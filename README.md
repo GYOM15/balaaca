@@ -144,9 +144,9 @@ monde. Un push direct est rejete avec `GH006`, meme avec `--no-verify`.
 
 | Document | Contenu |
 |---|---|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | vue macro, contextes, couches, regles de dependance |
-| [docs/DATABASE.md](docs/DATABASE.md) | schema, contraintes, index, RLS, migrations |
-| [docs/SECURITY.md](docs/SECURITY.md) | modele de menaces, isolation multi-tenant, OWASP |
+| [docs/adr/](docs/adr/) | les decisions structurantes et leurs raisons |
+| [.claude/skills/CANONICAL.md](.claude/skills/CANONICAL.md) | les symboles epingles : tables, ports, exceptions, codes d'erreur, ordre des migrations, et les comportements PostgreSQL verifies |
+| [.claude/skills/](.claude/skills/) | les conventions d'ingenierie appliquees au projet |
 | [docs/adr/](docs/adr/) | decisions d'architecture et leurs raisons |
 
 ## Licence
