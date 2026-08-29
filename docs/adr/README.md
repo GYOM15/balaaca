@@ -10,9 +10,17 @@ Nommage : `NNNN-titre-en-kebab-case.md`, numerotation continue.
 | # | Decision | Statut |
 |---|---|---|
 | [0001](0001-monolithe-modulaire-hexagonal.md) | Monolithe modulaire hexagonal plutot que microservices | Accepte |
-| [0002](0002-resolution-du-tenant-en-base.md) | Le tenant est resolu en base, pas depuis un claim JWT | Accepte |
-| [0003](0003-exclusion-postgresql-contre-la-double-reservation.md) | Contrainte d'exclusion PostgreSQL contre la double reservation | Accepte |
+| [0002](0002-resolution-du-tenant-en-base.md) | Le tenant est resolu en base, pas depuis un claim JWT | Accepte, amende |
+| [0003](0003-exclusion-postgresql-contre-la-double-reservation.md) | Contrainte d'exclusion PostgreSQL contre la double reservation | Accepte, amende |
 | [0004](0004-outbox-en-table-sans-broker.md) | Outbox en table drainee par un worker, sans broker | Accepte |
 | [0005](0005-perimetre-du-paiement.md) | Aucun paiement construit maintenant, coutures preparees | Accepte |
 | [0006](0006-modele-de-branches.md) | `main` + `develop` + branches de feature | Accepte |
 | [0007](0007-modelisation-du-temps.md) | Instants en UTC, regles recurrentes en heure locale | Accepte |
+
+## Amendement plutot que remplacement
+
+Un ADR n'est normalement jamais reecrit. Les ADR 0002 et 0003 font exception :
+ils ont ete amendes le jour meme de leur redaction, apres une revue
+adversariale et avant toute implementation, alors qu'aucun code n'en dependait.
+Chacun conserve en tete la trace de ce qui a ete corrige et pourquoi. Un ADR
+sur lequel du code repose est remplace, jamais amende.
