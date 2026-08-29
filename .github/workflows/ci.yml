@@ -1,0 +1,141 @@
+# Balaaca continuous integration.
+#
+# Every job here checks something that exists TODAY. Jobs for the Maven build,
+# the test levels, the coverage and mutation gates and the container image are
+# added with the code they verify: a job that cannot fail is not a gate, and
+# leaving one in place would make the pipeline read greener than it is.
+#
+# Every action is pinned to a commit SHA, never a tag. A tag is mutable and its
+# owner can silently repoint it, which is exactly how the tj-actions/changed-files
+# and reviewdog supply-chain compromises worked.
+
+name: ci
+
+on:
+  pull_request:
+    # develop is the integration branch; main only ever receives a promotion,
+    # and that promotion must pass the same gate it would have on develop.
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+
+# Least privilege: no job here writes anything.
+permissions:
+  contents: read
+
+# A superseded run is wasted money and a misleading status.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secrets:
+    name: secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # gitleaks walks history: a secret removed in a later commit is still
+          # compromised and must still fail the build.
+          fetch-depth: 0
+
+      - name: Run gitleaks
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          # Pinned like an action: the release archive is verified before it is
+          # executed. The MIT binary is used rather than the marketplace action,
+          # which bills organisation accounts.
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          set -euo pipefail
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL --retry 3 -o "$archive" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}"
+          echo "${GITLEAKS_SHA256}  ${archive}" | sha256sum -c -
+          tar -xzf "$archive" gitleaks
+          ./gitleaks --version
+          # --redact so a finding never prints the secret into a public log.
+          ./gitleaks detect --source . --redact --exit-code 1 --verbose
+
+  lint:
+    name: shell and compose
+    needs: secrets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Shellcheck the hooks and the bootstrap
+        run: |
+          set -euo pipefail
+          # shellcheck ships on the runner image, so there is nothing to pin.
+          shellcheck --version
+          shellcheck --severity=warning \
+            infrastructure/postgres/bootstrap.sh
+          # The hooks are POSIX sh, not bash: check them as such.
+          shellcheck --shell=sh --severity=warning \
+            .githooks/commit-msg .githooks/pre-push .githooks/pre-commit
+
+      - name: Validate the compose stack
+        run: |
+          set -euo pipefail
+          cp .env.example .env
+          # Two failures matter here. A malformed compose file, and a variable
+          # referenced by compose but absent from .env.example - which breaks a
+          # fresh clone silently, since compose only warns and substitutes "".
+          warnings=$(docker compose config 2>&1 >/dev/null || true)
+          if printf '%s' "$warnings" | grep -q 'variable is not set'; then
+            echo "::error::a compose variable is missing from .env.example"
+            printf '%s\n' "$warnings"
+            exit 1
+          fi
+          docker compose config --quiet
+
+      - name: Check the commit-msg hook still enforces the convention
+        run: |
+          set -euo pipefail
+          # The hook is the only thing enforcing the commit convention, since
+          # this repository has no server-side branch protection. If it stops
+          # working, nothing else notices.
+          tmp=$(mktemp -d)
+          check() {
+            printf '%s' "$2" > "$tmp/msg"
+            if .githooks/commit-msg "$tmp/msg" >/dev/null 2>&1; then r=ACCEPT; else r=REJECT; fi
+            if [ "$r" != "$1" ]; then
+              echo "::error::commit-msg hook: expected $1 for '$3'"
+              exit 1
+            fi
+            echo "ok $r  $3"
+          }
+          check ACCEPT 'Add provider ownership guard'        'plain imperative'
+          check REJECT 'Added provider ownership guard'      'past tense'
+          check REJECT 'feat(booking): add guard'            'conventional prefix'
+          check REJECT 'add provider ownership guard'        'lowercase start'
+          check REJECT 'Add provider ownership guard.'       'trailing period'
+          check REJECT 'Add a provider ownership guard to the booking module' 'over 50 chars'
+          check REJECT "$(printf 'Add guard\n\nCo-Authored-By: X <a@b.c>')" 'co-author trailer'
+
+  dependencies:
+    name: vulnerable dependencies
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Keyless by design. OWASP Dependency-Check throttles to a multi-minute
+      # NVD warm-up without an API key and its recent releases fail outright
+      # when one is absent, which is a gate that fails for the wrong reason.
+      #
+      # The action lives in a subdirectory: the repository root carries a
+      # metadata-only action.yml with no `runs:` section, and referencing it
+      # fails the job before any step.
+      - uses: google/osv-scanner-action/osv-scanner-action@6e4298ebc4db23e847df9b2e2de2939d6f066c67 # v2.5.1
+        with:
+          # --allow-no-lockfiles: without it the scanner exits 128 with "No
+          # package sources found" whenever a scanned tree has no manifest.
+          # That is the state of this repository today, and it stays correct
+          # afterwards: a directory without a lockfile is not a finding. Real
+          # vulnerabilities still fail the build.
+          scan-args: |-
+            --recursive
+            --allow-no-lockfiles
+            ./
