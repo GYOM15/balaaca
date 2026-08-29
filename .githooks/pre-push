@@ -1,0 +1,23 @@
+#!/bin/sh
+# Guards the release branch. GitHub server-side branch protection is not
+# available on a private repository without a paid plan, so this is the interim
+# measure. It is bypassable with --no-verify: it catches mistakes, it does not
+# stop a determined push.
+#
+# Promoting develop to main at a phase milestone:
+#     ALLOW_MAIN_PUSH=1 git push origin main
+
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+    case "$remote_ref" in
+        refs/heads/main)
+            if [ "$ALLOW_MAIN_PUSH" != "1" ]; then
+                printf 'pre-push: direct push to main is blocked.\n' >&2
+                printf '  Merge into develop and promote at a milestone with\n' >&2
+                printf '  ALLOW_MAIN_PUSH=1 git push origin main\n' >&2
+                exit 1
+            fi
+            ;;
+    esac
+done
+
+exit 0

@@ -42,6 +42,29 @@ balaaca/
 └── .claude/skills/       # conventions d'ingenierie appliquees au projet
 ```
 
+## Developpement
+
+Les hooks Git sont versionnes dans `.githooks/`. Ils ne sont pas actifs tant que
+vous ne les avez pas branches, une fois par clone :
+
+```bash
+git config core.hooksPath .githooks
+```
+
+| Hook | Role |
+|---|---|
+| `commit-msg` | applique la convention de commit : sujet imperatif capitalise de 50 caracteres maximum, sans prefixe `type(scope):`, corps a 72, aucun trailer `Co-Authored-By` |
+| `pre-push` | bloque les pushs directs sur `main` (promotion explicite : `ALLOW_MAIN_PUSH=1 git push origin main`) |
+| `pre-commit` | passe `gitleaks` sur le diff indexe si l'outil est installe |
+
+Ce sont des pre-filtres, pas des garanties : `--no-verify` les contourne. La
+verification qui fait autorite est la CI.
+
+Branches : `main` est la branche de release, `develop` la branche d'integration
+et la branche par defaut. On travaille sur `feature/<slug>` (ou `fix/`, `chore/`,
+`docs/`, `ci/`) coupee depuis `develop`, fusionnee dans `develop` par pull
+request. `develop` est promue vers `main` aux jalons de phase.
+
 ## Documentation
 
 | Document | Contenu |
