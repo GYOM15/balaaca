@@ -35,13 +35,16 @@ public class BookAppointmentAttempt {
     private final LookupServiceOfferingUseCase offerings;
     private final CalculateSlotsUseCase slots;
     private final AppointmentRepository appointments;
+    private final BookingNotifications notifications;
 
     public BookAppointmentAttempt(LookupServiceOfferingUseCase offerings,
                                   CalculateSlotsUseCase slots,
-                                  AppointmentRepository appointments) {
+                                  AppointmentRepository appointments,
+                                  BookingNotifications notifications) {
         this.offerings = offerings;
         this.slots = slots;
         this.appointments = appointments;
+        this.notifications = notifications;
     }
 
     /**
@@ -81,7 +84,7 @@ public class BookAppointmentAttempt {
         StaffId staffId = command.staffId().orElseGet(() -> pick(command, excluded));
         CustomerId customerId = appointments.upsertCustomer(command.customer());
 
-        return appointments.insertIfAbsent(new NewAppointment(
+        InsertOutcome outcome = appointments.insertIfAbsent(new NewAppointment(
                 AppointmentId.of(UUID.randomUUID()),
                 staffId,
                 offering,
@@ -90,6 +93,16 @@ public class BookAppointmentAttempt {
                 command.source(),
                 command.idempotency().map(i -> i.key()),
                 command.idempotency().map(i -> i.requestHash())));
+
+        // In this transaction, after the appointment exists: the notifications
+        // carry a foreign key to it, and committing them separately would be the
+        // dual write the outbox exists to avoid. Not on a replay - the rows are
+        // already there, and their dedupe keys would absorb them anyway.
+        if (!outcome.replayed()) {
+            notifications.planFor(outcome.appointmentId(), command.startsAt(),
+                                  offering, command.customer());
+        }
+        return outcome;
     }
 
     /**

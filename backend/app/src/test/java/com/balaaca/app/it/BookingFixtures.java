@@ -6,6 +6,8 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
@@ -37,14 +39,18 @@ public class BookingFixtures {
 
     public void reset() {
         run("""
-            TRUNCATE appointments, customers, availability_overrides, availability_rules,
-                     service_offerings, provider_staff, providers CASCADE
+            TRUNCATE notifications, appointments, customers, availability_overrides,
+                     availability_rules, service_offerings, provider_staff, providers CASCADE
             """);
+        // Only the salon publishes a way to be reached. coiffeur-solo deliberately
+        // does not: a provider with no contact must still be bookable, and the
+        // staff notice is simply not planned.
         run("""
-            INSERT INTO providers (id, slug, business_name, country_code, published, status) VALUES
-              ('%s','salon-fatou','Salon Fatou','GN',true,'ACTIVE'),
-              ('%s','barbier-cache','Barbier Cache','GN',false,'PENDING'),
-              ('%s','coiffeur-solo','Coiffeur Solo','GN',true,'ACTIVE')
+            INSERT INTO providers (id, slug, business_name, country_code, published, status,
+                                   whatsapp_phone_e164) VALUES
+              ('%s','salon-fatou','Salon Fatou','GN',true,'ACTIVE','+224622999001'),
+              ('%s','barbier-cache','Barbier Cache','GN',false,'PENDING',NULL),
+              ('%s','coiffeur-solo','Coiffeur Solo','GN',true,'ACTIVE',NULL)
             """.formatted(SALON, HIDDEN, SOLO));
         run("""
             INSERT INTO provider_staff (id, provider_id, display_name, role) VALUES
@@ -71,6 +77,30 @@ public class BookingFixtures {
               ('%s','%s','Coupe',30,0,0,50000,'GNF'),
               ('%s','%s','Coupe',60,0,0,80000,'GNF')
             """.formatted(SALON_OFFERING, SALON, HIDDEN_OFFERING, HIDDEN, SOLO_OFFERING, SOLO));
+    }
+
+    /** One outbox row, as the worker would read it. */
+    public record NotificationRow(String kind, String recipientKind, String toPhone,
+                                  String dedupeKey, String status, String payload) {
+    }
+
+    public List<NotificationRow> notifications(UUID providerId) {
+        String sql = """
+                SELECT kind, recipient_kind, coalesce(to_phone_e164,''), dedupe_key,
+                       status, payload::text
+                  FROM notifications WHERE provider_id = '%s'
+                 ORDER BY scheduled_at, kind
+                """.formatted(providerId);
+        List<NotificationRow> rows = new ArrayList<>();
+        try (Connection c = admin(); Statement s = c.createStatement(); ResultSet rs = s.executeQuery(sql)) {
+            while (rs.next()) {
+                rows.add(new NotificationRow(rs.getString(1), rs.getString(2), rs.getString(3),
+                                             rs.getString(4), rs.getString(5), rs.getString(6)));
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+        return rows;
     }
 
     public long activeAppointments(UUID providerId) {
