@@ -176,7 +176,28 @@ method argument. Fail-closed: no resolvable membership, no access.
 > The rule is mechanical: **if a method touches a tenant table, annotate it
 > `@Transactional`.** Read-only is not an exemption, it is the dangerous case.
 
+
+> **A second permissive policy makes RLS stop identifying "my row".** Policies
+> are OR'd. `providers` carries the tenant policy AND a public-read policy so
+> the hub can list published providers with no tenant bound - so with a tenant
+> bound, a bare `SELECT ... FROM providers` returns my provider PLUS every
+> published one.
+>
+> Found by CI, not by reading: `getSingleResult()` threw
+> `NonUniqueResultException: 2 results were returned`, and only because a second
+> published provider existed in the fixtures. With one, it would have passed and
+> shipped.
+>
+> The rule: **on a table with more than one permissive policy, any query meaning
+> "the current tenant's row" says so explicitly** -
+> `WHERE id = app_current_provider()`. Relying on RLS for singularity is only
+> safe where the tenant policy is the only one.
+
 ## Anti-patterns
+
+- `SELECT ... FROM providers` with `getSingleResult()`, trusting RLS to leave
+  one row -> a public-read policy is OR'd with the tenant one, so it returns
+  every published provider too.
 
 - A read-only repository method left non-transactional "because it only reads"
   -> the GUC is gone by the second statement, RLS filters everything, and the

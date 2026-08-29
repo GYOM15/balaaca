@@ -19,9 +19,17 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Reads the provider's declared hours. No query here carries a provider
- * predicate: RLS supplies it, and adding one by hand would be a second place to
- * forget it.
+ * Reads the provider's declared hours.
+ *
+ * <p>Queries against tenant-scoped tables carry no provider predicate: RLS
+ * supplies it, and adding one by hand would be a second place to forget it.
+ *
+ * <p>{@code providers} is the exception, and it is not optional. That table
+ * carries TWO policies, OR'd: the tenant one, and a public-read one so the hub
+ * can list published providers without a tenant bound. With a tenant bound a
+ * bare SELECT therefore returns my provider PLUS every published provider, and
+ * "the current provider" stops being a single row. Anything meaning "mine" says
+ * so explicitly.
  */
 @ApplicationScoped
 public class AvailabilityPanacheRepository implements AvailabilityRepository {
@@ -34,7 +42,8 @@ public class AvailabilityPanacheRepository implements AvailabilityRepository {
 
     @Override
     public ZoneId zoneOfCurrentProvider() {
-        return ZoneId.of((String) em.createNativeQuery("SELECT timezone FROM providers")
+        return ZoneId.of((String) em.createNativeQuery(
+                "SELECT timezone FROM providers WHERE id = app_current_provider()")
                 .getSingleResult());
     }
 
@@ -43,7 +52,7 @@ public class AvailabilityPanacheRepository implements AvailabilityRepository {
     public BookingPolicy policyOfCurrentProvider() {
         Object[] r = (Object[]) em.createNativeQuery("""
                 SELECT slot_granularity_minutes, min_lead_time_minutes, max_advance_days
-                  FROM providers
+                  FROM providers WHERE id = app_current_provider()
                 """).getSingleResult();
         return new BookingPolicy(
                 Duration.ofMinutes(((Number) r[0]).longValue()),
