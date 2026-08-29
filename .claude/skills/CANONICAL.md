@@ -415,7 +415,42 @@ Executed against 18.6. Do not re-derive these; cite them.
 | `current_setting('x', true)` when unset | empty string |
 | `''::uuid` | `22P02` |
 | `SET LOCAL` via `set_config(..., true)` | dropped at commit - safe with pooling |
-| 10 concurrent inserts on one slot | 1 row, 9 × `23P01` |
+| 10 concurrent inserts on one slot | 1 row wins - always |
+| the losers' SQLSTATE under contention | **non-deterministic**: `23P01` or `40P01` deadlock, see below |
 | `SECURITY DEFINER` under `FORCE RLS` | runs under the owner's policies - the resolution path |
 | app role attempting `DISABLE ROW LEVEL SECURITY` | `must be owner of table` |
 | app role attempting to grant itself `BYPASSRLS` | `permission denied to alter role` |
+
+
+---
+
+## 11. Contention on the exclusion constraint
+
+Measured against the migrated schema on PostgreSQL 18.6, N sessions racing for
+one slot:
+
+| Concurrent | Winners | `23P01` exclusion | `40P01` deadlock |
+|---|---|---|---|
+| 2 | 1 | 0 | 1 |
+| 3 | 1 | 2 | 0 |
+| 5 | 1 | 0 | 4 |
+| 10 | 1 | 0 | 9 |
+
+**The invariant never broke: exactly one booking, every time.** What varies is
+the error the loser sees. Each transaction inserts its tuple, then waits on the
+conflicting transaction; two or more such waits form a cycle and PostgreSQL
+breaks it as a deadlock instead of reporting the exclusion violation.
+
+This is not a defect to fix. It is a behaviour the booking path must handle,
+and it is invisible to any single-threaded test:
+
+- **`23P01`** - the slot is definitively taken. Map to `409 SLOT_UNAVAILABLE`.
+- **`40P01`** - a transient serialisation failure that says **nothing** about
+  whether the slot is free. **Retry the whole transaction**, bounded (three
+  attempts, small jitter). A retry that then hits `23P01` is a real conflict and
+  becomes the 409; exhausted retries are `503` with `Retry-After`, because the
+  system is contended, not the slot.
+
+Treating a deadlock as "slot taken" turns away customers from a free slot.
+Leaving it unmapped returns an unhandled 500 on every busy provider. Both are
+production failures that only appear under load.

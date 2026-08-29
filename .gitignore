@@ -46,3 +46,7 @@ Thumbs.db
 coverage/
 jacoco.exec
 .scannerwork/
+
+# --- Maven / Quarkus build output ---
+backend/**/target/
+.jqwik-database
