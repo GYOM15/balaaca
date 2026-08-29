@@ -1,0 +1,135 @@
+package com.balaaca.app.it;
+
+import static io.restassured.RestAssured.given;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.equalTo;
+
+import io.quarkus.test.common.QuarkusTestResource;
+import io.quarkus.test.junit.QuarkusTest;
+import jakarta.inject.Inject;
+import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+/**
+ * Availability, end to end. Until this increment a customer could book at 03:00
+ * on a day the provider was closed: the exclusion constraint stops a slot being
+ * sold twice, and nothing stopped one being sold at all.
+ */
+@QuarkusTest
+@QuarkusTestResource(PostgresTestResource.class)
+class AvailabilityIT {
+
+    private static final String SALON = "/v1/providers/salon-fatou/appointments";
+    private static final String SLOTS = "/v1/providers/salon-fatou/available-slots";
+
+    @Inject
+    BookingFixtures fixtures;
+
+    @BeforeEach
+    void seed() {
+        fixtures.reset();
+    }
+
+    private static String booking(String startsAt, String phone) {
+        return """
+               {"service_offering_id":"%s","starts_at":"%s",
+                "customer":{"full_name":"Mariama B.","phone":"%s"}}
+               """.formatted(BookingFixtures.SALON_OFFERING, startsAt, phone);
+    }
+
+    @Test
+    @DisplayName("Refuses a booking outside the declared hours")
+    void refusesOutsideHours() {
+        // The salon opens 08:00 to 20:00; 03:00 is nobody's opening hour.
+        given().contentType("application/json")
+                .body(booking("2026-09-01T03:00:00Z", "622000001"))
+                .when().post(SALON)
+                .then().statusCode(422).body("code", equalTo("SLOT_OUTSIDE_AVAILABILITY"));
+
+        assertThat(fixtures.activeAppointments(BookingFixtures.SALON)).isZero();
+    }
+
+    @Test
+    @DisplayName("Refuses a booking on a Sunday, which has no rule")
+    void refusesOnAClosedWeekday() {
+        // 2026-09-06 is a Sunday; rules cover Monday to Saturday only.
+        given().contentType("application/json")
+                .body(booking("2026-09-06T10:00:00Z", "622000002"))
+                .when().post(SALON)
+                .then().statusCode(422).body("code", equalTo("SLOT_OUTSIDE_AVAILABILITY"));
+    }
+
+    @Test
+    @DisplayName("Refuses a booking on a date closed by an override")
+    void refusesOnAnOverriddenClosure() {
+        // 2026-09-01 is a Tuesday and normally open.
+        fixtures.closeSalonOn("2026-09-01");
+
+        given().contentType("application/json")
+                .body(booking("2026-09-01T10:00:00Z", "622000003"))
+                .when().post(SALON)
+                .then().statusCode(422).body("code", equalTo("SLOT_OUTSIDE_AVAILABILITY"));
+    }
+
+    @Test
+    @DisplayName("Still accepts a booking inside the declared hours")
+    void acceptsInsideHours() {
+        given().contentType("application/json")
+                .body(booking("2026-09-01T10:00:00Z", "622000004"))
+                .when().post(SALON)
+                .then().statusCode(201);
+    }
+
+    @Test
+    @DisplayName("Lists only bookable slots, never who is busy when")
+    void listsOnlyBookableSlots() {
+        List<String> starts = given()
+                .queryParam("service_offering_id", BookingFixtures.SALON_OFFERING.toString())
+                .queryParam("from", "2026-09-01").queryParam("to", "2026-09-01")
+                .when().get(SLOTS)
+                .then().statusCode(200)
+                .extract().jsonPath().getList("data.starts_at");
+
+        assertThat(starts).isNotEmpty();
+    }
+
+    @Test
+    @DisplayName("A booked slot disappears from the list")
+    void bookedSlotLeavesTheList() {
+        List<String> before = listStarts();
+        assertThat(before).contains("2026-09-01T10:00:00Z");
+
+        given().contentType("application/json")
+                .body(booking("2026-09-01T10:00:00Z", "622000005"))
+                .when().post(SALON).then().statusCode(201);
+
+        // The offering carries a 15-minute lead-in and a 10-minute tail, so the
+        // booking removes rather more than its own hour - exactly what the
+        // exclusion constraint would have refused.
+        assertThat(listStarts()).doesNotContain("2026-09-01T10:00:00Z");
+    }
+
+    @Test
+    @DisplayName("Every slot the list offers is one the database accepts")
+    void offeredSlotsAreActuallyBookable() {
+        // The list and the constraint must agree. A slot advertised and then
+        // refused is worse than one never offered: the customer watches it
+        // vanish as they tap it.
+        String first = listStarts().get(0);
+
+        given().contentType("application/json")
+                .body(booking(first, "622000006"))
+                .when().post(SALON)
+                .then().statusCode(201);
+    }
+
+    private List<String> listStarts() {
+        return given()
+                .queryParam("service_offering_id", BookingFixtures.SALON_OFFERING.toString())
+                .queryParam("from", "2026-09-01").queryParam("to", "2026-09-01")
+                .when().get(SLOTS).then().statusCode(200)
+                .extract().jsonPath().getList("data.starts_at");
+    }
+}

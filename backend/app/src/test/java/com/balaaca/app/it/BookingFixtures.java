@@ -36,7 +36,10 @@ public class BookingFixtures {
     }
 
     public void reset() {
-        run("TRUNCATE appointments, customers, service_offerings, provider_staff, providers CASCADE");
+        run("""
+            TRUNCATE appointments, customers, availability_overrides, availability_rules,
+                     service_offerings, provider_staff, providers CASCADE
+            """);
         run("""
             INSERT INTO providers (id, slug, business_name, country_code, published, status) VALUES
               ('%s','salon-fatou','Salon Fatou','GN',true,'ACTIVE'),
@@ -49,6 +52,17 @@ public class BookingFixtures {
               ('b1b1b1b1-0000-0000-0000-000000000001','%s','Cache','OWNER'),
               ('c3c3c3c3-0000-0000-0000-000000000001','%s','Solo','OWNER')
             """.formatted(SALON, HIDDEN, SOLO));
+        // Monday to Saturday, 08:00 to 20:00 local. Without these every booking
+        // is now correctly refused as outside the provider's declared hours,
+        // which is the point of this increment.
+        for (int day = 1; day <= 6; day++) {
+            run("""
+                INSERT INTO availability_rules
+                  (id, provider_id, staff_id, day_of_week, start_time, end_time) VALUES
+                  (gen_random_uuid(),'%s','a1a1a1a1-0000-0000-0000-000000000001',%d,'08:00','20:00'),
+                  (gen_random_uuid(),'%s','c3c3c3c3-0000-0000-0000-000000000001',%d,'08:00','20:00')
+                """.formatted(SALON, day, SOLO, day));
+        }
         run("""
             INSERT INTO service_offerings
               (id, provider_id, name, duration_minutes, buffer_before_minutes,
@@ -64,6 +78,15 @@ public class BookingFixtures {
                 SELECT count(*) FROM appointments
                  WHERE provider_id = '%s' AND status IN ('PENDING','CONFIRMED')
                 """.formatted(providerId));
+    }
+
+    /** Closes a single date for the salon, to exercise an override. */
+    public void closeSalonOn(String isoDate) {
+        run("""
+            INSERT INTO availability_overrides
+              (id, provider_id, staff_id, override_date, kind, reason) VALUES
+              (gen_random_uuid(),'%s','a1a1a1a1-0000-0000-0000-000000000001','%s','CLOSED','ferie')
+            """.formatted(SALON, isoDate));
     }
 
     public long distinctStaffBooked(UUID providerId) {

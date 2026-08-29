@@ -11,6 +11,9 @@
   <artifactId>booking</artifactId>
   <dependencies>
     <dependency>
+      <groupId>com.balaaca</groupId><artifactId>scheduling</artifactId><version>${project.version}</version>
+    </dependency>
+    <dependency>
       <groupId>com.balaaca</groupId><artifactId>catalog</artifactId><version>${project.version}</version>
     </dependency>
     <dependency><groupId>com.balaaca</groupId><artifactId>shared-kernel</artifactId></dependency>

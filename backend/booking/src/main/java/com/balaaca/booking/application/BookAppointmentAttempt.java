@@ -8,6 +8,11 @@ import com.balaaca.booking.ports.outbound.AppointmentRepository.InsertOutcome;
 import com.balaaca.booking.ports.outbound.AppointmentRepository.NewAppointment;
 import com.balaaca.catalog.ports.inbound.BookableOffering;
 import com.balaaca.catalog.ports.inbound.LookupServiceOfferingUseCase;
+import com.balaaca.booking.domain.BookingExceptions.SlotOutsideAvailabilityException;
+import com.balaaca.scheduling.ports.inbound.CalculateSlotsUseCase;
+import com.balaaca.scheduling.ports.inbound.CalculateSlotsUseCase.SlotRequest;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import com.balaaca.sharedkernel.ids.AppointmentId;
 import com.balaaca.sharedkernel.ids.CustomerId;
 import com.balaaca.sharedkernel.ids.StaffId;
@@ -27,11 +32,14 @@ import java.util.UUID;
 public class BookAppointmentAttempt {
 
     private final LookupServiceOfferingUseCase offerings;
+    private final CalculateSlotsUseCase slots;
     private final AppointmentRepository appointments;
 
     public BookAppointmentAttempt(LookupServiceOfferingUseCase offerings,
+                                  CalculateSlotsUseCase slots,
                                   AppointmentRepository appointments) {
         this.offerings = offerings;
+        this.slots = slots;
         this.appointments = appointments;
     }
 
@@ -46,6 +54,14 @@ public class BookAppointmentAttempt {
         // The application layer, not the domain, is where the two contexts meet.
         BookedSlot slot = BookedSlot.from(command.startsAt(), offering.duration(),
                                           offering.bufferBefore(), offering.bufferAfter());
+
+        // Checked inside the transaction, against the same calculation that
+        // produced the public list. The exclusion constraint stops a slot being
+        // sold twice; nothing else stops one being sold at 3am on a closed day.
+        if (!slots.isBookable(command.startsAt(), slotRequest(command, offering))) {
+            throw new SlotOutsideAvailabilityException(command.startsAt(),
+                    "outside the provider's declared availability");
+        }
 
         StaffId staffId = command.staffId().orElseGet(() -> pick(command, excluded));
         CustomerId customerId = appointments.upsertCustomer(command.customer());
@@ -75,6 +91,16 @@ public class BookAppointmentAttempt {
         return command.staffId()
                 .map(List::of)
                 .orElseGet(() -> appointments.eligibleStaff(command.serviceOfferingId()));
+    }
+
+    private static SlotRequest slotRequest(BookAppointmentCommand command,
+                                           BookableOffering offering) {
+        // A single day: the question is whether this one start is bookable, and
+        // widening the range would only cost work.
+        LocalDate day = command.startsAt().atZone(ZoneId.of("UTC")).toLocalDate();
+        return new SlotRequest(command.serviceOfferingId(), command.staffId(),
+                day.minusDays(1), day.plusDays(1),
+                offering.duration(), offering.bufferBefore(), offering.bufferAfter());
     }
 
     private StaffId pick(BookAppointmentCommand command, List<StaffId> excluded) {
