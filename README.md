@@ -108,6 +108,26 @@ git config core.hooksPath .githooks
 Ce sont des pre-filtres, pas des garanties : `--no-verify` les contourne. La
 verification qui fait autorite est la CI, qui rejoue tout cote serveur.
 
+### Lancer les tests
+
+```bash
+cd backend
+mvn test      # unitaires seuls, rapide, aucun Docker requis
+mvn verify    # ajoute les suites *IT sur Testcontainers
+```
+
+Sur **macOS avec Docker Desktop**, Testcontainers reste bloque a la decouverte
+du socket (`DockerClientProviderStrategy.getFirstValidStrategy`) : il sonde des
+strategies qui n'aboutissent pas, sans echouer franchement, ce qui ressemble a
+un test qui ne repond plus. Lui indiquer le socket regle le probleme :
+
+```bash
+export DOCKER_HOST="unix://$HOME/.docker/run/docker.sock"
+export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
+```
+
+Inutile sur les runners Linux, ou le socket est a l'emplacement standard.
+
 ## Integration continue
 
 `.github/workflows/ci.yml` s'execute sur chaque pull request vers `develop` ou
