@@ -54,7 +54,7 @@ git config core.hooksPath .githooks
 | Hook | Role |
 |---|---|
 | `commit-msg` | applique la convention de commit : sujet imperatif capitalise de 50 caracteres maximum, sans prefixe `type(scope):`, corps a 72, aucun trailer `Co-Authored-By` |
-| `pre-push` | bloque les pushs directs sur `main` (promotion explicite : `ALLOW_MAIN_PUSH=1 git push origin main`) |
+| `pre-push` | bloque les pushs directs sur `main` et sur `develop` : les deux n'avancent que par une pull request fusionnee. Overrides explicites : `ALLOW_MAIN_PUSH=1` pour promouvoir `develop` vers `main` a un jalon, `ALLOW_DEVELOP_PUSH=1` pour reparer un `develop` casse |
 | `pre-commit` | passe `gitleaks` sur le diff indexe si l'outil est installe |
 
 Ce sont des pre-filtres, pas des garanties : `--no-verify` les contourne. La
