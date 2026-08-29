@@ -9,8 +9,10 @@ import com.balaaca.scheduling.ports.outbound.AvailabilityRepository;
 import com.balaaca.sharedkernel.ids.StaffId;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.persistence.EntityManager;
-import java.sql.Time;
 import java.sql.Timestamp;
+import java.time.Instant;
+import java.time.LocalTime;
+import java.time.OffsetDateTime;
 import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.LocalDate;
@@ -42,6 +44,28 @@ public class AvailabilityPanacheRepository implements AvailabilityRepository {
 
     public AvailabilityPanacheRepository(EntityManager em) {
         this.em = em;
+    }
+
+    // The driver's return type for a temporal column depends on its version and
+    // settings: modern pgjdbc hands back java.time values, older paths hand back
+    // java.sql ones. A native query sees whatever it gives, so these accept both
+    // rather than casting to one and failing at runtime on the other.
+    private static LocalTime localTime(Object value) {
+        return value instanceof LocalTime t ? t : ((java.sql.Time) value).toLocalTime();
+    }
+
+    private static LocalDate localDate(Object value) {
+        return value instanceof LocalDate d ? d : ((java.sql.Date) value).toLocalDate();
+    }
+
+    private static Instant instant(Object value) {
+        if (value instanceof OffsetDateTime o) {
+            return o.toInstant();
+        }
+        if (value instanceof Instant i) {
+            return i;
+        }
+        return ((Timestamp) value).toInstant();
     }
 
     @Override
@@ -79,9 +103,9 @@ public class AvailabilityPanacheRepository implements AvailabilityRepository {
         return rows.stream().map(r -> new AvailabilityRule(
                         // ISO day numbering: 1 is Monday, which DayOfWeek shares.
                         DayOfWeek.of(((Number) r[0]).intValue()),
-                        new LocalWindow(((Time) r[1]).toLocalTime(), ((Time) r[2]).toLocalTime()),
-                        Optional.ofNullable((java.sql.Date) r[3]).map(java.sql.Date::toLocalDate),
-                        Optional.ofNullable((java.sql.Date) r[4]).map(java.sql.Date::toLocalDate)))
+                        new LocalWindow(localTime(r[1]), localTime(r[2])),
+                        Optional.ofNullable(r[3]).map(AvailabilityPanacheRepository::localDate),
+                        Optional.ofNullable(r[4]).map(AvailabilityPanacheRepository::localDate)))
                 .toList();
     }
 
@@ -101,11 +125,11 @@ public class AvailabilityPanacheRepository implements AvailabilityRepository {
                 .getResultList();
 
         return rows.stream().map(r -> {
-            LocalDate date = ((java.sql.Date) r[0]).toLocalDate();
+            LocalDate date = localDate(r[0]);
             return "CLOSED".equals(r[1])
                     ? AvailabilityOverride.closed(date)
-                    : AvailabilityOverride.customHours(date, new LocalWindow(
-                            ((Time) r[2]).toLocalTime(), ((Time) r[3]).toLocalTime()));
+                    : AvailabilityOverride.customHours(date,
+                            new LocalWindow(localTime(r[2]), localTime(r[3])));
         }).toList();
     }
 
@@ -127,8 +151,7 @@ public class AvailabilityPanacheRepository implements AvailabilityRepository {
                 .getResultList();
 
         return rows.stream()
-                .map(r -> new InstantRange(((Timestamp) r[0]).toInstant(),
-                                           ((Timestamp) r[1]).toInstant()))
+                .map(r -> new InstantRange(instant(r[0]), instant(r[1])))
                 .toList();
     }
 }
