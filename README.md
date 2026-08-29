@@ -35,7 +35,7 @@ nulle part une devise, un indicatif telephonique ou un fuseau unique.
 balaaca/
 ├── backend/              # Quarkus — monolithe modulaire (source de verite metier)
 ├── frontend/             # Next.js — pages publiques, tableau de bord, back-office
-├── notification-worker/  # envoi asynchrone : WhatsApp, SMS, email
+├── notification-worker/  # draine la table notifications et envoie
 ├── chatbot-service/      # squelette, appelle l'API metier — jamais la base
 ├── infrastructure/       # docker, nginx, keycloak, postgres
 ├── docs/                 # architecture, base de donnees, securite, ADR
@@ -115,6 +115,27 @@ cd backend
 mvn test      # unitaires seuls, rapide, aucun Docker requis
 mvn verify    # ajoute les suites *IT sur Testcontainers
 ```
+
+`notification-worker` est un projet Maven separe, volontairement hors du
+reacteur de `backend` : il ne depend d'aucun artefact Balaaca. Il se construit
+et se teste a part.
+
+```bash
+cd notification-worker
+mvn verify
+```
+
+Il ne demarre pas sans canal nomme explicitement :
+
+```bash
+balaaca.notification.channel=console
+```
+
+Il n'y a pas de valeur par defaut, et c'est voulu. Le seul canal existant
+aujourd'hui ecrit dans le log et n'envoie rien : un worker qui marquerait des
+lignes `SENT` que personne n'a recues serait pire qu'un worker qui refuse de
+demarrer. Aucune passerelle reelle n'est branchee — WhatsApp Business ou
+agregateur SMS est une decision commerciale, pas un detail de code.
 
 Sur **macOS avec Docker Desktop**, Testcontainers reste bloque a la decouverte
 du socket (`DockerClientProviderStrategy.getFirstValidStrategy`) : il sonde des

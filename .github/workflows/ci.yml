@@ -79,6 +79,12 @@ jobs:
       # three exists outside PostgreSQL.
       - run: mvn -B -f backend/pom.xml verify
 
+      # The satellite is its own Maven project, outside the backend reactor on
+      # purpose, so the verify above does not reach it. Its suites need the same
+      # PostgreSQL: they run the real migrations against a container and drain
+      # under the worker's own least-privilege role.
+      - run: mvn -B -f notification-worker/pom.xml verify
+
       - if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -86,6 +92,8 @@ jobs:
           path: |
             backend/**/target/surefire-reports/**
             backend/**/target/failsafe-reports/**
+            notification-worker/target/surefire-reports/**
+            notification-worker/target/failsafe-reports/**
           if-no-files-found: ignore
 
   lint:
