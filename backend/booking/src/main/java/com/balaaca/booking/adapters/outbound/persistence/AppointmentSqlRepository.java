@@ -23,7 +23,7 @@ import java.util.UUID;
  * a {@code StaffId} is a uuid at all.
  */
 @ApplicationScoped
-public class AppointmentPanacheRepository implements AppointmentRepository {
+public class AppointmentSqlRepository implements AppointmentRepository {
 
     private static final String EXCLUSION_VIOLATION = "23P01";
     private static final String UNIQUE_VIOLATION = "23505";
@@ -32,7 +32,7 @@ public class AppointmentPanacheRepository implements AppointmentRepository {
     private final EntityManager em;
     private final TenantContext tenantContext;
 
-    public AppointmentPanacheRepository(EntityManager em, TenantContext tenantContext) {
+    public AppointmentSqlRepository(EntityManager em, TenantContext tenantContext) {
         this.em = em;
         this.tenantContext = tenantContext;
     }

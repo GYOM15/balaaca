@@ -79,7 +79,7 @@ Under `com.balaaca.<context>.*`:
 4. **`adapters/`** — the edges. `adapters/inbound/{rest}` drives the
    application through inbound ports; `adapters/outbound/{persistence,
    gateway,messaging}` implements outbound ports. Adapters are named for
-   their technology: `AppointmentPanacheRepository`, never `*Impl`.
+   their technology: `AppointmentSqlRepository`, never `*Impl`.
 
 **`shared-kernel` is the ONE context exempt from this four-layer rule.** It
 is not a bounded context and has no aggregates to protect; it is laid out
@@ -102,7 +102,7 @@ write `com.balaaca.shared.*` — that package does not exist.
    `shared-kernel` depends on no context.
 2. **Ports are owned by the core, implemented at the edge.** A repository
    interface (`AppointmentRepository`) lives in `ports/outbound/`; its
-   Hibernate implementation (`AppointmentPanacheRepository`) lives in
+   SQL implementation (`AppointmentSqlRepository`) lives in
    `adapters/outbound/persistence/`. Never invert this. The same shape
    holds for the cross-cutting ports of `shared-kernel`: the interface is
    declared where the plumbing needs it, the implementation lives in the
@@ -272,7 +272,7 @@ catalog/ports/inbound/LookupServiceOfferingUseCase.java  # in-process, used by b
 scheduling/ports/inbound/SlotAvailabilityUseCase.java    # in-process, used by booking
 billing/ports/inbound/EntitlementCheckUseCase.java       # in-process, write-path guard
 
-booking/adapters/outbound/persistence/AppointmentPanacheRepository.java
+booking/adapters/outbound/persistence/AppointmentSqlRepository.java
 booking/adapters/outbound/messaging/NotificationOutboxWriter.java
 ```
 

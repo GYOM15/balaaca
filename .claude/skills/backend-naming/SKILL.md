@@ -103,8 +103,9 @@ in, never a vague technical role.
    an interceptor (see `cdi-interceptors`).
 8. **Adapters: named for the technology they bring, never `*Impl`.** An
    adapter's name must say WHICH implementation it is, because one day there
-   will be a second: `AppointmentPanacheRepository` (not
-   `AppointmentRepositoryImpl`), `TwilioSmsAdapter implements SmsSenderPort`
+   will be a second: `AppointmentSqlRepository` (not
+   `AppointmentRepositoryImpl`, and not `*PanacheRepository` for an adapter
+   that uses no Panache), `TwilioSmsAdapter implements SmsSenderPort`
    (not `SmsSenderPortImpl`), `KeycloakIdentityAdapter`. `Impl` carries no
    information and blocks the next implementation from having a meaningful
    name. Sub-packages follow the direction and the edge:
@@ -112,11 +113,14 @@ in, never a vague technical role.
    messaging}`. There is no `grpc` sub-package and no `.proto` file anywhere —
    core modules talk through inbound ports (rule 4), and satellites talk HTTP
    to the business API.
-9. **Persistence rows: `*Entity` in the persistence adapter package.**
-   `AppointmentEntity`, `AvailabilityRuleEntity`, `ServiceOfferingEntity` are
-   Hibernate `@Entity` types in `adapters/outbound/persistence/`. They are
-   mapped to/from domain types by a `*Mapper`; the domain never imports an
-   `*Entity`. Tenant-scoped rows are filtered by PostgreSQL RLS, whose GUC is
+9. **Persistence rows are not mapped types: there is no `*Entity` and no
+   `*Mapper`.** ADR-0008 decides it - the schema's invariants are PostgreSQL
+   features an ORM cannot express, so persistence adapters issue native SQL
+   through the `EntityManager` and build domain types from the result tuple
+   in place. A `*SqlRepository` is therefore the only class that knows a
+   column exists, and the conversion lives in the method that reads the row.
+   Reintroduce an `@Entity` only by superseding ADR-0008, never quietly for
+   one table. Tenant-scoped rows are filtered by PostgreSQL RLS, whose GUC is
    bound by a connection-level hook rather than by any annotation (see
    `multi-tenant-rls`); that is a property of the schema, not of the name.
 10. **Domain events: `*Event` semantics, past tense, in `<context>.domain/`
@@ -255,9 +259,8 @@ com.balaaca.booking
     │   └── AppointmentResource.java          # implements generated AppointmentApi,
     │                                         # mounted at /v1/appointments
     └── outbound/persistence/
-        ├── AppointmentEntity.java            # @Entity (Hibernate)
-        ├── AppointmentPanacheRepository.java # implements AppointmentRepository
-        └── AppointmentEntityMapper.java      # domain <-> entity
+        └── AppointmentSqlRepository.java     # implements AppointmentRepository,
+                                              # native SQL, no @Entity (ADR-0008)
 
 # NOTE: no SmsSenderPort and no TwilioSmsAdapter here — `booking` never sends a
 # message. It writes a row to the notifications table in the SAME transaction

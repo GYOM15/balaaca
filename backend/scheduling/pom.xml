@@ -13,7 +13,7 @@
     <dependency><groupId>com.balaaca</groupId><artifactId>shared-kernel</artifactId></dependency>
     <dependency><groupId>com.balaaca</groupId><artifactId>platform-kernel</artifactId></dependency>
     <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-arc</artifactId></dependency>
-    <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-hibernate-orm-panache</artifactId></dependency>
+    <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-hibernate-orm</artifactId></dependency>
     <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-hibernate-validator</artifactId></dependency>
   </dependencies>
   <build>

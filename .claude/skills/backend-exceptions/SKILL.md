@@ -264,7 +264,7 @@ never takes one:
 
 ```java
 @ApplicationScoped
-public class AppointmentPanacheRepository implements AppointmentRepository {
+public class AppointmentSqlRepository implements AppointmentRepository {
 
     private static final String EXCLUSION_VIOLATION = "23P01";
 

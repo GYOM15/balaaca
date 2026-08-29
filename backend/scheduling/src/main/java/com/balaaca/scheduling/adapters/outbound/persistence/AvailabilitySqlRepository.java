@@ -34,7 +34,7 @@ import java.util.Optional;
  * so explicitly.
  */
 @ApplicationScoped
-public class AvailabilityPanacheRepository implements AvailabilityRepository {
+public class AvailabilitySqlRepository implements AvailabilityRepository {
 
     // Every optional staff filter casts its parameter. PostgreSQL cannot infer
     // the type of a parameter whose only unambiguous use is beside IS NULL, and
@@ -42,7 +42,7 @@ public class AvailabilityPanacheRepository implements AvailabilityRepository {
 
     private final EntityManager em;
 
-    public AvailabilityPanacheRepository(EntityManager em) {
+    public AvailabilitySqlRepository(EntityManager em) {
         this.em = em;
     }
 
@@ -104,8 +104,8 @@ public class AvailabilityPanacheRepository implements AvailabilityRepository {
                         // ISO day numbering: 1 is Monday, which DayOfWeek shares.
                         DayOfWeek.of(((Number) r[0]).intValue()),
                         new LocalWindow(localTime(r[1]), localTime(r[2])),
-                        Optional.ofNullable(r[3]).map(AvailabilityPanacheRepository::localDate),
-                        Optional.ofNullable(r[4]).map(AvailabilityPanacheRepository::localDate)))
+                        Optional.ofNullable(r[3]).map(AvailabilitySqlRepository::localDate),
+                        Optional.ofNullable(r[4]).map(AvailabilitySqlRepository::localDate)))
                 .toList();
     }
 

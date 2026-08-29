@@ -14,11 +14,11 @@ import java.util.List;
 import java.util.UUID;
 
 @ApplicationScoped
-public class ServiceOfferingPanacheRepository implements LookupServiceOfferingUseCase {
+public class ServiceOfferingSqlRepository implements LookupServiceOfferingUseCase {
 
     private final EntityManager em;
 
-    public ServiceOfferingPanacheRepository(EntityManager em) {
+    public ServiceOfferingSqlRepository(EntityManager em) {
         this.em = em;
     }
 
