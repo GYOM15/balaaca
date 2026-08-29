@@ -102,7 +102,7 @@ git config core.hooksPath .githooks
 | Hook | Role |
 |---|---|
 | `commit-msg` | applique la convention de commit : sujet imperatif capitalise de 50 caracteres maximum, sans prefixe `type(scope):`, corps a 72, aucun trailer `Co-Authored-By` |
-| `pre-push` | bloque les pushs directs sur `main` et sur `develop` : les deux n'avancent que par une pull request fusionnee. Overrides explicites : `ALLOW_MAIN_PUSH=1` pour promouvoir `develop` vers `main` a un jalon, `ALLOW_DEVELOP_PUSH=1` pour reparer un `develop` casse |
+| `pre-push` | bloque les pushs directs sur `main` et sur `develop`. Sans override : GitHub les refuse de toute facon cote serveur, le hook ne fait que l'annoncer plus tot |
 | `pre-commit` | passe `gitleaks` sur le diff indexe **si** l'outil est installe, et se tait sinon. L'installer n'est pas un prerequis : le scan qui fait autorite tourne en CI, sur l'historique complet, a chaque pull request |
 
 Ce sont des pre-filtres, pas des garanties : `--no-verify` les contourne. La
@@ -132,7 +132,13 @@ qu'elle ne l'est.
 Branches : `main` est la branche de release, `develop` la branche d'integration
 et la branche par defaut. On travaille sur `feature/<slug>` (ou `fix/`, `chore/`,
 `docs/`, `ci/`) coupee depuis `develop`, fusionnee dans `develop` par pull
-request. `develop` est promue vers `main` aux jalons de phase.
+request. `develop` est promue vers `main` aux jalons de phase, **par pull
+request egalement**.
+
+Les deux branches sont protegees cote serveur : pull request obligatoire, les
+trois checks de CI exiges, force-push et suppression refuses, et
+`enforce_admins` actif — le proprietaire du depot y est soumis comme tout le
+monde. Un push direct est rejete avec `GH006`, meme avec `--no-verify`.
 
 ## Documentation
 
