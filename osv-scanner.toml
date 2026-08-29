@@ -1,0 +1,28 @@
+# Waivers for OSV-Scanner. Every entry carries a reason and an expiry: a waiver
+# without a review date silently becomes permanent, which is how a real finding
+# ends up ignored.
+
+[[IgnoredVulns]]
+id = "GHSA-6fmv-xxpf-w3cw"
+ignoreUntil = 2026-11-29
+reason = """
+plexus-utils 3.5.1 is not in this build.
+
+OSV resolves it statically from a declared reference and reports it against
+backend/pom.xml and backend/shared-kernel/pom.xml. What Maven actually resolves
+is different, and was checked rather than assumed:
+
+  - the Quarkus BOM EXCLUDES org.codehaus.plexus:plexus-utils outright;
+  - `mvn dependency:tree` on shared-kernel and on app, the deployable, returns
+    zero occurrences, so it is on no compile or runtime classpath and ships in
+    no artifact;
+  - `mvn dependency:resolve-plugins` shows plugin classpaths using 4.0.3, 4.0.1
+    and 3.4.2 - never 3.5.1.
+
+jandex-maven-plugin was still moved to the parent's pluginManagement with an
+explicit plexus-utils 3.6.1 override, so that if a real path to it ever appears
+it is already on a fixed version.
+
+Revisit at expiry: if OSV still reports it, re-run the three checks above before
+renewing. Do not renew on the strength of this note alone.
+"""

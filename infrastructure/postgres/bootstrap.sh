@@ -15,7 +15,8 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
      -v migrator_user="${BALAACA_DB_MIGRATOR_USER}" \
      -v migrator_password="${BALAACA_DB_MIGRATOR_PASSWORD}" \
      -v worker_user="${BALAACA_DB_WORKER_USER}" \
-     -v worker_password="${BALAACA_DB_WORKER_PASSWORD}" <<'SQL'
+     -v worker_password="${BALAACA_DB_WORKER_PASSWORD}" \
+     -v db_name="${POSTGRES_DB}" <<'SQL'
 
 -- Owns the schema and runs Flyway. Never used at runtime.
 CREATE ROLE :"migrator_user" LOGIN PASSWORD :'migrator_password'
@@ -42,18 +43,29 @@ ALTER SCHEMA public OWNER TO :"migrator_user";
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 GRANT  USAGE  ON SCHEMA public TO :"app_user", :"worker_user", balaaca_resolver;
 
+-- The migrations transfer ownership of the SECURITY DEFINER resolution
+-- functions to balaaca_resolver, and ALTER FUNCTION ... OWNER TO requires
+-- membership of the target role. The migrator is the schema owner already and
+-- is never used at runtime, so this grants it nothing it did not have.
+GRANT balaaca_resolver TO :"migrator_user";
+
+-- CREATE on the database so the migrations can install their own extensions.
+-- btree_gist, citext and pg_trgm are trusted extensions since PostgreSQL 13, so
+-- this needs no superuser. Keeping extensions in a versioned migration rather
+-- than here means a fresh VPS gets the same schema from Flyway alone.
+GRANT CREATE ON DATABASE :"db_name" TO :"migrator_user";
+
 -- Anything Flyway creates later is usable by the application without a further
 -- GRANT pass. Table-level grants stay explicit in the migrations.
 ALTER DEFAULT PRIVILEGES FOR ROLE :"migrator_user" IN SCHEMA public
     GRANT USAGE, SELECT ON SEQUENCES TO :"app_user";
 SQL
 
+# Keycloak keeps its own database in the same instance: one less container to
+# run, and its schema never mixes with the application's.
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
      -v kc_user="${KEYCLOAK_DB_USER}" \
-     -v kc_password="${KEYCLOAK_DB_PASSWORD}" \
-     -v kc_db="${KEYCLOAK_DB}" <<'SQL'
--- Keycloak keeps its own database in the same instance: one less container to
--- run, and its schema never mixes with the application's.
+     -v kc_password="${KEYCLOAK_DB_PASSWORD}" <<'SQL'
 CREATE ROLE :"kc_user" LOGIN PASSWORD :'kc_password'
     NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
 SQL
