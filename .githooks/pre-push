@@ -1,19 +1,31 @@
 #!/bin/sh
-# Guards the release branch. GitHub server-side branch protection is not
-# available on a private repository without a paid plan, so this is the interim
-# measure. It is bypassable with --no-verify: it catches mistakes, it does not
-# stop a determined push.
+# Guards the two branches that must only ever be advanced by a merged pull
+# request. GitHub server-side branch protection is unavailable on a private
+# repository without a paid plan, so this is the interim measure. It is
+# bypassable with --no-verify: it catches mistakes, it does not stop a
+# determined push.
 #
-# Promoting develop to main at a phase milestone:
-#     ALLOW_MAIN_PUSH=1 git push origin main
+# Legitimate overrides, each naming its own case:
+#   ALLOW_MAIN_PUSH=1    git push origin main      # milestone promotion
+#   ALLOW_DEVELOP_PUSH=1 git push origin develop   # repairing a broken develop
 
 while read -r _local_ref _local_sha remote_ref _remote_sha; do
     case "$remote_ref" in
         refs/heads/main)
             if [ "$ALLOW_MAIN_PUSH" != "1" ]; then
                 printf 'pre-push: direct push to main is blocked.\n' >&2
-                printf '  Merge into develop and promote at a milestone with\n' >&2
+                printf '  main advances by promoting develop at a milestone:\n' >&2
                 printf '  ALLOW_MAIN_PUSH=1 git push origin main\n' >&2
+                exit 1
+            fi
+            ;;
+        refs/heads/develop)
+            if [ "$ALLOW_DEVELOP_PUSH" != "1" ]; then
+                printf 'pre-push: direct push to develop is blocked.\n' >&2
+                printf '  develop advances by merging a pull request from a\n' >&2
+                printf '  feature/, fix/, chore/, docs/ or ci/ branch.\n' >&2
+                printf '  To repair a broken develop:\n' >&2
+                printf '  ALLOW_DEVELOP_PUSH=1 git push origin develop\n' >&2
                 exit 1
             fi
             ;;
