@@ -298,25 +298,33 @@ jobs:
       # against the throwaway database, and a real OIDC issuer to discover.
       - name: Boot the image and wait for readiness
         run: |
+          # Generated per run, never written down. An inline literal here would
+          # be harmless in itself, but it teaches the habit this project bans
+          # everywhere else - and it trips every secret scanner that reads a
+          # --password flag, which desensitises reviewers to real findings.
+          SMOKE_PASSWORD="$(openssl rand -hex 24)"
+          export SMOKE_PASSWORD
+
           docker network create balaaca-smoke
           docker run -d --name pg --network balaaca-smoke \
             -e POSTGRES_DB=balaaca \
             -e POSTGRES_USER=balaaca \
-            -e POSTGRES_PASSWORD=throwaway postgres:18
+            -e POSTGRES_PASSWORD="$SMOKE_PASSWORD" postgres:18
           docker run -d --name kc --network balaaca-smoke \
             -e KC_BOOTSTRAP_ADMIN_USERNAME=admin \
-            -e KC_BOOTSTRAP_ADMIN_PASSWORD=throwaway \
+            -e KC_BOOTSTRAP_ADMIN_PASSWORD="$SMOKE_PASSWORD" \
             quay.io/keycloak/keycloak:26.4 start-dev
           timeout 120 sh -c \
-            'until docker exec kc /opt/keycloak/bin/kcadm.sh config credentials \
+            'until docker exec -e P="$SMOKE_PASSWORD" kc \
+               /opt/keycloak/bin/kcadm.sh config credentials \
                --server http://localhost:8080 --realm master \
-               --user admin --password throwaway >/dev/null 2>&1; do sleep 3; done'
+               --user admin --password "$P" >/dev/null 2>&1; do sleep 3; done'
           docker exec kc /opt/keycloak/bin/kcadm.sh create realms \
             -s realm=balaaca-test -s enabled=true
           docker run -d --name api --network balaaca-smoke -p 8080:8080 \
             -e QUARKUS_DATASOURCE_JDBC_URL=jdbc:postgresql://pg:5432/balaaca \
             -e QUARKUS_DATASOURCE_USERNAME=balaaca \
-            -e QUARKUS_DATASOURCE_PASSWORD=throwaway \
+            -e QUARKUS_DATASOURCE_PASSWORD="$SMOKE_PASSWORD" \
             -e QUARKUS_FLYWAY_MIGRATE_AT_START=true \
             -e QUARKUS_OIDC_AUTH_SERVER_URL=http://kc:8080/realms/balaaca-test \
             "$IMAGE:${{ github.sha }}"
