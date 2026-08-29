@@ -139,7 +139,22 @@ and a version check does not make a retry safe.
     not an error the second time. Any code used here must exist in the published
     catalogue in `platform-api` before it ships.
 
+
+> **`ON CONFLICT` must repeat a partial index's predicate.** An idempotency key
+> is optional, so its unique index is partial:
+> `... ON appointments (provider_id, idempotency_key) WHERE idempotency_key IS NOT NULL`.
+> A bare `ON CONFLICT (provider_id, idempotency_key)` then fails with `42P10`,
+> "there is no unique or exclusion constraint matching the ON CONFLICT
+> specification" - the arbiter cannot infer a partial index. Write
+> `ON CONFLICT (provider_id, idempotency_key) WHERE idempotency_key IS NOT NULL`.
+>
+> This is a startup-time-invisible failure: the statement compiles, the schema is
+> valid, and the first real booking is a 500.
+
 ## Anti-patterns
+
+- `ON CONFLICT (a, b) DO NOTHING` against a partial unique index -> `42P10` at
+  the first insert; repeat the index's `WHERE` clause in the conflict target.
 
 - "There is a `UNIQUE (provider_id, idempotency_key)`, so versioning is
   unnecessary." → conflation; the key blocks a *replay*, not a concurrent

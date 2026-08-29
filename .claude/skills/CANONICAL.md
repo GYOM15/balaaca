@@ -415,6 +415,8 @@ Executed against 18.6. Do not re-derive these; cite them.
 | `current_setting('x', true)` when unset | empty string |
 | `''::uuid` | `22P02` |
 | `SET LOCAL` via `set_config(..., true)` | dropped at commit - safe with pooling |
+| the same, called OUTSIDE a transaction | scoped to that one statement, gone by the next |
+| `ON CONFLICT (cols)` against a PARTIAL unique index | `42P10` unless the index's `WHERE` predicate is repeated |
 | 10 concurrent inserts on one slot | 1 row wins - always |
 | the losers' SQLSTATE under contention | **non-deterministic**: `23P01` or `40P01` deadlock, see below |
 | `SECURITY DEFINER` under `FORCE RLS` | runs under the owner's policies - the resolution path |
@@ -454,3 +456,71 @@ and it is invisible to any single-threaded test:
 Treating a deadlock as "slot taken" turns away customers from a free slot.
 Leaving it unmapped returns an unhandled 500 on every busy provider. Both are
 production failures that only appear under load.
+
+
+---
+
+## 12. Two traps this schema sets, both paid for once
+
+### The session variable does not outlive its statement
+
+`set_config('app.provider_id', ?, true)` is `SET LOCAL`. Outside a transaction
+there is no transaction to be local to, so it applies to that statement and is
+gone by the next one. **Verified**: the same query returns 0 rows outside a
+transaction and 2 rows inside one.
+
+Every read that RLS filters must therefore run inside a transaction, including
+reads that change nothing. A read-only lookup left non-transactional does not
+fail loudly - it returns an empty result, which reads as "this tenant has no
+data" and produces a confidently wrong answer. In this codebase that turned
+every server-chosen booking into a spurious "no eligible staff".
+
+The rule: **if a method touches a tenant table, it is `@Transactional`, even if
+it only reads.**
+
+### ON CONFLICT cannot see a partial index by itself
+
+The idempotency index is partial, because a key is optional:
+
+```sql
+CREATE UNIQUE INDEX uq_appointments_idempotency
+    ON appointments (provider_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
+```
+
+`ON CONFLICT (provider_id, idempotency_key)` then fails with `42P10`, "there is
+no unique or exclusion constraint matching the ON CONFLICT specification"
+(**verified**). The inference arbiter has to be told the predicate too:
+
+```sql
+ON CONFLICT (provider_id, idempotency_key) WHERE idempotency_key IS NOT NULL
+DO NOTHING
+```
+
+---
+
+## 13. Types at the boundary
+
+Identifiers are distinct types, not raw uuids:
+`ServiceOfferingId`, `StaffId`, `CustomerId`, `AppointmentId` in
+`com.balaaca.sharedkernel.ids`, each a record implementing `EntityId`. Passing a
+customer id where a staff id belongs stops being a runtime mystery and becomes a
+compile error.
+
+The core speaks domain types only. A command carries `PhoneNumber`, not a
+string; `BookingSource`, not `"PUBLIC"`. An inbound adapter converts once, at
+the edge, and everything inward is valid by construction - which is what lets
+application services carry no defensive checks.
+
+**When a mapper class earns its place.** Not by field count. By whether the
+translation carries rules:
+
+| Translation | Where it belongs |
+|---|---|
+| Copying one field out (`AppointmentId` to a response) | inline at the call site |
+| Parsing, normalising, defaulting, unit or enum conversion | a named, container-free mapper |
+| Twelve fields copied one-to-one | neither - ask why two identical shapes exist |
+
+A second test matters more than size: **how many inbound adapters need the same
+translation?** REST, the chatbot and the dashboard will all have to produce a
+`BookAppointmentCommand`. Inlined in the first resource, the second copies it
+and the third gets the phone region wrong.

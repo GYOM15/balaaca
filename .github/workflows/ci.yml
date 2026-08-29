@@ -57,6 +57,37 @@ jobs:
           # --redact so a finding never prints the secret into a public log.
           ./gitleaks detect --source . --redact --exit-code 1 --verbose
 
+  build:
+    name: build and test
+    needs: secrets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@dded0888837ed1f317902acf8a20df0ad188d165 # v5.0.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      # verify, not test: the integration suites are *IT under Failsafe and run
+      # against a real PostgreSQL through Testcontainers. The runner supplies the
+      # Docker socket they need - and finds it instantly, unlike Docker Desktop
+      # on macOS, where socket discovery is slow enough to look like a hang.
+      #
+      # Swapping them for an in-memory database would delete the only proof that
+      # RLS, the exclusion constraint and the deadlock retry behave: none of the
+      # three exists outside PostgreSQL.
+      - run: mvn -B -f backend/pom.xml verify
+
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-reports
+          path: |
+            backend/**/target/surefire-reports/**
+            backend/**/target/failsafe-reports/**
+          if-no-files-found: ignore
+
   lint:
     name: shell and compose
     needs: secrets

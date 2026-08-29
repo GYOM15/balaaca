@@ -161,7 +161,26 @@ method argument. Fail-closed: no resolvable membership, no access.
     does not raise**, so assert the row count, never an exception. Never H2,
     never a mocked repository: the behaviour under test is the database's.
 
+
+> **Every read of a tenant table runs inside a transaction, including reads that
+> change nothing.** `set_config('app.provider_id', ?, true)` is `SET LOCAL`:
+> outside a transaction there is nothing for it to be local to, so it applies to
+> that one statement and is gone by the next. Verified - the same query returns
+> zero rows outside a transaction and the expected rows inside one.
+>
+> This does not fail loudly. It returns an empty result, which reads as "this
+> tenant has no data" and produces a confidently wrong answer. In this codebase
+> a single non-transactional lookup turned every server-chosen booking into a
+> spurious "no eligible staff", and the request came back 409 on a free slot.
+>
+> The rule is mechanical: **if a method touches a tenant table, annotate it
+> `@Transactional`.** Read-only is not an exemption, it is the dangerous case.
+
 ## Anti-patterns
+
+- A read-only repository method left non-transactional "because it only reads"
+  -> the GUC is gone by the second statement, RLS filters everything, and the
+  caller gets an empty list instead of an error.
 
 - Putting provider membership in a Keycloak claim (`provider_id`,
   `providers[]`, a group, a realm per provider). It cannot exist at first

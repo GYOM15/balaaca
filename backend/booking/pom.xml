@@ -10,6 +10,9 @@
   </parent>
   <artifactId>booking</artifactId>
   <dependencies>
+    <dependency>
+      <groupId>com.balaaca</groupId><artifactId>catalog</artifactId><version>${project.version}</version>
+    </dependency>
     <dependency><groupId>com.balaaca</groupId><artifactId>shared-kernel</artifactId></dependency>
     <dependency><groupId>com.balaaca</groupId><artifactId>platform-kernel</artifactId></dependency>
     <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-arc</artifactId></dependency>

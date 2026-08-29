@@ -17,6 +17,7 @@
     <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
     <quarkus.platform.version>3.30.8</quarkus.platform.version>
     <surefire-plugin.version>3.5.2</surefire-plugin.version>
+    <failsafe-plugin.version>3.5.2</failsafe-plugin.version>
     <archunit.version>1.4.1</archunit.version>
     <assertj.version>3.27.7</assertj.version>
     <jqwik.version>1.10.1</jqwik.version>
@@ -109,6 +110,22 @@
       </plugins>
     </pluginManagement>
     <plugins>
+      <plugin>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <version>${failsafe-plugin.version}</version>
+        <!-- Container-backed tests are *IT and run at verify, so a plain
+             `mvn test` stays fast and does not need a Docker daemon. -->
+        <executions>
+          <execution>
+            <goals><goal>integration-test</goal><goal>verify</goal></goals>
+            <configuration>
+              <systemPropertyVariables>
+                <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
+              </systemPropertyVariables>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
       <plugin>
         <artifactId>maven-surefire-plugin</artifactId>
         <version>${surefire-plugin.version}</version>

@@ -1,0 +1,182 @@
+package com.balaaca.booking.adapters.outbound.persistence;
+
+import com.balaaca.booking.domain.BookingExceptions.IdempotencyKeyReusedException;
+import com.balaaca.booking.domain.BookingExceptions.SlotUnavailableException;
+import com.balaaca.booking.domain.BookingExceptions.TransientBookingConflictException;
+import com.balaaca.booking.domain.CustomerContact;
+import com.balaaca.booking.ports.outbound.AppointmentRepository;
+import com.balaaca.platformkernel.tenancy.TenantContext;
+import com.balaaca.sharedkernel.ids.AppointmentId;
+import com.balaaca.sharedkernel.ids.CustomerId;
+import com.balaaca.sharedkernel.ids.ServiceOfferingId;
+import com.balaaca.sharedkernel.ids.StaffId;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceException;
+import java.sql.SQLException;
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * The edge where domain types become columns. Unwrapping an identifier to a raw
+ * uuid belongs here and nowhere inward: this is the only class that has to know
+ * a {@code StaffId} is a uuid at all.
+ */
+@ApplicationScoped
+public class AppointmentPanacheRepository implements AppointmentRepository {
+
+    private static final String EXCLUSION_VIOLATION = "23P01";
+    private static final String UNIQUE_VIOLATION = "23505";
+    private static final String DEADLOCK_DETECTED = "40P01";
+
+    private final EntityManager em;
+    private final TenantContext tenantContext;
+
+    public AppointmentPanacheRepository(EntityManager em, TenantContext tenantContext) {
+        this.em = em;
+        this.tenantContext = tenantContext;
+    }
+
+    @Override
+    public InsertOutcome insertIfAbsent(NewAppointment a) {
+        // provider_id is bound from TenantContext rather than taken from the
+        // command: a native insert bypasses any ORM-level tenant filter, so this
+        // is the only place it can come from, and RLS WITH CHECK is the backstop
+        // if it is ever wrong.
+        UUID providerId = tenantContext.require().value();
+        String key = a.idempotencyKey().orElse(null);
+
+        try {
+            int inserted = em.createNativeQuery("""
+                    INSERT INTO appointments (
+                        id, provider_id, staff_id, service_offering_id, customer_id,
+                        starts_at, ends_at, buffer_before_minutes, buffer_after_minutes,
+                        blocked_from, blocked_until, service_name,
+                        customer_price_amount_minor, customer_price_currency,
+                        duration_minutes, source, idempotency_key, idempotency_request_hash)
+                    VALUES (
+                        :id, :providerId, :staffId, :offeringId, :customerId,
+                        :startsAt, :endsAt, :bufferBefore, :bufferAfter,
+                        :blockedFrom, :blockedUntil, :serviceName,
+                        :priceMinor, :currency, :duration, :source, :key, :hash)
+                    ON CONFLICT (provider_id, idempotency_key)
+                        WHERE idempotency_key IS NOT NULL
+                    DO NOTHING
+                    """)
+                    .setParameter("id", a.id().value())
+                    .setParameter("providerId", providerId)
+                    .setParameter("staffId", a.staffId().value())
+                    .setParameter("offeringId", a.offering().id().value())
+                    .setParameter("customerId", a.customerId().value())
+                    .setParameter("startsAt", a.slot().startsAt())
+                    .setParameter("endsAt", a.slot().endsAt())
+                    .setParameter("bufferBefore", a.slot().bufferBeforeMinutes())
+                    .setParameter("bufferAfter", a.slot().bufferAfterMinutes())
+                    .setParameter("blockedFrom", a.slot().blockedFrom())
+                    .setParameter("blockedUntil", a.slot().blockedUntil())
+                    .setParameter("serviceName", a.offering().name())
+                    .setParameter("priceMinor", a.offering().price().amountMinor())
+                    .setParameter("currency", a.offering().price().currency().name())
+                    .setParameter("duration", (int) a.offering().duration().toMinutes())
+                    .setParameter("source", a.source().name())
+                    .setParameter("key", key)
+                    .setParameter("hash", a.idempotencyRequestHash().orElse(null))
+                    .executeUpdate();
+
+            if (inserted == 1) {
+                return new InsertOutcome(a.id(), false);
+            }
+            // Zero rows means the key already exists: a replay, not an error.
+            return replayOf(providerId, key, a.idempotencyRequestHash().orElse(null));
+
+        } catch (PersistenceException e) {
+            throw translate(e, a);
+        }
+    }
+
+    /** Same key and same request is the first result; same key, different request is a bug. */
+    @SuppressWarnings("unchecked")
+    private InsertOutcome replayOf(UUID providerId, String key, String hash) {
+        List<Object[]> rows = em.createNativeQuery("""
+                SELECT id, idempotency_request_hash FROM appointments
+                 WHERE provider_id = :providerId AND idempotency_key = :key
+                """)
+                .setParameter("providerId", providerId)
+                .setParameter("key", key)
+                .getResultList();
+
+        if (rows.isEmpty()) {
+            throw new IdempotencyKeyReusedException(key);
+        }
+        Object[] r = rows.get(0);
+        if (hash != null && !hash.equals(r[1])) {
+            throw new IdempotencyKeyReusedException(key);
+        }
+        return new InsertOutcome(AppointmentId.of((UUID) r[0]), true);
+    }
+
+    /**
+     * Turns a SQLSTATE into the right business answer. The distinction that
+     * matters is 23P01 against 40P01: both mean this transaction lost, but only
+     * the first means the slot is taken.
+     */
+    private RuntimeException translate(PersistenceException e, NewAppointment a) {
+        String state = sqlState(e);
+        if (EXCLUSION_VIOLATION.equals(state)) {
+            return new SlotUnavailableException(a.slot().startsAt(), a.staffId().value());
+        }
+        if (DEADLOCK_DETECTED.equals(state)) {
+            return new TransientBookingConflictException(e);
+        }
+        if (UNIQUE_VIOLATION.equals(state)) {
+            return new IdempotencyKeyReusedException(a.idempotencyKey().orElse(null));
+        }
+        return e;
+    }
+
+    private static String sqlState(Throwable e) {
+        for (Throwable t = e; t != null && t.getCause() != t; t = t.getCause()) {
+            if (t instanceof SQLException sql && sql.getSQLState() != null) {
+                return sql.getSQLState();
+            }
+        }
+        return null;
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public List<StaffId> eligibleStaff(ServiceOfferingId serviceOfferingId) {
+        // Least loaded first, ties broken by id so the order is stable. RLS
+        // supplies the tenant predicate.
+        List<UUID> ids = em.createNativeQuery("""
+                SELECT s.id FROM provider_staff s
+                 WHERE s.bookable AND s.status = 'ACTIVE'
+                 ORDER BY (SELECT count(*) FROM appointments a
+                            WHERE a.staff_id = s.id
+                              AND a.status IN ('PENDING','CONFIRMED')), s.id
+                """).getResultList();
+        return ids.stream().map(StaffId::of).toList();
+    }
+
+    @Override
+    public CustomerId upsertCustomer(CustomerContact contact) {
+        UUID providerId = tenantContext.require().value();
+        // DO UPDATE on a column nobody reads, rather than DO NOTHING, so that
+        // RETURNING yields the id on both paths. The name is not overwritten:
+        // the provider may have corrected it in their own address book.
+        UUID id = (UUID) em.createNativeQuery("""
+                INSERT INTO customers (id, provider_id, full_name, phone_e164, email)
+                VALUES (:id, :providerId, :fullName, :phone, :email)
+                ON CONFLICT (provider_id, phone_e164)
+                DO UPDATE SET updated_at = now()
+                RETURNING id
+                """)
+                .setParameter("id", UUID.randomUUID())
+                .setParameter("providerId", providerId)
+                .setParameter("fullName", contact.fullName())
+                .setParameter("phone", contact.phone().e164())
+                .setParameter("email", contact.email().orElse(null))
+                .getSingleResult();
+        return CustomerId.of(id);
+    }
+}
