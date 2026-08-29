@@ -185,7 +185,28 @@ write `com.balaaca.shared.*` — that package does not exist.
     once is a distributed monolith wearing a microservice costume — it has
     the coupling of the former and the failure modes of the latter.
 
+
+> **A `domain/` package imports no other context, not even its ports.** The
+> inward rule is usually stated about layers; it binds across contexts too. A
+> domain type that takes another context's published DTO as a parameter drags
+> that context into its own definition, and every later reshape of the DTO
+> ripples into a domain that has no business knowing it exists.
+>
+> Caught here for real: `BookedSlot.from(Instant, BookableOffering)` made
+> `booking/domain` depend on `catalog/ports/inbound`. The fix costs nothing -
+> the factory takes the three `Duration` values it actually uses, and the two
+> contexts meet in `application/`, which is where a use case is allowed to know
+> about both.
+>
+> Enforce it: an ArchUnit rule asserting that `..<context>.domain..` depends only
+> on itself and `sharedkernel`. Grepping the imports of every `domain/` package
+> is a thirty-second check and finds it immediately.
+
 ## Anti-patterns
+
+- A domain type whose factory or field mentions another context's port DTO ->
+  the domain now depends on that context. Pass the primitives it uses, and let
+  the application layer be where two contexts meet.
 
 - `booking` calling `scheduling` or `catalog` over HTTP → rule 3. They are
   in the same monolith; inject the inbound port and call it in-process.

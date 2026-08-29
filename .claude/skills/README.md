@@ -48,7 +48,7 @@ If you add a skill, add the frontmatter.
 > current stable versions** of the stack (Java LTS, Quarkus, PostgreSQL,
 > Keycloak, Redis, libraries) as your prompt asks.
 
-## The 21 skills
+## The 22 skills
 
 **Architecture and code**
 
@@ -59,6 +59,8 @@ If you add a skill, add the frontmatter.
   exempt from the four-layer rule.
 - `backend-srp` — SRP for CDI beans; business rules stay in the domain, never
   in a `*Resource` and never in a repository.
+- `domain-boundaries` - typed values and identifiers in the core, translation
+  at the edge, and when a mapper earns its place.
 - `backend-naming` — English naming; `*UseCase` / `*Service` / `*Repository` /
   `*Port` / `*Resource`, adapters named for their technology, **plural
   snake_case tables**, `Vnnn__snake_case` migrations, past-tense domain events.
