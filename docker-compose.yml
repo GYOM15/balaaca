@@ -1,0 +1,113 @@
+# Balaaca - local development stack.
+#
+# Images are pinned and multi-arch (amd64 + arm64): the same file runs on a
+# developer's Mac, on a VPS, and on the Raspberry Pi used for the first weeks.
+# Nothing here is tuned for a Pi's memory; the VPS is the real target.
+#
+# Secrets come from .env, which is gitignored. docker-compose.prod.yml overrides
+# ports, limits and secret sources for a real deployment.
+
+name: ${COMPOSE_PROJECT_NAME:-balaaca}
+
+services:
+  postgres:
+    image: postgres:18.6
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_SUPERUSER}
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD}
+      # Read by bootstrap.sh to create the least-privilege roles.
+      BALAACA_DB_APP_USER: ${BALAACA_DB_APP_USER}
+      BALAACA_DB_APP_PASSWORD: ${BALAACA_DB_APP_PASSWORD}
+      BALAACA_DB_MIGRATOR_USER: ${BALAACA_DB_MIGRATOR_USER}
+      BALAACA_DB_MIGRATOR_PASSWORD: ${BALAACA_DB_MIGRATOR_PASSWORD}
+      BALAACA_DB_WORKER_USER: ${BALAACA_DB_WORKER_USER}
+      BALAACA_DB_WORKER_PASSWORD: ${BALAACA_DB_WORKER_PASSWORD}
+      KEYCLOAK_DB: ${KEYCLOAK_DB}
+      KEYCLOAK_DB_USER: ${KEYCLOAK_DB_USER}
+      KEYCLOAK_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+    volumes:
+      # PostgreSQL 18+ expects the mount at /var/lib/postgresql, not at
+      # .../data: the server then stores the cluster in a major-version
+      # subdirectory, which is what makes `pg_upgrade --link` possible without
+      # a mount-point boundary in the way. Mounting .../data refuses to start.
+      - postgres-data:/var/lib/postgresql
+      # Runs once, on an empty data directory.
+      - ./infrastructure/postgres/bootstrap.sh:/docker-entrypoint-initdb.d/10-bootstrap.sh:ro
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-55432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_SUPERUSER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    networks: [balaaca]
+
+  redis:
+    image: redis:8.2-alpine
+    restart: unless-stopped
+    # Cache, rate limiting and idempotency records. Never the source of truth,
+    # and never a lock for slot exclusion - that is the database's job.
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD}
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --appendonly no
+      --save ""
+    ports:
+      - "127.0.0.1:${REDIS_HOST_PORT:-56379}:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    networks: [balaaca]
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4
+    restart: unless-stopped
+    # start-dev is DEVELOPMENT ONLY: it disables HTTPS and relaxes hostname
+    # checks. Production runs `start` behind TLS - see docs/DEPLOYMENT.md.
+    command: ["start-dev", "--http-port=8080"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/${KEYCLOAK_DB}
+      KC_DB_USERNAME: ${KEYCLOAK_DB_USER}
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+      KC_HEALTH_ENABLED: "true"
+      KC_HTTP_ENABLED: "true"
+    ports:
+      - "127.0.0.1:${KEYCLOAK_PORT:-8180}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # The image carries no curl and no wget. Bash can open a TCP socket, so
+      # that is the probe - but it must be invoked as bash explicitly:
+      # CMD-SHELL runs /bin/sh, where /dev/tcp does not exist, and the check
+      # fails silently while the server is perfectly healthy.
+      test:
+        - CMD
+        - bash
+        - -c
+        - 'exec 3<>/dev/tcp/127.0.0.1/9000 && printf "GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3 && grep -q ''"status": "UP"'' <&3'
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+    networks: [balaaca]
+
+volumes:
+  postgres-data:
+
+networks:
+  balaaca:
+    driver: bridge
