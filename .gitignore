@@ -1,0 +1,48 @@
+# --- Secrets : rien de tout cela ne doit jamais être commité ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.jks
+*.crt
+secrets/
+infrastructure/keycloak/realm-export-prod.json
+
+# --- Java / Maven ---
+target/
+*.class
+.mvn/wrapper/maven-wrapper.jar
+release.properties
+dependency-reduced-pom.xml
+
+# --- Quarkus ---
+.quarkus/
+quarkus.log
+
+# --- Node / Next.js ---
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+npm-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# --- Docker / données locales ---
+data/
+volumes/
+
+# --- IDE / OS ---
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
+
+# --- Tests / couverture ---
+coverage/
+jacoco.exec
+.scannerwork/
