@@ -27,6 +27,19 @@ public interface AppointmentRepository {
      */
     InsertOutcome insertIfAbsent(NewAppointment appointment);
 
+    /**
+     * The appointment an earlier request with this key already created.
+     *
+     * <p>Empty means no request has used the key, not that the key is free to
+     * take: only the insert's conflict target can say that without racing.
+     * It is read before a request is judged, so that a retry is answered with
+     * what it asked for rather than judged a second time.
+     *
+     * @throws com.balaaca.booking.domain.BookingExceptions.IdempotencyKeyReusedException
+     *         when the key exists against a different request
+     */
+    Optional<InsertOutcome> replayOf(String idempotencyKey, String requestHash);
+
     /** Staff who could take this booking, most lightly loaded first. */
     List<StaffId> eligibleStaff(ServiceOfferingId serviceOfferingId);
 

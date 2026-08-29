@@ -19,6 +19,7 @@ import com.balaaca.sharedkernel.ids.StaffId;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.transaction.Transactional;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -54,6 +55,18 @@ public class BookAppointmentAttempt {
         // The application layer, not the domain, is where the two contexts meet.
         BookedSlot slot = BookedSlot.from(command.startsAt(), offering.duration(),
                                           offering.bufferBefore(), offering.bufferAfter());
+
+        // A retry is not a new request and must not be judged as one. Answered
+        // first, before any rule is applied: the slot it took may since have
+        // fallen inside the lead time or been closed by an override, and
+        // refusing the retry would leave the caller believing nothing was
+        // booked while the appointment stands. Only a request carrying a key
+        // can be a retry, so this reads on exactly those.
+        Optional<InsertOutcome> replay = command.idempotency()
+                .flatMap(i -> appointments.replayOf(i.key(), i.requestHash()));
+        if (replay.isPresent()) {
+            return replay.get();
+        }
 
         // Checked inside the transaction, against the same calculation that
         // produced the public list. The exclusion constraint stops a slot being

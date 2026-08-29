@@ -15,6 +15,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceException;
 import java.sql.SQLException;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -86,17 +87,25 @@ public class AppointmentSqlRepository implements AppointmentRepository {
             if (inserted == 1) {
                 return new InsertOutcome(a.id(), false);
             }
-            // Zero rows means the key already exists: a replay, not an error.
-            return replayOf(providerId, key, a.idempotencyRequestHash().orElse(null));
+            // Zero rows means the conflict target fired, so the key exists and
+            // a row must be readable. Finding none would mean the index and the
+            // table disagree, which is not a replay.
+            return findReplay(providerId, key, a.idempotencyRequestHash().orElse(null))
+                    .orElseThrow(() -> new IdempotencyKeyReusedException(key));
 
         } catch (PersistenceException e) {
             throw translate(e, a);
         }
     }
 
+    @Override
+    public Optional<InsertOutcome> replayOf(String idempotencyKey, String requestHash) {
+        return findReplay(tenantContext.require().value(), idempotencyKey, requestHash);
+    }
+
     /** Same key and same request is the first result; same key, different request is a bug. */
     @SuppressWarnings("unchecked")
-    private InsertOutcome replayOf(UUID providerId, String key, String hash) {
+    private Optional<InsertOutcome> findReplay(UUID providerId, String key, String hash) {
         List<Object[]> rows = em.createNativeQuery("""
                 SELECT id, idempotency_request_hash FROM appointments
                  WHERE provider_id = :providerId AND idempotency_key = :key
@@ -106,13 +115,13 @@ public class AppointmentSqlRepository implements AppointmentRepository {
                 .getResultList();
 
         if (rows.isEmpty()) {
-            throw new IdempotencyKeyReusedException(key);
+            return Optional.empty();
         }
         Object[] r = rows.get(0);
         if (hash != null && !hash.equals(r[1])) {
             throw new IdempotencyKeyReusedException(key);
         }
-        return new InsertOutcome(AppointmentId.of((UUID) r[0]), true);
+        return Optional.of(new InsertOutcome(AppointmentId.of((UUID) r[0]), true));
     }
 
     /**

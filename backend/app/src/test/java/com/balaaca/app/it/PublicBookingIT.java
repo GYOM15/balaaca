@@ -165,6 +165,30 @@ class PublicBookingIT {
         }
 
         @Test
+        @DisplayName("replaying survives the slot ceasing to be bookable")
+        void replaySurvivesAClosedDay() {
+            String key = "key-" + UUID.randomUUID();
+            String payload = body(BookingFixtures.SALON_OFFERING, "2026-09-04T10:00:00Z", "622000010");
+
+            String first = given().contentType("application/json").header("Idempotency-Key", key)
+                    .body(payload).when().post(SALON)
+                    .then().statusCode(201).extract().path("appointment_id");
+
+            // The provider closes the day between the two calls. The same thing
+            // happens on its own when a start drifts inside the lead time while
+            // a customer's connection is still retrying: the availability check
+            // now says no to a request whose appointment already exists.
+            fixtures.closeSalonOn("2026-09-04");
+
+            String replay = given().contentType("application/json").header("Idempotency-Key", key)
+                    .body(payload).when().post(SALON)
+                    .then().statusCode(200).extract().path("appointment_id");
+
+            assertThat(replay).isEqualTo(first);
+            assertThat(fixtures.activeAppointments(BookingFixtures.SALON)).isEqualTo(1);
+        }
+
+        @Test
         @DisplayName("the same key with a different request is rejected, not silently replayed")
         void reusedKeyIsRejected() {
             String key = "key-" + UUID.randomUUID();
