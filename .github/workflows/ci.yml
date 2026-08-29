@@ -124,9 +124,18 @@ jobs:
       # Keyless by design. OWASP Dependency-Check throttles to a multi-minute
       # NVD warm-up without an API key and its recent releases fail outright
       # when one is absent, which is a gate that fails for the wrong reason.
-      - uses: google/osv-scanner-action@6e4298ebc4db23e847df9b2e2de2939d6f066c67 # v2.5.1
+      #
+      # The action lives in a subdirectory: the repository root carries a
+      # metadata-only action.yml with no `runs:` section, and referencing it
+      # fails the job before any step.
+      - uses: google/osv-scanner-action/osv-scanner-action@6e4298ebc4db23e847df9b2e2de2939d6f066c67 # v2.5.1
         with:
+          # --allow-no-lockfiles: without it the scanner exits 128 with "No
+          # package sources found" whenever a scanned tree has no manifest.
+          # That is the state of this repository today, and it stays correct
+          # afterwards: a directory without a lockfile is not a finding. Real
+          # vulnerabilities still fail the build.
           scan-args: |-
             --recursive
-            --skip-git
+            --allow-no-lockfiles
             ./
