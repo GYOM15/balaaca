@@ -103,10 +103,31 @@ git config core.hooksPath .githooks
 |---|---|
 | `commit-msg` | applique la convention de commit : sujet imperatif capitalise de 50 caracteres maximum, sans prefixe `type(scope):`, corps a 72, aucun trailer `Co-Authored-By` |
 | `pre-push` | bloque les pushs directs sur `main` et sur `develop` : les deux n'avancent que par une pull request fusionnee. Overrides explicites : `ALLOW_MAIN_PUSH=1` pour promouvoir `develop` vers `main` a un jalon, `ALLOW_DEVELOP_PUSH=1` pour reparer un `develop` casse |
-| `pre-commit` | passe `gitleaks` sur le diff indexe si l'outil est installe |
+| `pre-commit` | passe `gitleaks` sur le diff indexe **si** l'outil est installe, et se tait sinon. L'installer n'est pas un prerequis : le scan qui fait autorite tourne en CI, sur l'historique complet, a chaque pull request |
 
 Ce sont des pre-filtres, pas des garanties : `--no-verify` les contourne. La
-verification qui fait autorite est la CI.
+verification qui fait autorite est la CI, qui rejoue tout cote serveur.
+
+## Integration continue
+
+`.github/workflows/ci.yml` s'execute sur chaque pull request vers `develop` ou
+`main`, et sur chaque push vers ces deux branches. La chaine echoue vite : un
+job ne demarre pas si le precedent est rouge.
+
+| Job | Verifie |
+|---|---|
+| `secrets` | `gitleaks` sur l'**historique complet** — un secret retire dans un commit ulterieur reste compromis |
+| `lint` | `shellcheck` sur les hooks et le bootstrap ; validite du `docker-compose.yml` ; **toute variable referencee par compose est presente dans `.env.example`** ; et le hook `commit-msg` applique toujours la convention |
+| `dependencies` | OSV-Scanner, sans cle d'API |
+
+Chaque action est epinglee a un SHA de commit, jamais a un tag : un tag est
+mutable et son proprietaire peut le repointer silencieusement. L'archive
+`gitleaks` est verifiee par empreinte SHA-256 avant d'etre executee.
+
+Les jobs de build Maven, de tests, de couverture, de mutation et d'image
+arriveront avec le code qu'ils verifient. Un job qui ne peut pas echouer n'est
+pas une barriere, et le laisser en place ferait paraitre la CI plus verte
+qu'elle ne l'est.
 
 Branches : `main` est la branche de release, `develop` la branche d'integration
 et la branche par defaut. On travaille sur `feature/<slug>` (ou `fix/`, `chore/`,
