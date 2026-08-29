@@ -34,6 +34,10 @@ import java.util.Optional;
 @ApplicationScoped
 public class AvailabilityPanacheRepository implements AvailabilityRepository {
 
+    // Every optional staff filter casts its parameter. PostgreSQL cannot infer
+    // the type of a parameter whose only unambiguous use is beside IS NULL, and
+    // refuses the statement with 42P18 rather than guessing.
+
     private final EntityManager em;
 
     public AvailabilityPanacheRepository(EntityManager em) {
@@ -66,7 +70,7 @@ public class AvailabilityPanacheRepository implements AvailabilityRepository {
         List<Object[]> rows = em.createNativeQuery("""
                 SELECT day_of_week, start_time, end_time, effective_from, effective_to
                   FROM availability_rules
-                 WHERE (:staffId IS NULL OR staff_id = :staffId)
+                 WHERE (CAST(:staffId AS uuid) IS NULL OR staff_id = CAST(:staffId AS uuid))
                  ORDER BY day_of_week, start_time
                 """)
                 .setParameter("staffId", staffId.map(s -> s.value()).orElse(null))
@@ -88,7 +92,7 @@ public class AvailabilityPanacheRepository implements AvailabilityRepository {
         List<Object[]> rows = em.createNativeQuery("""
                 SELECT override_date, kind, start_time, end_time
                   FROM availability_overrides
-                 WHERE (:staffId IS NULL OR staff_id = :staffId)
+                 WHERE (CAST(:staffId AS uuid) IS NULL OR staff_id = CAST(:staffId AS uuid))
                    AND override_date BETWEEN :from AND :to
                 """)
                 .setParameter("staffId", staffId.map(s -> s.value()).orElse(null))
@@ -114,7 +118,7 @@ public class AvailabilityPanacheRepository implements AvailabilityRepository {
                 SELECT lower(blocked_range), upper(blocked_range)
                   FROM appointments
                  WHERE status IN ('PENDING','CONFIRMED')
-                   AND (:staffId IS NULL OR staff_id = :staffId)
+                   AND (CAST(:staffId AS uuid) IS NULL OR staff_id = CAST(:staffId AS uuid))
                    AND blocked_range && tstzrange(:from, :until, '[)')
                 """)
                 .setParameter("staffId", staffId.map(s -> s.value()).orElse(null))
