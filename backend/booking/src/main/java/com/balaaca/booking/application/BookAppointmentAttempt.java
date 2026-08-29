@@ -58,7 +58,9 @@ public class BookAppointmentAttempt {
         // Checked inside the transaction, against the same calculation that
         // produced the public list. The exclusion constraint stops a slot being
         // sold twice; nothing else stops one being sold at 3am on a closed day.
-        if (!slots.isBookable(command.startsAt(), slotRequest(command, offering))) {
+        // The two questions stay separate: this one never asks whether the slot
+        // is free, so a taken slot still answers 409 and not 422.
+        if (!slots.isWithinAvailability(command.startsAt(), slotRequest(command, offering))) {
             throw new SlotOutsideAvailabilityException(command.startsAt(),
                     "outside the provider's declared availability");
         }

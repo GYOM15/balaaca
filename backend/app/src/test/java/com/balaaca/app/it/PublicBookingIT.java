@@ -88,7 +88,11 @@ class PublicBookingIT {
             // 10-minute tail, so a 10:00 booking holds 09:45 to 11:10.
             book("2026-09-01T10:00:00Z", "622000001").statusCode(201);
 
-            book("2026-09-01T11:05:00Z", "622000002").statusCode(409);
+            // 11:00 is a declared start - the salon's grid is 15 minutes - so
+            // the request reaches the constraint, which is what refuses it. A
+            // start off the grid would be refused earlier, and for another
+            // reason, testing nothing about buffers.
+            book("2026-09-01T11:00:00Z", "622000002").statusCode(409);
         }
 
         @Test
@@ -96,9 +100,9 @@ class PublicBookingIT {
         void acceptsAfterBuffers() {
             book("2026-09-01T10:00:00Z", "622000001").statusCode(201);
 
-            // 11:10 would still block from 10:55 because of its own lead-in;
-            // 11:25 is the first start whose whole blocked window is clear.
-            book("2026-09-01T11:25:00Z", "622000002").statusCode(201);
+            // 11:15 would still block from 11:00 because of its own lead-in;
+            // 11:30 is the first declared start whose blocked window is clear.
+            book("2026-09-01T11:30:00Z", "622000002").statusCode(201);
         }
     }
 

@@ -36,32 +36,48 @@ public class CalculateSlotsService implements CalculateSlotsUseCase {
     @Override
     @Transactional(Transactional.TxType.REQUIRED)
     public List<AvailableSlot> bookable(SlotRequest request) {
-        return SlotCalculator.bookable(queryFor(request));
+        ZoneId zone = availability.zoneOfCurrentProvider();
+        return SlotCalculator.bookable(queryFor(request, zone, busyIn(request, zone)));
     }
 
+    /**
+     * Answered with no busy ranges, deliberately.
+     *
+     * <p>Whether a slot is still free is the exclusion constraint's answer, and
+     * only it can give that answer correctly: it is taken inside the INSERT,
+     * where two racing bookings are ordered. Consulting the busy ranges here
+     * would move it earlier and get it wrong twice - a slot merely taken would
+     * be reported as outside the provider's declared hours, and a retry of a
+     * booking that already succeeded would be refused by the very row it
+     * created.
+     */
     @Override
     @Transactional(Transactional.TxType.REQUIRED)
-    public boolean isBookable(Instant startsAt, SlotRequest request) {
-        return SlotCalculator.isBookable(startsAt, queryFor(request));
+    public boolean isWithinAvailability(Instant startsAt, SlotRequest request) {
+        ZoneId zone = availability.zoneOfCurrentProvider();
+        return SlotCalculator.isBookable(startsAt, queryFor(request, zone, List.of()));
     }
 
-    private SlotQuery queryFor(SlotRequest request) {
-        ZoneId zone = availability.zoneOfCurrentProvider();
-
-        // Widened by a day on each side: a window that starts the previous local
-        // evening and wraps past midnight still occupies part of the requested
-        // range, and an appointment near the boundary still blocks it.
+    /**
+     * Widened by a day on each side: a window that starts the previous local
+     * evening and wraps past midnight still occupies part of the requested
+     * range, and an appointment near the boundary still blocks it.
+     */
+    private List<InstantRange> busyIn(SlotRequest request, ZoneId zone) {
         InstantRange window = new InstantRange(
                 request.fromDate().minusDays(1).atStartOfDay(zone).toInstant(),
                 request.toDate().plusDays(1).atTime(LocalTime.MAX).atZone(zone).toInstant());
+        return availability.busyRanges(request.staffId(), window);
+    }
 
+    private SlotQuery queryFor(SlotRequest request, ZoneId zone, List<InstantRange> busy) {
         return new SlotQuery(
                 request.fromDate(),
                 request.toDate(),
                 zone,
                 availability.rulesFor(request.staffId()),
                 availability.overridesFor(request.staffId(), request.fromDate(), request.toDate()),
-                availability.busyRanges(request.staffId(), window),
+                busy,
                 request.serviceDuration(),
                 request.bufferBefore(),
                 request.bufferAfter(),

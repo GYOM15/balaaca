@@ -74,6 +74,21 @@ class AvailabilityIT {
     }
 
     @Test
+    @DisplayName("Refuses a start that is not on the provider's slot grid")
+    void refusesOffGridStart() {
+        // The salon's granularity is 15 minutes, so 10:05 is a start it never
+        // offers. Accepting it anyway would make slot_granularity_minutes
+        // decorative: two customers could take 10:00 and 10:05 and the
+        // provider's day would stop matching the grid they configured.
+        given().contentType("application/json")
+                .body(booking("2026-09-01T10:05:00Z", "622000007"))
+                .when().post(SALON)
+                .then().statusCode(422).body("code", equalTo("SLOT_OUTSIDE_AVAILABILITY"));
+
+        assertThat(fixtures.activeAppointments(BookingFixtures.SALON)).isZero();
+    }
+
+    @Test
     @DisplayName("Still accepts a booking inside the declared hours")
     void acceptsInsideHours() {
         given().contentType("application/json")
