@@ -1,0 +1,16 @@
+#!/bin/sh
+# Secret scan before anything leaves the working tree. Skipped with a warning
+# when gitleaks is absent, because CI runs it unconditionally anyway.
+
+if command -v gitleaks >/dev/null 2>&1; then
+    if ! gitleaks protect --staged --redact --no-banner; then
+        printf 'pre-commit: gitleaks found a candidate secret in the staged diff.\n' >&2
+        printf '  Treat it as compromised: rotate it, do not just unstage it.\n' >&2
+        exit 1
+    fi
+else
+    printf 'pre-commit: gitleaks not installed, skipping local secret scan.\n' >&2
+    printf '  brew install gitleaks\n' >&2
+fi
+
+exit 0
