@@ -143,8 +143,11 @@ jobs:
           # --allow-no-lockfiles: a directory with no manifest is not a finding.
           # --config: waivers live in osv-scanner.toml, each with a reason and an
           # expiry, and the scanner prints the reason it filtered on.
-          ./osv-scanner --config=osv-scanner.toml --recursive --allow-no-lockfiles ./
-          code=$?
+          # `|| code=$?` and not a bare call: an Actions run step already
+          # executes under `bash -e`, so a non-zero exit aborts the step before
+          # the case below is ever reached.
+          code=0
+          ./osv-scanner --config=osv-scanner.toml --recursive --allow-no-lockfiles ./ || code=$?
 
           case "$code" in
             0)   echo "no known vulnerabilities" ;;
