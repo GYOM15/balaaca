@@ -1,0 +1,421 @@
+# Balaaca - canonical reference
+
+Every symbol below is **pinned**. A skill may cite this file; it must never
+restate a signature, a DDL or a code in its own words. When a skill and this
+file disagree, this file wins and the skill is a bug.
+
+It exists because parallel authoring produced five names for one column and four
+definitions of one table. Ambiguity in doctrine becomes drift in code.
+
+Facts marked **verified** were executed against PostgreSQL 18.6, not reasoned
+about.
+
+---
+
+## 1. Modules
+
+Eight Maven modules. The list is closed.
+
+| Module | Holds | Framework? |
+|---|---|---|
+| `shared-kernel` | `money`, `time`, `phone`, `error`, `pagination` | **no** - zero framework imports |
+| `platform-kernel` | `tenancy`, `logging`, `ratelimit` | yes - CDI, MicroProfile JWT, Agroal |
+| `identity` | `users`, the Keycloak subject link | yes |
+| `providers` | providers, staff, categories - the tenant root | yes |
+| `catalog` | service offerings | yes |
+| `scheduling` | availability rules, overrides, slot calculation | yes |
+| `booking` | appointments, customers, the state machine | yes |
+| `billing` | subscriptions, plan entitlements | yes |
+
+Satellites, separate deployables: `notification-worker`, `chatbot-service`.
+
+**Why two kernels.** `shared-kernel` is what a domain class may import. Putting
+`TenantContext` and the Agroal hook there would make every class that imports
+`Money` drag CDI, JWT and Agroal behind it, and the ArchUnit "domain is
+framework free" rule would still pass because it only inspects direct imports.
+`platform-kernel` carries the framework-coupled cross-cutting machinery, and
+**no `domain/` package may depend on it**.
+
+Packages: `com.balaaca.<module>.<layer>`, layers
+`domain | ports.inbound | ports.outbound | application | adapters.inbound.rest |
+adapters.outbound.persistence`. The two kernels are exempt from the layer rule:
+`com.balaaca.sharedkernel.{money,time,phone,error,pagination}` and
+`com.balaaca.platformkernel.{tenancy,logging,ratelimit}`.
+
+---
+
+## 2. Migrations - order and ownership
+
+One migration creates a table **and every constraint other migrations depend
+on**, `UNIQUE (provider_id, id)` included. A composite foreign key whose target
+lacks that UNIQUE fails with `42830` (**verified**), so a UNIQUE added later
+than its first referencing migration breaks a fresh database.
+
+| Version | Creates | Also declares |
+|---|---|---|
+| `V001__create_roles_and_extensions.sql` | roles `balaaca_migrator`, `balaaca_app`, `balaaca_resolver`, `balaaca_notification_worker`; extensions `btree_gist`, `citext`, `pg_trgm` | `app_current_provider()` |
+| `V002__create_users.sql` | `users` | |
+| `V003__create_provider_categories.sql` | `provider_categories` | |
+| `V004__create_providers.sql` | `providers` | |
+| `V005__create_provider_staff.sql` | `provider_staff` | `UNIQUE (provider_id, id)`, the one-active-membership index |
+| `V006__create_service_offerings.sql` | `service_offerings` | `UNIQUE (provider_id, id)`, `CHECK (duration_minutes > 0)` |
+| `V007__create_customers.sql` | `customers` | `UNIQUE (provider_id, id)`, `UNIQUE (provider_id, phone_e164)` |
+| `V008__create_availability.sql` | `availability_rules`, `availability_overrides` | |
+| `V009__create_appointments.sql` | `appointments` | `UNIQUE (provider_id, id)`, the exclusion constraint |
+| `V010__create_notifications.sql` | `notifications` | |
+| `V011__create_subscriptions.sql` | `subscriptions` | |
+| `V012__create_audit_logs.sql` | `audit_logs` | |
+| `V013__enable_row_level_security.sql` | policies, grants, resolution functions | |
+
+Tables are plural snake_case. `staff_id` references `provider_staff`; the
+shortened stem is the one deliberate exception to "foreign key = singular stem
+plus `_id`".
+
+---
+
+## 3. The appointments table - normative DDL
+
+**Verified**: this exact DDL executes, and rejects every hole listed under it.
+
+```sql
+CREATE TABLE appointments (
+    id                  uuid PRIMARY KEY,
+    provider_id         uuid NOT NULL REFERENCES providers(id) ON DELETE RESTRICT,
+    staff_id            uuid NOT NULL,
+    service_offering_id uuid NOT NULL,
+    customer_id         uuid NOT NULL,
+    booked_by_user_id   uuid REFERENCES users(id),
+
+    starts_at    timestamptz NOT NULL,
+    ends_at      timestamptz NOT NULL,
+    -- Frozen at booking: changing the offering never moves an existing booking.
+    buffer_before_minutes int NOT NULL CHECK (buffer_before_minutes >= 0),
+    buffer_after_minutes  int NOT NULL CHECK (buffer_after_minutes  >= 0),
+    blocked_from  timestamptz NOT NULL,
+    blocked_until timestamptz NOT NULL,
+
+    status varchar(20) NOT NULL DEFAULT 'PENDING'
+           CHECK (status IN ('PENDING','CONFIRMED','CANCELLED','COMPLETED','NO_SHOW')),
+    cancelled_at   timestamptz,
+    cancelled_by   varchar(20) CHECK (cancelled_by IN ('CUSTOMER','PROVIDER','SYSTEM')),
+
+    -- Frozen snapshot of what the customer owes.
+    service_name                varchar(120) NOT NULL,
+    customer_price_amount_minor bigint  NOT NULL CHECK (customer_price_amount_minor >= 0),
+    customer_price_currency     varchar(3) NOT NULL CHECK (customer_price_currency ~ '^[A-Z]{3}$'),
+
+    idempotency_key          varchar(80),
+    idempotency_request_hash varchar(64),
+
+    version    bigint      NOT NULL DEFAULT 0,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+
+    blocked_range tstzrange GENERATED ALWAYS AS
+        (tstzrange(blocked_from, blocked_until, '[)')) STORED,
+
+    CONSTRAINT ck_appointments_window         CHECK (ends_at > starts_at),
+    CONSTRAINT ck_appointments_block_nonempty CHECK (blocked_until > blocked_from),
+    CONSTRAINT ck_appointments_block_covers   CHECK (blocked_from  <= starts_at
+                                                 AND blocked_until >= ends_at),
+    CONSTRAINT ck_appointments_block_derived  CHECK (
+        blocked_from  = starts_at - make_interval(mins => buffer_before_minutes)
+    AND blocked_until = ends_at   + make_interval(mins => buffer_after_minutes)),
+    CONSTRAINT ck_appointments_cancel_shape CHECK (
+        status <> 'CANCELLED' OR (cancelled_at IS NOT NULL AND cancelled_by IS NOT NULL)),
+    CONSTRAINT ck_appointments_idempotency_pair CHECK (
+        (idempotency_key IS NULL) = (idempotency_request_hash IS NULL)),
+
+    FOREIGN KEY (provider_id, staff_id)            REFERENCES provider_staff    (provider_id, id),
+    FOREIGN KEY (provider_id, service_offering_id) REFERENCES service_offerings (provider_id, id),
+    FOREIGN KEY (provider_id, customer_id)         REFERENCES customers         (provider_id, id),
+    CONSTRAINT uq_appointments_provider_id UNIQUE (provider_id, id)
+);
+
+ALTER TABLE appointments ADD CONSTRAINT no_double_booking
+    EXCLUDE USING gist (provider_id WITH =, staff_id WITH =, blocked_range WITH &&)
+    WHERE (status IN ('PENDING','CONFIRMED'));
+
+CREATE UNIQUE INDEX uq_appointments_idempotency
+    ON appointments (provider_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
+```
+
+Holes this closes, each **verified**:
+
+| Attack | Without the CHECK | With it |
+|---|---|---|
+| `blocked_from = blocked_until` | the range is EMPTY, `&&` is false against everything, unlimited bookings at one instant | `23514` |
+| Blocked window narrowed to one minute for an hour-long service | 59 minutes unprotected, constraint satisfied | `23514` |
+| `blocked_from` inconsistent with the declared buffer | derivation unenforced | `23514` |
+| Offering with `duration_minutes = 0` | produces the empty range above | `23514` |
+
+`make_interval` may **not** appear in a generated column (`42P17`, **verified**)
+but **may** appear in a `CHECK` (**verified**). That asymmetry is why
+`blocked_from`/`blocked_until` are ordinary columns and only `blocked_range` is
+generated.
+
+---
+
+## 4. Tenant resolution - the two sources
+
+The tenant is **never** taken from a request field, a header, or a JWT claim. It
+has exactly two server-side sources, and **verified** SQL for each.
+
+### 4.1 Authenticated staff - from the Keycloak subject
+
+`provider_staff` is tenant-scoped, so resolving membership from it is
+circular: the GUC is not bound yet, `FORCE ROW LEVEL SECURITY` binds the owner
+too, and a plain read returns zero rows - **nobody could ever authenticate**.
+A `SECURITY DEFINER` function owned by a role with its own narrow policy is what
+breaks the circle, and it returns exactly one uuid.
+
+```sql
+CREATE POLICY provider_staff_resolution ON provider_staff
+    FOR SELECT TO balaaca_resolver USING (true);
+
+CREATE FUNCTION app_resolve_provider(p_subject varchar) RETURNS uuid
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS
+$$ SELECT ps.provider_id FROM provider_staff ps JOIN users u ON u.id = ps.user_id
+    WHERE u.keycloak_user_id = p_subject AND ps.status = 'ACTIVE' $$;
+ALTER FUNCTION app_resolve_provider(varchar) OWNER TO balaaca_resolver;
+REVOKE ALL ON FUNCTION app_resolve_provider(varchar) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app_resolve_provider(varchar) TO balaaca_app;
+```
+
+**Verified**: `balaaca_app` reading `provider_staff` directly with no GUC sees
+zero rows; the function still resolves; and calling it cannot widen a read.
+
+### 4.2 Public booking - from the published slug
+
+A customer is not staff, so membership resolution yields nothing and a booking
+would 403. The public write path therefore identifies the tenant by the
+provider's **public slug** - the very string meant to be shared on WhatsApp.
+
+```
+POST /v1/providers/{slug}/appointments
+```
+
+```sql
+CREATE FUNCTION app_resolve_published_provider(p_slug varchar) RETURNS uuid
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS
+$$ SELECT id FROM providers WHERE slug = p_slug AND published $$;
+ALTER FUNCTION app_resolve_published_provider(varchar) OWNER TO balaaca_resolver;
+```
+
+**Verified**: an unpublished provider resolves to `NULL`, so the endpoint 404s.
+
+This is not the IDOR the no-tenant-in-request rule exists to prevent: the slug
+grants no privilege beyond what the public page already offers. The rule stands
+unchanged for every authenticated provider-scoped route, which carries **no**
+tenant identifier at all. What the public path may do is strictly bounded:
+create a `PENDING` appointment, and read the public projections. It may never
+list appointments or read customers.
+
+### 4.3 Binding the GUC
+
+The interceptor fills `TenantContext`. The **database** GUC is bound by a
+connection-level hook, because `@TenantBound` at `PLATFORM_BEFORE + 10` runs
+outside the transaction Quarkus opens at `PLATFORM_BEFORE + 200`, so a
+`@Transactional(MANDATORY)` binder can never be called from it.
+
+`TenantGucPoolInterceptor` (`platformkernel.tenancy`, an `AgroalPoolInterceptor`)
+issues, as the first statement on the acquired connection:
+
+```sql
+SELECT set_config('app.provider_id', ?, true)
+```
+
+It **must** guard on request-context activity - `Arc.container().requestContext()
+.isActive()` - and bind the empty string when inactive. A `@RequestScoped` proxy
+accessed outside an active context throws `ContextNotActiveException`; without
+the guard, Flyway at startup, the readiness probe and the worker drain all fail.
+
+Every RLS policy predicate, without exception:
+
+```sql
+provider_id = nullif(current_setting('app.provider_id', true), '')::uuid
+```
+
+**Verified**: `current_setting('x')` without `missing_ok` raises `42704`, and
+`''::uuid` raises `22P02` - a 500 where a 404 belongs. Only this form degrades
+to `NULL` and filters every row.
+
+---
+
+## 5. Ports - exact signatures
+
+```java
+// platformkernel.tenancy - implemented in providers
+public interface ProviderMembershipResolver {
+    ProviderId requireFor(String keycloakSubject);   // throws NoProviderMembershipException
+    ProviderId requirePublished(ProviderSlug slug);  // throws ProviderNotFoundException
+}
+
+// catalog.ports.inbound
+public interface LookupServiceOfferingUseCase {
+    ServiceOffering require(ServiceOfferingId id);   // throws ServiceOfferingNotFoundException
+}
+
+// scheduling.ports.inbound
+public interface CalculateSlotsUseCase {
+    List<AvailableSlot> bookable(SlotQuery query);
+}
+
+// billing.ports.inbound
+public interface CheckEntitlementUseCase {
+    void require(Entitlement entitlement);           // throws PlanLimitReachedException
+}
+
+// booking.ports.inbound
+public interface BookAppointmentUseCase {
+    AppointmentId book(BookAppointmentCommand command);
+}
+
+// booking.ports.outbound
+public interface AppointmentRepository {
+    InsertOutcome insertIfAbsent(Appointment appointment);
+    int compareAndAdvance(AppointmentId id, AppointmentStatus expected,
+                          AppointmentStatus next, long version);
+    Map<StaffId, List<InstantRange>> busyRanges(Set<StaffId> staff, InstantRange window);
+}
+
+public record InsertOutcome(Appointment appointment, boolean replayed) {}
+```
+
+`insertIfAbsent` is `INSERT ... ON CONFLICT (provider_id, idempotency_key) DO
+NOTHING` followed by a `SELECT`. An explicit conflict target arbitrates only that
+index, so a `23P01` exclusion violation still surfaces. `23505` on the
+idempotency index is a **replay**, never an error.
+
+---
+
+## 6. Exceptions
+
+One base, in `com.balaaca.sharedkernel.error`, framework-free.
+
+```java
+public abstract class DomainException extends RuntimeException {
+    private final String code;                 // published, SCREAMING_SNAKE_CASE
+    private final int status;                  // HTTP status the mapper emits
+    private final Map<String, Object> details; // audit only, never sent to the client
+
+    protected DomainException(String code, int status, String message) {
+        this(code, status, message, Map.of(), null);
+    }
+    protected DomainException(String code, int status, String message,
+                              Map<String, Object> details) {
+        this(code, status, message, details, null);
+    }
+    protected DomainException(String code, int status, String message,
+                              Map<String, Object> details, Throwable cause) { ... }
+}
+```
+
+| Exception | Status | Code |
+|---|---|---|
+| `SlotUnavailableException(Instant startsAt)` | 409 | `SLOT_UNAVAILABLE` |
+| `SlotOutsideAvailabilityException(Instant)` | 422 | `SLOT_OUTSIDE_AVAILABILITY` |
+| `AppointmentConflictException(AppointmentId)` | 409 | `APPOINTMENT_CONFLICT` |
+| `InvalidStateTransitionException(from, to)` | 409 | `INVALID_STATE_TRANSITION` |
+| `CancellationDeadlinePassedException(Instant)` | 422 | `CANCELLATION_DEADLINE_PASSED` |
+| `NoEligibleStaffException(Instant)` | 409 | `SLOT_UNAVAILABLE` |
+| `IdempotencyKeyReusedException(String key)` | 422 | `IDEMPOTENCY_KEY_REUSED` |
+| `PlanLimitReachedException(Entitlement)` | 403 | `PLAN_LIMIT_REACHED` |
+| `CurrencyMismatchException(a, b)` | 422 | `CURRENCY_MISMATCH` |
+| `NoProviderMembershipException(String subject)` | 403 | `FORBIDDEN` |
+| `ResourceNotFoundException(String kind, String id)` | 404 | `RESOURCE_NOT_FOUND` |
+| `CrossTenantAccessException(String kind, String id)` | 404 | `RESOURCE_NOT_FOUND` |
+
+`SlotUnavailableException`'s message never names the staff member: on the
+any-staff path the server chose them, so naming them discloses who is busy to a
+caller who never asked. The staff id goes in `details`, which the audit log reads
+and the client never sees.
+
+A cross-tenant read and a genuine miss are **byte-identical**: same 404, same
+`RESOURCE_NOT_FOUND`. `PlanLimitReachedException` is 403, never 402 - there is no
+payment path to require.
+
+---
+
+## 7. Published error codes - closed catalogue
+
+`RESOURCE_NOT_FOUND` · `VALIDATION_FAILED` · `UNAUTHENTICATED` · `FORBIDDEN` ·
+`RATE_LIMITED` · `SLOT_UNAVAILABLE` · `SLOT_OUTSIDE_AVAILABILITY` ·
+`APPOINTMENT_CONFLICT` · `INVALID_STATE_TRANSITION` ·
+`CANCELLATION_DEADLINE_PASSED` · `IDEMPOTENCY_KEY_REQUIRED` ·
+`IDEMPOTENCY_KEY_REUSED` · `PLAN_LIMIT_REACHED` · `CURRENCY_MISMATCH` ·
+`INTERNAL_ERROR`
+
+No other code exists. Adding one is an OpenAPI change. Renaming one is forbidden.
+
+---
+
+## 8. Commands and wire shapes
+
+```java
+public record BookAppointmentCommand(
+        ServiceOfferingId  serviceOfferingId,
+        Optional<StaffId>  staffId,        // empty = the server chooses
+        Instant            startsAt,
+        CustomerContact    customer,       // fullName + PhoneNumber + optional email
+        IdempotencyRequest idempotency) {} // key + requestHash
+
+public record IdempotencyRequest(String key, String requestHash) {}
+```
+
+`requestHash` is SHA-256 of the **client's** canonicalised body only -
+`service_offering_id`, `starts_at`, `staff_id` including its absence, and the
+customer contact. Never over server-resolved values: hashing the chosen staff id
+would make a legitimate retry produce a different hash and fail as a reuse.
+
+Wire format is snake_case throughout. `staff_id` is **omitted** to let the server
+choose; it is never sent as `null`.
+
+```yaml
+BookAppointmentRequest:
+  required: [service_offering_id, starts_at, customer]
+  properties:
+    service_offering_id: { type: string, format: uuid }
+    staff_id:            { type: string, format: uuid }   # omit for any staff
+    starts_at:           { type: string, format: date-time }
+    customer:            { $ref: '#/components/schemas/CustomerContact' }
+```
+
+Collections: `{ "data": [...], "next_cursor": string|null }`, `?cursor=&limit=`.
+
+---
+
+## 9. Interceptor order
+
+| Binding | Class | Priority |
+|---|---|---|
+| tracing | `TracingInterceptor` | `PLATFORM_BEFORE + 5` |
+| `@TenantBound` | `TenantBoundInterceptor` | `PLATFORM_BEFORE + 10` |
+| `@RateLimited` | `RateLimitInterceptor` | `PLATFORM_BEFORE + 20` |
+| `@Transactional` | Quarkus | `PLATFORM_BEFORE + 200` |
+| `@Audited` | `AuditLoggingInterceptor` | `PLATFORM_BEFORE + 210` |
+
+Audit sits inside the transaction so an audit row commits with the change it
+describes. The GUC hook is **not** an interceptor (section 4.3).
+
+---
+
+## 10. Verified PostgreSQL behaviour
+
+Executed against 18.6. Do not re-derive these; cite them.
+
+| Behaviour | Result |
+|---|---|
+| `tstzrange(a, b, '[)')` in a `GENERATED ... STORED` column | allowed - it is `IMMUTABLE` |
+| `timestamptz - make_interval(...)` in a generated column | `42P17`, not `IMMUTABLE` |
+| the same expression in a `CHECK` | allowed |
+| empty range (`a = b`) against `EXCLUDE ... &&` | **never conflicts** - the hole `ck_*_block_nonempty` closes |
+| composite FK with no matching `UNIQUE` on the target | `42830` at migration time |
+| `current_setting('x')` when unset | `42704` |
+| `current_setting('x', true)` when unset | empty string |
+| `''::uuid` | `22P02` |
+| `SET LOCAL` via `set_config(..., true)` | dropped at commit - safe with pooling |
+| 10 concurrent inserts on one slot | 1 row, 9 × `23P01` |
+| `SECURITY DEFINER` under `FORCE RLS` | runs under the owner's policies - the resolution path |
+| app role attempting `DISABLE ROW LEVEL SECURITY` | `must be owner of table` |
+| app role attempting to grant itself `BYPASSRLS` | `permission denied to alter role` |
