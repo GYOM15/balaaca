@@ -18,7 +18,7 @@
     <quarkus.platform.version>3.30.8</quarkus.platform.version>
     <surefire-plugin.version>3.5.2</surefire-plugin.version>
     <archunit.version>1.4.1</archunit.version>
-    <assertj.version>3.27.3</assertj.version>
+    <assertj.version>3.27.7</assertj.version>
     <jqwik.version>1.10.1</jqwik.version>
   </properties>
 
@@ -85,6 +85,29 @@
   </dependencies>
 
   <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>io.smallrye</groupId>
+          <artifactId>jandex-maven-plugin</artifactId>
+          <version>3.6.0</version>
+          <dependencies>
+            <!-- The plugin pulls plexus-utils 3.5.1, which carries
+                 GHSA-6fmv-xxpf-w3cw. Overriding it here fixes every module at
+                 once; declaring the plugin eight times would mean eight places
+                 to forget the next time. -->
+            <dependency>
+              <groupId>org.codehaus.plexus</groupId>
+              <artifactId>plexus-utils</artifactId>
+              <version>3.6.1</version>
+            </dependency>
+          </dependencies>
+          <executions>
+            <execution><id>make-index</id><goals><goal>jandex</goal></goals></execution>
+          </executions>
+        </plugin>
+      </plugins>
+    </pluginManagement>
     <plugins>
       <plugin>
         <artifactId>maven-surefire-plugin</artifactId>
