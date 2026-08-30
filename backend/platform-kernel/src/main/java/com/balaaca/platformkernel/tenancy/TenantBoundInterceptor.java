@@ -1,10 +1,11 @@
 package com.balaaca.platformkernel.tenancy;
 
 import jakarta.annotation.Priority;
-import jakarta.enterprise.inject.Instance;
+import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.interceptor.AroundInvoke;
 import jakarta.interceptor.Interceptor;
 import jakarta.interceptor.InvocationContext;
+import java.security.Principal;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 
 /**
@@ -30,21 +31,39 @@ import org.eclipse.microprofile.jwt.JsonWebToken;
 @Priority(Interceptor.Priority.PLATFORM_BEFORE + 10)
 public class TenantBoundInterceptor {
 
-    private final Instance<JsonWebToken> jwt;
+    private final SecurityIdentity identity;
     private final TenantContext tenantContext;
     private final ProviderMembershipResolver memberships;
 
-    public TenantBoundInterceptor(Instance<JsonWebToken> jwt,
+    public TenantBoundInterceptor(SecurityIdentity identity,
                                   TenantContext tenantContext,
                                   ProviderMembershipResolver memberships) {
-        this.jwt = jwt;
+        this.identity = identity;
         this.tenantContext = tenantContext;
         this.memberships = memberships;
     }
 
+    /**
+     * The subject, taken from the identity rather than from an injected
+     * {@code JsonWebToken}.
+     *
+     * <p>That bean only exists while a particular extension is active, so an
+     * injection point on it resolves to nothing the moment the provider is
+     * switched off - and this interceptor then read a null subject and refused
+     * every caller, with the same 403 it gives someone who genuinely belongs to
+     * no provider. Two very different problems, one answer, and nothing in the
+     * log to tell them apart.
+     *
+     * <p>The identity is always there. What varies is the principal it carries,
+     * and only a token principal has a subject to resolve.
+     */
+    private static String subjectOf(Principal principal) {
+        return principal instanceof JsonWebToken token ? token.getSubject() : null;
+    }
+
     @AroundInvoke
     Object bind(InvocationContext ctx) throws Exception {
-        String subject = jwt.isResolvable() ? jwt.get().getSubject() : null;
+        String subject = subjectOf(identity.getPrincipal());
         if (subject == null || subject.isBlank()) {
             throw new NoProviderMembershipException(subject);
         }

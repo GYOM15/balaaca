@@ -36,12 +36,71 @@ servers:
     description: The deployable serving this document.
 
 tags:
+  - name: agenda
+    description: What a provider sees of their own bookings.
   - name: availability
     description: What a customer can book, from a provider's public page.
   - name: booking
     description: Taking a slot.
 
 paths:
+  /v1/appointments:
+    get:
+      operationId: listAppointments
+      tags: [agenda]
+      summary: List the caller's own appointments
+      description: |
+        The provider's agenda. There is no provider identifier anywhere in this
+        request - not a path segment, not a query parameter, not a header. The
+        tenant is resolved server-side from the verified subject through `users`
+        and `provider_staff`, so a scope grants access inside the caller's own
+        provider and can never reach across.
+
+        A subject that resolves to no active membership is `403 FORBIDDEN`. That
+        is not the same as `401`: the token was valid, it simply belongs to
+        nobody here.
+      security:
+        - oauth2: [dashboard:read]
+      parameters:
+        - name: from
+          in: query
+          required: false
+          description: Only appointments starting at or after this instant.
+            Defaults to now.
+          schema:
+            type: string
+            format: date-time
+        - name: status
+          in: query
+          required: false
+          description: Narrow to one status. Omit for the active ones -
+            `PENDING` and `CONFIRMED`.
+          schema:
+            $ref: '#/components/schemas/AppointmentStatus'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: The caller's appointments, earliest first.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: '`UNAUTHENTICATED` - no verified token, or it expired.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: '`FORBIDDEN` - the subject belongs to no active provider.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
   /v1/providers/{slug}/available-slots:
     get:
       operationId: listAvailableSlots
@@ -202,6 +261,21 @@ paths:
                 $ref: '#/components/schemas/Problem'
 
 components:
+
+  securitySchemes:
+    oauth2:
+      type: oauth2
+      description: |
+        Scopes are coarse capability grants, checked at the service layer as
+        well as here. None of them crosses a provider: the tenant comes from the
+        database via the subject, so a scope says what the caller may do inside
+        their own provider and nothing about whose data they reach.
+      flows:
+        authorizationCode:
+          authorizationUrl: /realms/balaaca/protocol/openid-connect/auth
+          tokenUrl: /realms/balaaca/protocol/openid-connect/token
+          scopes:
+            dashboard:read: Read the caller's own agenda and settings.
 
   parameters:
     ProviderSlug:
@@ -368,6 +442,84 @@ components:
         customer_note:
           type: string
           maxLength: 500
+
+    AppointmentStatus:
+      type: string
+      description: Where an appointment is in its life. Closed and named, so a
+        client can switch on it.
+      enum: [PENDING, CONFIRMED, CANCELLED, COMPLETED, NO_SHOW]
+
+    Money:
+      type: object
+      description: Never a bare number and never a float. The scale is the
+        currency's own - GNF has none, so 150000 is 150000 francs.
+      required: [amount_minor, currency]
+      properties:
+        amount_minor:
+          type: integer
+          format: int64
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          example: GNF
+
+    AppointmentCustomerView:
+      type: object
+      description: |
+        What the provider sees of the person who booked. This is their own
+        address book, so the number is theirs to have - it appears in no public
+        projection and in no notification payload.
+      required: [full_name, phone]
+      properties:
+        full_name:
+          type: string
+        phone:
+          type: string
+          description: E.164.
+
+    AppointmentView:
+      type: object
+      description: |
+        One row of the caller's agenda. A separate schema from the public
+        projection rather than the same one with fields stripped at runtime: a
+        projection enforced by shape cannot be leaked by a forgotten condition.
+
+        The service name and price are what was frozen at booking, not what the
+        offering says today - repricing a service must not rewrite what a
+        customer was quoted.
+      required: [appointment_id, starts_at, ends_at, status, service_name, price, customer]
+      properties:
+        appointment_id:
+          type: string
+          format: uuid
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        status:
+          $ref: '#/components/schemas/AppointmentStatus'
+        service_name:
+          type: string
+        price:
+          $ref: '#/components/schemas/Money'
+        customer:
+          $ref: '#/components/schemas/AppointmentCustomerView'
+
+    AppointmentPage:
+      type: object
+      required: [data, next_cursor]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AppointmentView'
+        next_cursor:
+          type: string
+          nullable: true
+          description: Opaque; null on the last page.
 
     AppointmentCreatedView:
       type: object

@@ -49,13 +49,19 @@ class ArchitectureTest {
     };
 
     /**
-     * The two domain types the booking command carries. The published surface of
-     * a use case is its port, its command and result records, and the types
-     * those records hold - so the deployable that builds a command necessarily
-     * touches these two, and nothing else in anyone's domain.
+     * The domain types a port's own records carry. The published surface of a
+     * use case is its port, its commands and results, and the types those hold -
+     * so the deployable that builds a command or reads a result necessarily
+     * touches these, and nothing else in anyone's domain.
+     *
+     * <p>The list grows one deliberate entry at a time, which is the point: this
+     * rule failed the day the agenda started returning AppointmentStatus, and
+     * adding it here was a decision someone made rather than a boundary that
+     * moved on its own.
      */
     private static final String PUBLISHED_DOMAIN_TYPES =
-            "com\\.balaaca\\.(booking\\.domain\\.(BookingSource|CustomerContact)"
+            "com\\.balaaca\\.(booking\\.domain\\.(BookingSource|CustomerContact"
+            + "|AppointmentStatus)"
             + "|scheduling\\.domain\\.AvailableSlot)";
 
     // --- The domain is an island ------------------------------------------

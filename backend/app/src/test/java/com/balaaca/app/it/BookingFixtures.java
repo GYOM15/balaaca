@@ -27,6 +27,11 @@ public class BookingFixtures {
     public static final UUID HIDDEN = UUID.fromString("22222222-2222-2222-2222-222222222222");
     public static final UUID SOLO = UUID.fromString("33333333-3333-3333-3333-333333333333");
 
+    /** Keycloak subjects. The staff row is what ties one to a provider. */
+    public static final String SALON_SUBJECT = "kc-salon-fatou";
+    public static final String SOLO_SUBJECT = "kc-coiffeur-solo";
+    public static final String STRANGER_SUBJECT = "kc-nobody";
+
     public static final UUID SALON_OFFERING = UUID.fromString("5e111111-0000-0000-0000-000000000001");
     public static final UUID HIDDEN_OFFERING = UUID.fromString("5e222222-0000-0000-0000-000000000001");
     public static final UUID SOLO_OFFERING = UUID.fromString("50103333-0000-0000-0000-000000000001");
@@ -40,8 +45,18 @@ public class BookingFixtures {
     public void reset() {
         run("""
             TRUNCATE notifications, appointments, customers, availability_overrides,
-                     availability_rules, service_offerings, provider_staff, providers CASCADE
+                     availability_rules, service_offerings, provider_staff, providers,
+                     users CASCADE
             """);
+        // A user with no staff row exists on purpose: a valid token whose
+        // subject belongs to nobody here must be told 403, not handed an empty
+        // agenda that looks like a working account.
+        run("""
+            INSERT INTO users (id, keycloak_user_id, display_name) VALUES
+              ('d1d1d1d1-0000-0000-0000-000000000001','%s','Fatou'),
+              ('d2d2d2d2-0000-0000-0000-000000000001','%s','Solo'),
+              ('d3d3d3d3-0000-0000-0000-000000000001','%s','Personne')
+            """.formatted(SALON_SUBJECT, SOLO_SUBJECT, STRANGER_SUBJECT));
         // Only the salon publishes a way to be reached. coiffeur-solo deliberately
         // does not: a provider with no contact must still be bookable, and the
         // staff notice is simply not planned.
@@ -53,10 +68,10 @@ public class BookingFixtures {
               ('%s','coiffeur-solo','Coiffeur Solo','GN',true,'ACTIVE',NULL)
             """.formatted(SALON, HIDDEN, SOLO));
         run("""
-            INSERT INTO provider_staff (id, provider_id, display_name, role) VALUES
-              ('a1a1a1a1-0000-0000-0000-000000000001','%s','Fatou','OWNER'),
-              ('b1b1b1b1-0000-0000-0000-000000000001','%s','Cache','OWNER'),
-              ('c3c3c3c3-0000-0000-0000-000000000001','%s','Solo','OWNER')
+            INSERT INTO provider_staff (id, provider_id, user_id, display_name, role) VALUES
+              ('a1a1a1a1-0000-0000-0000-000000000001','%s','d1d1d1d1-0000-0000-0000-000000000001','Fatou','OWNER'),
+              ('b1b1b1b1-0000-0000-0000-000000000001','%s',NULL,'Cache','OWNER'),
+              ('c3c3c3c3-0000-0000-0000-000000000001','%s','d2d2d2d2-0000-0000-0000-000000000001','Solo','OWNER')
             """.formatted(SALON, HIDDEN, SOLO));
         // Monday to Saturday, 08:00 to 20:00 local. Without these every booking
         // is now correctly refused as outside the provider's declared hours,
