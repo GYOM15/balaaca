@@ -1,10 +1,14 @@
 package com.balaaca.booking.ports.outbound;
 
 import com.balaaca.booking.domain.AppointmentStatus;
+import com.balaaca.booking.domain.BookedSlot;
 import com.balaaca.booking.ports.inbound.ListAppointmentsUseCase.AgendaEntry;
 import com.balaaca.sharedkernel.ids.AppointmentId;
+import com.balaaca.sharedkernel.ids.ServiceOfferingId;
+import com.balaaca.sharedkernel.ids.StaffId;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.Set;
 
 /** Moves an appointment through its states, one conditional statement at a time. */
 public interface AppointmentStateRepository {
@@ -28,11 +32,46 @@ public interface AppointmentStateRepository {
     Optional<AgendaEntry> cancel(AppointmentId id, Optional<String> reason, Instant at);
 
     /**
-     * The current status, for telling a refusal apart from a miss.
+     * Moves an appointment to another slot.
      *
-     * <p>Read only after a transition found no row. Empty means the appointment
-     * does not exist or is not the caller's - and RLS makes those the same
-     * answer, deliberately.
+     * <p>The window is recomputed by the caller from the service the
+     * appointment already carries, and the exclusion constraint arbitrates the
+     * result exactly as it does for a first booking: a 23P01 on this UPDATE is
+     * the same 409 as a taken slot.
+     *
+     * <p>An UPDATE and not a delete-then-insert. Recreating the row would
+     * change its id, break the audit trail, and open a window in which a third
+     * party takes the freed slot.
+     *
+     * @return the moved appointment, or empty when no row was in a movable state
      */
-    Optional<AppointmentStatus> statusOf(AppointmentId id);
+    Optional<AgendaEntry> reschedule(AppointmentId id, BookedSlot slot, Instant at);
+
+    /**
+     * Applies one of the simple transitions.
+     *
+     * @param from  the states the move is legal from; the UPDATE carries them,
+     *              so two racing callers produce one affected row and one zero
+     * @return the appointment as it now stands, or empty when no row was in one
+     *         of those states
+     */
+    Optional<AgendaEntry> transition(AppointmentId id, Set<AppointmentStatus> from,
+                                     AppointmentStatus to, Instant at);
+
+    /**
+     * What the caller needs to know about a row before touching it, and to tell
+     * a refusal apart from a miss afterwards.
+     *
+     * <p>Empty means the appointment does not exist or is not the caller's -
+     * and RLS makes those the same answer, deliberately.
+     */
+    Optional<AppointmentSnapshot> snapshotOf(AppointmentId id);
+
+    /** Just enough to recompute a slot and to judge a transition. */
+    record AppointmentSnapshot(AppointmentId id,
+                               ServiceOfferingId serviceOfferingId,
+                               StaffId staffId,
+                               AppointmentStatus status,
+                               Instant startsAt) {
+    }
 }

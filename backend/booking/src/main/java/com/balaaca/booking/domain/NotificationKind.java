@@ -18,5 +18,8 @@ public enum NotificationKind {
     REMINDER,
 
     /** To the customer, when their appointment is called off. */
-    CANCELLATION
+    CANCELLATION,
+
+    /** To the customer, when their appointment moves. */
+    RESCHEDULE
 }

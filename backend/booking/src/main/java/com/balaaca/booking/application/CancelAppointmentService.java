@@ -63,9 +63,10 @@ public class CancelAppointmentService implements CancelAppointmentUseCase {
      * it produces the same 404 as one that never existed. That is the point.
      */
     private RuntimeException refusalFor(AppointmentId id) {
-        return appointments.statusOf(id)
+        return appointments.snapshotOf(id)
                 .<RuntimeException>map(current ->
-                        new InvalidStateTransitionException(current, AppointmentStatus.CANCELLED))
+                        new InvalidStateTransitionException(current.status(),
+                                                            AppointmentStatus.CANCELLED))
                 .orElseGet(() -> new AppointmentNotFoundException(id.value()));
     }
 }

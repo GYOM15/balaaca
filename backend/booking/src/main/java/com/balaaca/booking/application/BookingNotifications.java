@@ -93,6 +93,10 @@ public class BookingNotifications {
      * rather than on a second text.
      */
     public void planCancellation(AgendaEntry cancelled) {
+        planOne(cancelled, NotificationKind.CANCELLATION);
+    }
+
+    private void planOne(AgendaEntry cancelled, NotificationKind kind) {
         ProviderProfile provider = providers.currentProfile();
         Map<String, String> payload = Map.of(
                 "business_name", provider.businessName(),
@@ -103,10 +107,15 @@ public class BookingNotifications {
                 LOCAL_TIME.format(cancelled.startsAt().atZone(provider.timezone())));
 
         outbox.plan(List.of(new PlannedNotification(
-                cancelled.id(), NotificationKind.CANCELLATION,
+                cancelled.id(), kind,
                 NotificationRecipient.CUSTOMER,
                 Optional.of(cancelled.customer().phone().e164()), cancelled.customer().email(),
                 LOCALE, payload, cancelled.startsAt(), clock.instant())));
+    }
+
+    /** What a moved appointment owes: one message, to the customer, now. */
+    public void planReschedule(AgendaEntry moved) {
+        planOne(moved, NotificationKind.RESCHEDULE);
     }
 
     private static PlannedNotification confirmation(AppointmentId id, Instant startsAt,

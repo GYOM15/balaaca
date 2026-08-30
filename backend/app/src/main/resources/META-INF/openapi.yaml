@@ -124,12 +124,7 @@ paths:
       security:
         - oauth2: [appointments:write]
       parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
+        - $ref: '#/components/parameters/AppointmentId'
       requestBody:
         required: false
         content:
@@ -164,6 +159,202 @@ paths:
             `INVALID_STATE_TRANSITION` - the appointment has already reached a
             state it cannot leave. Cancelling twice lands here, and so does
             cancelling something already completed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /v1/appointments/{id}/reschedule:
+    post:
+      operationId: rescheduleAppointment
+      tags: [agenda]
+      summary: Move an appointment to another slot
+      description: |
+        Recomputed server-side from the service's own duration and buffers, and
+        arbitrated by the same exclusion constraint a first booking faces: the
+        slot is either free at the new time or it is not. The appointment keeps
+        its id, so its history and its notifications follow it.
+
+        Reminders owed for the old time are withdrawn and the new ones planned,
+        in the same transaction as the move.
+      security:
+        - oauth2: [appointments:write]
+      parameters:
+        - $ref: '#/components/parameters/AppointmentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RescheduleAppointmentRequest'
+      responses:
+        '200':
+          description: The appointment as it now stands.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: '`UNAUTHENTICATED` - no verified token, or it expired.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: '`FORBIDDEN` - the subject belongs to no active provider.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: |
+            `SLOT_UNAVAILABLE` if the new slot is taken, or
+            `INVALID_STATE_TRANSITION` if the appointment can no longer move.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          description: |
+            `SLOT_OUTSIDE_AVAILABILITY` - the new start falls outside what the
+            provider published.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /v1/appointments/{id}/confirmation:
+    post:
+      operationId: confirmAppointment
+      tags: [agenda]
+      summary: Confirm a pending appointment
+      description: |
+        Only a `PENDING` appointment can be confirmed. Confirming one twice is
+        refused rather than silently repeated: the second caller believed
+        something was still pending that was not.
+      security:
+        - oauth2: [appointments:write]
+      parameters:
+        - $ref: '#/components/parameters/AppointmentId'
+      responses:
+        '200':
+          description: The appointment as it now stands.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: '`UNAUTHENTICATED` - no verified token, or it expired.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: '`FORBIDDEN` - the subject belongs to no active provider.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: |
+            `INVALID_STATE_TRANSITION` - only a pending appointment confirms.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /v1/appointments/{id}/completion:
+    post:
+      operationId: completeAppointment
+      tags: [agenda]
+      summary: Mark an appointment as honoured
+      description: |
+        Only a `CONFIRMED` appointment completes. The slot is already past; what
+        this records is that the customer came.
+      security:
+        - oauth2: [appointments:write]
+      parameters:
+        - $ref: '#/components/parameters/AppointmentId'
+      responses:
+        '200':
+          description: The appointment as it now stands.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: '`UNAUTHENTICATED` - no verified token, or it expired.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: '`FORBIDDEN` - the subject belongs to no active provider.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: |
+            `INVALID_STATE_TRANSITION` - only a confirmed appointment completes.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /v1/appointments/{id}/no-show:
+    post:
+      operationId: markAppointmentNoShow
+      tags: [agenda]
+      summary: Record that the customer did not come
+      description: |
+        Only a `CONFIRMED` appointment can be a no-show. Kept apart from
+        cancellation on purpose: a customer who cancelled and a customer who
+        simply did not arrive are different facts about the same empty chair,
+        and a provider deciding whom to take next time needs to tell them
+        apart.
+      security:
+        - oauth2: [appointments:write]
+      parameters:
+        - $ref: '#/components/parameters/AppointmentId'
+      responses:
+        '200':
+          description: The appointment as it now stands.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: '`UNAUTHENTICATED` - no verified token, or it expired.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: '`FORBIDDEN` - the subject belongs to no active provider.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: |
+            `INVALID_STATE_TRANSITION` - only a confirmed appointment can be a no-show.
           content:
             application/problem+json:
               schema:
@@ -347,6 +538,13 @@ components:
             appointments:write: Create and move the caller's own appointments.
 
   parameters:
+    AppointmentId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     ProviderSlug:
       name: slug
       in: path
@@ -589,6 +787,19 @@ components:
           type: string
           nullable: true
           description: Opaque; null on the last page.
+
+    RescheduleAppointmentRequest:
+      type: object
+      description: |
+        The new start, and nothing else about time. No end and no duration: both
+        follow from the service the appointment already carries, and accepting
+        either would let a caller shrink its own footprint and move inside
+        someone else's appointment.
+      required: [starts_at]
+      properties:
+        starts_at:
+          type: string
+          format: date-time
 
     CancelAppointmentRequest:
       type: object

@@ -7,8 +7,10 @@ import com.balaaca.app.api.model.AppointmentStatus;
 import com.balaaca.app.api.model.AppointmentView;
 import com.balaaca.app.api.model.Money;
 import com.balaaca.app.api.model.CancelAppointmentRequest;
+import com.balaaca.app.api.model.RescheduleAppointmentRequest;
 import com.balaaca.booking.ports.inbound.CancelAppointmentUseCase;
 import com.balaaca.booking.ports.inbound.ListAppointmentsUseCase;
+import com.balaaca.booking.ports.inbound.MoveAppointmentUseCase;
 import com.balaaca.booking.ports.inbound.ListAppointmentsUseCase.AgendaEntry;
 import com.balaaca.booking.ports.inbound.ListAppointmentsUseCase.AgendaQuery;
 import com.balaaca.platformkernel.tenancy.TenantBound;
@@ -46,14 +48,42 @@ public class AppointmentsResource implements AgendaApi {
 
     private final ListAppointmentsUseCase appointments;
     private final CancelAppointmentUseCase cancellation;
+    private final MoveAppointmentUseCase moves;
     private final Clock clock;
 
     public AppointmentsResource(ListAppointmentsUseCase appointments,
                                 CancelAppointmentUseCase cancellation,
+                                MoveAppointmentUseCase moves,
                                 Clock clock) {
         this.appointments = appointments;
         this.cancellation = cancellation;
+        this.moves = moves;
         this.clock = clock;
+    }
+
+    @Override
+    @RolesAllowed("appointments:write")
+    public Response rescheduleAppointment(UUID id, RescheduleAppointmentRequest request) {
+        return Response.ok(toView(moves.reschedule(
+                AppointmentId.of(id), request.getStartsAt().toInstant()))).build();
+    }
+
+    @Override
+    @RolesAllowed("appointments:write")
+    public Response confirmAppointment(UUID id) {
+        return Response.ok(toView(moves.confirm(AppointmentId.of(id)))).build();
+    }
+
+    @Override
+    @RolesAllowed("appointments:write")
+    public Response completeAppointment(UUID id) {
+        return Response.ok(toView(moves.complete(AppointmentId.of(id)))).build();
+    }
+
+    @Override
+    @RolesAllowed("appointments:write")
+    public Response markAppointmentNoShow(UUID id) {
+        return Response.ok(toView(moves.markNoShow(AppointmentId.of(id)))).build();
     }
 
     @Override
