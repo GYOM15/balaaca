@@ -57,8 +57,6 @@ sauvegarde. Voir `DEPLOYMENT.md`.
 
 ## Trous fonctionnels connus
 
-- **Inviter un membre a avoir un compte.** `provider_staff.user_id` reste `NULL`
-  sauf pour le proprietaire, donc un employe ne peut pas se connecter.
 - **Transfert de propriete.** Il y a un `OWNER` et rien ne le deplace.
 - **La clientele.** `customers` se remplit a chaque reservation et aucun
   endpoint ne la lit : un salon ne voit ni sa clientele ni l'historique d'une

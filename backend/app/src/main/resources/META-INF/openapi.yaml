@@ -49,6 +49,8 @@ tags:
     description: What a customer sees before booking.
   - name: team
     description: The people who work at a provider.
+  - name: invitations
+    description: Joining a team you were invited to.
   - name: schedule
     description: When a provider is open, and when they are not.
   - name: catalogue
@@ -411,6 +413,95 @@ paths:
         '409':
           description: '`INVALID_STATE_TRANSITION` - the last bookable person at
             a published business cannot be stood down.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /v1/staff/{id}/invitation:
+    post:
+      operationId: inviteStaffMember
+      tags: [team]
+      summary: Mint a code that lets one of your people sign in
+      description: |
+        A member is a bookable chair, and most of them never sign in. This is for
+        the ones who should: the owner mints a code for a chair that already
+        exists and hands it to the person who sits in it.
+
+        Nothing is sent. The owner already has a way to reach their own
+        employee, and a channel this platform does not yet have would only stand
+        between them.
+
+        Issuing a second code replaces the first, which is also how one is
+        revoked. A code expires after seven days, is spent the moment it is
+        redeemed, and can never be redeemed into an owner's row.
+      security:
+        - oauth2: [staff:write]
+      parameters:
+        - $ref: '#/components/parameters/StaffId'
+      responses:
+        '201':
+          description: The code, returned once.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffInvitationView'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`INVALID_STATE_TRANSITION` - that member already has an
+            account, or is the owner.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /v1/invitations/{code}/acceptance:
+    post:
+      operationId: acceptStaffInvitation
+      tags: [invitations]
+      summary: Join the team that invited you
+      description: |
+        The second route on this platform that is authenticated and carries no
+        tenant, and for the same reason as the first: the caller has no
+        membership yet, and this is what gives them one.
+
+        Sign up first - the account is ordinary - then redeem the code. It
+        declares no scope, because a scope says what a caller may do inside
+        their own provider and they do not have one.
+
+        An unknown code, an expired one, one already redeemed and one belonging
+        to a suspended business are the same `404`. Telling them apart would say
+        whether a code ever existed to anyone who guesses.
+      security:
+        - oauth2: []
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 20
+            maxLength: 64
+            pattern: '^[A-Za-z0-9_-]+$'
+      responses:
+        '200':
+          description: The team you have joined.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JoinedProviderView'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`ALREADY_REGISTERED` - this account already belongs
+            somewhere.'
           content:
             application/problem+json:
               schema:
@@ -2375,3 +2466,36 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PublicStaffMember'
+
+    StaffInvitationView:
+      type: object
+      description: |
+        Returned once and stored nowhere the owner can read it again. Issuing a
+        second code replaces this one, which is also how it is revoked.
+      required: [code, expires_at]
+      properties:
+        code:
+          type: string
+          description: Hand it to the person it is for. It grants exactly one
+            thing - a seat at this provider - and nothing else.
+        expires_at:
+          type: string
+          format: date-time
+
+    JoinedProviderView:
+      type: object
+      required: [provider_slug, business_name, display_name, role]
+      properties:
+        provider_slug:
+          type: string
+        business_name:
+          type: string
+        display_name:
+          type: string
+          description: The name the owner gave this chair, not one the caller
+            chose. They were invited to a seat that already existed.
+        role:
+          type: string
+          enum: [STAFF]
+          description: Always STAFF. An owner's row is not claimable by an
+            invitation, in the function and in the policy behind it.

@@ -7,6 +7,8 @@ import com.balaaca.providers.ports.outbound.StaffRepository;
 import com.balaaca.sharedkernel.ids.StaffId;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.persistence.EntityManager;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -113,4 +115,34 @@ public class StaffSqlRepository implements StaffRepository {
         return new StaffMember(StaffId.of((UUID) r[0]), (String) r[1], (String) r[2],
                                (Boolean) r[3], "ACTIVE".equals(r[4]));
     }
+    @Override
+    @SuppressWarnings("unchecked")
+    public boolean exists(StaffId id) {
+        return !em.createNativeQuery("SELECT 1 FROM provider_staff WHERE id = :id")
+                .setParameter("id", id.value())
+                .getResultList().isEmpty();
+    }
+
+    @Override
+    public boolean issueInvitation(StaffId id, String code, Instant expiresAt) {
+        // Every condition is in the statement. A read-then-write would leave a
+        // window in which a member is given an account between the check and the
+        // code being written, and the owner would hand out a second way into a
+        // seat that is already taken.
+        return em.createNativeQuery("""
+                UPDATE provider_staff
+                   SET invitation_token = :code,
+                       invitation_expires_at = :expiresAt,
+                       updated_at = now()
+                 WHERE id = :id
+                   AND user_id IS NULL
+                   AND role = 'STAFF'
+                   AND status = 'ACTIVE'
+                """)
+                .setParameter("id", id.value())
+                .setParameter("code", code)
+                .setParameter("expiresAt", Timestamp.from(expiresAt))
+                .executeUpdate() == 1;
+    }
+
 }

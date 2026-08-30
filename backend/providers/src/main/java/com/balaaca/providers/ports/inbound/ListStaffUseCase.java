@@ -29,6 +29,24 @@ public interface ListStaffUseCase {
      */
     StaffMember replace(StaffId id, StaffDefinition definition);
 
+    /**
+     * Mints a code that lets this member sign in.
+     *
+     * <p>A member is a bookable chair and most never sign in. This is for the
+     * ones who should - and it is the write that was missing: nothing but
+     * registration ever put an account on a staff row, so the STAFF role drawn
+     * by V015 was unreachable outside a test fixture.
+     *
+     * @throws com.balaaca.providers.domain.StaffNotFoundException no such member
+     * @throws com.balaaca.providers.domain.NotInvitableException already has an
+     *         account, or is the owner
+     */
+    StaffInvitation invite(StaffId id);
+
+    /** Returned once. Issuing another replaces it, which is also how to revoke. */
+    record StaffInvitation(String code, java.time.Instant expiresAt) {
+    }
+
     /** No role: ownership moves through a conversation, not an edit form. */
     record StaffDefinition(String displayName, boolean bookable, boolean active) {
     }
