@@ -55,6 +55,28 @@ La CI construit, teste et verifie le contrat. **Rien ne pousse sur le VPS**, il
 n'y a pas de `pg_dump` planifie, et le repertoire des images n'est dans aucune
 sauvegarde. Voir `DEPLOYMENT.md`.
 
+## Translate the repository to English
+
+**The last step, deliberately.** `code-language` has required English for
+everything a developer reads since the pack was written - down to the ADRs and
+the commit messages - and it was broken anyway: this README, this file, the
+deployment runbook and the nine ADRs are French. Pull request descriptions were
+too.
+
+`RepositoryLanguageTest` now freezes that debt. Nothing new can be written in
+French, and `language-waivers.txt` lists exactly what is owed. **The pass is
+finished when that file holds nothing but comments** - which is a completion
+criterion a build can check, rather than a feeling.
+
+Order, when the time comes: `README.md` first (the first thing anyone reads),
+then `DEPLOYMENT.md` (an operator is the reader least likely to speak French),
+then this file, then the ADRs as one set - a half-French decision log is worse
+than a French one.
+
+What a **customer** reads is untouched by this. User-facing copy stays French
+first for the launch market, from an i18n catalogue. The rule is that the
+repository is English, not that the product is.
+
 ## Trous fonctionnels connus
 
 - **Transfert de propriete.** Il y a un `OWNER` et rien ne le deplace.
