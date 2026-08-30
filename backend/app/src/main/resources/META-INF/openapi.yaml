@@ -36,6 +36,8 @@ servers:
     description: The deployable serving this document.
 
 tags:
+  - name: catalogue
+    description: The services a provider offers.
   - name: agenda
     description: What a provider sees of their own bookings.
   - name: availability
@@ -159,6 +161,126 @@ paths:
             `INVALID_STATE_TRANSITION` - the appointment has already reached a
             state it cannot leave. Cancelling twice lands here, and so does
             cancelling something already completed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /v1/service-offerings:
+    get:
+      operationId: listServiceOfferings
+      tags: [catalogue]
+      summary: List the caller's own services
+      description: |
+        Every service the caller owns, retired ones included unless narrowed.
+        The provider's own view, so it carries the price whether or not the
+        public page shows it.
+      security:
+        - oauth2: [dashboard:read]
+      parameters:
+        - name: active
+          in: query
+          required: false
+          description: Omit for every service. A retired one is kept, never
+            deleted - appointments that were booked at its price still name it.
+          schema:
+            type: boolean
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: The caller's services, in their display order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceOfferingPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: createServiceOffering
+      tags: [catalogue]
+      summary: Add a service
+      description: |
+        The name is unique among the caller's active services, case-insensitively:
+        two live services called Tresses are two things a customer cannot choose
+        between.
+      security:
+        - oauth2: [catalog:write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceOfferingRequest'
+      responses:
+        '201':
+          description: The service as created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceOfferingView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: |
+            `INVALID_STATE_TRANSITION` - an active service already carries that
+            name.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /v1/service-offerings/{id}:
+    put:
+      operationId: replaceServiceOffering
+      tags: [catalogue]
+      summary: Change a service, or retire it
+      description: |
+        The whole representation, not a patch: a partial update over a price and
+        two buffers is a shape where forgetting a field silently changes it.
+
+        Changing a price or a duration never moves an appointment already
+        booked. Those were frozen onto the row at the time, which is what makes
+        a past booking still say what the customer was quoted.
+
+        Retiring is `active: false`. There is no delete.
+      security:
+        - oauth2: [catalog:write]
+      parameters:
+        - $ref: '#/components/parameters/ServiceOfferingId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceOfferingRequest'
+      responses:
+        '200':
+          description: The service as it now stands.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceOfferingView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: |
+            `INVALID_STATE_TRANSITION` - another active service already carries
+            that name.
           content:
             application/problem+json:
               schema:
@@ -535,10 +657,18 @@ components:
           tokenUrl: /realms/balaaca/protocol/openid-connect/token
           scopes:
             dashboard:read: Read the caller's own agenda and settings.
+            catalog:write: Create and change the caller's own services.
             appointments:write: Create and move the caller's own appointments.
 
   parameters:
     AppointmentId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ServiceOfferingId:
       name: id
       in: path
       required: true
@@ -572,6 +702,19 @@ components:
         maximum: 200
 
   responses:
+    Unauthenticated:
+      description: '`UNAUTHENTICATED` - no verified token, or it expired.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Forbidden:
+      description: '`FORBIDDEN` - the subject belongs to no active provider, or
+        the token does not carry the scope this operation needs.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
     BadRequest:
       description: '`VALIDATION_FAILED`, or `IDEMPOTENCY_KEY_REQUIRED` when a
         mutating operation arrived without the header.'
@@ -709,6 +852,96 @@ components:
         customer_note:
           type: string
           maxLength: 500
+
+    ServiceOfferingRequest:
+      type: object
+      description: |
+        No provider identifier: the tenant comes from the token. The duration is
+        what the appointment will occupy, and the buffers are the quiet either
+        side of it - a cleaning slot, a chair to be swept.
+      required: [name, duration_minutes, price]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        description:
+          type: string
+        duration_minutes:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 720
+          description: Never zero. A zero-length service occupies an empty range,
+            and an empty range collides with nothing.
+        buffer_before_minutes:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 240
+          default: 0
+        buffer_after_minutes:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 240
+          default: 0
+        price:
+          $ref: '#/components/schemas/Money'
+        price_visible:
+          type: boolean
+          default: true
+          description: Whether the public page shows the price.
+        sort_order:
+          type: integer
+          format: int32
+          default: 0
+        active:
+          type: boolean
+          default: true
+
+    ServiceOfferingView:
+      type: object
+      required: [service_offering_id, name, duration_minutes, buffer_before_minutes,
+                 buffer_after_minutes, price, price_visible, sort_order, active]
+      properties:
+        service_offering_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        duration_minutes:
+          type: integer
+          format: int32
+        buffer_before_minutes:
+          type: integer
+          format: int32
+        buffer_after_minutes:
+          type: integer
+          format: int32
+        price:
+          $ref: '#/components/schemas/Money'
+        price_visible:
+          type: boolean
+        sort_order:
+          type: integer
+          format: int32
+        active:
+          type: boolean
+
+    ServiceOfferingPage:
+      type: object
+      required: [data, next_cursor]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ServiceOfferingView'
+        next_cursor:
+          type: string
+          nullable: true
 
     AppointmentStatus:
       type: string

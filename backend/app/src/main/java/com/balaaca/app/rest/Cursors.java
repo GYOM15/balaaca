@@ -4,6 +4,7 @@ import com.balaaca.app.api.model.ErrorCode;
 import com.balaaca.booking.ports.inbound.ListAppointmentsUseCase.AgendaPosition;
 import com.balaaca.sharedkernel.error.DomainException;
 import com.balaaca.sharedkernel.ids.AppointmentId;
+import com.balaaca.sharedkernel.ids.ServiceOfferingId;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;
@@ -49,6 +50,22 @@ final class Cursors {
             return Optional.of(new AgendaPosition(Instant.parse(parts[0]),
                                                   AppointmentId.of(UUID.fromString(parts[1]))));
         } catch (IllegalArgumentException | java.time.format.DateTimeParseException e) {
+            throw new InvalidCursorException();
+        }
+    }
+
+    /** A bare identifier, for a sequence the provider orders itself. */
+    static String encodeRawId(UUID id) {
+        return encodeRaw(id.toString());
+    }
+
+    static Optional<ServiceOfferingId> serviceOfferingPosition(String cursor) {
+        if (cursor == null || cursor.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(ServiceOfferingId.of(UUID.fromString(decodeRaw(cursor))));
+        } catch (IllegalArgumentException e) {
             throw new InvalidCursorException();
         }
     }
