@@ -209,6 +209,21 @@ public class BookingFixtures {
             """.formatted(SALON, code));
     }
 
+    /** Every customer phone this provider has stored, as E.164. */
+    public List<String> customerPhones(UUID providerId) {
+        List<String> phones = new ArrayList<>();
+        String sql = "SELECT phone_e164 FROM customers WHERE provider_id = '%s' ORDER BY 1"
+                .formatted(providerId);
+        try (Connection c = admin(); Statement s = c.createStatement(); ResultSet rs = s.executeQuery(sql)) {
+            while (rs.next()) {
+                phones.add(rs.getString(1));
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+        return phones;
+    }
+
     /** Arbitrary SQL, for the one-off row a single test needs and no other. */
     public void execute(String sql) {
         run(sql);

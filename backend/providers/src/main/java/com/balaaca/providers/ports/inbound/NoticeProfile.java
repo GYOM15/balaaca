@@ -4,19 +4,27 @@ import java.time.ZoneId;
 import java.util.Optional;
 
 /**
- * What a notification has to say about the current tenant.
+ * What the platform needs in order to address the current tenant and its
+ * customers.
  *
  * <p>Not the provider aggregate, and not the profile a provider edits: this is
- * the projection {@code booking} needs to address a message - the name to put
- * in it, the zone its times are written in, and where it reaches the business.
- * Publishing the aggregate would let every context depend on this one's domain,
- * and every reshape would ripple outward.
+ * the projection {@code booking} needs - the name to put in a message, the zone
+ * its times are written in, the country its customers' phone numbers belong to,
+ * and where a notice reaches the business. Publishing the aggregate would let
+ * every context depend on this one's domain, and every reshape would ripple
+ * outward.
+ *
+ * <p>{@code countryCode} is here because it was a column nothing read while the
+ * booking edge passed a hardcoded "GN" - against a product rule that says
+ * nothing may hardcode a single market, and against PhoneNumber's own javadoc,
+ * which already said the region comes from the provider's country.
  *
  * @param noticeDestination where a staff-facing message goes, empty when the
  *                          provider has published no way to be reached
  */
 public record NoticeProfile(String businessName,
                             ZoneId timezone,
+                            String countryCode,
                             Optional<NoticeDestination> noticeDestination) {
 
     /**

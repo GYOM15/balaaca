@@ -396,6 +396,38 @@ at a suspended business are one `404`.
 
 ---
 
+## 4.8 A column arrives with its reader
+
+Almost every defect found in this project has had one shape, and none was a
+logic bug: **the schema declares something and no code names it.**
+
+`auto_confirm` DEFAULTed to true and had no reader, so every salon confirmed by
+hand. `cancellation_deadline_minutes` was enforced nowhere. `users.status` and
+`providers.status` were consulted nowhere, so suspension revoked nothing.
+`audit_logs` had no Java at all. `provider_staff.role` was written and read by
+nobody, so every employee held full control. `provider_categories` had eighteen
+rows and no route. `providers.country_code` existed while the booking edge
+passed a hardcoded `"GN"`. And three times a table nothing wrote to made a whole
+capability unreachable: no provider, no second staff member, no employee
+account.
+
+The cause is upstream. Twelve migrations were written from a specification
+before most of the code existed, so the schema described the whole product while
+the code implemented a slice, and **nothing measured the distance**.
+
+Two rules follow.
+
+1. **A column arrives in the same change as its reader.** A migration that adds
+   a column no code names is not a smaller change, it is a promise with no
+   delivery date.
+2. **`SchemaCoverageTest` measures the distance**, because rule 1 is advice and
+   advice is not enforcement. Every declared column is named by some code or
+   waived in `schema-coverage-waivers.txt` with a reason, and every table the
+   application role may INSERT into has an INSERT somewhere. It runs in a
+   quarter of a second and it found `country_code` on its first execution.
+
+---
+
 ## 5. Ports - exact signatures
 
 ```java

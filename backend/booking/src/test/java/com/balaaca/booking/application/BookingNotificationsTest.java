@@ -83,12 +83,13 @@ class BookingNotificationsTest {
     }
 
     private static NoticeProfile reachable() {
-        return new NoticeProfile("Salon Fatou", ZoneId.of("Africa/Conakry"),
+        return new NoticeProfile("Salon Fatou", ZoneId.of("Africa/Conakry"), "GN",
                 Optional.of(new NoticeDestination(Optional.of("+224622999001"), Optional.empty())));
     }
 
     private static NoticeProfile unreachable() {
-        return new NoticeProfile("Coiffeur Solo", ZoneId.of("Africa/Conakry"), Optional.empty());
+        return new NoticeProfile("Coiffeur Solo", ZoneId.of("Africa/Conakry"), "GN",
+                                 Optional.empty());
     }
 
     private List<PlannedNotification> planFor(NoticeProfile profile, Instant startsAt) {

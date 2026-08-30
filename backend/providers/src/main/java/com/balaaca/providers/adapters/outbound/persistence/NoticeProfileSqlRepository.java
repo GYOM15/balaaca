@@ -36,17 +36,18 @@ public class NoticeProfileSqlRepository implements LookupNoticeProfileUseCase {
         // WhatsApp first: it is the channel this market actually reads, and a
         // provider who filled it in chose it over the public line.
         Object[] r = (Object[]) em.createNativeQuery("""
-                SELECT business_name, timezone,
+                SELECT business_name, timezone, country_code,
                        coalesce(whatsapp_phone_e164, public_phone_e164), public_email
                   FROM providers WHERE id = app_current_provider()
                 """).getSingleResult();
 
-        Optional<String> phone = Optional.ofNullable((String) r[2]);
-        Optional<String> email = Optional.ofNullable((String) r[3]);
+        Optional<String> phone = Optional.ofNullable((String) r[3]);
+        Optional<String> email = Optional.ofNullable((String) r[4]);
 
         return new NoticeProfile(
                 (String) r[0],
                 ZoneId.of((String) r[1]),
+                (String) r[2],
                 phone.isEmpty() && email.isEmpty()
                         ? Optional.empty()
                         : Optional.of(new NoticeDestination(phone, email)));

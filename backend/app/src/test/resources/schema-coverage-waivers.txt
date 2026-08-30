@@ -1,0 +1,34 @@
+# Columns the schema declares that no code names, each with the reason it is
+# allowed to stay that way. The point of this file is not to be empty - it is
+# that nobody adds a line to it without writing why.
+#
+# Format: table.column: reason
+#
+# Before adding one, ask which of these it is:
+#   - the database fills it and nothing needs to read it (a default, a clock);
+#   - a capability that is deliberately not built yet, and named as such;
+#   - a column that should not have been created before its reader existed,
+#     in which case the answer is to write the reader, not the waiver.
+
+# --- Filled by the database, read by nobody, and that is correct -------------
+users.created_at:        DEFAULT now(). Nothing has needed to read it, and a reader that only existed to satisfy this gate would be worse than the waiver.
+audit_logs.occurred_at:  DEFAULT now(). The trail is written by the application and read by an operator in SQL.
+
+# --- Encapsulated by a SECURITY DEFINER function ----------------------------
+users.keycloak_user_id:  Named only inside app_resolve_membership and app_register_provider. Java passes a subject and never the column - which is the point of the function.
+
+# --- Deliberately not built, and named in the backlog -----------------------
+providers.is_featured:      Sponsored placement. The DDL says "not built" and docs/BACKLOG.md says the same.
+providers.featured_until:   Sponsored placement, as above.
+subscriptions.started_at:   Billing. The module has one file and the plan tiers are an open product decision.
+subscriptions.expires_at:   Billing, as above.
+
+# --- Capabilities nobody has asked for yet ----------------------------------
+appointments.customer_note:    A customer cannot leave a note with a booking. Real gap, small, unclaimed.
+appointments.provider_note:    A provider cannot annotate an appointment.
+appointments.booked_by_user_id: Which staff member took a booking on a customer's behalf. There is no such path yet - every booking comes from the public page.
+customers.notes:               A provider's own notes on a client. Waits for the clientele screens.
+
+# --- Tables the application role may write, and what writes them ------------
+# Waived as <table>.* when the write is legitimate but not an INSERT in Java.
+subscriptions.*: Billing. Nothing creates a subscription because no plan exists to subscribe to; the tiers and prices are an open product decision, recorded in docs/BACKLOG.md.
