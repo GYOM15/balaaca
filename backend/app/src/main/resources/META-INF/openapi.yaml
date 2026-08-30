@@ -36,6 +36,12 @@ servers:
     description: The deployable serving this document.
 
 tags:
+  - name: onboarding
+    description: Bringing a business onto the platform.
+  - name: profile
+    description: What a provider publishes about itself.
+  - name: discovery
+    description: What a customer sees before booking.
   - name: schedule
     description: When a provider is open, and when they are not.
   - name: catalogue
@@ -826,6 +832,200 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
 
+  /v1/providers:
+    post:
+      operationId: registerProvider
+      tags: [onboarding]
+      summary: Register the caller's business
+      description: |
+        The one authenticated operation that runs with no tenant. Everything
+        else on this API resolves a provider from the verified subject through
+        `users` and `provider_staff`; this is what puts those rows there. Until
+        a subject has them, every other authenticated operation answers 403,
+        which is exactly what a salon that has just signed up would otherwise
+        hit forever.
+
+        It declares no scope, and that is deliberate rather than an omission: a
+        scope says what the caller may do *inside their own provider*, and the
+        caller does not have one yet. Authentication is the whole requirement.
+
+        The business is created dormant - `PENDING` and unpublished - so
+        registering does not put an empty page on the public booking path. Fill
+        in the services and the opening hours, then publish through
+        `updateProviderProfile`.
+
+        The account's display name and email come from the verified token, not
+        from this body. A caller does not get to choose who they are.
+
+        One account, one business. A second call from the same subject is
+        `409 ALREADY_REGISTERED`, and a slug another business already holds is
+        `409 SLUG_UNAVAILABLE` - two situations a client must be able to tell
+        apart, because one is fixed by picking a different handle and the other
+        is not fixed by anything.
+      security:
+        - oauth2: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterProviderRequest'
+      responses:
+        '201':
+          description: The business exists, dormant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderRegisteredView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '409':
+          description: '`SLUG_UNAVAILABLE` - the handle is taken, or
+            `ALREADY_REGISTERED` - this account already has a business.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /v1/provider-profile:
+    get:
+      operationId: getProviderProfile
+      tags: [profile]
+      summary: Read the caller's own public page, as it stands
+      description: |
+        Singular because the caller has exactly one. There is no provider
+        identifier in this request, and no collection of profiles to select
+        from: the tenant is ambient.
+      security:
+        - oauth2: [dashboard:read]
+      responses:
+        '200':
+          description: The profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderProfileView'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      operationId: updateProviderProfile
+      tags: [profile]
+      summary: Change the caller's own public page, and publish it
+      description: |
+        The whole profile, not a field at a time, for the same reason opening
+        hours are replaced a week at a time: a partial edit leaves the question
+        of what happened to the fields nobody mentioned.
+
+        The slug is not in the request body and cannot be changed here. It is
+        the string on the QR code, in the WhatsApp message and on the shopfront;
+        changing it silently breaks every link already handed to a customer. A
+        provider who genuinely needs a new handle is a support conversation, not
+        a `PUT`.
+
+        `published` is what puts the business on the public booking path, and it
+        is refused with `409 INVALID_STATE_TRANSITION` until there is something
+        to book: at least one active service and at least one stretch of opening
+        hours. A published page with an empty calendar is worse than no page -
+        a customer finds it, finds nothing, and does not come back.
+      security:
+        - oauth2: [profile:write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProviderProfileRequest'
+      responses:
+        '200':
+          description: The profile as it now stands.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderProfileView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`INVALID_STATE_TRANSITION` - nothing is bookable yet, so
+            the page cannot be published.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /v1/providers/{slug}:
+    get:
+      operationId: getPublicProvider
+      tags: [discovery]
+      summary: A provider's public page
+      description: |
+        What a customer sees before they book: who the business is, where it is,
+        and what it offers. Only published providers are reachable, and an
+        unpublished one is the same `404` as a slug that was never taken - any
+        way to tell those apart says whether a hidden business exists.
+
+        A service whose price the provider chose not to show carries no `price`
+        at all, rather than a zero or a null: the projection is shaped so the
+        price cannot be leaked by a forgotten condition. Inactive services are
+        absent, and the buffers padding each appointment are internal and are
+        not published.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProviderSlug'
+      responses:
+        '200':
+          description: The public page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicProviderView'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/providers/{slug}/opening-hours:
+    get:
+      operationId: listPublicOpeningHours
+      tags: [discovery]
+      summary: When a provider is open
+      description: |
+        The counterpart to `listAvailableSlots`, and the reason that operation
+        can return bookable slots alone. A shop's hours are already public - on
+        its door - so publishing them costs nothing, while a uniform grid
+        flagging which slots are taken would be a minute-by-minute occupancy map
+        of a named person at a named address, served to anyone who can spell the
+        slug. Lay the bookable slots over these hours for the grid; the slots
+        remain the only statement about what can actually be booked.
+
+        The hours of everyone bookable, merged: a salon is open when any of its
+        people is working, and a customer laying out a grid does not care which.
+        Overlapping stretches are merged into one, so a day never draws twice.
+
+        Holidays and one-off closures are not represented here. They move which
+        slots exist, and slots are where a customer should read them.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProviderSlug'
+      responses:
+        '200':
+          description: The weekly hours.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicOpeningHours'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
 components:
 
   securitySchemes:
@@ -845,6 +1045,7 @@ components:
             catalog:write: Create and change the caller's own services.
             schedule:write: Set the caller's own opening hours and closures.
             appointments:write: Create and move the caller's own appointments.
+            profile:write: Change the caller's own public page, and publish it.
 
   parameters:
     AppointmentId:
@@ -983,6 +1184,8 @@ components:
         - IDEMPOTENCY_KEY_REUSED
         - RATE_LIMITED
         - INTERNAL_ERROR
+        - SLUG_UNAVAILABLE
+        - ALREADY_REGISTERED
 
     AvailableSlot:
       type: object
@@ -1394,3 +1597,229 @@ components:
         appointment_id:
           type: string
           format: uuid
+
+    RegisterProviderRequest:
+      type: object
+      description: |
+        No provider identifier, and no account fields: who the caller is comes
+        from the verified token. What is here is what only the business knows.
+      required: [slug, business_name]
+      properties:
+        slug:
+          type: string
+          description: |
+            The public handle - the string on the QR code and in the WhatsApp
+            message. Chosen once and permanent; `updateProviderProfile` cannot
+            change it.
+          pattern: '^[a-z0-9]([a-z0-9-]{1,58}[a-z0-9])$'
+          minLength: 3
+          maxLength: 60
+          example: salon-awa
+        business_name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        category_slug:
+          type: string
+          description: One of the published categories. Omit if none fits.
+          maxLength: 60
+          example: coiffure
+        city:
+          type: string
+          maxLength: 80
+        timezone:
+          type: string
+          description: |
+            The IANA zone the opening hours will be written in. Defaults to
+            `Africa/Conakry`. Defaulted, never assumed - the product is not
+            Guinea-only.
+          maxLength: 64
+          example: Africa/Conakry
+
+    ProviderRegisteredView:
+      type: object
+      required: [provider_id, slug, published]
+      properties:
+        provider_id:
+          type: string
+          format: uuid
+          description: |
+            The caller's own tenant. Returned once, here, because a client that
+            has just created something is entitled to know what it created; it
+            is never accepted back as a request field.
+        slug:
+          type: string
+        published:
+          type: boolean
+          description: Always false. A business is created dormant.
+
+    ProviderProfileView:
+      type: object
+      required: [slug, business_name, timezone, published, status]
+      properties:
+        slug:
+          type: string
+        business_name:
+          type: string
+        description:
+          type: string
+        category_slug:
+          type: string
+        city:
+          type: string
+        address_line:
+          type: string
+        public_phone_e164:
+          type: string
+        public_email:
+          type: string
+        whatsapp_phone_e164:
+          type: string
+        timezone:
+          type: string
+        published:
+          type: boolean
+        status:
+          $ref: '#/components/schemas/ProviderStatus'
+
+    ProviderStatus:
+      type: string
+      description: |
+        Where the business stands with the platform, which is not the same
+        question as whether its page is live. A `SUSPENDED` provider keeps
+        `published: true` and still disappears from the public path.
+      enum: [PENDING, ACTIVE, SUSPENDED, CLOSED]
+
+    ProviderProfileRequest:
+      type: object
+      description: The whole profile. No slug - see `updateProviderProfile`.
+      required: [business_name, timezone, published]
+      properties:
+        business_name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 2000
+        category_slug:
+          type: string
+          maxLength: 60
+        city:
+          type: string
+          maxLength: 80
+        address_line:
+          type: string
+          maxLength: 200
+        public_phone_e164:
+          type: string
+          pattern: '^\+[1-9][0-9]{7,14}$'
+          example: "+224622000001"
+        public_email:
+          type: string
+          maxLength: 200
+        whatsapp_phone_e164:
+          type: string
+          pattern: '^\+[1-9][0-9]{7,14}$'
+        timezone:
+          type: string
+          maxLength: 64
+        published:
+          type: boolean
+
+    PublicServiceOffering:
+      type: object
+      description: |
+        A service as a customer sees it. The buffers padding each appointment
+        are internal and absent, and `price` is absent - not null, not zero -
+        when the provider chose not to publish it.
+      required: [service_offering_id, name, duration_minutes]
+      properties:
+        service_offering_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        duration_minutes:
+          type: integer
+          format: int32
+        price:
+          $ref: '#/components/schemas/Money'
+
+    PublicProviderView:
+      type: object
+      description: |
+        A separate projection, not the dashboard view with fields filtered at
+        runtime: a shape cannot be leaked by a forgotten condition.
+      required: [slug, business_name, timezone, services]
+      properties:
+        slug:
+          type: string
+        business_name:
+          type: string
+        description:
+          type: string
+        category_slug:
+          type: string
+        city:
+          type: string
+        address_line:
+          type: string
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+        logo_url:
+          type: string
+        cover_url:
+          type: string
+        public_phone_e164:
+          type: string
+        whatsapp_phone_e164:
+          type: string
+        timezone:
+          type: string
+          description: The zone the opening hours are written in.
+        services:
+          type: array
+          description: Active services, in the provider's own order.
+          items:
+            $ref: '#/components/schemas/PublicServiceOffering'
+
+    PublicOpeningHoursSegment:
+      type: object
+      description: One stretch of a day, in the provider's own local time.
+      required: [day_of_week, start_time, end_time]
+      properties:
+        day_of_week:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 7
+          description: ISO numbering, 1 is Monday.
+        start_time:
+          type: string
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+          example: "08:00"
+        end_time:
+          type: string
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+          example: "20:00"
+
+    PublicOpeningHours:
+      type: object
+      required: [timezone, data]
+      properties:
+        timezone:
+          type: string
+          description: The IANA zone the times are written in. A local time
+            without one is not a moment.
+          example: Africa/Conakry
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicOpeningHoursSegment'

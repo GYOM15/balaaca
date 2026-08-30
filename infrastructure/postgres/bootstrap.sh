@@ -33,6 +33,12 @@ CREATE ROLE :"app_user" LOGIN PASSWORD :'app_password'
 -- never connected as, only impersonated by its own functions.
 CREATE ROLE balaaca_resolver NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
 
+-- Owns the one SECURITY DEFINER function that creates a tenant. Separate from
+-- balaaca_resolver, which stays read-only: "who can bring a provider into
+-- existence" then has exactly one answer, and it is this role. NOLOGIN, so its
+-- INSERT grants are reachable through that function and nowhere else.
+CREATE ROLE balaaca_registrar NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+
 -- The notification worker, restricted to the notifications table by its
 -- policies and grants.
 CREATE ROLE :"worker_user" LOGIN PASSWORD :'worker_password'
@@ -41,13 +47,14 @@ CREATE ROLE :"worker_user" LOGIN PASSWORD :'worker_password'
 -- The schema belongs to the migrator; the application only uses it.
 ALTER SCHEMA public OWNER TO :"migrator_user";
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
-GRANT  USAGE  ON SCHEMA public TO :"app_user", :"worker_user", balaaca_resolver;
+GRANT  USAGE  ON SCHEMA public TO :"app_user", :"worker_user",
+                                  balaaca_resolver, balaaca_registrar;
 
 -- The migrations transfer ownership of the SECURITY DEFINER resolution
 -- functions to balaaca_resolver, and ALTER FUNCTION ... OWNER TO requires
 -- membership of the target role. The migrator is the schema owner already and
 -- is never used at runtime, so this grants it nothing it did not have.
-GRANT balaaca_resolver TO :"migrator_user";
+GRANT balaaca_resolver, balaaca_registrar TO :"migrator_user";
 
 -- CREATE on the database so the migrations can install their own extensions.
 -- btree_gist, citext and pg_trgm are trusted extensions since PostgreSQL 13, so

@@ -53,7 +53,7 @@ than its first referencing migration breaks a fresh database.
 
 | Version | Creates | Also declares |
 |---|---|---|
-| `V001__create_roles_and_extensions.sql` | roles `balaaca_migrator`, `balaaca_app`, `balaaca_resolver`, `balaaca_notification_worker`; extensions `btree_gist`, `citext`, `pg_trgm` | `app_current_provider()` |
+| `V001__create_roles_and_extensions.sql` | roles `balaaca_migrator`, `balaaca_app`, `balaaca_resolver`, `balaaca_registrar`, `balaaca_notification_worker`; extensions `btree_gist`, `citext`, `pg_trgm` | `app_current_provider()` |
 | `V002__create_users.sql` | `users` | |
 | `V003__create_provider_categories.sql` | `provider_categories` | |
 | `V004__create_providers.sql` | `providers` | |
@@ -66,6 +66,7 @@ than its first referencing migration breaks a fresh database.
 | `V011__create_subscriptions.sql` | `subscriptions` | |
 | `V012__create_audit_logs.sql` | `audit_logs` | |
 | `V013__enable_row_level_security.sql` | policies, grants, resolution functions | |
+| `V014__enable_provider_registration.sql` | registration policies and grants, `app_register_provider()` | the signup seam - see 4.4 |
 
 Tables are plural snake_case. `staff_id` references `provider_staff`; the
 shortened stem is the one deliberate exception to "foreign key = singular stem
@@ -240,6 +241,50 @@ provider_id = nullif(current_setting('app.provider_id', true), '')::uuid
 `''::uuid` raises `22P02` - a 500 where a 404 belongs. Only this form degrades
 to `NULL` and filters every row.
 
+### 4.4 Signing up - creating a tenant before one exists
+
+`providers_tenant` carries `WITH CHECK (id = app_current_provider())`, which
+with nothing bound is `NULL` and admits nothing. So a salon that registers in
+Keycloak holds a valid token, reaches every route, and is refused by all of
+them: no role can perform the INSERT that would make it resolvable.
+
+The same circularity 4.1 broke for reading, broken the same way - a
+`SECURITY DEFINER` function, owned by its **own** role so that "what can bring
+a provider into existence" has exactly one answer.
+
+```sql
+CREATE FUNCTION app_register_provider(...) RETURNS void
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = public AS $$ ... $$;
+ALTER FUNCTION app_register_provider(...) OWNER TO balaaca_registrar;
+
+CREATE POLICY providers_registration ON providers
+    FOR INSERT TO balaaca_registrar
+    WITH CHECK (NOT published AND status = 'PENDING');
+CREATE POLICY provider_staff_registration ON provider_staff
+    FOR INSERT TO balaaca_registrar WITH CHECK (role = 'OWNER');
+```
+
+Three things are load-bearing and none is stylistic.
+
+- **The provider row is inserted BEFORE the staff row.** A caller who passes an
+  existing provider's id then fails on `providers_pkey` before any membership
+  is written. Reversed, the function is a salon takeover: write an `OWNER` row
+  into someone else's provider and the resolver hands you their tenant on the
+  next request. **Verified** on PostgreSQL 18.6.
+- **The registrar can only ever create a dormant provider.** The policy, not
+  the function body, is what guarantees registration never puts a page on the
+  public booking path.
+- **Uniqueness is translated to SQLSTATEs inside the function.** Every unique
+  violation is `23505`, so telling three constraints apart in Java would mean
+  depending on the driver's exception type in a module that has no other reason
+  to. `providers_slug_key` -> `Z0001`, `uq_provider_staff_one_active_membership`
+  and `users_keycloak_user_id_key` -> `Z0002`; anything else is re-raised, so a
+  primary-key collision stays the fault it is.
+
+`POST /v1/providers` is therefore `@Authenticated` and **not** `@TenantBound`,
+the only route on the platform that is. It declares no scope: a scope says what
+a caller may do inside their own provider, and the caller has none yet.
+
 ---
 
 ## 5. Ports - exact signatures
@@ -344,9 +389,16 @@ payment path to require.
 `APPOINTMENT_CONFLICT` · `INVALID_STATE_TRANSITION` ·
 `CANCELLATION_DEADLINE_PASSED` · `IDEMPOTENCY_KEY_REQUIRED` ·
 `IDEMPOTENCY_KEY_REUSED` · `PLAN_LIMIT_REACHED` · `CURRENCY_MISMATCH` ·
-`INTERNAL_ERROR`
+`INTERNAL_ERROR` · `SLUG_UNAVAILABLE` · `ALREADY_REGISTERED`
 
 No other code exists. Adding one is an OpenAPI change. Renaming one is forbidden.
+
+The last two were added with the signup path (4.4), and only because neither was
+expressible. A taken public handle and an account that already runs a business
+are both `409`, and a client that cannot tell them apart cannot say which: one
+is fixed by choosing another handle, the other is not fixed by anything the
+caller can type. Collapsing them into `VALIDATION_FAILED` would have been the
+cheaper change and the wrong one.
 
 ---
 

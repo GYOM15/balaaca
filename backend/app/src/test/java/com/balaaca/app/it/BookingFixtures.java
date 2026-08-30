@@ -31,6 +31,10 @@ public class BookingFixtures {
     public static final String SALON_SUBJECT = "kc-salon-fatou";
     public static final String SOLO_SUBJECT = "kc-coiffeur-solo";
     public static final String STRANGER_SUBJECT = "kc-nobody";
+    /** Nobody at all: no users row either, which is what a real signup looks like. */
+    public static final String NEWCOMER_SUBJECT = "kc-nouveau";
+
+    public static final String CATEGORY = "coiffure";
 
     public static final UUID SALON_OFFERING = UUID.fromString("5e111111-0000-0000-0000-000000000001");
     public static final UUID HIDDEN_OFFERING = UUID.fromString("5e222222-0000-0000-0000-000000000001");
@@ -46,8 +50,16 @@ public class BookingFixtures {
         run("""
             TRUNCATE notifications, appointments, customers, availability_overrides,
                      availability_rules, service_offerings, provider_staff, providers,
-                     users CASCADE
+                     provider_categories, users CASCADE
             """);
+        run("""
+            INSERT INTO provider_categories (id, slug, label_fr) VALUES
+              ('ca7e6047-0000-0000-0000-000000000001','%s','Coiffure'),
+              ('ca7e6047-0000-0000-0000-000000000002','retire','Retire')
+            """.formatted(CATEGORY));
+        // Offered once and withdrawn: naming it must be refused like any other
+        // unknown category, not quietly stored as none.
+        run("UPDATE provider_categories SET active = false WHERE slug = 'retire'");
         // A user with no staff row exists on purpose: a valid token whose
         // subject belongs to nobody here must be told 403, not handed an empty
         // agenda that looks like a working account.
@@ -123,6 +135,11 @@ public class BookingFixtures {
                 SELECT count(*) FROM appointments
                  WHERE provider_id = '%s' AND status IN ('PENDING','CONFIRMED')
                 """.formatted(providerId));
+    }
+
+    /** Arbitrary SQL, for the one-off row a single test needs and no other. */
+    public void execute(String sql) {
+        run(sql);
     }
 
     /** Closes a single date for the salon, to exercise an override. */

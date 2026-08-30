@@ -12,6 +12,15 @@
   <dependencies>
     <dependency><groupId>com.balaaca</groupId><artifactId>shared-kernel</artifactId></dependency>
     <dependency><groupId>com.balaaca</groupId><artifactId>platform-kernel</artifactId></dependency>
+    <!-- Publishing a page is refused until something on it can be booked, and
+         the two modules that own that answer are asked through their inbound
+         ports. In-process calls, no cycle: neither depends on this one. -->
+    <dependency>
+      <groupId>com.balaaca</groupId><artifactId>catalog</artifactId><version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.balaaca</groupId><artifactId>scheduling</artifactId><version>${project.version}</version>
+    </dependency>
     <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-arc</artifactId></dependency>
     <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-hibernate-orm</artifactId></dependency>
     <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-hibernate-validator</artifactId></dependency>

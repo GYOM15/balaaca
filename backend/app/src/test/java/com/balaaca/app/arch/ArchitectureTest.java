@@ -59,10 +59,14 @@ class ArchitectureTest {
      * adding it here was a decision someone made rather than a boundary that
      * moved on its own.
      */
+    // Every entry here was added on purpose, one at a time, because a port
+    // record started carrying it. The list is meant to grow slowly and to be
+    // argued about; a wildcard would end the argument by conceding it.
     private static final String PUBLISHED_DOMAIN_TYPES =
             "com\\.balaaca\\.(booking\\.domain\\.(BookingSource|CustomerContact"
             + "|AppointmentStatus)"
-            + "|scheduling\\.domain\\.AvailableSlot)";
+            + "|scheduling\\.domain\\.(AvailableSlot|OpenWindow)"
+            + "|providers\\.domain\\.ProviderStatus)";
 
     // --- The domain is an island ------------------------------------------
 
@@ -163,7 +167,7 @@ class ArchitectureTest {
                     .should().dependOnClassesThat(
                             resideInAPackage("com.balaaca.*.domain..")
                                     .and(not(nameMatching(PUBLISHED_DOMAIN_TYPES))))
-                    .because("an inbound command carries these two, so the edge that "
+                    .because("an inbound command or view carries these, so the edge that "
                              + "builds one has to name them; anything else in a "
                              + "domain is that context's own business");
 

@@ -32,7 +32,7 @@ token=$(curl -sS -X POST "$KC/realms/$REALM/protocol/openid-connect/token" \
     -d "username=$USERNAME" \
     -d "password=$PASSWORD" \
     -d "grant_type=password" \
-    -d "scope=openid dashboard:read appointments:write" \
+    -d "scope=openid dashboard:read appointments:write catalog:write schedule:write profile:write" \
     | python3 -c 'import json,sys; print(json.load(sys.stdin).get("access_token",""))')
 
 if [ -z "$token" ]; then
@@ -57,7 +57,8 @@ if not claims.get("sub"):
     problems.append("no sub claim: the built-in basic scope is missing from the realm")
 if "'"$AUDIENCE"'" not in audience:
     problems.append("audience is %s, expected to contain '"$AUDIENCE"'" % audience)
-for required in ("dashboard:read", "appointments:write"):
+for required in ("dashboard:read", "appointments:write",
+                 "catalog:write", "schedule:write", "profile:write"):
     if required not in scopes:
         problems.append("scope %s was requested and not granted" % required)
 

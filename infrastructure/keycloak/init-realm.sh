@@ -140,6 +140,9 @@ echo "[init-realm] client scopes..."
 create_scope "balaaca-audience" "Puts balaaca-backend in the token's audience."
 create_scope "dashboard:read" "Read the caller's own agenda and settings."
 create_scope "appointments:write" "Create and move the caller's own appointments."
+create_scope "catalog:write" "Create and change the caller's own services."
+create_scope "schedule:write" "Set the caller's own opening hours and closures."
+create_scope "profile:write" "Change the caller's own public page, and publish it."
 
 # The audience mapper cannot be declared with the scope above: kcadm creates a
 # scope and its mappers in two calls.
@@ -160,7 +163,8 @@ fi
 # both token-issuing clients carry the audience. The scopes are default rather
 # than optional: this product has no consent screen to grant them on.
 for client in balaaca-frontend balaaca-dev-cli; do
-    for scope in balaaca-audience dashboard:read appointments:write; do
+    for scope in balaaca-audience dashboard:read appointments:write \
+                 catalog:write schedule:write profile:write; do
         assign_scope "$client" "$scope"
     done
 done
