@@ -18,21 +18,29 @@ KC="${KEYCLOAK_URL:-http://localhost:8180}"
 REALM="${KEYCLOAK_REALM:-balaaca}"
 CLIENT="${KEYCLOAK_DEV_CLIENT_ID:-balaaca-dev-cli}"
 AUDIENCE="${KEYCLOAK_BACKEND_CLIENT_ID:-balaaca-backend}"
+# The password comes from the environment, never from an argument. Process
+# arguments are world-readable - any other local account reads `ps auxww` while
+# this runs - and an argument also lands verbatim in the shell history file.
 USERNAME="${1:-}"
-PASSWORD="${2:-}"
+PASSWORD="${BALAACA_SMOKE_PASSWORD:-}"
 
 if [ -z "$USERNAME" ] || [ -z "$PASSWORD" ]; then
-    echo "usage: $0 <username> <password>" >&2
+    echo "usage: BALAACA_SMOKE_PASSWORD=... $0 <username>" >&2
     echo "  Create the user first, in the admin console at $KC" >&2
+    echo "  Prefix the command with a space to keep it out of your history." >&2
     exit 2
 fi
 
-token=$(curl -sS -X POST "$KC/realms/$REALM/protocol/openid-connect/token" \
-    -d "client_id=$CLIENT" \
-    -d "username=$USERNAME" \
-    -d "password=$PASSWORD" \
-    -d "grant_type=password" \
-    -d "scope=openid dashboard:read appointments:write" \
+# `--data-urlencode "password@-"` reads that ONE field from stdin, so the
+# password is never in curl's argv either - and curl still encodes it, which
+# matters the moment a password contains & or +.
+token=$(printf '%s' "$PASSWORD" \
+    | curl -sS -X POST "$KC/realms/$REALM/protocol/openid-connect/token" \
+        -d "client_id=$CLIENT" \
+        -d "grant_type=password" \
+        -d "scope=openid dashboard:read appointments:write catalog:write schedule:write profile:write staff:write" \
+        --data-urlencode "username=$USERNAME" \
+        --data-urlencode "password@-" \
     | python3 -c 'import json,sys; print(json.load(sys.stdin).get("access_token",""))')
 
 if [ -z "$token" ]; then
@@ -57,7 +65,9 @@ if not claims.get("sub"):
     problems.append("no sub claim: the built-in basic scope is missing from the realm")
 if "'"$AUDIENCE"'" not in audience:
     problems.append("audience is %s, expected to contain '"$AUDIENCE"'" % audience)
-for required in ("dashboard:read", "appointments:write"):
+for required in ("dashboard:read", "appointments:write",
+                 "catalog:write", "schedule:write", "profile:write",
+                 "staff:write"):
     if required not in scopes:
         problems.append("scope %s was requested and not granted" % required)
 

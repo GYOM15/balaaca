@@ -53,7 +53,7 @@ than its first referencing migration breaks a fresh database.
 
 | Version | Creates | Also declares |
 |---|---|---|
-| `V001__create_roles_and_extensions.sql` | roles `balaaca_migrator`, `balaaca_app`, `balaaca_resolver`, `balaaca_notification_worker`; extensions `btree_gist`, `citext`, `pg_trgm` | `app_current_provider()` |
+| `V001__create_roles_and_extensions.sql` | roles `balaaca_migrator`, `balaaca_app`, `balaaca_resolver`, `balaaca_registrar`, `balaaca_notification_worker`; extensions `btree_gist`, `citext`, `pg_trgm` | `app_current_provider()` |
 | `V002__create_users.sql` | `users` | |
 | `V003__create_provider_categories.sql` | `provider_categories` | |
 | `V004__create_providers.sql` | `providers` | |
@@ -66,6 +66,9 @@ than its first referencing migration breaks a fresh database.
 | `V011__create_subscriptions.sql` | `subscriptions` | |
 | `V012__create_audit_logs.sql` | `audit_logs` | |
 | `V013__enable_row_level_security.sql` | policies, grants, resolution functions | |
+| `V014__enable_provider_registration.sql` | registration policies and grants, `app_register_provider()` | the signup seam - see 4.4 |
+| `V015__enforce_membership_and_isolation.sql` | `app_resolve_membership()`, status filters, RLS on `users` and `audit_logs`, maintenance policies | see 4.5 |
+| `V016__seed_provider_categories.sql` | the curated trade taxonomy | `provider_categories` was empty in production |
 
 Tables are plural snake_case. `staff_id` references `provider_staff`; the
 shortened stem is the one deliberate exception to "foreign key = singular stem
@@ -173,11 +176,12 @@ breaks the circle, and it returns exactly one uuid.
 CREATE POLICY provider_staff_resolution ON provider_staff
     FOR SELECT TO balaaca_resolver USING (true);
 
-CREATE FUNCTION app_resolve_provider(p_subject varchar) RETURNS uuid
+CREATE FUNCTION app_resolve_membership(p_subject varchar)
+RETURNS TABLE (provider_id uuid, staff_id uuid, staff_role varchar)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS
 $$ SELECT ps.provider_id FROM provider_staff ps JOIN users u ON u.id = ps.user_id
     WHERE u.keycloak_user_id = p_subject AND ps.status = 'ACTIVE' $$;
-ALTER FUNCTION app_resolve_provider(varchar) OWNER TO balaaca_resolver;
+ALTER FUNCTION app_resolve_membership(varchar) OWNER TO balaaca_resolver;
 REVOKE ALL ON FUNCTION app_resolve_provider(varchar) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app_resolve_provider(varchar) TO balaaca_app;
 ```
@@ -239,6 +243,80 @@ provider_id = nullif(current_setting('app.provider_id', true), '')::uuid
 **Verified**: `current_setting('x')` without `missing_ok` raises `42704`, and
 `''::uuid` raises `22P02` - a 500 where a 404 belongs. Only this form degrades
 to `NULL` and filters every row.
+
+### 4.4 Signing up - creating a tenant before one exists
+
+`providers_tenant` carries `WITH CHECK (id = app_current_provider())`, which
+with nothing bound is `NULL` and admits nothing. So a salon that registers in
+Keycloak holds a valid token, reaches every route, and is refused by all of
+them: no role can perform the INSERT that would make it resolvable.
+
+The same circularity 4.1 broke for reading, broken the same way - a
+`SECURITY DEFINER` function, owned by its **own** role so that "what can bring
+a provider into existence" has exactly one answer.
+
+```sql
+CREATE FUNCTION app_register_provider(...) RETURNS void
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = public AS $$ ... $$;
+ALTER FUNCTION app_register_provider(...) OWNER TO balaaca_registrar;
+
+CREATE POLICY providers_registration ON providers
+    FOR INSERT TO balaaca_registrar
+    WITH CHECK (NOT published AND status = 'PENDING');
+CREATE POLICY provider_staff_registration ON provider_staff
+    FOR INSERT TO balaaca_registrar WITH CHECK (role = 'OWNER');
+```
+
+Three things are load-bearing and none is stylistic.
+
+- **The provider row is inserted BEFORE the staff row.** A caller who passes an
+  existing provider's id then fails on `providers_pkey` before any membership
+  is written. Reversed, the function is a salon takeover: write an `OWNER` row
+  into someone else's provider and the resolver hands you their tenant on the
+  next request. **Verified** on PostgreSQL 18.6.
+- **The registrar can only ever create a dormant provider.** The policy, not
+  the function body, is what guarantees registration never puts a page on the
+  public booking path.
+- **Uniqueness is translated to SQLSTATEs inside the function.** Every unique
+  violation is `23505`, so telling three constraints apart in Java would mean
+  depending on the driver's exception type in a module that has no other reason
+  to. `providers_slug_key` -> `Z0001`, `uq_provider_staff_one_active_membership`
+  and `users_keycloak_user_id_key` -> `Z0002`; anything else is re-raised, so a
+  primary-key collision stays the fault it is.
+
+`POST /v1/providers` is therefore `@Authenticated` and **not** `@TenantBound`,
+the only route on the platform that is. It declares no scope: a scope says what
+a caller may do inside their own provider, and the caller has none yet.
+
+### 4.5 What revocation revokes, and who may do what
+
+Three things the schema described and nothing enforced, all fixed in V015 and
+all verified against PostgreSQL 18.6.
+
+- **Suspension suspended nothing.** Resolution filtered on the staff row's
+  status alone. An account marked `DELETED` still resolved on the next request,
+  defeating the interceptor's one design premise; a `SUSPENDED` provider kept
+  its dashboard AND stayed publicly bookable. `users.status`, `providers.status`
+  and the `providers_public_read` policy now all say so.
+- **There was no OWNER/STAFF line.** `provider_staff.role` was written at
+  registration and read by nothing, so every member with an account could
+  unpublish the storefront and re-price the catalogue. Resolution returns the
+  role; `TenantContext.requireOwner` refuses in the service layer, which is what
+  the published contract always claimed happened. Owner-only: the public
+  profile, and composing the team. A member writes their own hours and closures
+  and nobody else's.
+- **`users` and `audit_logs` had no RLS** while `balaaca_app` held full DML.
+  Both are FORCE now, `users` scoped through `provider_staff` and `audit_logs`
+  on `provider_id`.
+
+A fourth, found while writing it: only `notifications` had a **maintenance
+policy**. Every other tenant table was FORCE RLS with no policy naming
+`balaaca_migrator`, so a data-fixing migration matched zero rows and reported
+success. Verified. All ten now have one.
+
+Scopes are **optional** client scopes, not default. A default scope is in every
+token for every user, which made every `@RolesAllowed` unable to refuse anybody.
+They still are not the privilege boundary - the database is.
 
 ---
 
@@ -344,9 +422,16 @@ payment path to require.
 `APPOINTMENT_CONFLICT` · `INVALID_STATE_TRANSITION` ·
 `CANCELLATION_DEADLINE_PASSED` · `IDEMPOTENCY_KEY_REQUIRED` ·
 `IDEMPOTENCY_KEY_REUSED` · `PLAN_LIMIT_REACHED` · `CURRENCY_MISMATCH` ·
-`INTERNAL_ERROR`
+`INTERNAL_ERROR` · `SLUG_UNAVAILABLE` · `ALREADY_REGISTERED`
 
 No other code exists. Adding one is an OpenAPI change. Renaming one is forbidden.
+
+The last two were added with the signup path (4.4), and only because neither was
+expressible. A taken public handle and an account that already runs a business
+are both `409`, and a client that cannot tell them apart cannot say which: one
+is fixed by choosing another handle, the other is not fixed by anything the
+caller can type. Collapsing them into `VALIDATION_FAILED` would have been the
+cheaper change and the wrong one.
 
 ---
 

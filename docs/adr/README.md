@@ -17,6 +17,7 @@ Nommage : `NNNN-titre-en-kebab-case.md`, numerotation continue.
 | [0006](0006-modele-de-branches.md) | `main` + `develop` + branches de feature | Accepte |
 | [0007](0007-modelisation-du-temps.md) | Instants en UTC, regles recurrentes en heure locale | Accepte |
 | [0008](0008-sql-natif-sans-mapping-orm.md) | SQL natif dans les adaptateurs, sans mapping ORM | Accepte |
+| [0009](0009-inscription-autonome-d-un-prestataire.md) | Inscription autonome : creer un tenant avant qu'un tenant existe | Accepte |
 
 ## Amendement plutot que remplacement
 

@@ -11,8 +11,13 @@ package com.balaaca.platformkernel.tenancy;
  */
 public interface ProviderMembershipResolver {
 
-    /** @throws NoProviderMembershipException when the subject is not active staff */
-    ProviderId requireFor(String keycloakSubject);
+    /**
+     * @throws NoProviderMembershipException when the subject is not active staff
+     *         of an active provider - which now covers a suspended account and a
+     *         suspended or closed business, neither of which revoked anything
+     *         before
+     */
+    Membership requireFor(String keycloakSubject);
 
     /** @throws ProviderNotPublishedException when the slug is unknown or unpublished */
     ProviderId requirePublished(String slug);

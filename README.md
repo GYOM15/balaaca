@@ -77,10 +77,15 @@ l'initialisation du volume, et cree quatre roles de moindre privilege :
 | `balaaca_migrator` | proprietaire du schema, execute Flyway | jamais utilise a l'execution |
 | `balaaca_app` | la connexion applicative | ni proprietaire, ni `BYPASSRLS` — sinon le RLS serait inerte |
 | `balaaca_resolver` | proprietaire des fonctions `SECURITY DEFINER` de resolution de tenant | `NOLOGIN` : jamais connecte, seulement incarne |
+| `balaaca_registrar` | proprietaire de la seule fonction qui cree un prestataire | `NOLOGIN`, et distinct du resolver : « qui peut faire naitre un salon » a une seule reponse |
 | `balaaca_notification_worker` | le worker de notifications | restreint a sa table |
 
-Sur un VPS, l'initialisation du conteneur ne s'execute pas contre un cluster
-existant : ce script doit etre joue une fois a la main. Voir
+Le script est **idempotent** : chaque role n'est cree que s'il est absent, et le
+mot de passe d'un role existant n'est jamais reapplique. Sur un VPS,
+l'initialisation du conteneur ne s'execute que sur un repertoire de donnees
+vide, donc **il faut le rejouer a la main avant chaque deploiement** — une
+migration qui a besoin d'un role nouveau echoue sinon, et l'application ne
+demarre pas. Voir
 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ### Arret

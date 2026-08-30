@@ -1,5 +1,6 @@
 package com.balaaca.scheduling.ports.inbound;
 
+import com.balaaca.scheduling.domain.OpenWindow;
 import com.balaaca.sharedkernel.ids.StaffId;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -17,6 +18,18 @@ import java.util.UUID;
 public interface ManageAvailabilityUseCase {
 
     List<WeeklySegment> openingHours(StaffId staffId);
+
+    /**
+     * The hours of the business rather than of one person: every bookable,
+     * active staff member's currently-effective hours, merged.
+     *
+     * <p>It takes no staff identifier because the question has none. A customer
+     * reading a provider's page wants to know when the door is open, and a
+     * provider asking whether their page is ready to publish wants the same
+     * thing. Rules whose effective period has not started, or has ended, are
+     * already gone.
+     */
+    List<OpenWindow> combinedOpeningHours();
 
     /**
      * Replaces the whole week for one staff member.

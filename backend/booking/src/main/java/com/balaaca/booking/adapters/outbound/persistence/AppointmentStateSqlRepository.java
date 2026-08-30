@@ -3,6 +3,7 @@ package com.balaaca.booking.adapters.outbound.persistence;
 import com.balaaca.booking.domain.AppointmentStatus;
 import com.balaaca.booking.domain.BookedSlot;
 import com.balaaca.booking.domain.BookingExceptions.SlotUnavailableException;
+import com.balaaca.booking.domain.BookingExceptions.TransientBookingConflictException;
 import com.balaaca.booking.domain.CustomerContact;
 import com.balaaca.booking.ports.inbound.ListAppointmentsUseCase.AgendaEntry;
 import com.balaaca.booking.ports.outbound.AppointmentStateRepository;
@@ -35,6 +36,7 @@ import java.util.UUID;
 public class AppointmentStateSqlRepository implements AppointmentStateRepository {
 
     private static final String EXCLUSION_VIOLATION = "23P01";
+    private static final String DEADLOCK_DETECTED = "40P01";
 
     private final EntityManager em;
 
@@ -111,10 +113,21 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                 .setParameter("at", Timestamp.from(at))
                 .getResultList();
         } catch (PersistenceException e) {
-            if (EXCLUSION_VIOLATION.equals(sqlState(e))) {
+            String state = sqlState(e);
+            if (EXCLUSION_VIOLATION.equals(state)) {
                 // The slot is taken at the new time. The same answer a first
                 // booking gets, and it never names who has it.
                 throw new SlotUnavailableException(slot.startsAt(), null);
+            }
+            if (DEADLOCK_DETECTED.equals(state)) {
+                // Measured on the insert path: at two, five and ten racers the
+                // loser's SQLSTATE is 40P01, not 23P01. This statement contends
+                // on the same index, and only the insert side translated it - so
+                // a provider dragging an appointment while a customer booked the
+                // same window was answered 500, with the appointment silently
+                // still at its old time. A deadlock says this transaction lost
+                // and nothing about the slot, so it is retried, not reported.
+                throw new TransientBookingConflictException(e);
             }
             throw e;
         }

@@ -8,9 +8,9 @@ import com.balaaca.booking.domain.NotificationRecipient;
 import com.balaaca.booking.domain.PlannedNotification;
 import com.balaaca.booking.ports.outbound.NotificationOutboxPort;
 import com.balaaca.catalog.ports.inbound.BookableOffering;
-import com.balaaca.providers.ports.inbound.LookupProviderProfileUseCase;
-import com.balaaca.providers.ports.inbound.ProviderProfile;
-import com.balaaca.providers.ports.inbound.ProviderProfile.NoticeDestination;
+import com.balaaca.providers.ports.inbound.LookupNoticeProfileUseCase;
+import com.balaaca.providers.ports.inbound.NoticeProfile;
+import com.balaaca.providers.ports.inbound.NoticeProfile.NoticeDestination;
 import com.balaaca.sharedkernel.ids.AppointmentId;
 import com.balaaca.sharedkernel.ids.ServiceOfferingId;
 import com.balaaca.sharedkernel.money.Currency;
@@ -73,22 +73,22 @@ class BookingNotificationsTest {
         return new CustomerContact("Mariama B.", new PhoneNumber("+224622000001"), Optional.empty());
     }
 
-    private BookingNotifications plannerFor(ProviderProfile profile) {
-        LookupProviderProfileUseCase providers = () -> profile;
+    private BookingNotifications plannerFor(NoticeProfile profile) {
+        LookupNoticeProfileUseCase providers = () -> profile;
         return new BookingNotifications(providers, outbox,
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
-    private static ProviderProfile reachable() {
-        return new ProviderProfile("Salon Fatou", ZoneId.of("Africa/Conakry"),
+    private static NoticeProfile reachable() {
+        return new NoticeProfile("Salon Fatou", ZoneId.of("Africa/Conakry"),
                 Optional.of(new NoticeDestination(Optional.of("+224622999001"), Optional.empty())));
     }
 
-    private static ProviderProfile unreachable() {
-        return new ProviderProfile("Coiffeur Solo", ZoneId.of("Africa/Conakry"), Optional.empty());
+    private static NoticeProfile unreachable() {
+        return new NoticeProfile("Coiffeur Solo", ZoneId.of("Africa/Conakry"), Optional.empty());
     }
 
-    private List<PlannedNotification> planFor(ProviderProfile profile, Instant startsAt) {
+    private List<PlannedNotification> planFor(NoticeProfile profile, Instant startsAt) {
         plannerFor(profile).planFor(APPOINTMENT, startsAt, offering(), customer());
         return outbox.planned;
     }

@@ -125,21 +125,45 @@ scope_id_of() {
         | grep -B4 "\"name\" : \"$1\"" | grep '"id"' | head -1 | sed 's/.*: "//;s/".*//'
 }
 
+# $3 is "default" or "optional".
+#
+# A DEFAULT scope lands in every token the client issues, for every user,
+# unconditionally. Every API scope was default, which meant every caller held
+# every one of them and no @RolesAllowed anywhere could refuse anybody.
+#
+# They are OPTIONAL now: a client asks for what it needs and the token carries
+# that and no more. This is not the privilege boundary - a caller may still ask
+# for everything, and what a member may do inside their own provider is settled
+# by provider_staff.role in the database, on every request. It is the difference
+# between a token that says what it is for and one that says everything.
+#
+# balaaca-audience stays default: a token that names no API is a token every API
+# has to guess about.
 assign_scope() {
     _cid=$(client_id_of "$1")
     _sid=$(scope_id_of "$2")
+    _kind="${3:-optional}"
     if [ -z "$_cid" ] || [ -z "$_sid" ]; then
         echo "[init-realm]   WARNING: cannot assign $2 to $1" >&2
         return
     fi
-    $KCADM update "clients/$_cid/default-client-scopes/$_sid" -r "$REALM" >/dev/null 2>&1 \
-        && echo "[init-realm]   $2 -> $1"
+    # Moving a scope between the two lists means removing it from the other, or
+    # Keycloak keeps both and default wins.
+    _other="default"
+    [ "$_kind" = "default" ] && _other="optional"
+    $KCADM delete "clients/$_cid/${_other}-client-scopes/$_sid" -r "$REALM" >/dev/null 2>&1 || true
+    $KCADM update "clients/$_cid/${_kind}-client-scopes/$_sid" -r "$REALM" >/dev/null 2>&1 \
+        && echo "[init-realm]   $2 -> $1 ($_kind)"
 }
 
 echo "[init-realm] client scopes..."
 create_scope "balaaca-audience" "Puts balaaca-backend in the token's audience."
 create_scope "dashboard:read" "Read the caller's own agenda and settings."
 create_scope "appointments:write" "Create and move the caller's own appointments."
+create_scope "catalog:write" "Create and change the caller's own services."
+create_scope "schedule:write" "Set the caller's own opening hours and closures."
+create_scope "profile:write" "Change the caller's own public page, and publish it."
+create_scope "staff:write" "Add and change the caller's own people."
 
 # The audience mapper cannot be declared with the scope above: kcadm creates a
 # scope and its mappers in two calls.
@@ -157,25 +181,42 @@ if [ -n "$AUDIENCE_SID" ] && ! $KCADM get "client-scopes/$AUDIENCE_SID/protocol-
 fi
 
 # A token that names no API is a token any API would have to guess about, so
-# both token-issuing clients carry the audience. The scopes are default rather
-# than optional: this product has no consent screen to grant them on.
+# both token-issuing clients carry the audience, and it is the only default.
 for client in balaaca-frontend balaaca-dev-cli; do
-    for scope in balaaca-audience dashboard:read appointments:write; do
-        assign_scope "$client" "$scope"
+    assign_scope "$client" "balaaca-audience" default
+    for scope in dashboard:read appointments:write catalog:write \
+                 schedule:write profile:write staff:write; do
+        assign_scope "$client" "$scope" optional
     done
 done
 
 # The secret lives in the environment, and --import-realm ignores it on a realm
 # that already exists. Re-applied every boot so rotating it is a restart.
+#
+# This was the one step in the file with no failure branch: it echoed on success
+# and said nothing otherwise, with stdout and stderr discarded, and the sentinel
+# was touched unconditionally two lines below. So a rotation that failed - an
+# expired kcadm session, a client list not yet consistent, client_id_of coming
+# back empty - printed nothing, went green on the healthcheck, and left Keycloak
+# accepting the OLD secret while the operator believed the leak was closed. The
+# header of this file promises the opposite, in those words.
 FRONTEND_CID=$(client_id_of "balaaca-frontend")
-if [ -n "$FRONTEND_CID" ]; then
-    $KCADM update "clients/$FRONTEND_CID" -r "$REALM" \
+if [ -z "$FRONTEND_CID" ]; then
+    echo "[init-realm] FATAL: client balaaca-frontend not found; secret not applied" >&2
+    exit 1
+fi
+if ! $KCADM update "clients/$FRONTEND_CID" -r "$REALM" \
         -s publicClient=false \
         -s clientAuthenticatorType=client-secret \
-        -s "secret=$KEYCLOAK_FRONTEND_CLIENT_SECRET" >/dev/null 2>&1 \
-        && echo "[init-realm]   balaaca-frontend secret applied"
+        -s "secret=$KEYCLOAK_FRONTEND_CLIENT_SECRET" >/dev/null 2>&1; then
+    echo "[init-realm] FATAL: could not apply the balaaca-frontend secret." >&2
+    echo "[init-realm]        Keycloak still accepts the previous one." >&2
+    exit 1
 fi
+echo "[init-realm]   balaaca-frontend secret applied"
 
+# Only now. The sentinel is what the compose healthcheck waits on, so touching
+# it after a failed step is the same as reporting a realm that works.
 touch "$SENTINEL"
 echo "[init-realm] realm configured"
 

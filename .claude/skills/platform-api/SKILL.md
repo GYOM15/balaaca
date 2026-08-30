@@ -136,6 +136,15 @@ code that is not here.
    | `IDEMPOTENCY_KEY_REUSED` | 422 | The key was replayed with a different request body. |
    | `RATE_LIMITED` | 429 | The documented quota for this operation is exhausted, or a contended resource could not be ordered. |
    | `INTERNAL_ERROR` | 500 | The server failed in a way it does not model. |
+   | `SLUG_UNAVAILABLE` | 409 | The public handle a signup asked for is another business's. |
+   | `ALREADY_REGISTERED` | 409 | The calling account already runs a business. |
+
+   The last two arrived with the signup path and are the only additions since
+   publication. They are here because neither was expressible: both are `409`,
+   and a client that cannot tell them apart cannot tell a provider which - one
+   is fixed by choosing another handle, the other is not fixed by anything the
+   caller can type. That is the bar for adding a code, and `VALIDATION_FAILED`
+   was the cheaper answer and the wrong one.
 
    Two entries carry a deliberate design decision. **`RESOURCE_NOT_FOUND` is
    one code for both a genuine miss and a cross-tenant read**, and the two
@@ -384,6 +393,8 @@ components:
             - IDEMPOTENCY_KEY_REUSED
             - RATE_LIMITED
             - INTERNAL_ERROR
+            - SLUG_UNAVAILABLE
+            - ALREADY_REGISTERED
 ```
 
 No provider identifier anywhere in a request, no internal type, no module
