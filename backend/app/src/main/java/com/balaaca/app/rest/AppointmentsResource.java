@@ -14,6 +14,7 @@ import com.balaaca.booking.ports.inbound.ListAppointmentsUseCase.AgendaQuery;
 import com.balaaca.platformkernel.tenancy.TenantBound;
 import com.balaaca.sharedkernel.ids.AppointmentId;
 import io.quarkus.security.Authenticated;
+import jakarta.annotation.security.RolesAllowed;
 import jakarta.ws.rs.core.Response;
 import java.time.Clock;
 import java.time.OffsetDateTime;
@@ -23,6 +24,10 @@ import java.util.UUID;
 
 /**
  * The provider's own agenda.
+ *
+ * <p>The scopes the contract declares are enforced here, not merely documented:
+ * the realm maps them onto roles, so an operation the caller was not granted is
+ * refused before the tenant is even resolved.
  *
  * <p>Two annotations do the work, and the order between them is not arbitrary.
  * {@code @Authenticated} refuses a request with no verified token;
@@ -52,6 +57,7 @@ public class AppointmentsResource implements AgendaApi {
     }
 
     @Override
+    @RolesAllowed("appointments:write")
     public Response cancelAppointment(UUID id, CancelAppointmentRequest request) {
         // A capability, not a status field: what the caller expresses is the
         // thing they want to happen, and the machine stays inside.
@@ -63,6 +69,7 @@ public class AppointmentsResource implements AgendaApi {
     }
 
     @Override
+    @RolesAllowed("dashboard:read")
     public Response listAppointments(OffsetDateTime from, AppointmentStatus status,
                                      String cursor, Integer limit) {
         var page = appointments.list(new AgendaQuery(

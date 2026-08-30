@@ -56,7 +56,7 @@ class CancellationIT {
 
     @Test
     @DisplayName("Cancelling returns the appointment in its new state")
-    @TestSecurity(user = BookingFixtures.SALON_SUBJECT)
+    @TestSecurity(user = BookingFixtures.SALON_SUBJECT, roles = {"dashboard:read", "appointments:write"})
     @OidcSecurity(claims = @Claim(key = "sub", value = BookingFixtures.SALON_SUBJECT))
     void cancels() {
         String id = book(SALON_BOOKING, BookingFixtures.SALON_OFFERING, SLOT, "622000001");
@@ -70,7 +70,7 @@ class CancellationIT {
 
     @Test
     @DisplayName("The slot comes back, in the same statement that freed it")
-    @TestSecurity(user = BookingFixtures.SALON_SUBJECT)
+    @TestSecurity(user = BookingFixtures.SALON_SUBJECT, roles = {"dashboard:read", "appointments:write"})
     @OidcSecurity(claims = @Claim(key = "sub", value = BookingFixtures.SALON_SUBJECT))
     void releasesTheSlot() {
         String id = book(SALON_BOOKING, BookingFixtures.SALON_OFFERING, SLOT, "622000001");
@@ -86,7 +86,7 @@ class CancellationIT {
 
     @Test
     @DisplayName("The reminder that is no longer owed is withdrawn, and one notice is planned")
-    @TestSecurity(user = BookingFixtures.SALON_SUBJECT)
+    @TestSecurity(user = BookingFixtures.SALON_SUBJECT, roles = {"dashboard:read", "appointments:write"})
     @OidcSecurity(claims = @Claim(key = "sub", value = BookingFixtures.SALON_SUBJECT))
     void withdrawsWhatIsNoLongerOwed() {
         String id = book(SALON_BOOKING, BookingFixtures.SALON_OFFERING, SLOT, "622000001");
@@ -111,7 +111,7 @@ class CancellationIT {
 
     @Test
     @DisplayName("Cancelling twice is refused, not silently repeated")
-    @TestSecurity(user = BookingFixtures.SALON_SUBJECT)
+    @TestSecurity(user = BookingFixtures.SALON_SUBJECT, roles = {"dashboard:read", "appointments:write"})
     @OidcSecurity(claims = @Claim(key = "sub", value = BookingFixtures.SALON_SUBJECT))
     void refusesASecondCancellation() {
         String id = book(SALON_BOOKING, BookingFixtures.SALON_OFFERING, SLOT, "622000001");
@@ -122,7 +122,7 @@ class CancellationIT {
 
     @Test
     @DisplayName("Another provider's appointment answers exactly like one that never existed")
-    @TestSecurity(user = BookingFixtures.SOLO_SUBJECT)
+    @TestSecurity(user = BookingFixtures.SOLO_SUBJECT, roles = {"dashboard:read", "appointments:write"})
     @OidcSecurity(claims = @Claim(key = "sub", value = BookingFixtures.SOLO_SUBJECT))
     void cannotCancelSomeoneElses() {
         String theirs = book(SALON_BOOKING, BookingFixtures.SALON_OFFERING, SLOT, "622000001");
@@ -134,6 +134,20 @@ class CancellationIT {
                 .statusCode(404).body("code", equalTo("RESOURCE_NOT_FOUND"));
 
         assertThat(fixtures.activeAppointments(BookingFixtures.SALON)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("Reading the agenda does not grant cancelling it")
+    @TestSecurity(user = BookingFixtures.SALON_SUBJECT, roles = {"dashboard:read"})
+    @OidcSecurity(claims = @Claim(key = "sub", value = BookingFixtures.SALON_SUBJECT))
+    void refusesWithoutTheWriteScope() {
+        // The contract declares appointments:write on this operation. Without a
+        // test for the token that lacks it, the declaration is documentation:
+        // the scopes would be in the OpenAPI document and in the realm, and
+        // nothing would be checking them at the door.
+        given().contentType("application/json").body("{}")
+                .when().post("/v1/appointments/" + UUID.randomUUID() + "/cancellation")
+                .then().statusCode(403);
     }
 
     @Test

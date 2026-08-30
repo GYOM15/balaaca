@@ -157,7 +157,8 @@ jobs:
           # shellcheck ships on the runner image, so there is nothing to pin.
           shellcheck --version
           shellcheck --severity=warning \
-            infrastructure/postgres/bootstrap.sh
+            infrastructure/postgres/bootstrap.sh \
+            infrastructure/keycloak/smoke.sh
           # The hooks are POSIX sh, not bash: check them as such.
           shellcheck --shell=sh --severity=warning \
             .githooks/commit-msg .githooks/pre-push .githooks/pre-commit

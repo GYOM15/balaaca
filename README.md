@@ -149,6 +149,36 @@ export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
 
 Inutile sur les runners Linux, ou le socket est a l'emplacement standard.
 
+### Identite
+
+Le realm est un fichier versionne, [`infrastructure/keycloak/realm-balaaca.json`](infrastructure/keycloak/realm-balaaca.json),
+importe par compose au demarrage. Une configuration d'identite que personne ne
+peut recreer pose le meme probleme qu'un schema sans migrations.
+
+Trois clients : `balaaca-backend` (serveur de ressources, ne connecte personne),
+`balaaca-frontend` (confidentiel, pilote par le BFF Next.js — le code n'est
+jamais echange dans le navigateur), et `balaaca-dev-cli` (public, password
+grant, **developpement local uniquement** — un realm de production est
+provisionne separement et ne le porte pas).
+
+Le secret de `balaaca-frontend` est genere par Keycloak et n'est pas dans le
+depot. A la premiere installation, on le releve dans la console d'administration
+(`Clients > balaaca-frontend > Credentials`) et on le met dans `.env`.
+
+Apres un `docker compose up`, cette verification dit si le realm delivre un
+jeton que l'API peut reellement utiliser :
+
+```bash
+./infrastructure/keycloak/smoke.sh <utilisateur> <mot-de-passe>
+```
+
+Elle existe parce qu'un import de realm peut reussir en etant faux. Declarer
+`clientScopes` dans un fichier de realm **remplace** l'ensemble integre de
+Keycloak au lieu de s'y ajouter, et le scope integre `basic` est celui qui porte
+le claim `sub`. Sans lui, chaque jeton est valide, bien signe — et sans sujet,
+donc la resolution du tenant ne trouve personne et tout appel authentifie repond
+403. C'est exactement ce qui s'est passe a la premiere ecriture de ce realm.
+
 ### Le contrat public
 
 `backend/app/src/main/resources/META-INF/openapi.yaml` **est** l'API. Les

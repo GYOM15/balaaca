@@ -70,7 +70,7 @@ class AgendaIT {
 
     @Test
     @DisplayName("A valid token belonging to nobody here is refused, not emptied")
-    @TestSecurity(user = BookingFixtures.STRANGER_SUBJECT)
+    @TestSecurity(user = BookingFixtures.STRANGER_SUBJECT, roles = {"dashboard:read", "appointments:write"})
     @OidcSecurity(claims = @Claim(key = "sub", value = BookingFixtures.STRANGER_SUBJECT))
     void refusesASubjectWithNoMembership() {
         // 403 and not an empty 200: an account that silently shows nothing is
@@ -81,7 +81,7 @@ class AgendaIT {
 
     @Test
     @DisplayName("A provider sees their own bookings")
-    @TestSecurity(user = BookingFixtures.SALON_SUBJECT)
+    @TestSecurity(user = BookingFixtures.SALON_SUBJECT, roles = {"dashboard:read", "appointments:write"})
     @OidcSecurity(claims = @Claim(key = "sub", value = BookingFixtures.SALON_SUBJECT))
     void showsTheCallersOwnAgenda() {
         book(SALON_BOOKING, BookingFixtures.SALON_OFFERING, "2026-09-04T10:00:00Z", "622000001");
@@ -91,7 +91,7 @@ class AgendaIT {
 
     @Test
     @DisplayName("A provider never sees another's, even with the same query")
-    @TestSecurity(user = BookingFixtures.SOLO_SUBJECT)
+    @TestSecurity(user = BookingFixtures.SOLO_SUBJECT, roles = {"dashboard:read", "appointments:write"})
     @OidcSecurity(claims = @Claim(key = "sub", value = BookingFixtures.SOLO_SUBJECT))
     void neverShowsAnotherProvidersAgenda() {
         book(SALON_BOOKING, BookingFixtures.SALON_OFFERING, "2026-09-04T10:00:00Z", "622000001");
@@ -105,7 +105,7 @@ class AgendaIT {
 
     @Test
     @DisplayName("The customer's number is the provider's to see, and only theirs")
-    @TestSecurity(user = BookingFixtures.SALON_SUBJECT)
+    @TestSecurity(user = BookingFixtures.SALON_SUBJECT, roles = {"dashboard:read", "appointments:write"})
     @OidcSecurity(claims = @Claim(key = "sub", value = BookingFixtures.SALON_SUBJECT))
     void carriesTheCustomerForTheProvider() {
         book(SALON_BOOKING, BookingFixtures.SALON_OFFERING, "2026-09-04T10:00:00Z", "622000001");
@@ -120,7 +120,7 @@ class AgendaIT {
 
     @Test
     @DisplayName("The agenda pages, and the cursor resumes at the next booking")
-    @TestSecurity(user = BookingFixtures.SALON_SUBJECT)
+    @TestSecurity(user = BookingFixtures.SALON_SUBJECT, roles = {"dashboard:read", "appointments:write"})
     @OidcSecurity(claims = @Claim(key = "sub", value = BookingFixtures.SALON_SUBJECT))
     void pagesTheAgenda() {
         book(SALON_BOOKING, BookingFixtures.SALON_OFFERING, "2026-09-04T10:00:00Z", "622000001");
