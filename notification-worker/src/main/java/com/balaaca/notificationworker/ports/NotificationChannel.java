@@ -14,10 +14,11 @@ import com.balaaca.notificationworker.domain.ClaimedNotification;
 public interface NotificationChannel {
 
     /**
-     * @param idempotencyKey the row's dedupe key, passed through so a crash
-     *                       between the gateway's acknowledgement and the SENT
-     *                       update costs a suppressed duplicate, not a second
-     *                       message
+     * @param idempotencyKey the row's dedupe key, passed through for channels
+     *                       that accept one. WhatsApp does not, so on that path
+     *                       a crash between the acknowledgement and the SENT
+     *                       update costs a real duplicate - said here rather
+     *                       than assumed away
      * @return the transport actually used, recorded on the row
      * @throws ChannelException when the message did not get through
      */

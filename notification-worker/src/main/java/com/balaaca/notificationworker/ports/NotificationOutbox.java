@@ -27,8 +27,9 @@ public interface NotificationOutbox {
      * Returns rows a worker claimed and never finished to PENDING.
      *
      * <p>A process killed mid-send leaves a row SENDING for ever otherwise.
-     * Delivery is at-least-once by contract, and the channel's idempotency key
-     * absorbs the replay, so releasing a stale lease is safe.
+     * Delivery is at-least-once by contract, so releasing a stale lease may
+     * replay a send. Whether that costs a duplicate depends on the channel:
+     * WhatsApp has no idempotency key and will deliver twice.
      *
      * @return how many were released
      */

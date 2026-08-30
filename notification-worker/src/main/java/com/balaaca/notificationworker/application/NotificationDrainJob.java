@@ -80,11 +80,12 @@ public class NotificationDrainJob {
     }
 
     /**
-     * A row left SENDING is a row nothing will ever pick up again. Releasing the
-     * lease may replay a send that had in fact gone out; delivery is
-     * at-least-once by contract and the dedupe key is the channel's own
-     * idempotency key, so the cost is a suppressed duplicate rather than a
-     * message lost for good.
+     * A row left SENDING is a row nothing will ever pick up again. Releasing
+     * the lease may replay a send that had in fact gone out, and on WhatsApp
+     * nothing suppresses that: the API takes no idempotency key, so the
+     * customer reads the message twice. The trade is deliberate - a duplicate
+     * confirmation is an annoyance, a confirmation that never arrives is a
+     * customer standing outside a closed salon.
      */
     @Scheduled(every = "{balaaca.notification.reap-interval:60s}",
                concurrentExecution = ConcurrentExecution.SKIP)
@@ -97,9 +98,11 @@ public class NotificationDrainJob {
 
     private void dispatch(ClaimedNotification n) {
         try {
-            // The dedupe key doubles as the channel's idempotency key: a crash
-            // between the acknowledgement and markSent replays the send, and the
-            // gateway suppresses it instead of sending twice.
+            // The dedupe key travels as the channel's idempotency key where a
+            // channel has one. WhatsApp does not, so a crash between its
+            // acknowledgement and markSent costs a real duplicate. The key still
+            // does the job it can: it stops a notification being PLANNED twice,
+            // which is the likelier mistake by far.
             Channel used = channel.get().send(n, n.dedupeKey());
             outbox.markSent(n.id(), used, clock.instant());
         } catch (ChannelException e) {
