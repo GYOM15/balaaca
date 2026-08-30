@@ -72,6 +72,7 @@ than its first referencing migration breaks a fresh database.
 | `V017__narrow_two_policies.sql` | `providers_public_read` restricted to unbound connections; the registrar may add an owner only to a provider with no staff | |
 | `V018__record_the_audit_trail.sql` | `app_resolve_membership()` returns the account; `audit_logs` accepts a platform row | |
 | `V019__let_a_customer_reach_their_booking.sql` | `appointments.public_reference`, `app_resolve_booking_provider()` | a third tenant source - see 4.6 |
+| `V020__answer_the_caller_before_the_slug.sql` | `app_register_provider()` refuses a registered account before arbitrating the handle | closes a slug oracle |
 
 Tables are plural snake_case. `staff_id` references `provider_staff`; the
 shortened stem is the one deliberate exception to "foreign key = singular stem
