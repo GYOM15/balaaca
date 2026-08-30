@@ -36,6 +36,8 @@ servers:
     description: The deployable serving this document.
 
 tags:
+  - name: schedule
+    description: When a provider is open, and when they are not.
   - name: catalogue
     description: The services a provider offers.
   - name: agenda
@@ -165,6 +167,189 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+
+  /v1/staff:
+    get:
+      operationId: listStaff
+      tags: [schedule]
+      summary: List the caller's own staff
+      description: |
+        Opening hours and closures belong to a person, not to a business: a
+        salon where one stylist works Saturdays and another does not is the
+        normal case, and a schedule that could not say so would be wrong for
+        everyone but the solo provider.
+      security:
+        - oauth2: [dashboard:read]
+      responses:
+        '200':
+          description: The caller's staff, active first.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffList'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/opening-hours:
+    get:
+      operationId: listOpeningHours
+      tags: [schedule]
+      summary: Read one staff member's weekly hours
+      description: |
+        The segments of each day, in the provider's own local time. Breaks are
+        the gaps between segments; there is no separate notion of one.
+      security:
+        - oauth2: [dashboard:read]
+      parameters:
+        - $ref: '#/components/parameters/StaffIdQuery'
+      responses:
+        '200':
+          description: The weekly hours.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpeningHours'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      operationId: replaceOpeningHours
+      tags: [schedule]
+      summary: Replace one staff member's weekly hours
+      description: |
+        The whole week, not a day at a time. A provider thinks in weeks, and a
+        per-day edit leaves the question of what happens to the days that were
+        not mentioned - which is exactly the ambiguity that empties a Saturday
+        nobody meant to close.
+
+        An end before a start is a window that wraps past midnight, which is a
+        real thing for a provider open until one in the morning. Equal is the
+        only nonsense, and it is refused.
+
+        Changing hours never moves an appointment already booked. What is
+        already taken stays taken; the new hours decide what can still be.
+      security:
+        - oauth2: [schedule:write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpeningHoursRequest'
+      responses:
+        '200':
+          description: The hours as they now stand.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpeningHours'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/closures:
+    get:
+      operationId: listClosures
+      tags: [schedule]
+      summary: List the days that differ from the weekly hours
+      description: |
+        A closure replaces the week's rules for that date rather than adding to
+        them: a provider who declares a holiday means closed, not closed except
+        for the usual hours.
+      security:
+        - oauth2: [dashboard:read]
+      parameters:
+        - $ref: '#/components/parameters/StaffIdQuery'
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: The closures and one-off hours in the range.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClosureList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: createClosure
+      tags: [schedule]
+      summary: Close a day, or give it different hours
+      description: |
+        `CLOSED` carries no times and `CUSTOM_HOURS` requires both; the database
+        states that as its own constraint, so a request that gets it wrong is
+        refused rather than stored as a day that means nothing.
+      security:
+        - oauth2: [schedule:write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClosureRequest'
+      responses:
+        '201':
+          description: The closure as created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClosureView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/closures/{id}:
+    delete:
+      operationId: deleteClosure
+      tags: [schedule]
+      summary: Remove a closure, restoring the weekly hours for that day
+      description: |
+        Deleted rather than retired, unlike a service. Nothing was ever booked
+        against a closure, so there is no history in it to keep.
+      security:
+        - oauth2: [schedule:write]
+      parameters:
+        - $ref: '#/components/parameters/ClosureId'
+      responses:
+        '204':
+          description: The day follows the weekly hours again.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /v1/service-offerings:
     get:
@@ -658,10 +843,28 @@ components:
           scopes:
             dashboard:read: Read the caller's own agenda and settings.
             catalog:write: Create and change the caller's own services.
+            schedule:write: Set the caller's own opening hours and closures.
             appointments:write: Create and move the caller's own appointments.
 
   parameters:
     AppointmentId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    StaffIdQuery:
+      name: staff_id
+      in: query
+      required: true
+      description: Whose schedule. A provider identifier never appears in a
+        request; a staff identifier is one of the caller's own people, and the
+        database confines it to them.
+      schema:
+        type: string
+        format: uuid
+    ClosureId:
       name: id
       in: path
       required: true
@@ -852,6 +1055,145 @@ components:
         customer_note:
           type: string
           maxLength: 500
+
+    StaffView:
+      type: object
+      required: [staff_id, display_name, role, bookable, active]
+      properties:
+        staff_id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+        role:
+          type: string
+        bookable:
+          type: boolean
+        active:
+          type: boolean
+
+    StaffList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/StaffView'
+
+    OpeningHoursSegment:
+      type: object
+      description: One stretch of a day, in the provider's own local time.
+      required: [day_of_week, start_time, end_time]
+      properties:
+        day_of_week:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 7
+          description: ISO numbering, 1 is Monday.
+        start_time:
+          type: string
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+          example: "08:00"
+        end_time:
+          type: string
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+          example: "20:00"
+        effective_from:
+          type: string
+          format: date
+          description: Omit for hours that have always applied.
+        effective_to:
+          type: string
+          format: date
+
+    OpeningHours:
+      type: object
+      required: [staff_id, timezone, data]
+      properties:
+        staff_id:
+          type: string
+          format: uuid
+        timezone:
+          type: string
+          description: The IANA zone the times are written in. A local time
+            without one is not a moment.
+          example: Africa/Conakry
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpeningHoursSegment'
+
+    OpeningHoursRequest:
+      type: object
+      required: [staff_id, data]
+      properties:
+        staff_id:
+          type: string
+          format: uuid
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpeningHoursSegment'
+
+    ClosureKind:
+      type: string
+      enum: [CLOSED, CUSTOM_HOURS]
+
+    ClosureRequest:
+      type: object
+      required: [staff_id, date, kind]
+      properties:
+        staff_id:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date
+        kind:
+          $ref: '#/components/schemas/ClosureKind'
+        start_time:
+          type: string
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+          description: Required for CUSTOM_HOURS, refused for CLOSED.
+        end_time:
+          type: string
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+        reason:
+          type: string
+          maxLength: 200
+
+    ClosureView:
+      type: object
+      required: [closure_id, staff_id, date, kind]
+      properties:
+        closure_id:
+          type: string
+          format: uuid
+        staff_id:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date
+        kind:
+          $ref: '#/components/schemas/ClosureKind'
+        start_time:
+          type: string
+        end_time:
+          type: string
+        reason:
+          type: string
+
+    ClosureList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClosureView'
 
     ServiceOfferingRequest:
       type: object
