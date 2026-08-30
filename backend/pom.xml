@@ -21,6 +21,7 @@
     <archunit.version>1.4.1</archunit.version>
     <assertj.version>3.27.7</assertj.version>
     <jqwik.version>1.10.1</jqwik.version>
+    <jackson.version>2.22.1</jackson.version>
   </properties>
 
   <modules>
@@ -40,6 +41,25 @@
 
   <dependencyManagement>
     <dependencies>
+      <!--
+        Declared BEFORE the Quarkus BOM, which imports jackson-bom itself: on an
+        import, the first declaration wins. Quarkus 3.39.1 pins 2.22.0, and two
+        advisories against jackson-databind are fixed in 2.22.1 - a @JsonView
+        bypass on unwrapped properties, and case-insensitive deserialization
+        defeating a per-property @JsonIgnoreProperties. Both turn a field the
+        server meant to refuse into one it accepts, which on a public booking
+        payload is the wrong side to be wrong on.
+
+        Remove this the day the platform ships 2.22.1 or later; until then it is
+        a pin with a reason, not a floating override.
+      -->
+      <dependency>
+        <groupId>com.fasterxml.jackson</groupId>
+        <artifactId>jackson-bom</artifactId>
+        <version>${jackson.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
       <dependency>
         <groupId>${quarkus.platform.group-id}</groupId>
         <artifactId>${quarkus.platform.artifact-id}</artifactId>
