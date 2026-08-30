@@ -159,6 +159,9 @@ jobs:
           shellcheck --severity=warning \
             infrastructure/postgres/bootstrap.sh \
             infrastructure/keycloak/smoke.sh
+          # The entrypoint is POSIX sh: the Keycloak image has no bash.
+          shellcheck --shell=sh --severity=warning \
+            infrastructure/keycloak/init-realm.sh
           # The hooks are POSIX sh, not bash: check them as such.
           shellcheck --shell=sh --severity=warning \
             .githooks/commit-msg .githooks/pre-push .githooks/pre-commit

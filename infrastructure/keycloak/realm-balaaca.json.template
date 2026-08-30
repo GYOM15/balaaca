@@ -1,0 +1,62 @@
+{
+  "realm": "balaaca",
+  "displayName": "Balaaca",
+  "enabled": true,
+  "registrationAllowed": true,
+  "registrationEmailAsUsername": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "verifyEmail": false,
+  "editUsernameAllowed": false,
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "clients": [
+    {
+      "clientId": "balaaca-backend",
+      "name": "Balaaca API",
+      "description": "The resource server. It logs nobody in; it exists so a token can name it as its audience, and so the API can refuse one that does not.",
+      "enabled": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false
+    },
+    {
+      "clientId": "balaaca-frontend",
+      "name": "Balaaca dashboard",
+      "description": "Driven by the Next.js BFF: the code exchange happens server-side and no token ever reaches the browser.",
+      "enabled": true,
+      "publicClient": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "__FRONTEND_REDIRECT_URI__"
+      },
+      "redirectUris": [
+        "__FRONTEND_REDIRECT_URI__"
+      ],
+      "webOrigins": [
+        "__FRONTEND_ORIGIN__"
+      ],
+      "secret": "__KEYCLOAK_FRONTEND_CLIENT_SECRET__",
+      "clientAuthenticatorType": "client-secret"
+    },
+    {
+      "clientId": "balaaca-dev-cli",
+      "name": "Local development only",
+      "description": "Password grant, so a developer and the smoke check can fetch a token from a terminal. Deliberately named for what it is: a production realm is provisioned separately and does not carry this client. Public, so there is no secret to commit.",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false
+    }
+  ]
+}

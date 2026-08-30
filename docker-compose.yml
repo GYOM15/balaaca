@@ -74,9 +74,11 @@ services:
     restart: unless-stopped
     # start-dev is DEVELOPMENT ONLY: it disables HTTPS and relaxes hostname
     # checks. Production runs `start` behind TLS - see docs/DEPLOYMENT.md.
-    # --import-realm reads /opt/keycloak/data/import on every start. The import
-    # is idempotent: an existing realm is left alone, so a developer's local
-    # users and test data survive a restart.
+    # The entrypoint fills the realm template from the environment, starts
+    # Keycloak, and finishes what --import-realm cannot: an import leaves an
+    # existing realm alone, so client scopes and the frontend secret are applied
+    # on every boot instead.
+    entrypoint: ["/opt/keycloak/data/init-realm.sh"]
     command: ["start-dev", "--http-port=8080", "--import-realm"]
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN}
@@ -87,11 +89,18 @@ services:
       KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
       KC_HEALTH_ENABLED: "true"
       KC_HTTP_ENABLED: "true"
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KEYCLOAK_FRONTEND_CLIENT_SECRET: ${KEYCLOAK_FRONTEND_CLIENT_SECRET}
+      FRONTEND_REDIRECT_URI: ${FRONTEND_REDIRECT_URI:-http://localhost:3000/*}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3000}
     volumes:
-      # The realm is a reviewed, versioned file rather than clicks in an admin
-      # console: an identity configuration nobody can recreate is the same
-      # problem as a schema with no migrations.
-      - ./infrastructure/keycloak/realm-balaaca.json:/opt/keycloak/data/import/realm-balaaca.json:ro
+      # A reviewed, versioned template rather than clicks in an admin console:
+      # an identity configuration nobody can recreate is the same problem as a
+      # schema with no migrations. It is a template because the frontend client
+      # is confidential, and a secret in a committed file is a secret.
+      - ./infrastructure/keycloak/realm-balaaca.json.template:/opt/keycloak/data/template/realm-balaaca.json.template:ro
+      - ./infrastructure/keycloak/init-realm.sh:/opt/keycloak/data/init-realm.sh:ro
     ports:
       - "127.0.0.1:${KEYCLOAK_PORT:-8180}:8080"
     depends_on:
@@ -106,7 +115,11 @@ services:
         - CMD
         - bash
         - -c
-        - 'exec 3<>/dev/tcp/127.0.0.1/9000 && printf "GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3 && grep -q ''"status": "UP"'' <&3'
+        # Two conditions, not one. /health/ready goes green as soon as the
+        # server boots, and the client scopes are assigned seconds later - long
+        # enough for a dependent service to mint a scopeless token and cache it
+        # for a full lifespan. The sentinel is written last.
+        - 'exec 3<>/dev/tcp/127.0.0.1/9000 && printf "GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3 && grep -q ''"status": "UP"'' <&3 && test -f /tmp/keycloak-postconfig-done'
       interval: 10s
       timeout: 5s
       retries: 30

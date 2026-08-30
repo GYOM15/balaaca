@@ -161,9 +161,27 @@ jamais echange dans le navigateur), et `balaaca-dev-cli` (public, password
 grant, **developpement local uniquement** — un realm de production est
 provisionne separement et ne le porte pas).
 
-Le secret de `balaaca-frontend` est genere par Keycloak et n'est pas dans le
-depot. A la premiere installation, on le releve dans la console d'administration
-(`Clients > balaaca-frontend > Credentials`) et on le met dans `.env`.
+Le fichier est un **template** : `balaaca-frontend` est confidentiel, et un
+secret dans un fichier committe est un secret. `init-realm.sh` remplit les
+marqueurs `__VARIABLE__` depuis l'environnement au demarrage, echoue si une
+variable requise manque, et refuse de demarrer s'il reste un marqueur non
+resolu — sans quoi le realm importerait le marqueur litteral comme secret.
+
+Le meme script fait ensuite ce que `--import-realm` ne sait pas faire :
+
+- **Creer les client scopes.** Les declarer dans le fichier de realm
+  **remplace** l'ensemble integre de Keycloak au lieu de s'y ajouter, et le
+  scope integre `basic` porte le claim `sub`. Les creer apres l'import laisse
+  les integres intacts, et evite d'en garder ici une copie qui vieillirait.
+- **Mettre a jour un client existant.** `--import-realm` laisse tel quel un
+  realm deja present, donc le secret et les scopes sont reappliques a chaque
+  demarrage : faire tourner un secret est un redemarrage.
+
+La sonde du conteneur attend un sentinelle ecrit en toute fin de configuration,
+pas seulement `/health/ready` : celui-ci passe au vert des le demarrage du
+serveur, quelques secondes avant que les scopes existent — assez pour qu'un
+service dependant obtienne un jeton sans scope et le garde en cache pendant
+toute sa duree de vie.
 
 Apres un `docker compose up`, cette verification dit si le realm delivre un
 jeton que l'API peut reellement utiliser :
