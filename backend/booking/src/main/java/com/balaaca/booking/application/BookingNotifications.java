@@ -4,6 +4,7 @@ import com.balaaca.booking.domain.CustomerContact;
 import com.balaaca.booking.domain.NotificationKind;
 import com.balaaca.booking.domain.NotificationRecipient;
 import com.balaaca.booking.domain.PlannedNotification;
+import com.balaaca.booking.ports.inbound.ListAppointmentsUseCase.AgendaEntry;
 import com.balaaca.booking.ports.outbound.NotificationOutboxPort;
 import com.balaaca.catalog.ports.inbound.BookableOffering;
 import com.balaaca.providers.ports.inbound.LookupProviderProfileUseCase;
@@ -82,6 +83,30 @@ public class BookingNotifications {
         reminder(appointmentId, startsAt, HOURS_BEFORE, now, customer, payload).ifPresent(planned::add);
 
         outbox.plan(planned);
+    }
+
+    /**
+     * What a cancelled appointment owes: one message, to the customer, now.
+     *
+     * <p>Keyed on the appointment's start like the confirmation, so the pair
+     * cannot collide and a replayed cancellation lands on the UNIQUE index
+     * rather than on a second text.
+     */
+    public void planCancellation(AgendaEntry cancelled) {
+        ProviderProfile provider = providers.currentProfile();
+        Map<String, String> payload = Map.of(
+                "business_name", provider.businessName(),
+                "service_name", cancelled.serviceName(),
+                "customer_name", cancelled.customer().fullName(),
+                "starts_at", cancelled.startsAt().toString(),
+                "starts_at_local",
+                LOCAL_TIME.format(cancelled.startsAt().atZone(provider.timezone())));
+
+        outbox.plan(List.of(new PlannedNotification(
+                cancelled.id(), NotificationKind.CANCELLATION,
+                NotificationRecipient.CUSTOMER,
+                Optional.of(cancelled.customer().phone().e164()), cancelled.customer().email(),
+                LOCALE, payload, cancelled.startsAt(), clock.instant())));
     }
 
     private static PlannedNotification confirmation(AppointmentId id, Instant startsAt,

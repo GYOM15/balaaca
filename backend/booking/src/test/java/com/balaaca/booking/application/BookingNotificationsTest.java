@@ -51,6 +51,13 @@ class BookingNotificationsTest {
         public void plan(List<PlannedNotification> notifications) {
             planned.addAll(notifications);
         }
+
+        @Override
+        public void cancelPending(com.balaaca.sharedkernel.ids.AppointmentId appointmentId) {
+            throw new UnsupportedOperationException(
+                    "planning owes nothing to withdrawal; a test that reached here "
+                    + "would be asserting the wrong thing");
+        }
     }
 
     private final RecordingOutbox outbox = new RecordingOutbox();

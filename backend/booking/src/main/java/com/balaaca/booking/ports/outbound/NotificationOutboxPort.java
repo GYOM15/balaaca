@@ -1,6 +1,7 @@
 package com.balaaca.booking.ports.outbound;
 
 import com.balaaca.booking.domain.PlannedNotification;
+import com.balaaca.sharedkernel.ids.AppointmentId;
 import java.util.List;
 
 /**
@@ -22,4 +23,18 @@ public interface NotificationOutboxPort {
      * doing its job, not an error.
      */
     void plan(List<PlannedNotification> notifications);
+
+    /**
+     * Withdraws what is no longer owed, in the caller's transaction.
+     *
+     * <p>A cancelled appointment whose reminder is still PENDING will text a
+     * customer about something that no longer exists, hours after they were
+     * told it was off. Withdrawing has to happen with the cancellation or not
+     * at all: committed separately, a crash between the two leaves the reminder
+     * armed.
+     *
+     * <p>Only PENDING rows move. One already SENDING belongs to a worker that
+     * is mid-send, and one already SENT is gone - neither is ours to retract.
+     */
+    void cancelPending(AppointmentId appointmentId);
 }

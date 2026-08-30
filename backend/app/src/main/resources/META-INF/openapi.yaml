@@ -101,6 +101,74 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
 
+  /v1/appointments/{id}/cancellation:
+    post:
+      operationId: cancelAppointment
+      tags: [agenda]
+      summary: Cancel one of the caller's appointments
+      description: |
+        A capability, not a status field. There is no operation that sets an
+        appointment's state directly: the machine is internal, and what a client
+        can express is the thing it wants to happen.
+
+        Cancelling frees the slot as a side effect of the same statement - the
+        exclusion constraint is partial on the active statuses - so there is no
+        moment in which the slot is neither taken nor free.
+
+        The provider's own cancellation deadline does not apply here. It is a
+        promise made to customers about how late they may cancel, and the
+        provider is not bound by their own policy.
+
+        An appointment that is not the caller's answers exactly as one that does
+        not exist.
+      security:
+        - oauth2: [appointments:write]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelAppointmentRequest'
+      responses:
+        '200':
+          description: The appointment as it now stands.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: '`UNAUTHENTICATED` - no verified token, or it expired.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: '`FORBIDDEN` - the subject belongs to no active provider.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: |
+            `INVALID_STATE_TRANSITION` - the appointment has already reached a
+            state it cannot leave. Cancelling twice lands here, and so does
+            cancelling something already completed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
   /v1/providers/{slug}/available-slots:
     get:
       operationId: listAvailableSlots
@@ -276,6 +344,7 @@ components:
           tokenUrl: /realms/balaaca/protocol/openid-connect/token
           scopes:
             dashboard:read: Read the caller's own agenda and settings.
+            appointments:write: Create and move the caller's own appointments.
 
   parameters:
     ProviderSlug:
@@ -520,6 +589,15 @@ components:
           type: string
           nullable: true
           description: Opaque; null on the last page.
+
+    CancelAppointmentRequest:
+      type: object
+      description: What the provider wants recorded about why. Private to them -
+        it appears in no customer-facing message.
+      properties:
+        reason:
+          type: string
+          maxLength: 200
 
     AppointmentCreatedView:
       type: object

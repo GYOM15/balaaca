@@ -3,6 +3,7 @@ package com.balaaca.booking.adapters.outbound.persistence;
 import com.balaaca.booking.domain.PlannedNotification;
 import com.balaaca.booking.ports.outbound.NotificationOutboxPort;
 import com.balaaca.platformkernel.tenancy.TenantContext;
+import com.balaaca.sharedkernel.ids.AppointmentId;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.persistence.EntityManager;
 import java.util.List;
@@ -62,6 +63,22 @@ public class NotificationOutboxSqlRepository implements NotificationOutboxPort {
                     .setParameter("scheduledAt", java.sql.Timestamp.from(n.scheduledAt()))
                     .executeUpdate();
         }
+    }
+
+    @Override
+    public void cancelPending(AppointmentId appointmentId) {
+        // PENDING only. A SENDING row is held by a worker that is mid-send and
+        // may already have reached the customer; a SENT one is gone. Neither is
+        // ours to retract, and the dedupe key is what stops a replay of either
+        // from becoming a second message.
+        em.createNativeQuery("""
+                UPDATE notifications
+                   SET status = 'CANCELLED', updated_at = now()
+                 WHERE appointment_id = :appointmentId
+                   AND status = 'PENDING'
+                """)
+                .setParameter("appointmentId", appointmentId.value())
+                .executeUpdate();
     }
 
     /**

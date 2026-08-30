@@ -64,6 +64,20 @@ public final class BookingExceptions {
         }
     }
 
+    /** The appointment cannot leave the state it is in. */
+    public static final class InvalidStateTransitionException extends DomainException {
+        public InvalidStateTransitionException(AppointmentStatus from, AppointmentStatus to) {
+            // The states are in details, not in the message. Which state an
+            // appointment is in is the caller's own business here, but the
+            // message is the one thing that reaches a client verbatim and the
+            // habit of putting data in it is what eventually leaks somebody
+            // else's.
+            super("INVALID_STATE_TRANSITION", 409,
+                  "That appointment can no longer change",
+                  Map.of("from", from.name(), "to", to.name()));
+        }
+    }
+
     /** Same idempotency key, different request body. */
     public static final class IdempotencyKeyReusedException extends DomainException {
         public IdempotencyKeyReusedException(String key) {

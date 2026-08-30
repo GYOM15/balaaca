@@ -6,16 +6,20 @@ import com.balaaca.app.api.model.AppointmentPage;
 import com.balaaca.app.api.model.AppointmentStatus;
 import com.balaaca.app.api.model.AppointmentView;
 import com.balaaca.app.api.model.Money;
+import com.balaaca.app.api.model.CancelAppointmentRequest;
+import com.balaaca.booking.ports.inbound.CancelAppointmentUseCase;
 import com.balaaca.booking.ports.inbound.ListAppointmentsUseCase;
 import com.balaaca.booking.ports.inbound.ListAppointmentsUseCase.AgendaEntry;
 import com.balaaca.booking.ports.inbound.ListAppointmentsUseCase.AgendaQuery;
 import com.balaaca.platformkernel.tenancy.TenantBound;
+import com.balaaca.sharedkernel.ids.AppointmentId;
 import io.quarkus.security.Authenticated;
 import jakarta.ws.rs.core.Response;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * The provider's own agenda.
@@ -36,11 +40,26 @@ import java.util.Optional;
 public class AppointmentsResource implements AgendaApi {
 
     private final ListAppointmentsUseCase appointments;
+    private final CancelAppointmentUseCase cancellation;
     private final Clock clock;
 
-    public AppointmentsResource(ListAppointmentsUseCase appointments, Clock clock) {
+    public AppointmentsResource(ListAppointmentsUseCase appointments,
+                                CancelAppointmentUseCase cancellation,
+                                Clock clock) {
         this.appointments = appointments;
+        this.cancellation = cancellation;
         this.clock = clock;
+    }
+
+    @Override
+    public Response cancelAppointment(UUID id, CancelAppointmentRequest request) {
+        // A capability, not a status field: what the caller expresses is the
+        // thing they want to happen, and the machine stays inside.
+        AgendaEntry cancelled = cancellation.cancel(
+                AppointmentId.of(id),
+                Optional.ofNullable(request).map(CancelAppointmentRequest::getReason));
+
+        return Response.ok(toView(cancelled)).build();
     }
 
     @Override

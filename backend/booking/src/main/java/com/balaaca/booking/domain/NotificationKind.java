@@ -2,9 +2,9 @@ package com.balaaca.booking.domain;
 
 /**
  * The kinds booking produces today. The {@code notifications} table's CHECK
- * admits CANCELLATION and RESCHEDULE as well; they are absent here because no
- * use case emits them yet, and an enum constant nothing can produce is a
- * promise the code does not keep.
+ * admits RESCHEDULE as well; it is absent here because no use case emits one
+ * yet, and an enum constant nothing can produce is a promise the code does not
+ * keep.
  */
 public enum NotificationKind {
 
@@ -15,5 +15,8 @@ public enum NotificationKind {
     BOOKING_NOTICE,
 
     /** To the customer, before the appointment. The instant it is owed for tells two apart. */
-    REMINDER
+    REMINDER,
+
+    /** To the customer, when their appointment is called off. */
+    CANCELLATION
 }
