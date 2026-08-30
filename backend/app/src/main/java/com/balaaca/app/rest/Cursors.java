@@ -56,15 +56,19 @@ final class Cursors {
     }
 
     /**
-     * The directory's position, two values for the same reason the agenda's is:
-     * two salons can be called Chez Fatou, and a cursor that could not tell them
-     * apart would drop one or repeat it at every page boundary. The name is
-     * escaped, because a business name may contain the separator and a salon
-     * called "A | B" must not be able to forge a position.
+     * The directory's position: a name and a slug. Two values for the same
+     * reason the agenda's is - two salons can be called Chez Fatou, and a cursor
+     * that could not tell them apart would drop one or repeat it at every page
+     * boundary.
+     *
+     * <p>A slug rather than the row id, because this cursor is handed to an
+     * unauthenticated caller on every page. The name is escaped: a business name
+     * may contain the separator, and a salon called "A | B" must not be able to
+     * forge a position.
      */
     static String encodeDirectory(Position position) {
         return encodeRaw(position.businessName().replace("\\", "\\\\").replace("|", "\\|")
-                         + "|" + position.id());
+                         + "|" + position.slug());
     }
 
     static Optional<Position> directoryPosition(String cursor) {
@@ -76,13 +80,12 @@ final class Cursors {
         if (split < 0) {
             throw new InvalidCursorException();
         }
-        try {
-            return Optional.of(new Position(
-                    raw.substring(0, split).replace("\\|", "|").replace("\\\\", "\\"),
-                    UUID.fromString(raw.substring(split + 1))));
-        } catch (IllegalArgumentException e) {
+        String slug = raw.substring(split + 1);
+        if (slug.isBlank()) {
             throw new InvalidCursorException();
         }
+        return Optional.of(new Position(
+                raw.substring(0, split).replace("\\|", "|").replace("\\\\", "\\"), slug));
     }
 
     private static int lastUnescapedBar(String raw) {

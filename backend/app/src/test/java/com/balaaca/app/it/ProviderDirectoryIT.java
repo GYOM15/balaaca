@@ -189,6 +189,25 @@ class ProviderDirectoryIT {
     }
 
     @Test
+    @DisplayName("The cursor hands out nothing a customer could not already read")
+    void carriesNoInternalIdentifier() {
+        // Walking the hub one entry at a time used to hand an anonymous caller
+        // the providers.id of every business on the platform - the value RLS
+        // compares in `id = app_current_provider()`, and the one the contract
+        // says is returned once at registration and never accepted back.
+        String cursor = given().queryParam("limit", 1).when().get(DIRECTORY)
+                .then().statusCode(200).extract().jsonPath().getString("next_cursor");
+
+        String decoded = new String(java.util.Base64.getUrlDecoder().decode(cursor),
+                                    java.nio.charset.StandardCharsets.UTF_8);
+
+        assertThat(decoded).isEqualTo("Beaute Nzerekore|beaute-nzerekore");
+        assertThat(decoded)
+                .as("no uuid of any kind belongs in a cursor handed to a stranger")
+                .doesNotMatch("(?s).*[0-9a-f]{8}-[0-9a-f]{4}-.*");
+    }
+
+    @Test
     @DisplayName("A cursor the server did not mint is a bad request, not a 500")
     void refusesAForgedCursor() {
         given().queryParam("cursor", "pas-du-tout-un-curseur")

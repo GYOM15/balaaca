@@ -2,7 +2,6 @@ package com.balaaca.providers.ports.inbound;
 
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 
 /**
  * The hub: finding a provider without already knowing its handle.
@@ -33,8 +32,17 @@ public interface SearchProvidersUseCase {
      * Two values, because one is not enough: two salons can be called Chez
      * Fatou, and a cursor that could not tell them apart would drop one or
      * repeat it at every page boundary.
+     *
+     * <p>The tiebreaker is the SLUG, not the row id. A cursor is handed to an
+     * unauthenticated caller on every page, so whatever is in it is published -
+     * and the row id is the value RLS compares in {@code id =
+     * app_current_provider()} and the one the contract says is returned once and
+     * never accepted back. Paging the hub one entry at a time would have
+     * harvested the internal identifier of every business on the platform. The
+     * slug is unique, so it orders just as well, and it is already on the QR
+     * code.
      */
-    record Position(String businessName, UUID id) {
+    record Position(String businessName, String slug) {
     }
 
     /**

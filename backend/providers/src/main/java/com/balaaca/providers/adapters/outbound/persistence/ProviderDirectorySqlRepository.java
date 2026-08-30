@@ -7,7 +7,6 @@ import jakarta.transaction.Transactional;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 
 /**
  * The directory, in SQL.
@@ -28,6 +27,12 @@ import java.util.UUID;
  *
  * <p>Transactional because the empty tenant binding is still a SET LOCAL, and a
  * read outside a transaction runs on a connection this request never prepared.
+ *
+ * <p>The row id is not selected at all. It was, for the cursor, and that handed
+ * an unauthenticated caller walking the hub one entry at a time the internal
+ * identifier of every business on the platform - the one value the rest of the
+ * contract keeps off the public wire. The slug orders just as well and is
+ * already public.
  */
 @ApplicationScoped
 public class ProviderDirectorySqlRepository implements SearchProvidersUseCase {
@@ -53,7 +58,7 @@ public class ProviderDirectorySqlRepository implements SearchProvidersUseCase {
         // reorder results, which is what lets the cursor stay meaningful.
         var statement = em.createNativeQuery("""
                 SELECT p.slug, p.business_name, p.description, c.slug, p.city,
-                       p.logo_url, p.id
+                       p.logo_url
                   FROM providers p
                   LEFT JOIN provider_categories c ON c.id = p.category_id
                  WHERE (CAST(:name AS varchar) IS NULL
@@ -63,16 +68,16 @@ public class ProviderDirectorySqlRepository implements SearchProvidersUseCase {
                    AND (CAST(:city AS varchar) IS NULL
                         OR lower(p.city) = lower(CAST(:city AS varchar)))
                    AND (CAST(:afterName AS varchar) IS NULL
-                        OR (p.business_name, p.id)
-                           > (CAST(:afterName AS varchar), CAST(:afterId AS uuid)))
-                 ORDER BY p.business_name, p.id
+                        OR (p.business_name, p.slug)
+                           > (CAST(:afterName AS varchar), CAST(:afterSlug AS varchar)))
+                 ORDER BY p.business_name, p.slug
                  LIMIT :window
                 """)
                 .setParameter("name", query.nameContains().orElse(null))
                 .setParameter("category", query.categorySlug().orElse(null))
                 .setParameter("city", query.city().orElse(null))
                 .setParameter("afterName", query.after().map(Position::businessName).orElse(null))
-                .setParameter("afterId", query.after().map(Position::id).orElse(null))
+                .setParameter("afterSlug", query.after().map(Position::slug).orElse(null))
                 .setParameter("window", window);
 
         List<Object[]> rows = statement.getResultList();
@@ -82,7 +87,7 @@ public class ProviderDirectorySqlRepository implements SearchProvidersUseCase {
             cards.add(new ProviderCard(
                     (String) r[0], (String) r[1],
                     text(r[2]), text(r[3]), text(r[4]), text(r[5]),
-                    new Position((String) r[1], (UUID) r[6])));
+                    new Position((String) r[1], (String) r[0])));
         }
 
         Optional<Position> next = rows.size() > cards.size() && !cards.isEmpty()
