@@ -1,6 +1,7 @@
 package com.balaaca.app.it;
 
 import static io.restassured.RestAssured.given;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
@@ -150,6 +151,27 @@ class OnboardingIT {
         register("""
                 {"slug":"barbier-cache","business_name":"Salon Awa"}
                 """).then().statusCode(409).body("code", equalTo("SLUG_UNAVAILABLE"));
+    }
+
+    @Test
+    @DisplayName("An account that already has a business learns nothing about handles")
+    @TestSecurity(user = BookingFixtures.SALON_SUBJECT, roles = "dashboard:read")
+    @OidcSecurity(claims = @Claim(key = "sub", value = BookingFixtures.SALON_SUBJECT))
+    void tellsARegisteredAccountAboutItselfAndNotAboutOthers() {
+        // The slug used to be arbitrated before the caller, so this account got
+        // SLUG_UNAVAILABLE for a taken handle and ALREADY_REGISTERED for a free
+        // one - a binary oracle over every handle on the platform, unlimited,
+        // for any account, for ever. And wrong on its own terms: the error
+        // depended on a fact about somebody else's business.
+        String taken = register("""
+                {"slug":"barbier-cache","business_name":"Sonde"}
+                """).then().statusCode(409).extract().jsonPath().getString("code");
+
+        String free = register("""
+                {"slug":"poignee-completement-libre","business_name":"Sonde"}
+                """).then().statusCode(409).extract().jsonPath().getString("code");
+
+        assertThat(taken).isEqualTo("ALREADY_REGISTERED").isEqualTo(free);
     }
 
     @Test
