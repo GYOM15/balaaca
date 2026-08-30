@@ -18,8 +18,9 @@
 --
 -- What this does NOT close: an account with no business can still probe, the
 -- way every signup form that says "that name is taken" can be probed. Closing
--- that needs a rate limit rather than a different error, and RATE_LIMITED is
--- already in the published catalogue waiting for one.
+-- that needs a rate limit rather than a different error - a counter, not another
+-- code. RATE_LIMITED already exists and is already raised, but for booking
+-- CONTENTION, which is a different thing wearing the same status.
 --
 -- The ORDER OF THE TWO INSERTS is untouched, and must stay untouched: the
 -- provider row still goes in before the staff row, so a caller passing an

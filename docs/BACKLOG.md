@@ -36,10 +36,14 @@ deux mondes.
 compte **sans** salon peut sonder les poignees, exactement comme n'importe quel
 formulaire d'inscription qui repond « ce nom est pris ».
 
-Le fermer demande une limite de debit, pas une erreur differente.
-`RATE_LIMITED` (429) est deja publie et leve nulle part, et Redis est deja dans
-la compose. A faire quand il y aura assez de salons pour que la liste vaille la
-peine d'etre enumeree.
+Le fermer demande une limite de debit, pas une erreur differente. `RATE_LIMITED`
+(429) est deja publie et deja leve — mais pour la **contention** de reservation
+(`BookingContendedException`), ce qui est un autre sujet : une limite
+d'inscription aurait besoin d'un compteur, et Redis est deja dans la compose
+pour cela.
+
+A faire quand il y aura assez de salons pour que la liste vaille la peine d'etre
+enumeree.
 
 ### Un vrai systeme d'alerte
 Le worker journalise chaque notification morte en `ERROR`, avec le
