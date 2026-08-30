@@ -15,6 +15,9 @@ import com.balaaca.platformkernel.tenancy.PublicTenantBinder;
 import com.balaaca.providers.ports.inbound.LookupPublicProviderUseCase;
 import com.balaaca.providers.ports.inbound.LookupPublicProviderUseCase.PublicProvider;
 import com.balaaca.providers.ports.inbound.LookupPublicStaffUseCase;
+import com.balaaca.app.api.model.CategoryList;
+import com.balaaca.app.api.model.CategoryView;
+import com.balaaca.providers.ports.inbound.ListCategoriesUseCase;
 import com.balaaca.providers.ports.inbound.LookupProviderImageUseCase;
 import com.balaaca.scheduling.domain.OpenWindow;
 import com.balaaca.scheduling.ports.inbound.ManageAvailabilityUseCase;
@@ -44,19 +47,37 @@ public class PublicProviderResource implements DiscoveryApi {
     private final PublishedCatalogueUseCase catalogue;
     private final ManageAvailabilityUseCase availability;
     private final LookupProviderImageUseCase images;
+    private final ListCategoriesUseCase categories;
 
     public PublicProviderResource(PublicTenantBinder tenants,
                                   LookupPublicProviderUseCase providers,
                                   LookupPublicStaffUseCase staff,
                                   PublishedCatalogueUseCase catalogue,
                                   ManageAvailabilityUseCase availability,
-                                  LookupProviderImageUseCase images) {
+                                  LookupProviderImageUseCase images,
+                                  ListCategoriesUseCase categories) {
         this.tenants = tenants;
         this.providers = providers;
         this.staff = staff;
         this.catalogue = catalogue;
         this.availability = availability;
         this.images = images;
+        this.categories = categories;
+    }
+
+    /**
+     * The taxonomy the hub browses by. No tenant, no cursor: the whole thing is
+     * one page and always will be - a hub with two hundred trades is a hub
+     * nobody can browse.
+     */
+    @Override
+    public Response listCategories() {
+        return Response.ok(new CategoryList().data(
+                categories.offered().stream().map(c -> {
+                    CategoryView view = new CategoryView().slug(c.slug()).labelFr(c.labelFr());
+                    c.icon().ifPresent(view::setIcon);
+                    return view;
+                }).toList())).build();
     }
 
     /**

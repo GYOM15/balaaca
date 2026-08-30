@@ -66,13 +66,25 @@ public class AppointmentSqlRepository implements AppointmentRepository {
                         blocked_from, blocked_until, service_name,
                         customer_price_amount_minor, customer_price_currency,
                         duration_minutes, source, idempotency_key, idempotency_request_hash,
-                        public_reference)
+                        public_reference, status)
                     VALUES (
                         :id, :providerId, :staffId, :offeringId, :customerId,
                         :startsAt, :endsAt, :bufferBefore, :bufferAfter,
                         :blockedFrom, :blockedUntil, :serviceName,
                         :priceMinor, :currency, :duration, :source, :key, :hash,
-                        :reference)
+                        :reference,
+                        -- auto_confirm was a column with a DEFAULT of true and
+                        -- no reader, so every appointment was born PENDING and
+                        -- every salon confirmed by hand - the schema promising
+                        -- one thing and the code doing another.
+                        --
+                        -- Read in the INSERT rather than fetched first: the
+                        -- policy belongs to the row, and a value carried in
+                        -- from the application is a value that can arrive
+                        -- stale.
+                        (SELECT CASE WHEN auto_confirm THEN 'CONFIRMED'
+                                     ELSE 'PENDING' END
+                           FROM providers WHERE id = :providerId))
                     ON CONFLICT (provider_id, idempotency_key)
                         WHERE idempotency_key IS NOT NULL
                     DO NOTHING

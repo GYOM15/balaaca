@@ -1252,6 +1252,34 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
 
+  /v1/categories:
+    get:
+      operationId: listCategories
+      tags: [discovery]
+      summary: The trades a customer can browse by
+      description: |
+        Curated, not provider-authored. A category is a navigation device and its
+        value is that many providers share it: left to free text you get
+        "Coiffure", "coiffure", "Coiffeuse" and "Salon de coiffure", each
+        matching one business, and the hub stops working exactly when it starts
+        having providers. What a provider says in its own words lives one level
+        down, in its services.
+
+        Ordered as they should be shown. `label_fr` is the label - the platform
+        speaks French first - and the icon is a name, not a URL, so a client
+        picks it out of its own set and the platform never ships an image for it.
+
+        Withdrawn trades are absent. A provider that already carries one keeps
+        it; nobody new can choose it.
+      security: []
+      responses:
+        '200':
+          description: The trades.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryList'
+
   /v1/providers:
     get:
       operationId: listProviders
@@ -2499,3 +2527,29 @@ components:
           enum: [STAFF]
           description: Always STAFF. An owner's row is not claimable by an
             invitation, in the function and in the policy behind it.
+
+    CategoryView:
+      type: object
+      required: [slug, label_fr]
+      properties:
+        slug:
+          type: string
+          description: What `listProviders` accepts. Stable, and never renamed.
+        label_fr:
+          type: string
+        icon:
+          type: string
+          description: A name a client resolves in its own icon set, never a URL.
+
+    CategoryList:
+      type: object
+      description: |
+        No cursor. The whole taxonomy is a page and always will be - a hub with
+        two hundred trades is a hub nobody can browse - and inventing pagination
+        here would make every client walk a loop that always runs once.
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/CategoryView'

@@ -77,15 +77,21 @@ public class BookingFixtures {
               ('d2d2d2d2-0000-0000-0000-000000000001','%s','Solo'),
               ('d3d3d3d3-0000-0000-0000-000000000001','%s','Personne')
             """.formatted(SALON_SUBJECT, SOLO_SUBJECT, STRANGER_SUBJECT));
+        // The salon vets its bookings and the solo barber does not, so both
+        // sides of auto_confirm are exercised: a booking that arrives PENDING
+        // and one that arrives CONFIRMED. The column defaults to true, so
+        // leaving it out here would have quietly made every test the second
+        // case - which is how it went unnoticed that nothing read it at all.
+        //
         // Only the salon publishes a way to be reached. coiffeur-solo deliberately
         // does not: a provider with no contact must still be bookable, and the
         // staff notice is simply not planned.
         run("""
             INSERT INTO providers (id, slug, business_name, country_code, published, status,
-                                   whatsapp_phone_e164) VALUES
-              ('%s','salon-fatou','Salon Fatou','GN',true,'ACTIVE','+224622999001'),
-              ('%s','barbier-cache','Barbier Cache','GN',false,'PENDING',NULL),
-              ('%s','coiffeur-solo','Coiffeur Solo','GN',true,'ACTIVE',NULL)
+                                   whatsapp_phone_e164, auto_confirm) VALUES
+              ('%s','salon-fatou','Salon Fatou','GN',true,'ACTIVE','+224622999001',false),
+              ('%s','barbier-cache','Barbier Cache','GN',false,'PENDING',NULL,false),
+              ('%s','coiffeur-solo','Coiffeur Solo','GN',true,'ACTIVE',NULL,true)
             """.formatted(SALON, HIDDEN, SOLO));
         run("""
             INSERT INTO provider_staff (id, provider_id, user_id, display_name, role) VALUES
