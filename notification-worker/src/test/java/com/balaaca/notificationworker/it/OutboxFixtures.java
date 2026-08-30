@@ -78,6 +78,13 @@ public class OutboxFixtures {
         return id;
     }
 
+    /** How long the row has been held, as the database itself measures it. */
+    public double leaseAgeSeconds(UUID id) {
+        return Double.parseDouble(text(
+                "SELECT extract(epoch FROM now() - updated_at)::text "
+                + "FROM notifications WHERE id = '%s'".formatted(id)));
+    }
+
     public String status(UUID id) {
         return text("SELECT status FROM notifications WHERE id = '%s'".formatted(id));
     }

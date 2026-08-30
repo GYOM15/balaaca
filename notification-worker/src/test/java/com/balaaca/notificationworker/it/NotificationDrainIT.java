@@ -112,9 +112,18 @@ class NotificationDrainIT {
         UUID abandoned = fixtures.stale(OutboxFixtures.SALON, "appointment:8:REMINDER:1", "10 minutes");
         UUID working = fixtures.stale(OutboxFixtures.SALON, "appointment:9:REMINDER:1", "10 seconds");
 
-        // The count first. This assertion failed once in CI and could not be
-        // reproduced, and the status alone does not say whether the statement
-        // matched nothing or matched and was undone - which are different bugs.
+        // The premise, then the outcome. This failed on CI and passed seven
+        // times locally, and "no rows released" has two causes that look
+        // identical from the status alone: a row that was never old enough, and
+        // a comparison that never matched. Asserting the age first tells them
+        // apart in the failure message rather than in a second CI run.
+        assertThat(fixtures.leaseAgeSeconds(abandoned))
+                .as("the abandoned row's age, in seconds, as the database sees it")
+                .isGreaterThan(300);
+        assertThat(fixtures.leaseAgeSeconds(working))
+                .as("the working row's age, in seconds")
+                .isLessThan(300);
+
         assertThat(outbox.releaseStaleLeases(java.time.Duration.ofMinutes(5)))
                 .as("leases released")
                 .isEqualTo(1);
