@@ -8,10 +8,7 @@ import com.balaaca.app.api.model.ClosureView;
 import com.balaaca.app.api.model.OpeningHours;
 import com.balaaca.app.api.model.OpeningHoursRequest;
 import com.balaaca.app.api.model.OpeningHoursSegment;
-import com.balaaca.app.api.model.StaffList;
-import com.balaaca.app.api.model.StaffView;
 import com.balaaca.platformkernel.tenancy.TenantBound;
-import com.balaaca.providers.ports.inbound.ListStaffUseCase;
 import com.balaaca.providers.ports.inbound.LookupNoticeProfileUseCase;
 import com.balaaca.scheduling.ports.inbound.ManageAvailabilityUseCase;
 import com.balaaca.scheduling.ports.inbound.ManageAvailabilityUseCase.Closure;
@@ -40,29 +37,13 @@ import java.util.UUID;
 @TenantBound
 public class ScheduleResource implements ScheduleApi {
 
-    private final ListStaffUseCase staff;
     private final LookupNoticeProfileUseCase providers;
     private final ManageAvailabilityUseCase availability;
 
-    public ScheduleResource(ListStaffUseCase staff,
-                            LookupNoticeProfileUseCase providers,
+    public ScheduleResource(LookupNoticeProfileUseCase providers,
                             ManageAvailabilityUseCase availability) {
-        this.staff = staff;
         this.providers = providers;
         this.availability = availability;
-    }
-
-    @Override
-    @RolesAllowed("dashboard:read")
-    public Response listStaff() {
-        return Response.ok(new StaffList().data(staff.currentStaff().stream()
-                .map(m -> new StaffView()
-                        .staffId(m.id().value())
-                        .displayName(m.displayName())
-                        .role(m.role())
-                        .bookable(m.bookable())
-                        .active(m.active()))
-                .toList())).build();
     }
 
     @Override

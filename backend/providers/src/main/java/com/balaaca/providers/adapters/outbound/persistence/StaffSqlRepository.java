@@ -1,28 +1,40 @@
 package com.balaaca.providers.adapters.outbound.persistence;
 
-import com.balaaca.providers.ports.inbound.ListStaffUseCase;
+import com.balaaca.platformkernel.tenancy.TenantContext;
+import com.balaaca.providers.ports.inbound.ListStaffUseCase.StaffDefinition;
+import com.balaaca.providers.ports.inbound.ListStaffUseCase.StaffMember;
+import com.balaaca.providers.ports.outbound.StaffRepository;
 import com.balaaca.sharedkernel.ids.StaffId;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.persistence.EntityManager;
-import jakarta.transaction.Transactional;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
- * No provider predicate: RLS supplies it, and provider_staff is tenant-scoped,
- * so this returns the caller's people and cannot return anyone else's.
+ * The caller's people, in SQL.
+ *
+ * <p>Reads and the update carry no provider predicate: RLS supplies it, so a
+ * staff member who is not the caller's is invisible rather than forbidden, and
+ * an update naming someone else's id simply matches nothing. The insert is the
+ * exception - a native insert bypasses any tenant filter, so provider_id comes
+ * from TenantContext and the policy's WITH CHECK is the backstop.
+ *
+ * <p>role is written as STAFF and never taken from the caller. The owner is the
+ * row registration wrote, and moving ownership is not an edit to a member.
  */
 @ApplicationScoped
-public class StaffSqlRepository implements ListStaffUseCase {
+public class StaffSqlRepository implements StaffRepository {
 
     private final EntityManager em;
+    private final TenantContext tenantContext;
 
-    public StaffSqlRepository(EntityManager em) {
+    public StaffSqlRepository(EntityManager em, TenantContext tenantContext) {
         this.em = em;
+        this.tenantContext = tenantContext;
     }
 
     @Override
-    @Transactional(Transactional.TxType.REQUIRED)
     @SuppressWarnings("unchecked")
     public List<StaffMember> currentStaff() {
         List<Object[]> rows = em.createNativeQuery("""
@@ -31,8 +43,74 @@ public class StaffSqlRepository implements ListStaffUseCase {
                  ORDER BY (status = 'ACTIVE') DESC, display_name
                 """).getResultList();
 
-        return rows.stream().map(r -> new StaffMember(
-                StaffId.of((UUID) r[0]), (String) r[1], (String) r[2],
-                (Boolean) r[3], "ACTIVE".equals(r[4]))).toList();
+        return rows.stream().map(StaffSqlRepository::toMember).toList();
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public StaffMember insert(StaffDefinition definition) {
+        UUID id = UUID.randomUUID();
+        // user_id stays null: a member is a bookable resource, and the unique
+        // index on one active membership per account would otherwise refuse a
+        // second person the moment two of them shared an owner's account.
+        em.createNativeQuery("""
+                INSERT INTO provider_staff
+                       (id, provider_id, user_id, display_name, role, bookable, status)
+                VALUES (:id, :providerId, NULL, :displayName, 'STAFF', :bookable, :status)
+                """)
+                .setParameter("id", id)
+                .setParameter("providerId", tenantContext.require().value())
+                .setParameter("displayName", definition.displayName())
+                .setParameter("bookable", definition.bookable())
+                .setParameter("status", definition.active() ? "ACTIVE" : "DISABLED")
+                .executeUpdate();
+
+        return read(StaffId.of(id)).orElseThrow();
+    }
+
+    @Override
+    public Optional<StaffMember> update(StaffId id, StaffDefinition definition) {
+        int changed = em.createNativeQuery("""
+                UPDATE provider_staff
+                   SET display_name = :displayName,
+                       bookable     = :bookable,
+                       status       = :status,
+                       updated_at   = now()
+                 WHERE id = :id
+                """)
+                .setParameter("id", id.value())
+                .setParameter("displayName", definition.displayName())
+                .setParameter("bookable", definition.bookable())
+                .setParameter("status", definition.active() ? "ACTIVE" : "DISABLED")
+                .executeUpdate();
+
+        // Zero rows is a miss and another provider's member alike, because RLS
+        // removed the row from the statement's reach before it ran.
+        return changed == 0 ? Optional.empty() : read(id);
+    }
+
+    @Override
+    public long otherBookableStaff(StaffId excluding) {
+        return ((Number) em.createNativeQuery("""
+                SELECT count(*) FROM provider_staff
+                 WHERE status = 'ACTIVE' AND bookable AND id <> :excluding
+                """)
+                .setParameter("excluding", excluding.value())
+                .getSingleResult()).longValue();
+    }
+
+    @SuppressWarnings("unchecked")
+    private Optional<StaffMember> read(StaffId id) {
+        List<Object[]> rows = em.createNativeQuery("""
+                SELECT id, display_name, role, bookable, status
+                  FROM provider_staff WHERE id = :id
+                """).setParameter("id", id.value()).getResultList();
+
+        return rows.stream().findFirst().map(StaffSqlRepository::toMember);
+    }
+
+    private static StaffMember toMember(Object[] r) {
+        return new StaffMember(StaffId.of((UUID) r[0]), (String) r[1], (String) r[2],
+                               (Boolean) r[3], "ACTIVE".equals(r[4]));
     }
 }

@@ -36,12 +36,19 @@ servers:
     description: The deployable serving this document.
 
 tags:
-  - name: onboarding
-    description: Bringing a business onto the platform.
+  - name: providers
+    description: |
+      The provider collection: finding a business, and becoming one. One tag
+      because one path - every operation on `/v1/providers` is generated into
+      the same interface and served by the same class, and splitting them
+      across tags produces two classes for one path, of which the router keeps
+      one and answers 405 to the other.
   - name: profile
     description: What a provider publishes about itself.
   - name: discovery
     description: What a customer sees before booking.
+  - name: team
+    description: The people who work at a provider.
   - name: schedule
     description: When a provider is open, and when they are not.
   - name: catalogue
@@ -175,9 +182,42 @@ paths:
                 $ref: '#/components/schemas/Problem'
 
   /v1/staff:
+    post:
+      operationId: addStaffMember
+      tags: [team]
+      summary: Add someone to the caller's own team
+      description: |
+        A member is a bookable resource, not an account. A salon adds a chair
+        and the person who works it long before that person signs in - many
+        never will - so nothing here creates a login, and a member with no
+        account is the ordinary case rather than a degraded one.
+
+        Every member is created as staff. The owner is the row registration
+        wrote, and there is exactly one.
+      security:
+        - oauth2: [staff:write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StaffRequest'
+      responses:
+        '201':
+          description: The member.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
     get:
       operationId: listStaff
-      tags: [schedule]
+      tags: [team]
       summary: List the caller's own staff
       description: |
         Opening hours and closures belong to a person, not to a business: a
@@ -197,6 +237,88 @@ paths:
           $ref: '#/components/responses/Unauthenticated'
         '403':
           $ref: '#/components/responses/Forbidden'
+
+  /v1/staff/{id}:
+    put:
+      operationId: replaceStaffMember
+      tags: [team]
+      summary: Change one of the caller's own people
+      description: |
+        The whole member, not a field at a time.
+
+        There is no delete. A person who has left is `active: false`: their past
+        appointments still name them, and a row removed would take the history
+        with it. An inactive member keeps their hours and simply stops counting
+        towards when the business is open.
+
+        Standing someone down while they are the last bookable person at a
+        published business is `409 INVALID_STATE_TRANSITION` - it would leave a
+        page on the public path with nothing behind it. Unpublish first.
+
+        `role` is not here. Ownership moves through a separate conversation, not
+        through an edit form.
+      security:
+        - oauth2: [staff:write]
+      parameters:
+        - $ref: '#/components/parameters/StaffId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StaffRequest'
+      responses:
+        '200':
+          description: The member as they now stand.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`INVALID_STATE_TRANSITION` - the last bookable person at
+            a published business cannot be stood down.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /v1/providers/{slug}/staff:
+    get:
+      operationId: listPublicStaff
+      tags: [discovery]
+      summary: Who a customer can ask for
+      description: |
+        The people a customer may name when booking, and nothing else about
+        them: a display name and the identifier `bookAppointment` accepts. No
+        role, so a customer cannot tell the owner from an employee; no account,
+        no contact details, no working hours - an individual's weekly pattern is
+        a fact about a named person, and a customer needs it no more than they
+        need to know who is busy.
+
+        Only people who are active and bookable appear. Omit `staff_id` when
+        booking and the server picks; send one and the customer has asked for
+        that person, which is a different promise and a different answer when
+        the slot is gone.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProviderSlug'
+      responses:
+        '200':
+          description: The bookable people.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicStaffList'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /v1/opening-hours:
     get:
@@ -835,7 +957,7 @@ paths:
   /v1/providers:
     get:
       operationId: listProviders
-      tags: [discovery]
+      tags: [providers]
       summary: Find a provider
       description: |
         The hub itself. Without it a business is reachable only by someone who
@@ -892,7 +1014,7 @@ paths:
           $ref: '#/components/responses/BadRequest'
     post:
       operationId: registerProvider
-      tags: [onboarding]
+      tags: [providers]
       summary: Register the caller's business
       description: |
         The one authenticated operation that runs with no tenant. Everything
@@ -1103,6 +1225,7 @@ components:
             schedule:write: Set the caller's own opening hours and closures.
             appointments:write: Create and move the caller's own appointments.
             profile:write: Change the caller's own public page, and publish it.
+            staff:write: Add and change the caller's own people.
 
   parameters:
     AppointmentId:
@@ -1119,6 +1242,13 @@ components:
       description: Whose schedule. A provider identifier never appears in a
         request; a staff identifier is one of the caller's own people, and the
         database confines it to them.
+      schema:
+        type: string
+        format: uuid
+    StaffId:
+      name: id
+      in: path
+      required: true
       schema:
         type: string
         format: uuid
@@ -1917,3 +2047,47 @@ components:
           type: string
           nullable: true
           description: Opaque; null on the last page.
+
+    StaffRequest:
+      type: object
+      description: |
+        No role and no account. Ownership is not an edit, and a member is a
+        bookable resource rather than a login.
+      required: [display_name, bookable, active]
+      properties:
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        bookable:
+          type: boolean
+          description: Whether a customer may be given this person's slots. A
+            receptionist is active and not bookable.
+        active:
+          type: boolean
+          description: False for someone who has left. Their appointments stay.
+
+    PublicStaffMember:
+      type: object
+      description: |
+        A separate projection from StaffView, which carries the role and whether
+        the person is active. Neither is a customer's business, and a shape that
+        does not hold them cannot leak them.
+      required: [staff_id, display_name]
+      properties:
+        staff_id:
+          type: string
+          format: uuid
+          description: Pass to bookAppointment or listAvailableSlots to ask for
+            this person in particular.
+        display_name:
+          type: string
+
+    PublicStaffList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicStaffMember'
