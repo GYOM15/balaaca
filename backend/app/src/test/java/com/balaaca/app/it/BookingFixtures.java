@@ -33,6 +33,13 @@ public class BookingFixtures {
     public static final String STRANGER_SUBJECT = "kc-nobody";
     /** Nobody at all: no users row either, which is what a real signup looks like. */
     public static final String NEWCOMER_SUBJECT = "kc-nouveau";
+    /** An employee at the salon. Belongs there, and does not own it. */
+    public static final String EMPLOYEE_SUBJECT = "kc-employee";
+
+    public static final UUID SALON_OWNER_STAFF =
+            UUID.fromString("a1a1a1a1-0000-0000-0000-000000000001");
+    public static final UUID SALON_EMPLOYEE_STAFF =
+            UUID.fromString("a4a4a4a4-0000-0000-0000-000000000001");
 
     public static final String CATEGORY = "coiffure";
 
@@ -50,16 +57,17 @@ public class BookingFixtures {
         run("""
             TRUNCATE notifications, appointments, customers, availability_overrides,
                      availability_rules, service_offerings, provider_staff, providers,
-                     provider_categories, users CASCADE
+                     users CASCADE
             """);
+        // The trades come from V016 and are NOT truncated: the tests browse the
+        // taxonomy the product actually ships. Only the withdrawn one is local -
+        // naming a retired trade must be refused like any unknown one, not
+        // quietly stored as none.
         run("""
-            INSERT INTO provider_categories (id, slug, label_fr) VALUES
-              ('ca7e6047-0000-0000-0000-000000000001','%s','Coiffure'),
-              ('ca7e6047-0000-0000-0000-000000000002','retire','Retire')
-            """.formatted(CATEGORY));
-        // Offered once and withdrawn: naming it must be refused like any other
-        // unknown category, not quietly stored as none.
-        run("UPDATE provider_categories SET active = false WHERE slug = 'retire'");
+            INSERT INTO provider_categories (id, slug, label_fr, active) VALUES
+              ('ca7e6047-0000-0000-0000-000000000002','retire','Retire',false)
+            ON CONFLICT (slug) DO NOTHING
+            """);
         // A user with no staff row exists on purpose: a valid token whose
         // subject belongs to nobody here must be told 403, not handed an empty
         // agenda that looks like a working account.
@@ -135,6 +143,25 @@ public class BookingFixtures {
                 SELECT count(*) FROM appointments
                  WHERE provider_id = '%s' AND status IN ('PENDING','CONFIRMED')
                 """.formatted(providerId));
+    }
+
+    /**
+     * An employee with an account at the salon, added on request rather than to
+     * the shared decor.
+     *
+     * <p>A second bookable member is not a neutral addition: the booking path
+     * resolves "any available staff" by retrying against the next candidate, so
+     * a salon with two chairs answers 201 where a salon with one answers 409.
+     * Putting this row in reset() silently rewrote four double-booking tests
+     * into tests of something else.
+     */
+    public void seedEmployee() {
+        run("""
+            INSERT INTO users (id, keycloak_user_id, display_name)
+                 VALUES ('d4d4d4d4-0000-0000-0000-000000000001','%s','Mariama');
+            INSERT INTO provider_staff (id, provider_id, user_id, display_name, role)
+                 VALUES ('%s','%s','d4d4d4d4-0000-0000-0000-000000000001','Mariama','STAFF')
+            """.formatted(EMPLOYEE_SUBJECT, SALON_EMPLOYEE_STAFF, SALON));
     }
 
     /** Arbitrary SQL, for the one-off row a single test needs and no other. */

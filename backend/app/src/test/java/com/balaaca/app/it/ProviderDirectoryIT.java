@@ -42,7 +42,8 @@ class ProviderDirectoryIT {
         // separator, which a business is entitled to be called.
         fixtures.execute("""
                 UPDATE providers SET city = 'Conakry',
-                       category_id = 'ca7e6047-0000-0000-0000-000000000001'
+                       category_id = (SELECT id FROM provider_categories
+                                       WHERE slug = 'coiffure')
                  WHERE slug = 'salon-fatou';
                 UPDATE providers SET city = 'Kindia' WHERE slug = 'coiffeur-solo';
                 INSERT INTO providers (id, slug, business_name, city, published, status) VALUES

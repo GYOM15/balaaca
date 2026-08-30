@@ -125,15 +125,35 @@ scope_id_of() {
         | grep -B4 "\"name\" : \"$1\"" | grep '"id"' | head -1 | sed 's/.*: "//;s/".*//'
 }
 
+# $3 is "default" or "optional".
+#
+# A DEFAULT scope lands in every token the client issues, for every user,
+# unconditionally. Every API scope was default, which meant every caller held
+# every one of them and no @RolesAllowed anywhere could refuse anybody.
+#
+# They are OPTIONAL now: a client asks for what it needs and the token carries
+# that and no more. This is not the privilege boundary - a caller may still ask
+# for everything, and what a member may do inside their own provider is settled
+# by provider_staff.role in the database, on every request. It is the difference
+# between a token that says what it is for and one that says everything.
+#
+# balaaca-audience stays default: a token that names no API is a token every API
+# has to guess about.
 assign_scope() {
     _cid=$(client_id_of "$1")
     _sid=$(scope_id_of "$2")
+    _kind="${3:-optional}"
     if [ -z "$_cid" ] || [ -z "$_sid" ]; then
         echo "[init-realm]   WARNING: cannot assign $2 to $1" >&2
         return
     fi
-    $KCADM update "clients/$_cid/default-client-scopes/$_sid" -r "$REALM" >/dev/null 2>&1 \
-        && echo "[init-realm]   $2 -> $1"
+    # Moving a scope between the two lists means removing it from the other, or
+    # Keycloak keeps both and default wins.
+    _other="default"
+    [ "$_kind" = "default" ] && _other="optional"
+    $KCADM delete "clients/$_cid/${_other}-client-scopes/$_sid" -r "$REALM" >/dev/null 2>&1 || true
+    $KCADM update "clients/$_cid/${_kind}-client-scopes/$_sid" -r "$REALM" >/dev/null 2>&1 \
+        && echo "[init-realm]   $2 -> $1 ($_kind)"
 }
 
 echo "[init-realm] client scopes..."
@@ -161,12 +181,12 @@ if [ -n "$AUDIENCE_SID" ] && ! $KCADM get "client-scopes/$AUDIENCE_SID/protocol-
 fi
 
 # A token that names no API is a token any API would have to guess about, so
-# both token-issuing clients carry the audience. The scopes are default rather
-# than optional: this product has no consent screen to grant them on.
+# both token-issuing clients carry the audience, and it is the only default.
 for client in balaaca-frontend balaaca-dev-cli; do
-    for scope in balaaca-audience dashboard:read appointments:write \
-                 catalog:write schedule:write profile:write staff:write; do
-        assign_scope "$client" "$scope"
+    assign_scope "$client" "balaaca-audience" default
+    for scope in dashboard:read appointments:write catalog:write \
+                 schedule:write profile:write staff:write; do
+        assign_scope "$client" "$scope" optional
     done
 done
 

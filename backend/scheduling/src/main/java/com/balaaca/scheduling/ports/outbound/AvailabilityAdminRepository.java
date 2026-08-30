@@ -6,6 +6,7 @@ import com.balaaca.scheduling.domain.OpenWindow;
 import com.balaaca.sharedkernel.ids.StaffId;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -34,5 +35,12 @@ public interface AvailabilityAdminRepository {
 
     Closure insertClosure(UUID id, Closure closure);
 
-    boolean deleteClosure(UUID id);
+    /**
+     * @param restrictTo when present, only a closure belonging to that staff
+     *                   member is deleted. The restriction travels into the
+     *                   DELETE rather than being checked after a separate read,
+     *                   which would be a window in which the row could change
+     *                   hands.
+     */
+    boolean deleteClosure(UUID id, Optional<StaffId> restrictTo);
 }

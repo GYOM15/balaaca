@@ -5,6 +5,7 @@ import com.balaaca.providers.domain.NothingToPublishException;
 import com.balaaca.providers.domain.UnknownCategoryException;
 import com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase;
 import com.balaaca.providers.ports.outbound.ProviderProfileRepository;
+import com.balaaca.platformkernel.tenancy.TenantContext;
 import com.balaaca.providers.ports.outbound.ProviderRegistrationRepository;
 import com.balaaca.scheduling.ports.inbound.ManageAvailabilityUseCase;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -32,15 +33,18 @@ public class ManageProviderProfileService implements ManageProviderProfileUseCas
     private final ProviderRegistrationRepository categories;
     private final PublishedCatalogueUseCase catalogue;
     private final ManageAvailabilityUseCase availability;
+    private final TenantContext tenant;
 
     public ManageProviderProfileService(ProviderProfileRepository profiles,
                                         ProviderRegistrationRepository categories,
                                         PublishedCatalogueUseCase catalogue,
-                                        ManageAvailabilityUseCase availability) {
+                                        ManageAvailabilityUseCase availability,
+                                        TenantContext tenant) {
         this.profiles = profiles;
         this.categories = categories;
         this.catalogue = catalogue;
         this.availability = availability;
+        this.tenant = tenant;
     }
 
     @Override
@@ -52,6 +56,10 @@ public class ManageProviderProfileService implements ManageProviderProfileUseCas
     @Override
     @Transactional(Transactional.TxType.REQUIRED)
     public ProviderProfile replace(ProfileEdit edit) {
+        // The public page, the contact details and whether the business is
+        // reachable at all. An employee editing their own hours is ordinary;
+        // an employee unpublishing the storefront is not.
+        tenant.requireOwner("update_provider_profile");
         if (edit.published()) {
             requireSomethingBookable();
         }

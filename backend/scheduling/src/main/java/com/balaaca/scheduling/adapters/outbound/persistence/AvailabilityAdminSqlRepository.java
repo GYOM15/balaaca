@@ -169,9 +169,19 @@ public class AvailabilityAdminSqlRepository implements AvailabilityAdminReposito
     }
 
     @Override
-    public boolean deleteClosure(UUID id) {
-        return em.createNativeQuery("DELETE FROM availability_overrides WHERE id = :id")
+    public boolean deleteClosure(UUID id, Optional<StaffId> restrictTo) {
+        // The staff restriction is a predicate, not a check around the call. A
+        // read-then-delete would leave a window in which the row changes hands,
+        // and RLS already puts another provider's closure out of reach - this
+        // adds the same protection between colleagues.
+        return em.createNativeQuery("""
+                DELETE FROM availability_overrides
+                 WHERE id = :id
+                   AND (CAST(:staffId AS uuid) IS NULL
+                        OR staff_id = CAST(:staffId AS uuid))
+                """)
                 .setParameter("id", id)
+                .setParameter("staffId", restrictTo.map(StaffId::value).orElse(null))
                 .executeUpdate() == 1;
     }
 

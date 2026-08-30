@@ -67,6 +67,8 @@ than its first referencing migration breaks a fresh database.
 | `V012__create_audit_logs.sql` | `audit_logs` | |
 | `V013__enable_row_level_security.sql` | policies, grants, resolution functions | |
 | `V014__enable_provider_registration.sql` | registration policies and grants, `app_register_provider()` | the signup seam - see 4.4 |
+| `V015__enforce_membership_and_isolation.sql` | `app_resolve_membership()`, status filters, RLS on `users` and `audit_logs`, maintenance policies | see 4.5 |
+| `V016__seed_provider_categories.sql` | the curated trade taxonomy | `provider_categories` was empty in production |
 
 Tables are plural snake_case. `staff_id` references `provider_staff`; the
 shortened stem is the one deliberate exception to "foreign key = singular stem
@@ -174,11 +176,12 @@ breaks the circle, and it returns exactly one uuid.
 CREATE POLICY provider_staff_resolution ON provider_staff
     FOR SELECT TO balaaca_resolver USING (true);
 
-CREATE FUNCTION app_resolve_provider(p_subject varchar) RETURNS uuid
+CREATE FUNCTION app_resolve_membership(p_subject varchar)
+RETURNS TABLE (provider_id uuid, staff_id uuid, staff_role varchar)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS
 $$ SELECT ps.provider_id FROM provider_staff ps JOIN users u ON u.id = ps.user_id
     WHERE u.keycloak_user_id = p_subject AND ps.status = 'ACTIVE' $$;
-ALTER FUNCTION app_resolve_provider(varchar) OWNER TO balaaca_resolver;
+ALTER FUNCTION app_resolve_membership(varchar) OWNER TO balaaca_resolver;
 REVOKE ALL ON FUNCTION app_resolve_provider(varchar) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app_resolve_provider(varchar) TO balaaca_app;
 ```
@@ -284,6 +287,36 @@ Three things are load-bearing and none is stylistic.
 `POST /v1/providers` is therefore `@Authenticated` and **not** `@TenantBound`,
 the only route on the platform that is. It declares no scope: a scope says what
 a caller may do inside their own provider, and the caller has none yet.
+
+### 4.5 What revocation revokes, and who may do what
+
+Three things the schema described and nothing enforced, all fixed in V015 and
+all verified against PostgreSQL 18.6.
+
+- **Suspension suspended nothing.** Resolution filtered on the staff row's
+  status alone. An account marked `DELETED` still resolved on the next request,
+  defeating the interceptor's one design premise; a `SUSPENDED` provider kept
+  its dashboard AND stayed publicly bookable. `users.status`, `providers.status`
+  and the `providers_public_read` policy now all say so.
+- **There was no OWNER/STAFF line.** `provider_staff.role` was written at
+  registration and read by nothing, so every member with an account could
+  unpublish the storefront and re-price the catalogue. Resolution returns the
+  role; `TenantContext.requireOwner` refuses in the service layer, which is what
+  the published contract always claimed happened. Owner-only: the public
+  profile, and composing the team. A member writes their own hours and closures
+  and nobody else's.
+- **`users` and `audit_logs` had no RLS** while `balaaca_app` held full DML.
+  Both are FORCE now, `users` scoped through `provider_staff` and `audit_logs`
+  on `provider_id`.
+
+A fourth, found while writing it: only `notifications` had a **maintenance
+policy**. Every other tenant table was FORCE RLS with no policy naming
+`balaaca_migrator`, so a data-fixing migration matched zero rows and reported
+success. Verified. All ten now have one.
+
+Scopes are **optional** client scopes, not default. A default scope is in every
+token for every user, which made every `@RolesAllowed` unable to refuse anybody.
+They still are not the privilege boundary - the database is.
 
 ---
 
