@@ -109,21 +109,17 @@ class NotificationDrainIT {
     @Test
     @DisplayName("A released lease is picked up again rather than stranded")
     void releasesStaleLeases() {
-        // An hour against a five-minute lease, not ten minutes. The margin is
-        // not fussiness: this assertion failed twice on CI and never once in
-        // seven local runs, and the only difference between the two sides that
-        // could produce it is the clock the two statements read. An hour
-        // absorbs any correction a runner might apply between them; if it fails
-        // again, the clock was never the reason and the age assertion above
-        // will say so.
+        // An hour against a five-minute lease. The margin is not what made this
+        // test flaky - the scheduler was, firing its first drain in the middle
+        // of the assertions - but a wide margin costs nothing and says plainly
+        // that the ages are not the interesting part.
         UUID abandoned = fixtures.stale(OutboxFixtures.SALON, "appointment:8:REMINDER:1", "1 hour");
         UUID working = fixtures.stale(OutboxFixtures.SALON, "appointment:9:REMINDER:1", "1 second");
 
-        // The premise, then the outcome. This failed on CI and passed seven
-        // times locally, and "no rows released" has two causes that look
-        // identical from the status alone: a row that was never old enough, and
-        // a comparison that never matched. Asserting the age first tells them
-        // apart in the failure message rather than in a second CI run.
+        // The premise, then the outcome. "No rows released" has two causes that
+        // look identical from the status alone: a row that was never old
+        // enough, and a comparison that never matched. Asserting the age first
+        // tells them apart in the failure message rather than in another run.
         assertThat(fixtures.leaseAgeSeconds(abandoned))
                 .as("the abandoned row's age, in seconds, as the database sees it")
                 .isGreaterThan(300);
