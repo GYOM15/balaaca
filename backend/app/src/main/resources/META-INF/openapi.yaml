@@ -969,6 +969,9 @@ paths:
         this list by a filter written here - it is invisible to the database
         role serving the request.
 
+        Several `category_slug` may be given; a provider matching any of them is
+        returned.
+
         Ordered by name, always, and never by how well a result matches. A
         cursor over a ranked sequence is only meaningful while the ranking
         holds still, and a similarity score moves every time any provider edits
@@ -991,9 +994,19 @@ paths:
         - name: category_slug
           in: query
           required: false
+          explode: true
+          description: |
+            Repeat it to ask for several trades at once. That is what a wedding
+            section is: one query over photographie, traiteur, dj-animation,
+            decoration-evenementielle and the rest. "Mariage" is not a category,
+            because a photographer shoots weddings and corporate events and
+            portraits, and a provider has one trade.
           schema:
-            type: string
-            maxLength: 60
+            type: array
+            maxItems: 20
+            items:
+              type: string
+              maxLength: 60
         - name: city
           in: query
           required: false

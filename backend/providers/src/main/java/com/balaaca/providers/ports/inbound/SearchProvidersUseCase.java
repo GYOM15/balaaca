@@ -18,14 +18,21 @@ public interface SearchProvidersUseCase {
     /**
      * @param nameContains part of a business name; the caller has already
      *                     rejected anything shorter than two characters
+     * @param categorySlugs any of these trades matches; empty means all of them.
+     *                      Several because a wedding is not a trade - it is a
+     *                      query over the trades a wedding needs
      * @param after the last card of the previous page, so paging resumes
      *              exactly where the caller stopped reading
      */
     record Query(Optional<String> nameContains,
-                 Optional<String> categorySlug,
+                 List<String> categorySlugs,
                  Optional<String> city,
                  Optional<Position> after,
                  int limit) {
+
+        public Query {
+            categorySlugs = List.copyOf(categorySlugs);
+        }
     }
 
     /**

@@ -15,6 +15,7 @@ import com.balaaca.providers.ports.inbound.SearchProvidersUseCase.Query;
 import io.quarkus.security.Authenticated;
 import jakarta.ws.rs.core.Response;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -55,11 +56,12 @@ public class ProvidersResource implements ProvidersApi {
      * and nothing else.
      */
     @Override
-    public Response listProviders(String q, String categorySlug, String city,
+    public Response listProviders(String q, List<String> categorySlug, String city,
                                   String cursor, Integer limit) {
         var found = directory.search(new Query(
                 Optional.ofNullable(q).filter(v -> !v.isBlank()),
-                Optional.ofNullable(categorySlug).filter(v -> !v.isBlank()),
+                categorySlug == null ? List.of()
+                        : categorySlug.stream().filter(v -> !v.isBlank()).toList(),
                 Optional.ofNullable(city).filter(v -> !v.isBlank()),
                 Cursors.directoryPosition(cursor),
                 limit == null ? Cursors.DEFAULT_LIMIT : limit));

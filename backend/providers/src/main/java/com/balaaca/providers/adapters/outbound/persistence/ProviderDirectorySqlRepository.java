@@ -63,8 +63,8 @@ public class ProviderDirectorySqlRepository implements SearchProvidersUseCase {
                   LEFT JOIN provider_categories c ON c.id = p.category_id
                  WHERE (CAST(:name AS varchar) IS NULL
                         OR p.business_name ILIKE '%' || CAST(:name AS varchar) || '%')
-                   AND (CAST(:category AS varchar) IS NULL
-                        OR c.slug = CAST(:category AS varchar))
+                   AND (cardinality(CAST(:categories AS varchar[])) = 0
+                        OR c.slug = ANY(CAST(:categories AS varchar[])))
                    AND (CAST(:city AS varchar) IS NULL
                         OR lower(p.city) = lower(CAST(:city AS varchar)))
                    AND (CAST(:afterName AS varchar) IS NULL
@@ -74,7 +74,8 @@ public class ProviderDirectorySqlRepository implements SearchProvidersUseCase {
                  LIMIT :window
                 """)
                 .setParameter("name", query.nameContains().orElse(null))
-                .setParameter("category", query.categorySlug().orElse(null))
+                .setParameter("categories",
+                              query.categorySlugs().toArray(String[]::new))
                 .setParameter("city", query.city().orElse(null))
                 .setParameter("afterName", query.after().map(Position::businessName).orElse(null))
                 .setParameter("afterSlug", query.after().map(Position::slug).orElse(null))
