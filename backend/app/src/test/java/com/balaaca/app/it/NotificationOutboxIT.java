@@ -46,7 +46,7 @@ class NotificationOutboxIT {
     @Test
     @DisplayName("A booking leaves the rows it owes, PENDING and self-contained")
     void bookingWritesTheOutbox() {
-        given().contentType("application/json")
+        given().contentType("application/json").header("Idempotency-Key", "key-" + UUID.randomUUID())
                 .body(booking(BookingFixtures.SALON_OFFERING, "2026-09-04T10:00:00Z", "622000001"))
                 .when().post(SALON).then().statusCode(201);
 
@@ -71,7 +71,7 @@ class NotificationOutboxIT {
     void refusedBookingWritesNothing() {
         // 03:00 is outside the declared hours, so the attempt rolls back after
         // the offering has been read and before anything is inserted.
-        given().contentType("application/json")
+        given().contentType("application/json").header("Idempotency-Key", "key-" + UUID.randomUUID())
                 .body(booking(BookingFixtures.SALON_OFFERING, "2026-09-04T03:00:00Z", "622000002"))
                 .when().post(SALON).then().statusCode(422);
 
@@ -81,12 +81,12 @@ class NotificationOutboxIT {
     @Test
     @DisplayName("A slot lost to the constraint leaves nothing either")
     void losingTheSlotWritesNothing() {
-        given().contentType("application/json")
+        given().contentType("application/json").header("Idempotency-Key", "key-" + UUID.randomUUID())
                 .body(booking(BookingFixtures.SALON_OFFERING, "2026-09-04T10:00:00Z", "622000003"))
                 .when().post(SALON).then().statusCode(201);
         long afterWinner = fixtures.notifications(BookingFixtures.SALON).size();
 
-        given().contentType("application/json")
+        given().contentType("application/json").header("Idempotency-Key", "key-" + UUID.randomUUID())
                 .body(booking(BookingFixtures.SALON_OFFERING, "2026-09-04T10:00:00Z", "622000004"))
                 .when().post(SALON).then().statusCode(409);
 
@@ -110,7 +110,7 @@ class NotificationOutboxIT {
     @Test
     @DisplayName("A provider with no published contact is still bookable")
     void unreachableProviderIsStillBookable() {
-        given().contentType("application/json")
+        given().contentType("application/json").header("Idempotency-Key", "key-" + UUID.randomUUID())
                 .body(booking(BookingFixtures.SOLO_OFFERING, "2026-09-04T10:00:00Z", "622000006"))
                 .when().post(SOLO).then().statusCode(201);
 

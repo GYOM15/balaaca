@@ -1,0 +1,380 @@
+openapi: 3.0.3
+
+# The published contract. One document, hand-authored, in the deployable that
+# assembles the contexts - never one per Maven module: every module's
+# META-INF/openapi.yaml lands at the same classpath path, SmallRye serves
+# whichever wins the scan, and the rest disappear at runtime with no error.
+#
+# Runtime annotation scanning is off (mp.openapi.scan.disable), so what is
+# served is this file and only this file. The server interfaces and the wire
+# types are generated from it into target/generated-sources and never
+# committed: the only way to change the interface is to change the contract,
+# and the compiler catches a resource that no longer matches.
+info:
+  title: Balaaca API
+  version: "1.0.0"
+  description: |
+    The surface a client can call: today the two public operations a customer
+    reaches from a provider's page. Provider-scoped operations arrive with
+    authentication and will carry OAuth2 scopes; they will carry no tenant
+    identifier, because the tenant is resolved server-side from the verified
+    subject.
+
+    Every property and query parameter is snake_case. Instants are UTC
+    date-times. Money is `{ amount_minor, currency }`, never a bare number.
+  contact:
+    name: Balaaca
+    url: https://github.com/GYOM15/balaaca
+  license:
+    name: PolyForm Noncommercial 1.0.0
+    url: https://polyformproject.org/licenses/noncommercial/1.0.0/
+
+servers:
+  # Relative on purpose: no public hostname is published yet, and inventing one
+  # would put a URL in the contract that resolves to nothing.
+  - url: /
+    description: The deployable serving this document.
+
+tags:
+  - name: availability
+    description: What a customer can book, from a provider's public page.
+  - name: booking
+    description: Taking a slot.
+
+paths:
+  /v1/providers/{slug}/available-slots:
+    get:
+      operationId: listAvailableSlots
+      tags: [availability]
+      summary: List the slots a customer could book
+      description: |
+        Returns only slots that can actually be booked right now. Busy time is
+        not represented at all - no `available: false` entries, no busy
+        intervals, no annotated gaps.
+
+        That is not a timing precaution. A uniform grid with an availability
+        flag is a minute-by-minute occupancy map of a named person at a named
+        address, served to anyone who can spell the slug and trivially scraped
+        on a schedule. A client that wants a grid for layout lays these slots
+        over the provider's opening hours, which are public in their own right.
+
+        An unknown slug and an unpublished provider answer identically.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProviderSlug'
+        - name: service_offering_id
+          in: query
+          required: true
+          description: Which service is being booked; its duration and buffers
+            decide what a slot occupies.
+          schema:
+            type: string
+            format: uuid
+        - name: staff_id
+          in: query
+          required: false
+          description: Ask about one staff member. Omit for the whole bookable
+            team.
+          schema:
+            type: string
+            format: uuid
+        - name: from
+          in: query
+          required: true
+          description: First date to consider, in the provider's own zone.
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          required: true
+          description: Last date to consider. A range longer than 31 days is
+            truncated to 31 days from `from`.
+          schema:
+            type: string
+            format: date
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: The bookable slots in the requested range.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailableSlotPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/providers/{slug}/appointments:
+    post:
+      operationId: bookAppointment
+      tags: [booking]
+      summary: Book an appointment on a provider's public page
+      description: |
+        Creates a `PENDING` appointment. The slug carries the tenant here, and
+        only here: a customer is not staff, so membership resolution yields
+        nothing for them and a booking route with no tenant identifier would
+        answer 403 to the very people it exists for. The slug grants nothing
+        beyond what the public page already shows, and this path may do exactly
+        two things - create a pending appointment, and read the public
+        projections.
+
+        The server recomputes the window from the offering's own duration and
+        buffers, and freezes the price from the offering. Neither is accepted
+        from the client.
+
+        Retry semantics: a `409` means the slot is gone, so re-read
+        availability rather than retrying the same body. A `429` and a `5xx`
+        are safe to retry with the same `Idempotency-Key`; no `4xx` other than
+        `429` is.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProviderSlug'
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: |
+            The same key with the same body replays the first result and
+            returns `200`. The same key with a different body is `422
+            IDEMPOTENCY_KEY_REUSED`. The key is retained for the life of the
+            appointment - not for a fixed window.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 80
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookAppointmentRequest'
+      responses:
+        '201':
+          description: The appointment was created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentCreatedView'
+        '200':
+          description: |
+            This key already created this appointment. The body is the first
+            result, unchanged.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentCreatedView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: |
+            `SLOT_UNAVAILABLE` - the slot was taken between the availability
+            read and this write.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          description: |
+            `SLOT_OUTSIDE_AVAILABILITY` when the start falls outside what the
+            provider published, or `IDEMPOTENCY_KEY_REUSED` when the key was
+            replayed with a different body.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '429':
+          description: |
+            `RATE_LIMITED` - too many bookings arrived at once for this slot
+            and none of the attempts could be ordered. The slot may still be
+            free: retry with the same key.
+          headers:
+            Retry-After:
+              description: Seconds to wait before retrying.
+              schema:
+                type: integer
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+components:
+
+  parameters:
+    ProviderSlug:
+      name: slug
+      in: path
+      required: true
+      description: The provider's public handle - the string on the QR code.
+      schema:
+        type: string
+        pattern: '^[a-z0-9]([a-z0-9-]{1,58}[a-z0-9])$'
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque. Pass back the `next_cursor` of the previous page.
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: How many entries to return.
+      schema:
+        type: integer
+        minimum: 1
+        default: 50
+        maximum: 200
+
+  responses:
+    BadRequest:
+      description: '`VALIDATION_FAILED`, or `IDEMPOTENCY_KEY_REQUIRED` when a
+        mutating operation arrived without the header.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    NotFound:
+      description: |
+        `RESOURCE_NOT_FOUND`. One answer for a resource that does not exist and
+        for one that is not the caller's, byte for byte: any way to tell them
+        apart is an oracle for whether a hidden resource exists.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+
+  schemas:
+
+    Problem:
+      type: object
+      description: RFC 7807. `code` is the stable value a client branches on;
+        `title` is human text and may change.
+      required: [type, title, status, code]
+      properties:
+        type:
+          type: string
+          format: uri
+          example: https://errors.balaaca.com/slot-unavailable
+        title:
+          type: string
+          example: That slot is no longer available
+        status:
+          type: integer
+          format: int32
+          example: 409
+        code:
+          $ref: '#/components/schemas/ErrorCode'
+        instance:
+          type: string
+          description: The trace id for this request. Quote it in a bug report;
+            it is what ties the response to the server log.
+
+    ErrorCode:
+      type: string
+      description: |
+        The closed catalogue. Values are never renamed or reused once
+        published, because clients branch on them. There is no code that
+        distinguishes "not yours" from "does not exist", and none that names an
+        internal concept.
+      enum:
+        - VALIDATION_FAILED
+        - IDEMPOTENCY_KEY_REQUIRED
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - PLAN_LIMIT_REACHED
+        - RESOURCE_NOT_FOUND
+        - SLOT_UNAVAILABLE
+        - INVALID_STATE_TRANSITION
+        - SLOT_OUTSIDE_AVAILABILITY
+        - CANCELLATION_DEADLINE_PASSED
+        - CURRENCY_MISMATCH
+        - IDEMPOTENCY_KEY_REUSED
+        - RATE_LIMITED
+        - INTERNAL_ERROR
+
+    AvailableSlot:
+      type: object
+      description: A slot a customer could take. Carries when it starts and
+        when it ends, and nothing about who is free or busy.
+      required: [starts_at, ends_at]
+      properties:
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+
+    AvailableSlotPage:
+      type: object
+      required: [data, next_cursor]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AvailableSlot'
+        next_cursor:
+          type: string
+          nullable: true
+          description: Opaque; null on the last page.
+
+    CustomerContact:
+      type: object
+      description: How the customer is reached. The phone is normalised to
+        E.164 server-side from the provider's country.
+      required: [full_name, phone]
+      properties:
+        full_name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        phone:
+          type: string
+          minLength: 1
+          maxLength: 24
+          example: "622000001"
+        email:
+          type: string
+          maxLength: 255
+
+    BookAppointmentRequest:
+      type: object
+      description: |
+        No provider identifier: the tenant comes from the slug in the path. No
+        end time, no duration and no price: all three follow from the offering
+        and are recomputed server-side, because a client-supplied price is the
+        oldest trick there is.
+      required: [service_offering_id, starts_at, customer]
+      properties:
+        service_offering_id:
+          type: string
+          format: uuid
+        staff_id:
+          type: string
+          format: uuid
+          description: Ask for one person. Omit - never send null - to let the
+            server choose an available one.
+        starts_at:
+          type: string
+          format: date-time
+          description: The requested start, as a UTC instant.
+        customer:
+          $ref: '#/components/schemas/CustomerContact'
+        customer_note:
+          type: string
+          maxLength: 500
+
+    AppointmentCreatedView:
+      type: object
+      description: Deliberately thin. An id is all a customer needs, and all
+        the public path should hand back.
+      required: [appointment_id]
+      properties:
+        appointment_id:
+          type: string
+          format: uuid

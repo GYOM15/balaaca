@@ -103,6 +103,7 @@ class BookingConcurrencyIT {
                     .mapToObj(i -> pool.submit(() -> {
                         releaseAll.await();
                         return given().contentType("application/json")
+                                .header("Idempotency-Key", "racer-" + startsAt + "-" + i)
                                 .body("""
                                       {"service_offering_id":"%s","starts_at":"%s",
                                        "customer":{"full_name":"Client %d","phone":"+22462200%04d"}}

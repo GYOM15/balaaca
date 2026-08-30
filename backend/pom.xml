@@ -12,6 +12,11 @@
 
   <properties>
     <maven.compiler.release>21</maven.compiler.release>
+    <!-- Keeps parameter names in the bytecode. Without it a constraint
+         violation names the offending argument arg1, so an error body cannot
+         tell "your Idempotency-Key is missing" from "your body is wrong", and
+         every stack trace is one degree less readable. -->
+    <maven.compiler.parameters>true</maven.compiler.parameters>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
     <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
@@ -25,6 +30,7 @@
     <jacoco.version>0.8.15</jacoco.version>
     <pitest.version>1.30.0</pitest.version>
     <pitest-junit5.version>1.2.3</pitest-junit5.version>
+    <openapi-generator.version>7.25.0</openapi-generator.version>
   </properties>
 
   <modules>

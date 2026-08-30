@@ -6,7 +6,7 @@ import java.util.Map;
 public final class UnknownCurrencyException extends DomainException {
 
     public UnknownCurrencyException(String isoCode) {
-        super("VALIDATION_FAILED", 422,
+        super("VALIDATION_FAILED", 400,
               "Unknown currency code", Map.of("iso_code", String.valueOf(isoCode)));
     }
 }

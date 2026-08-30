@@ -1,5 +1,6 @@
 package com.balaaca.app.rest;
 
+import com.balaaca.app.api.model.ErrorCode;
 import com.balaaca.sharedkernel.error.DomainException;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.ExceptionMapper;
@@ -39,7 +40,8 @@ public class DomainExceptionMapper implements ExceptionMapper<DomainException> {
         }
         return Response.status(e.status())
                 .type("application/problem+json")
-                .entity(ProblemDetail.of(e.code(), e.status(), e.getMessage(), traceId))
+                .entity(Problems.of(ErrorCode.fromValue(e.code()), e.status(),
+                                    e.getMessage(), traceId))
                 .build();
     }
 }

@@ -8,6 +8,7 @@ import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -32,6 +33,12 @@ class AvailabilityIT {
         fixtures.reset();
     }
 
+    /** A fresh key per call: the contract requires one, not a particular one. */
+    private static io.restassured.specification.RequestSpecification post() {
+        return given().contentType("application/json")
+                .header("Idempotency-Key", "key-" + UUID.randomUUID());
+    }
+
     private static String booking(String startsAt, String phone) {
         return """
                {"service_offering_id":"%s","starts_at":"%s",
@@ -43,7 +50,7 @@ class AvailabilityIT {
     @DisplayName("Refuses a booking outside the declared hours")
     void refusesOutsideHours() {
         // The salon opens 08:00 to 20:00; 03:00 is nobody's opening hour.
-        given().contentType("application/json")
+        post()
                 .body(booking("2026-09-01T03:00:00Z", "622000001"))
                 .when().post(SALON)
                 .then().statusCode(422).body("code", equalTo("SLOT_OUTSIDE_AVAILABILITY"));
@@ -55,7 +62,7 @@ class AvailabilityIT {
     @DisplayName("Refuses a booking on a Sunday, which has no rule")
     void refusesOnAClosedWeekday() {
         // 2026-09-06 is a Sunday; rules cover Monday to Saturday only.
-        given().contentType("application/json")
+        post()
                 .body(booking("2026-09-06T10:00:00Z", "622000002"))
                 .when().post(SALON)
                 .then().statusCode(422).body("code", equalTo("SLOT_OUTSIDE_AVAILABILITY"));
@@ -67,7 +74,7 @@ class AvailabilityIT {
         // 2026-09-01 is a Tuesday and normally open.
         fixtures.closeSalonOn("2026-09-01");
 
-        given().contentType("application/json")
+        post()
                 .body(booking("2026-09-01T10:00:00Z", "622000003"))
                 .when().post(SALON)
                 .then().statusCode(422).body("code", equalTo("SLOT_OUTSIDE_AVAILABILITY"));
@@ -80,7 +87,7 @@ class AvailabilityIT {
         // offers. Accepting it anyway would make slot_granularity_minutes
         // decorative: two customers could take 10:00 and 10:05 and the
         // provider's day would stop matching the grid they configured.
-        given().contentType("application/json")
+        post()
                 .body(booking("2026-09-01T10:05:00Z", "622000007"))
                 .when().post(SALON)
                 .then().statusCode(422).body("code", equalTo("SLOT_OUTSIDE_AVAILABILITY"));
@@ -91,7 +98,7 @@ class AvailabilityIT {
     @Test
     @DisplayName("Still accepts a booking inside the declared hours")
     void acceptsInsideHours() {
-        given().contentType("application/json")
+        post()
                 .body(booking("2026-09-01T10:00:00Z", "622000004"))
                 .when().post(SALON)
                 .then().statusCode(201);
@@ -116,7 +123,7 @@ class AvailabilityIT {
         List<String> before = listStarts();
         assertThat(before).contains("2026-09-01T10:00:00Z");
 
-        given().contentType("application/json")
+        post()
                 .body(booking("2026-09-01T10:00:00Z", "622000005"))
                 .when().post(SALON).then().statusCode(201);
 
@@ -134,10 +141,63 @@ class AvailabilityIT {
         // vanish as they tap it.
         String first = listStarts().get(0);
 
-        given().contentType("application/json")
+        post()
                 .body(booking(first, "622000006"))
                 .when().post(SALON)
                 .then().statusCode(201);
+    }
+
+    @Test
+    @DisplayName("A page carries a cursor, and the cursor resumes where it stopped")
+    void pagesTheSlots() {
+        List<String> all = listStarts();
+        assertThat(all).hasSizeGreaterThan(3);
+
+        var first = given()
+                .queryParam("service_offering_id", BookingFixtures.SALON_OFFERING.toString())
+                .queryParam("from", "2026-09-01").queryParam("to", "2026-09-01")
+                .queryParam("limit", 3)
+                .when().get(SLOTS).then().statusCode(200).extract();
+
+        assertThat(first.jsonPath().getList("data.starts_at", String.class))
+                .isEqualTo(all.subList(0, 3));
+        String cursor = first.jsonPath().getString("next_cursor");
+        assertThat(cursor).isNotBlank();
+
+        List<String> second = given()
+                .queryParam("service_offering_id", BookingFixtures.SALON_OFFERING.toString())
+                .queryParam("from", "2026-09-01").queryParam("to", "2026-09-01")
+                .queryParam("limit", 3).queryParam("cursor", cursor)
+                .when().get(SLOTS).then().statusCode(200)
+                .extract().jsonPath().getList("data.starts_at", String.class);
+
+        // Resumes at the next slot, not at the one already read: a page that
+        // repeats its predecessor's last entry double-books it in any UI that
+        // appends.
+        assertThat(second).isEqualTo(all.subList(3, 6));
+    }
+
+    @Test
+    @DisplayName("The last page says so by carrying no cursor")
+    void lastPageHasNoCursor() {
+        String cursor = given()
+                .queryParam("service_offering_id", BookingFixtures.SALON_OFFERING.toString())
+                .queryParam("from", "2026-09-01").queryParam("to", "2026-09-01")
+                .queryParam("limit", 200)
+                .when().get(SLOTS).then().statusCode(200)
+                .extract().jsonPath().getString("next_cursor");
+
+        assertThat(cursor).isNull();
+    }
+
+    @Test
+    @DisplayName("A cursor the server never minted is a malformed parameter")
+    void rejectsAForgedCursor() {
+        given().queryParam("service_offering_id", BookingFixtures.SALON_OFFERING.toString())
+                .queryParam("from", "2026-09-01").queryParam("to", "2026-09-01")
+                .queryParam("cursor", "not-a-cursor")
+                .when().get(SLOTS)
+                .then().statusCode(400).body("code", equalTo("VALIDATION_FAILED"));
     }
 
     private List<String> listStarts() {

@@ -1,5 +1,6 @@
 package com.balaaca.app.rest;
 
+import com.balaaca.app.api.model.BookAppointmentRequest;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -21,11 +22,14 @@ public final class RequestFingerprint {
 
     public static String of(BookAppointmentRequest r) {
         String canonical = String.join("|",
-                String.valueOf(r.serviceOfferingId()),
-                String.valueOf(r.staffId()),
-                String.valueOf(r.startsAt()),
-                String.valueOf(r.customer().phone()),
-                String.valueOf(r.customer().fullName()));
+                String.valueOf(r.getServiceOfferingId()),
+                String.valueOf(r.getStaffId()),
+                // The instant, not the wire text: +00:00 and Z are the same
+                // moment, and a retry that spells it differently is still the
+                // same request.
+                String.valueOf(r.getStartsAt().toInstant()),
+                String.valueOf(r.getCustomer().getPhone()),
+                String.valueOf(r.getCustomer().getFullName()));
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256")
                     .digest(canonical.getBytes(StandardCharsets.UTF_8));

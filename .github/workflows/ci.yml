@@ -96,6 +96,54 @@ jobs:
             notification-worker/target/failsafe-reports/**
           if-no-files-found: ignore
 
+  contract:
+    name: published contract
+    needs: secrets
+    runs-on: ubuntu-latest
+    steps:
+      # Full history: the breaking-change check needs the version of the
+      # document that is already on develop to compare against.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      # The document is what is published, so it is what is linted - not the
+      # code that implements it and not the runtime /q/openapi, which is served
+      # from this same file with annotation scanning off.
+      - name: Lint the OpenAPI document
+        run: |
+          npx --yes @stoplight/spectral-cli@6.15.0 lint \
+            backend/app/src/main/resources/META-INF/openapi.yaml \
+            --ruleset .spectral.yaml --fail-severity=error
+
+      # A pinned, checksummed binary, like gitleaks and osv-scanner above: an
+      # action that resolves a tag at run time decides what runs in this gate.
+      - name: Check for breaking changes
+        env:
+          OASDIFF_VERSION: 1.29.1
+          OASDIFF_SHA256: 541f7c66c933495fceef24eaf5c48aa66c19069f366f7bd0a60a6a4820c5e533
+        run: |
+          set -uo pipefail
+          spec=backend/app/src/main/resources/META-INF/openapi.yaml
+
+          # Nothing to compare against the first time the document appears, and
+          # that is not a failure - it is the base case.
+          if ! git show "origin/${{ github.base_ref || 'develop' }}:$spec" > /tmp/published.yaml 2>/dev/null; then
+            echo "::notice::no published contract to compare against yet"
+            exit 0
+          fi
+
+          archive="oasdiff_${OASDIFF_VERSION}_linux_amd64.tar.gz"
+          curl -sSfL --retry 3 -o "$archive" \
+            "https://github.com/oasdiff/oasdiff/releases/download/v${OASDIFF_VERSION}/${archive}"
+          echo "${OASDIFF_SHA256}  ${archive}" | sha256sum -c -
+          tar -xzf "$archive" oasdiff
+
+          # Additive changes pass. Removing a field, tightening a type, renaming
+          # an error code or making an optional parameter required does not:
+          # inside /v1 the promise is compatibility, and breaking it needs /v2.
+          ./oasdiff breaking /tmp/published.yaml "$spec" --fail-on ERR
+
   lint:
     name: shell and compose
     needs: secrets

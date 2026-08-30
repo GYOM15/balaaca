@@ -78,6 +78,14 @@
             <goals><goal>check</goal></goals>
             <configuration>
               <dataFile>${project.build.directory}/jacoco-quarkus.exec</dataFile>
+              <!-- The wire types are generated from the contract, so their
+                   getters, equals and toString are the generator's work. Left
+                   in, they moved the ratio from 83% to 50% the day the contract
+                   landed, without a single test having got worse. A gate that
+                   answers to that is measuring the wrong thing. -->
+              <excludes>
+                <exclude>com/balaaca/app/api/**</exclude>
+              </excludes>
               <rules>
                 <rule>
                   <element>BUNDLE</element>
@@ -93,6 +101,55 @@
                   </limits>
                 </rule>
               </rules>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <!--
+        The contract compiles into interfaces and wire types, and nothing it
+        produces is committed. There is therefore no checked-in copy to drift
+        from the spec and no drift job to write: the only way to change the
+        interface is to change META-INF/openapi.yaml, and javac catches a
+        resource that no longer matches it.
+      -->
+      <plugin>
+        <groupId>org.openapitools</groupId>
+        <artifactId>openapi-generator-maven-plugin</artifactId>
+        <version>${openapi-generator.version}</version>
+        <executions>
+          <execution>
+            <id>generate-api</id>
+            <phase>generate-sources</phase>
+            <goals><goal>generate</goal></goals>
+            <configuration>
+              <inputSpec>${project.basedir}/src/main/resources/META-INF/openapi.yaml</inputSpec>
+              <generatorName>jaxrs-spec</generatorName>
+              <output>${project.build.directory}/generated-sources/openapi</output>
+              <apiPackage>com.balaaca.app.api</apiPackage>
+              <modelPackage>com.balaaca.app.api.model</modelPackage>
+              <generateApiTests>false</generateApiTests>
+              <generateModelTests>false</generateModelTests>
+              <generateApiDocumentation>false</generateApiDocumentation>
+              <generateModelDocumentation>false</generateModelDocumentation>
+              <configOptions>
+                <!-- Interfaces only: the resource is ours, its shape is not. -->
+                <interfaceOnly>true</interfaceOnly>
+                <returnResponse>true</returnResponse>
+                <useJakartaEe>true</useJakartaEe>
+                <useTags>true</useTags>
+                <sourceFolder>src/gen/java</sourceFolder>
+                <openApiNullable>false</openApiNullable>
+                <!-- Swagger 1.x annotations describe the contract a second
+                     time, in Java, from the file that already is the contract.
+                     They also need a dependency this project has no other use
+                     for. Scanning is off, so nothing reads them anyway. -->
+                <useSwaggerAnnotations>false</useSwaggerAnnotations>
+                <!-- java.util.Date otherwise, which is a wall clock with no
+                     zone and a mutable one at that. date-time becomes
+                     OffsetDateTime, which carries the offset the contract
+                     promises (ADR-0007). -->
+                <dateLibrary>java8</dateLibrary>
+              </configOptions>
             </configuration>
           </execution>
         </executions>

@@ -48,7 +48,7 @@ class PublicBookingIT {
         @Test
         @DisplayName("creates the appointment and returns its id")
         void books() {
-            given().contentType("application/json")
+            given().contentType("application/json").header("Idempotency-Key", "key-" + UUID.randomUUID())
                     .body(body(BookingFixtures.SALON_OFFERING, "2026-09-01T10:00:00Z", "622000001"))
                     .when().post(SALON)
                     .then().statusCode(201).body("appointment_id", org.hamcrest.Matchers.notNullValue());
@@ -59,7 +59,7 @@ class PublicBookingIT {
         @Test
         @DisplayName("normalises a locally typed phone number to E.164")
         void normalisesPhone() {
-            given().contentType("application/json")
+            given().contentType("application/json").header("Idempotency-Key", "key-" + UUID.randomUUID())
                     .body(body(BookingFixtures.SALON_OFFERING, "2026-09-01T10:00:00Z", "622 00 00 01"))
                     .when().post(SALON)
                     .then().statusCode(201);
@@ -113,7 +113,7 @@ class PublicBookingIT {
         @Test
         @DisplayName("an unpublished provider is not bookable")
         void unpublishedIsNotBookable() {
-            given().contentType("application/json")
+            given().contentType("application/json").header("Idempotency-Key", "key-" + UUID.randomUUID())
                     .body(body(BookingFixtures.HIDDEN_OFFERING, "2026-09-01T10:00:00Z", "622000001"))
                     .when().post(HIDDEN)
                     .then().statusCode(404).body("code", equalTo("RESOURCE_NOT_FOUND"));
@@ -122,7 +122,7 @@ class PublicBookingIT {
         @Test
         @DisplayName("an unknown slug answers exactly like an unpublished one")
         void unknownSlugIsIndistinguishable() {
-            given().contentType("application/json")
+            given().contentType("application/json").header("Idempotency-Key", "key-" + UUID.randomUUID())
                     .body(body(BookingFixtures.SALON_OFFERING, "2026-09-01T10:00:00Z", "622000001"))
                     .when().post("/v1/providers/does-not-exist/appointments")
                     .then().statusCode(404).body("code", equalTo("RESOURCE_NOT_FOUND"));
@@ -133,7 +133,7 @@ class PublicBookingIT {
         void crossTenantOfferingIsNotFound() {
             // 404 and not 403: a 403 would confirm the offering exists, which is
             // the existence oracle the whole isolation story exists to prevent.
-            given().contentType("application/json")
+            given().contentType("application/json").header("Idempotency-Key", "key-" + UUID.randomUUID())
                     .body(body(BookingFixtures.HIDDEN_OFFERING, "2026-09-01T10:00:00Z", "622000001"))
                     .when().post(SALON)
                     .then().statusCode(404).body("code", equalTo("RESOURCE_NOT_FOUND"));
@@ -209,18 +209,47 @@ class PublicBookingIT {
     class Validation {
 
         @Test
-        @DisplayName("an unparseable phone number is rejected")
+        @DisplayName("an unparseable phone number is a malformed request")
         void rejectsBadPhone() {
-            book("2026-09-06T10:00:00Z", "not-a-number").statusCode(422);
+            // 400, not 422: the published catalogue puts VALIDATION_FAILED at
+            // 400, and a client branches on the code, not on the prose.
+            book("2026-09-06T10:00:00Z", "not-a-number")
+                    .statusCode(400).body("code", equalTo("VALIDATION_FAILED"));
         }
 
         @Test
         @DisplayName("a missing body is rejected before anything is touched")
         void rejectsEmptyBody() {
-            given().contentType("application/json").body("{}")
-                    .when().post(SALON).then().statusCode(400);
+            given().contentType("application/json").header("Idempotency-Key", "key-" + UUID.randomUUID())
+                    .body("{}")
+                    .when().post(SALON)
+                    .then().statusCode(400).body("code", equalTo("VALIDATION_FAILED"));
 
             assertThat(fixtures.activeAppointments(BookingFixtures.SALON)).isZero();
+        }
+
+        @Test
+        @DisplayName("a booking with no Idempotency-Key says which header is missing")
+        void requiresAnIdempotencyKey() {
+            // The contract declares the header required. Answering the same
+            // VALIDATION_FAILED as a bad phone would leave the caller to guess
+            // which of the two problems they have.
+            given().contentType("application/json")
+                    .body(body(BookingFixtures.SALON_OFFERING, "2026-09-04T10:00:00Z", "622000020"))
+                    .when().post(SALON)
+                    .then().statusCode(400).body("code", equalTo("IDEMPOTENCY_KEY_REQUIRED"));
+
+            assertThat(fixtures.activeAppointments(BookingFixtures.SALON)).isZero();
+        }
+
+        @Test
+        @DisplayName("every refusal carries a code from the published catalogue")
+        void everyRefusalCarriesAPublishedCode() {
+            // The enum is generated from the contract, so a handler that
+            // invented a code could not have produced this body at all - but a
+            // status the catalogue does not pair with that code still could.
+            book("2026-09-06T03:00:00Z", "622000021")
+                    .statusCode(422).body("code", equalTo("SLOT_OUTSIDE_AVAILABILITY"));
         }
 
         @Test
@@ -238,7 +267,7 @@ class PublicBookingIT {
     }
 
     private static io.restassured.response.ValidatableResponse book(String startsAt, String phone) {
-        return given().contentType("application/json")
+        return given().contentType("application/json").header("Idempotency-Key", "key-" + UUID.randomUUID())
                 .body(body(BookingFixtures.SALON_OFFERING, startsAt, phone))
                 .when().post(SALON).then();
     }

@@ -1,5 +1,6 @@
 package com.balaaca.app.rest;
 
+import com.balaaca.app.api.model.ErrorCode;
 import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.ExceptionMapper;
@@ -25,7 +26,7 @@ public class UnexpectedExceptionMapper implements ExceptionMapper<Throwable> {
         LOG.errorf(e, "request.unhandled traceId=%s", traceId);
         return Response.status(500)
                 .type("application/problem+json")
-                .entity(ProblemDetail.of("INTERNAL_ERROR", 500, "Unexpected error", traceId))
+                .entity(Problems.of(ErrorCode.INTERNAL_ERROR, 500, "Unexpected error", traceId))
                 .build();
     }
 }

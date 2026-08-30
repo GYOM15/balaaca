@@ -149,6 +149,25 @@ export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
 
 Inutile sur les runners Linux, ou le socket est a l'emplacement standard.
 
+### Le contrat public
+
+`backend/app/src/main/resources/META-INF/openapi.yaml` **est** l'API. Les
+interfaces JAX-RS et les types de la couche transport en sont generes a chaque
+build, dans `target/generated-sources`, et ne sont jamais committes : il n'y a
+donc aucune copie qui puisse deriver, et la seule facon de changer une signature
+est de changer le contrat. Une ressource qui ne colle plus ne compile pas.
+
+Le scan d'annotations est desactive (`mp.openapi.scan.disable=true`) : ce qui
+est publie est ce fichier, pas ce que le classpath contient.
+
+```bash
+npx @stoplight/spectral-cli lint \
+  backend/app/src/main/resources/META-INF/openapi.yaml --ruleset .spectral.yaml
+```
+
+La CI relance ce lint et compare le document a celui de `develop` avec
+`oasdiff` : dans `/v1`, seules les evolutions additives passent.
+
 ## Integration continue
 
 `.github/workflows/ci.yml` s'execute sur chaque pull request vers `develop` ou

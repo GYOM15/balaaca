@@ -57,7 +57,7 @@ public record PhoneNumber(String e164) {
         public InvalidPhoneNumberException(String raw) {
             // The raw value is a personal identifier: it belongs in details for
             // the audit trail, never in a message that reaches a client.
-            super("VALIDATION_FAILED", 422, "Not a valid phone number",
+            super("VALIDATION_FAILED", 400, "Not a valid phone number",
                   Map.of("length", raw == null ? 0 : raw.length()));
         }
     }

@@ -59,7 +59,7 @@ public final class BookingExceptions {
     /** Retries exhausted. The system is contended, not the slot. */
     public static final class BookingContendedException extends DomainException {
         public BookingContendedException(Instant startsAt) {
-            super("RATE_LIMITED", 503, "Too many bookings at once, please retry",
+            super("RATE_LIMITED", 429, "Too many bookings at once, please retry",
                   Map.of("starts_at", startsAt.toString()));
         }
     }
