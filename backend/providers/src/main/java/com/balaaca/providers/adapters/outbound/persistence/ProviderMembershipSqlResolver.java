@@ -8,6 +8,7 @@ import com.balaaca.platformkernel.tenancy.ProviderMembershipResolver;
 import com.balaaca.platformkernel.tenancy.ProviderNotPublishedException;
 import jakarta.enterprise.context.ApplicationScoped;
 import com.balaaca.sharedkernel.ids.StaffId;
+import com.balaaca.sharedkernel.ids.UserId;
 import jakarta.persistence.EntityManager;
 import java.util.List;
 import java.util.UUID;
@@ -42,7 +43,7 @@ public class ProviderMembershipSqlResolver implements ProviderMembershipResolver
         // nothing, so this reads a list. A suspended account, a suspended
         // business and a stranger are all the same empty answer.
         List<Object[]> rows = em.createNativeQuery(
-                        "SELECT provider_id, staff_id, staff_role "
+                        "SELECT provider_id, staff_id, user_id, staff_role "
                         + "FROM app_resolve_membership(:subject)")
                 .setParameter("subject", keycloakSubject)
                 .getResultList();
@@ -53,7 +54,8 @@ public class ProviderMembershipSqlResolver implements ProviderMembershipResolver
         Object[] r = rows.get(0);
         return new Membership(ProviderId.of((UUID) r[0]),
                               StaffId.of((UUID) r[1]),
-                              MembershipRole.of((String) r[2]));
+                              UserId.of((UUID) r[2]),
+                              MembershipRole.of((String) r[3]));
     }
 
     @Override
@@ -69,4 +71,13 @@ public class ProviderMembershipSqlResolver implements ProviderMembershipResolver
         }
         return ProviderId.of(id);
     }
+    @Override
+    public java.util.Optional<ProviderId> resolveBooking(String reference) {
+        UUID id = (UUID) em.createNativeQuery(
+                        "SELECT app_resolve_booking_provider(:reference)")
+                .setParameter("reference", reference)
+                .getSingleResult();
+        return java.util.Optional.ofNullable(id).map(ProviderId::of);
+    }
+
 }

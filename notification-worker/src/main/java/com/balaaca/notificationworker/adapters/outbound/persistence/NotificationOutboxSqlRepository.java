@@ -96,11 +96,15 @@ public class NotificationOutboxSqlRepository implements NotificationOutbox {
     }
 
     @Override
-    public void scheduleRetry(UUID id, Instant nextAttemptAt, String failureCode) {
+    public boolean scheduleRetry(UUID id, Instant nextAttemptAt, String failureCode) {
         // The cap is read from the row, not from a constant here: max_attempts
         // is a column so that one stubborn recipient can be given a different
         // budget without a deployment.
-        update("""
+        // RETURNING rather than a second read: whether this attempt was the
+        // last one is decided by the same statement that made it so, and asking
+        // afterwards would be asking a row another worker may have moved.
+        try (Connection c = dataSource.getConnection();
+             PreparedStatement s = c.prepareStatement("""
                 UPDATE notifications
                    SET attempts       = attempts + 1,
                        status         = CASE WHEN attempts + 1 >= max_attempts
@@ -109,11 +113,17 @@ public class NotificationOutboxSqlRepository implements NotificationOutbox {
                        last_error     = ?,
                        updated_at     = now()
                  WHERE id = ?
-                """, s -> {
+                RETURNING status
+                """)) {
             s.setTimestamp(1, Timestamp.from(nextAttemptAt));
             s.setString(2, failureCode);
             s.setObject(3, id);
-        }, "scheduleRetry");
+            try (var rs = s.executeQuery()) {
+                return rs.next() && "DEAD".equals(rs.getString(1));
+            }
+        } catch (SQLException e) {
+            throw new OutboxUnavailableException("scheduleRetry", e);
+        }
     }
 
     @Override

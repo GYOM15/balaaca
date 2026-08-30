@@ -7,6 +7,7 @@ import com.balaaca.providers.ports.outbound.ProviderProfileRepository;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.persistence.EntityManager;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -38,7 +39,8 @@ public class ProviderProfileSqlRepository implements ProviderProfileRepository {
         Object[] r = (Object[]) em.createNativeQuery("""
                 SELECT p.slug, p.business_name, p.description, c.slug, p.city,
                        p.address_line, p.public_phone_e164, p.public_email,
-                       p.whatsapp_phone_e164, p.timezone, p.published, p.status
+                       p.whatsapp_phone_e164, p.logo_url, p.cover_url,
+                       p.timezone, p.published, p.status
                   FROM providers p
                   LEFT JOIN provider_categories c ON c.id = p.category_id
                  WHERE p.id = app_current_provider()
@@ -48,9 +50,10 @@ public class ProviderProfileSqlRepository implements ProviderProfileRepository {
                 (String) r[0], (String) r[1],
                 text(r[2]), text(r[3]), text(r[4]), text(r[5]),
                 text(r[6]), text(r[7]), text(r[8]),
-                ZoneId.of((String) r[9]),
-                (Boolean) r[10],
-                ProviderStatus.valueOf((String) r[11]));
+                text(r[9]), text(r[10]),
+                ZoneId.of((String) r[11]),
+                (Boolean) r[12],
+                ProviderStatus.valueOf((String) r[13]));
     }
 
     @Override
@@ -93,4 +96,46 @@ public class ProviderProfileSqlRepository implements ProviderProfileRepository {
     private static Optional<String> text(Object column) {
         return Optional.ofNullable((String) column).filter(v -> !v.isBlank());
     }
+    @Override
+    public Optional<String> replaceLogo(String name) {
+        return swapImage("logo_url", name);
+    }
+
+    @Override
+    public Optional<String> replaceCover(String name) {
+        return swapImage("cover_url", name);
+    }
+
+    /**
+     * One statement, returning what it replaced. A read-then-write would leave a
+     * window in which two uploads each believe they replaced the other's file,
+     * and one image would be orphaned on disk with nothing pointing at it.
+     *
+     * <p>The column name is not a parameter a caller supplies - it comes from
+     * the two methods above and nowhere else - so the concatenation names one of
+     * exactly two literals.
+     */
+    @SuppressWarnings("unchecked")
+    private Optional<String> swapImage(String column, String name) {
+        // `FROM providers AS old` is the idiom for returning what an UPDATE
+        // replaced. A subquery inside RETURNING would read the same statement's
+        // snapshot and its value would depend on how PostgreSQL happened to
+        // order the two, which is not something to build a file deletion on.
+        List<String> previous = em.createNativeQuery(
+                        "UPDATE providers SET " + column + " = :name, updated_at = now()"
+                        + " FROM providers AS old"
+                        + " WHERE providers.id = old.id"
+                        + "   AND providers.id = app_current_provider()"
+                        + " RETURNING old." + column)
+                .setParameter("name", name)
+                .getResultList();
+
+        // Not findFirst(): the column is nullable, a provider that had no image
+        // yields a list holding one null, and Optional.of on it throws. The
+        // ordinary case - the first upload - was the one that broke.
+        return previous.isEmpty()
+                ? Optional.empty()
+                : Optional.ofNullable(previous.get(0)).filter(v -> !v.isBlank());
+    }
+
 }

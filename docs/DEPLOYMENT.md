@@ -65,6 +65,23 @@ HINT:  This migration adds a role the cluster predates. Re-run
    la bonne audience et les scopes attendus. Un realm qui demarre n'est pas un
    realm qui fonctionne.
 
+## Les images publiees
+
+Elles vivent dans un repertoire monte, designe par `BALAACA_MEDIA_ROOT`
+(defaut `/var/lib/balaaca/media`). C'est honnete plutot qu'ideal, et il vaut
+mieux le dire :
+
+- **une seule instance.** Une deuxieme instance ne verrait pas les fichiers de
+  la premiere ;
+- **rien devant.** L'application sert ses propres octets, ce qui appartient a un
+  CDN ;
+- **a sauvegarder separement.** Le repertoire ne fait pas partie du dump
+  PostgreSQL, et une base restauree sans lui pointe vers des images absentes.
+
+La base stocke un **nom**, jamais une URL, et l'acces passe par un port. Le jour
+ou cela devient un stockage objet, c'est un adaptateur qui change - ni le schema,
+ni les lignes deja ecrites.
+
 ## Ce qui n'existe pas encore
 
 Enonce ici plutot que decouvert un dimanche :
@@ -74,5 +91,12 @@ Enonce ici plutot que decouvert un dimanche :
   manuel.
 - **aucune sauvegarde documentee.** Il n'y a ni `pg_dump` planifie, ni
   restauration testee.
-- **aucune alerte** sur les notifications passees en `DEAD`. Un message qui
-  meurt meurt en silence, alors que la doctrine outbox exige le contraire.
+- **aucune alerte** sur les notifications passees en `DEAD` — au sens d'un
+  systeme d'alerte. Le worker journalise desormais chaque mort en `ERROR`, avec
+  le `provider_id`, le type et la cle de deduplication (jamais le destinataire),
+  ce qui suffit a une recherche mais pas a reveiller quelqu'un :
+
+  ```
+  notification.dead id=... provider_id=... kind=BOOKING_CONFIRMATION
+                    dedupe_key=... code=... attempts=5
+  ```

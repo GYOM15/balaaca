@@ -10,10 +10,12 @@ import com.balaaca.app.api.model.PublicStaffList;
 import com.balaaca.app.api.model.PublicStaffMember;
 import com.balaaca.catalog.ports.inbound.PublishedCatalogueUseCase;
 import com.balaaca.catalog.ports.inbound.PublishedCatalogueUseCase.PublishedService;
+import com.balaaca.platformkernel.tenancy.ProviderNotPublishedException;
 import com.balaaca.platformkernel.tenancy.PublicTenantBinder;
 import com.balaaca.providers.ports.inbound.LookupPublicProviderUseCase;
 import com.balaaca.providers.ports.inbound.LookupPublicProviderUseCase.PublicProvider;
 import com.balaaca.providers.ports.inbound.LookupPublicStaffUseCase;
+import com.balaaca.providers.ports.inbound.LookupProviderImageUseCase;
 import com.balaaca.scheduling.domain.OpenWindow;
 import com.balaaca.scheduling.ports.inbound.ManageAvailabilityUseCase;
 import jakarta.ws.rs.core.Response;
@@ -41,17 +43,37 @@ public class PublicProviderResource implements DiscoveryApi {
     private final LookupPublicStaffUseCase staff;
     private final PublishedCatalogueUseCase catalogue;
     private final ManageAvailabilityUseCase availability;
+    private final LookupProviderImageUseCase images;
 
     public PublicProviderResource(PublicTenantBinder tenants,
                                   LookupPublicProviderUseCase providers,
                                   LookupPublicStaffUseCase staff,
                                   PublishedCatalogueUseCase catalogue,
-                                  ManageAvailabilityUseCase availability) {
+                                  ManageAvailabilityUseCase availability,
+                                  LookupProviderImageUseCase images) {
         this.tenants = tenants;
         this.providers = providers;
         this.staff = staff;
         this.catalogue = catalogue;
         this.availability = availability;
+        this.images = images;
+    }
+
+    /**
+     * The bytes of an image a provider published. Public, because the page that
+     * shows it is, and the name discloses nothing: it is minted by the store and
+     * carries neither the provider nor the kind nor the original filename.
+     */
+    @Override
+    public Response getMedia(String name) {
+        return images.image(name)
+                .map(image -> Response.ok(image.content())
+                        .type(image.contentType())
+                        // Immutable: replacing an image mints a new name, so a
+                        // cached one can never be stale.
+                        .header("Cache-Control", "public, max-age=31536000, immutable")
+                        .build())
+                .orElseThrow(() -> new ProviderNotPublishedException(name));
     }
 
     @Override
@@ -115,8 +137,8 @@ public class PublicProviderResource implements DiscoveryApi {
         provider.addressLine().ifPresent(view::setAddressLine);
         provider.latitude().ifPresent(view::setLatitude);
         provider.longitude().ifPresent(view::setLongitude);
-        provider.logoUrl().ifPresent(view::setLogoUrl);
-        provider.coverUrl().ifPresent(view::setCoverUrl);
+        provider.logoUrl().ifPresent(name -> view.setLogoUrl(ProviderProfileResource.MEDIA + name));
+        provider.coverUrl().ifPresent(name -> view.setCoverUrl(ProviderProfileResource.MEDIA + name));
         provider.publicPhoneE164().ifPresent(view::setPublicPhoneE164);
         provider.whatsappPhoneE164().ifPresent(view::setWhatsappPhoneE164);
         return view;

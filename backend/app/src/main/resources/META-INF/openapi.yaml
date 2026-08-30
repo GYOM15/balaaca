@@ -238,6 +238,132 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
+  /v1/provider-profile/logo:
+    post:
+      operationId: replaceProviderLogo
+      tags: [profile]
+      summary: Replace the caller's own logo
+      description: |
+        The bytes, with their type in `Content-Type`. No multipart and no
+        filename: a filename is a value the server would have to distrust and
+        would gain nothing from trusting.
+
+        JPEG and PNG only, and the check is on the bytes rather than on the
+        header - a declared type is a claim, and the first two bytes are a fact.
+        The image is decoded and re-encoded server-side, which proves it is an
+        image at all and strips every piece of metadata that came with it,
+        including the GPS coordinates a phone writes into a photo without being
+        asked.
+
+        Replacing one drops the previous file.
+      security:
+        - oauth2: [profile:write]
+      requestBody:
+        required: true
+        content:
+          image/jpeg:
+            schema:
+              type: string
+              format: binary
+          image/png:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '200':
+          description: The profile, carrying the new URL.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderProfileView'
+        '400':
+          description: '`VALIDATION_FAILED` - not an image, too large, or a type
+            this platform does not accept.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/provider-profile/cover:
+    post:
+      operationId: replaceProviderCover
+      tags: [profile]
+      summary: Replace the caller's own cover image
+      description: |
+        The same rules as the logo, and a larger bound: a cover is the width of
+        the page.
+      security:
+        - oauth2: [profile:write]
+      requestBody:
+        required: true
+        content:
+          image/jpeg:
+            schema:
+              type: string
+              format: binary
+          image/png:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '200':
+          description: The profile, carrying the new URL.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderProfileView'
+        '400':
+          description: '`VALIDATION_FAILED` - not an image, too large, or a type
+            this platform does not accept.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/media/{name}:
+    get:
+      operationId: getMedia
+      tags: [discovery]
+      summary: An image a provider published
+      description: |
+        Public, because the page that shows it is. The name is minted by the
+        server and carries no meaning - not the provider, not the kind, not the
+        original filename - so the URL discloses nothing and cannot be walked.
+
+        Served by the application today, which is honest rather than ideal: this
+        belongs behind a CDN, and the store is a port precisely so moving it
+        there changes one adapter.
+      security: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[A-Za-z0-9_-]{16,64}\.(jpg|png)$'
+      responses:
+        '200':
+          description: The image.
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /v1/staff/{id}:
     put:
       operationId: replaceStaffMember
@@ -860,6 +986,87 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /v1/bookings/{reference}:
+    get:
+      operationId: getBooking
+      tags: [booking]
+      summary: What a customer booked
+      description: |
+        A customer has no account and will not be made to have one. The reference
+        minted at booking, and sent with the confirmation, is the whole
+        authorisation: it names one appointment and grants nothing else.
+
+        It is not the appointment's identifier. That one is on the provider's
+        agenda, in the audit trail and in log lines, and a capability has to be a
+        value whose only job is to be one - so that widening where the
+        identifier is used never widens what the identifier can do.
+
+        An unknown reference and one belonging to a business the platform has
+        suspended are the same `404`. A provider that merely unpublished still
+        owes this answer: it took the booking.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/BookingReference'
+      responses:
+        '200':
+          description: The booking.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerBookingView'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/bookings/{reference}/cancellation:
+    post:
+      operationId: cancelBooking
+      tags: [booking]
+      summary: Call it off
+      description: |
+        Subject to the provider's own notice period, which binds the customer and
+        not the provider: a salon cancelling its own appointment is managing its
+        diary. `cancellation_deadline_minutes` has been a column since the schema
+        was written and was enforced nowhere, which is the same as not having it.
+
+        Past the deadline this is `422 CANCELLATION_DEADLINE_PASSED` and the
+        customer telephones - which is the right outcome, because at that point
+        the salon has a decision to make and a form cannot make it.
+
+        `cancellable_until` on the booking says in advance whether this will
+        work, so a client need not offer a button that answers 422.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/BookingReference'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelAppointmentRequest'
+      responses:
+        '200':
+          description: The booking, cancelled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerBookingView'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`INVALID_STATE_TRANSITION` - it is already over or
+            already cancelled.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          description: '`CANCELLATION_DEADLINE_PASSED` - too late to do this
+            online.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
   /v1/providers/{slug}/appointments:
     post:
       operationId: bookAppointment
@@ -1279,6 +1486,17 @@ components:
       schema:
         type: string
         format: uuid
+    BookingReference:
+      name: reference
+      in: path
+      required: true
+      description: The capability minted at booking. Opaque, and the only thing
+        that distinguishes the person who booked from a stranger.
+      schema:
+        type: string
+        minLength: 20
+        maxLength: 64
+        pattern: '^[A-Za-z0-9_-]+$'
     ProviderSlug:
       name: slug
       in: path
@@ -1788,15 +2006,62 @@ components:
           type: string
           maxLength: 200
 
+    CustomerBookingView:
+      type: object
+      description: |
+        What the customer is shown. No appointment identifier, no staff
+        identifier, no customer identifier: the reference is the only handle, and
+        publishing a second one would be publishing a second way in.
+      required: [reference, provider_slug, provider_name, service_name,
+                 staff_name, starts_at, ends_at, status, price]
+      properties:
+        reference:
+          type: string
+        provider_slug:
+          type: string
+        provider_name:
+          type: string
+        service_name:
+          type: string
+        staff_name:
+          type: string
+          description: Who they booked with. They chose or were told; it is not
+            a disclosure.
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        status:
+          $ref: '#/components/schemas/AppointmentStatus'
+        price:
+          $ref: '#/components/schemas/Money'
+        cancellable_until:
+          type: string
+          format: date-time
+          description: |
+            Absent when it can no longer be called off online at all - the
+            deadline has passed, or it is already cancelled or over. Absent
+            rather than a date in the past, so a client does not offer a button
+            that answers 422.
+
     AppointmentCreatedView:
       type: object
-      description: Deliberately thin. An id is all a customer needs, and all
-        the public path should hand back.
-      required: [appointment_id]
+      description: |
+        Deliberately thin, and the `reference` is the reason it is not thinner.
+        The identifier was all the public path handed back, and it left the
+        customer with no way to return: the reference is what `getBooking` and
+        `cancelBooking` take, and it travels on in the confirmation message.
+      required: [appointment_id, reference]
       properties:
         appointment_id:
           type: string
           format: uuid
+        reference:
+          type: string
+          description: Keep it. It is the only way back to this appointment
+            without an account, and it is returned once.
 
     RegisterProviderRequest:
       type: object
@@ -1874,6 +2139,12 @@ components:
         public_email:
           type: string
         whatsapp_phone_e164:
+          type: string
+        logo_url:
+          type: string
+          description: Absent until one is uploaded. Set through
+            `replaceProviderLogo`, never through this profile.
+        cover_url:
           type: string
         timezone:
           type: string

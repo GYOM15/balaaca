@@ -57,7 +57,7 @@ public class BookingFixtures {
         run("""
             TRUNCATE notifications, appointments, customers, availability_overrides,
                      availability_rules, service_offerings, provider_staff, providers,
-                     users CASCADE
+                     audit_logs, users CASCADE
             """);
         // The trades come from V016 and are NOT truncated: the tests browse the
         // taxonomy the product actually ships. Only the withdrawn one is local -
@@ -112,6 +112,29 @@ public class BookingFixtures {
               ('%s','%s','Coupe',30,0,0,50000,'GNF'),
               ('%s','%s','Coupe',60,0,0,80000,'GNF')
             """.formatted(SALON_OFFERING, SALON, HIDDEN_OFFERING, HIDDEN, SOLO_OFFERING, SOLO));
+    }
+
+    /** One line of the audit trail, as an operator would read it. */
+    public record AuditRow(String action, String entityType, String outcome,
+                           String actorRole, String providerId, String metadata) {
+    }
+
+    public List<AuditRow> auditTrail() {
+        String sql = """
+                SELECT action, entity_type, outcome, coalesce(actor_role,''),
+                       coalesce(provider_id::text,''), metadata::text
+                  FROM audit_logs ORDER BY id
+                """;
+        List<AuditRow> rows = new ArrayList<>();
+        try (Connection c = admin(); Statement s = c.createStatement(); ResultSet rs = s.executeQuery(sql)) {
+            while (rs.next()) {
+                rows.add(new AuditRow(rs.getString(1), rs.getString(2), rs.getString(3),
+                                      rs.getString(4), rs.getString(5), rs.getString(6)));
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+        return rows;
     }
 
     /** One outbox row, as the worker would read it. */

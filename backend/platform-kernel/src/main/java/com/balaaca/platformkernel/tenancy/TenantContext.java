@@ -61,6 +61,11 @@ public class TenantContext {
         return Optional.ofNullable(providerId);
     }
 
+    /** Empty for a customer on the public path, and for an unbound request. */
+    public Optional<Membership> membership() {
+        return Optional.ofNullable(membership);
+    }
+
     private Membership requireMembership() {
         if (membership == null) {
             // A customer, or nothing bound at all. Both are "not staff here".

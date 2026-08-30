@@ -2,11 +2,20 @@ package com.balaaca.app.rest;
 
 import com.balaaca.app.api.BookingApi;
 import com.balaaca.app.api.model.AppointmentCreatedView;
+import com.balaaca.app.api.model.AppointmentStatus;
 import com.balaaca.app.api.model.BookAppointmentRequest;
+import com.balaaca.app.api.model.CancelAppointmentRequest;
+import com.balaaca.app.api.model.CustomerBookingView;
+import com.balaaca.app.api.model.Money;
 import com.balaaca.booking.domain.BookingSource;
 import com.balaaca.booking.ports.inbound.BookAppointmentUseCase;
+import com.balaaca.booking.ports.inbound.CustomerBookingUseCase;
+import com.balaaca.booking.ports.inbound.CustomerBookingUseCase.CustomerBooking;
 import com.balaaca.platformkernel.tenancy.PublicTenantBinder;
 import jakarta.ws.rs.core.Response;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.Optional;
 
 /**
  * Booking, from the provider's public page.
@@ -35,13 +44,16 @@ public class PublicBookingResource implements BookingApi {
     private final PublicTenantBinder tenants;
     private final BookAppointmentRequestMapper mapper;
     private final BookAppointmentUseCase booking;
+    private final CustomerBookingUseCase bookings;
 
     public PublicBookingResource(PublicTenantBinder tenants,
                                  BookAppointmentRequestMapper mapper,
-                                 BookAppointmentUseCase booking) {
+                                 BookAppointmentUseCase booking,
+                                 CustomerBookingUseCase bookings) {
         this.tenants = tenants;
         this.mapper = mapper;
         this.booking = booking;
+        this.bookings = bookings;
     }
 
     @Override
@@ -56,10 +68,59 @@ public class PublicBookingResource implements BookingApi {
 
             // A replay returns the original booking, not a second one.
             return Response.status(result.replayed() ? 200 : 201)
-                    .entity(new AppointmentCreatedView().appointmentId(result.appointmentId().value()))
+                    .entity(new AppointmentCreatedView()
+                            .appointmentId(result.appointmentId().value())
+                            .reference(result.reference()))
                     .build();
         } finally {
             tenants.clear();
         }
     }
+    /**
+     * The tenant is bound from the reference rather than a slug, and that is the
+     * only difference from every other public route. A reference naming nothing
+     * never binds, so the request stops here with the same 404 an unknown one
+     * gets - and a booking at a business the platform suspended resolves to
+     * nothing for the same reason a suspended page does.
+     */
+    @Override
+    public Response getBooking(String reference) {
+        return withBooking(reference, () -> Response.ok(view(bookings.byReference(reference))).build());
+    }
+
+    @Override
+    public Response cancelBooking(String reference, CancelAppointmentRequest request) {
+        return withBooking(reference, () -> Response.ok(view(bookings.cancel(
+                reference,
+                Optional.ofNullable(request).map(CancelAppointmentRequest::getReason)))).build());
+    }
+
+    private Response withBooking(String reference, java.util.function.Supplier<Response> work) {
+        tenants.bindBooking(reference);
+        try {
+            return work.get();
+        } finally {
+            tenants.clear();
+        }
+    }
+
+    private static CustomerBookingView view(CustomerBooking booking) {
+        CustomerBookingView view = new CustomerBookingView()
+                .reference(booking.reference())
+                .providerSlug(booking.providerSlug())
+                .providerName(booking.providerName())
+                .serviceName(booking.serviceName())
+                .staffName(booking.staffName())
+                .startsAt(OffsetDateTime.ofInstant(booking.startsAt(), ZoneOffset.UTC))
+                .endsAt(OffsetDateTime.ofInstant(booking.endsAt(), ZoneOffset.UTC))
+                .status(AppointmentStatus.fromValue(booking.status()))
+                .price(new Money()
+                        .amountMinor(booking.price().amountMinor())
+                        .currency(booking.price().currency().name()));
+
+        booking.cancellableUntil().ifPresent(until -> view.setCancellableUntil(
+                OffsetDateTime.ofInstant(until, ZoneOffset.UTC)));
+        return view;
+    }
+
 }

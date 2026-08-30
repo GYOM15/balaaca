@@ -63,13 +63,15 @@ public class BookingNotifications {
 
     /** Called inside the booking transaction, so these rows commit with it or not at all. */
     public void planFor(AppointmentId appointmentId,
+                        String bookingReference,
                         Instant startsAt,
                         BookableOffering offering,
                         CustomerContact customer) {
 
         NoticeProfile provider = providers.currentNoticeProfile();
         Instant now = clock.instant();
-        Map<String, String> payload = payloadOf(provider, offering, customer, startsAt);
+        Map<String, String> payload =
+                payloadOf(provider, offering, customer, startsAt, bookingReference);
 
         List<PlannedNotification> planned = new ArrayList<>();
         planned.add(confirmation(appointmentId, startsAt, now, customer, payload));
@@ -162,7 +164,8 @@ public class BookingNotifications {
     private static Map<String, String> payloadOf(NoticeProfile provider,
                                                  BookableOffering offering,
                                                  CustomerContact customer,
-                                                 Instant startsAt) {
+                                                 Instant startsAt,
+                                                 String bookingReference) {
         return Map.of(
                 "business_name", provider.businessName(),
                 "service_name", offering.name(),
@@ -171,6 +174,11 @@ public class BookingNotifications {
                 "starts_at", startsAt.toString(),
                 // The provider's zone, because a message that says 10:00 must
                 // mean 10:00 where the appointment happens.
-                "starts_at_local", LOCAL_TIME.format(startsAt.atZone(provider.timezone())));
+                "starts_at_local", LOCAL_TIME.format(startsAt.atZone(provider.timezone())),
+                // The customer's only way back to this appointment. It goes in
+                // the confirmation and nowhere else - not in the reminder, not
+                // in the provider's notice - because every extra copy is another
+                // place a capability sits at rest.
+                "booking_reference", bookingReference);
     }
 }

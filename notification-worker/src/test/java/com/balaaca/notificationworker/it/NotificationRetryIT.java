@@ -25,6 +25,9 @@ import org.junit.jupiter.api.Test;
 class NotificationRetryIT {
 
     @Inject
+    com.balaaca.notificationworker.ports.NotificationOutbox outbox;
+
+    @Inject
     OutboxFixtures fixtures;
 
     @Inject
@@ -70,5 +73,21 @@ class NotificationRetryIT {
         // And a DEAD row is not due to anything: the next drain must not see it.
         drain.drain();
         assertThat(fixtures.attempts(id)).isEqualTo(6);
+    }
+
+    @Test
+    @DisplayName("The statement that kills the row is the one that says so")
+    void reportsTheDeath() {
+        UUID stillTrying = fixtures.due(OutboxFixtures.SALON,
+                "appointment:13:BOOKING_CONFIRMATION:1");
+        UUID lastChance = fixtures.lastAttempt(OutboxFixtures.SALON,
+                "appointment:14:BOOKING_CONFIRMATION:1");
+
+        // Whether this attempt was the last one is decided by the same UPDATE
+        // that made it so. Asking afterwards would be asking a row another
+        // worker may already have moved - and a message that dies in silence is
+        // a message nobody ever finds out about.
+        assertThat(outbox.scheduleRetry(stillTrying, java.time.Instant.now(), "X")).isFalse();
+        assertThat(outbox.scheduleRetry(lastChance, java.time.Instant.now(), "X")).isTrue();
     }
 }

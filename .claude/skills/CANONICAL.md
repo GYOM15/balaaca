@@ -69,6 +69,9 @@ than its first referencing migration breaks a fresh database.
 | `V014__enable_provider_registration.sql` | registration policies and grants, `app_register_provider()` | the signup seam - see 4.4 |
 | `V015__enforce_membership_and_isolation.sql` | `app_resolve_membership()`, status filters, RLS on `users` and `audit_logs`, maintenance policies | see 4.5 |
 | `V016__seed_provider_categories.sql` | the curated trade taxonomy | `provider_categories` was empty in production |
+| `V017__narrow_two_policies.sql` | `providers_public_read` restricted to unbound connections; the registrar may add an owner only to a provider with no staff | |
+| `V018__record_the_audit_trail.sql` | `app_resolve_membership()` returns the account; `audit_logs` accepts a platform row | |
+| `V019__let_a_customer_reach_their_booking.sql` | `appointments.public_reference`, `app_resolve_booking_provider()` | a third tenant source - see 4.6 |
 
 Tables are plural snake_case. `staff_id` references `provider_staff`; the
 shortened stem is the one deliberate exception to "foreign key = singular stem
@@ -177,7 +180,7 @@ CREATE POLICY provider_staff_resolution ON provider_staff
     FOR SELECT TO balaaca_resolver USING (true);
 
 CREATE FUNCTION app_resolve_membership(p_subject varchar)
-RETURNS TABLE (provider_id uuid, staff_id uuid, staff_role varchar)
+RETURNS TABLE (provider_id uuid, staff_id uuid, user_id uuid, staff_role varchar)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS
 $$ SELECT ps.provider_id FROM provider_staff ps JOIN users u ON u.id = ps.user_id
     WHERE u.keycloak_user_id = p_subject AND ps.status = 'ACTIVE' $$;
@@ -317,6 +320,40 @@ success. Verified. All ten now have one.
 Scopes are **optional** client scopes, not default. A default scope is in every
 token for every user, which made every `@RolesAllowed` unable to refuse anybody.
 They still are not the privilege boundary - the database is.
+
+### 4.6 Customer access - from the booking reference
+
+A customer has no account and will not be made to have one, so the third and
+last source of a tenant is a **capability**: a 256-bit reference minted at
+booking, handed back once, and carried in the confirmation message.
+
+```
+GET  /v1/bookings/{reference}
+POST /v1/bookings/{reference}/cancellation
+```
+
+```sql
+CREATE FUNCTION app_resolve_booking_provider(p_reference varchar) RETURNS uuid
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS
+$$ SELECT a.provider_id FROM appointments a JOIN providers p ON p.id = a.provider_id
+    WHERE a.public_reference = p_reference AND p.status IN ('PENDING','ACTIVE') $$;
+```
+
+Three things distinguish it from the slug:
+
+- **It is not the appointment's id.** The id is on the provider's agenda, in the
+  audit trail and in log lines; a capability has to be a value whose only job is
+  to be one, so that widening where the id is used never widens what it can do.
+- **It does not require the provider to be published.** A salon that took a
+  booking and then unpublished still owes that customer an answer. A suspended
+  or closed business is another matter and resolves to nothing.
+- **A replay returns the stored reference**, never a fresh mint - otherwise a
+  retried booking leaves the customer holding a key to nothing.
+
+`cancellation_deadline_minutes` is enforced on this path and only on this path.
+It binds the customer, not the provider: a salon cancelling its own appointment
+is managing its diary. The column existed from V004 and was enforced nowhere,
+which is the same as not having had it.
 
 ---
 

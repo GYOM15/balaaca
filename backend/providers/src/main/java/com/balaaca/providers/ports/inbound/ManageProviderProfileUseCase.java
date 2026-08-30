@@ -25,6 +25,15 @@ public interface ManageProviderProfileUseCase {
     ProviderProfile replace(ProfileEdit edit);
 
     /**
+     * Two methods rather than one taking a kind, so no enum has to cross into
+     * the edge to say which image this is. The bytes are validated and stripped
+     * of their metadata before anything is stored.
+     */
+    ProviderProfile replaceLogo(byte[] image);
+
+    ProviderProfile replaceCover(byte[] image);
+
+    /**
      * @param slug the public handle. Read-only here: it is on the QR code and in
      *             every message already sent, and changing it breaks all of them
      * @param status the platform's standing, which the provider does not set
@@ -38,6 +47,8 @@ public interface ManageProviderProfileUseCase {
                            Optional<String> publicPhoneE164,
                            Optional<String> publicEmail,
                            Optional<String> whatsappPhoneE164,
+                           Optional<String> logoUrl,
+                           Optional<String> coverUrl,
                            ZoneId timezone,
                            boolean published,
                            ProviderStatus status) {

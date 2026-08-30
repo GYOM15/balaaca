@@ -4,12 +4,17 @@ import com.balaaca.catalog.ports.inbound.PublishedCatalogueUseCase;
 import com.balaaca.providers.domain.NothingToPublishException;
 import com.balaaca.providers.domain.UnknownCategoryException;
 import com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase;
+import com.balaaca.providers.ports.outbound.ImageStore;
 import com.balaaca.providers.ports.outbound.ProviderProfileRepository;
+import com.balaaca.platformkernel.audit.AuditEvent;
+import com.balaaca.platformkernel.audit.AuditOutcome;
+import com.balaaca.platformkernel.audit.AuditTrail;
 import com.balaaca.platformkernel.tenancy.TenantContext;
 import com.balaaca.providers.ports.outbound.ProviderRegistrationRepository;
 import com.balaaca.scheduling.ports.inbound.ManageAvailabilityUseCase;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.transaction.Transactional;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -34,17 +39,23 @@ public class ManageProviderProfileService implements ManageProviderProfileUseCas
     private final PublishedCatalogueUseCase catalogue;
     private final ManageAvailabilityUseCase availability;
     private final TenantContext tenant;
+    private final AuditTrail audit;
+    private final ImageStore images;
 
     public ManageProviderProfileService(ProviderProfileRepository profiles,
                                         ProviderRegistrationRepository categories,
                                         PublishedCatalogueUseCase catalogue,
                                         ManageAvailabilityUseCase availability,
-                                        TenantContext tenant) {
+                                        TenantContext tenant,
+                                        AuditTrail audit,
+                                        ImageStore images) {
         this.profiles = profiles;
         this.categories = categories;
         this.catalogue = catalogue;
         this.availability = availability;
         this.tenant = tenant;
+        this.audit = audit;
+        this.images = images;
     }
 
     @Override
@@ -64,7 +75,16 @@ public class ManageProviderProfileService implements ManageProviderProfileUseCas
             requireSomethingBookable();
         }
         Optional<UUID> categoryId = edit.categorySlug().map(this::requireCategory);
-        return profiles.update(edit, categoryId);
+        ProviderProfile updated = profiles.update(edit, categoryId);
+
+        // Whether the page is live is the one field worth reading back off the
+        // trail months later: it is the difference between a business that took
+        // no bookings and one that was never reachable.
+        audit.record(new AuditEvent("PROVIDER_PROFILE_UPDATED", "provider",
+                Optional.of(updated.slug()), AuditOutcome.SUCCESS,
+                Map.of("published", String.valueOf(updated.published()))));
+
+        return updated;
     }
 
     /**
@@ -86,4 +106,41 @@ public class ManageProviderProfileService implements ManageProviderProfileUseCas
         return categories.activeCategoryId(slug)
                 .orElseThrow(() -> new UnknownCategoryException(slug));
     }
+    @Override
+    @Transactional(Transactional.TxType.REQUIRED)
+    public ProviderProfile replaceLogo(byte[] image) {
+        return replaceImage(image, "replace_logo", profiles::replaceLogo);
+    }
+
+    @Override
+    @Transactional(Transactional.TxType.REQUIRED)
+    public ProviderProfile replaceCover(byte[] image) {
+        return replaceImage(image, "replace_cover", profiles::replaceCover);
+    }
+
+    /**
+     * Validate, store, swap, then drop what was there.
+     *
+     * <p>That order matters. The file is written before the row points at it, so
+     * a failure leaves an orphan on disk rather than a page pointing at nothing;
+     * and the previous file is dropped only after the swap has committed to
+     * naming its replacement, so a rollback never deletes the image the row
+     * still uses. Wasted bytes are cheap and a broken page is not.
+     */
+    private ProviderProfile replaceImage(byte[] raw, String action,
+                                         java.util.function.Function<String,
+                                                 Optional<String>> swap) {
+        tenant.requireOwner(action);
+
+        String name = images.store(raw);
+        Optional<String> previous = swap.apply(name);
+
+        audit.record(new AuditEvent(action.toUpperCase(java.util.Locale.ROOT), "provider",
+                Optional.of(name), AuditOutcome.SUCCESS,
+                Map.of("content_type", images.contentTypeOf(name).orElse("unknown"))));
+
+        previous.filter(old -> !old.equals(name)).ifPresent(images::discard);
+        return profiles.current();
+    }
+
 }

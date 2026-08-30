@@ -14,6 +14,11 @@
     <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-arc</artifactId></dependency>
     <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-oidc</artifactId></dependency>
     <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-agroal</artifactId></dependency>
+    <!-- The audit trail writes one row through the same EntityManager and the
+         same tenant-bound connection as everything else. audit_logs has no
+         business owner: it records the tenancy boundary, which is what this
+         module is. -->
+    <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-hibernate-orm</artifactId></dependency>
   </dependencies>
   <build>
     <plugins>
