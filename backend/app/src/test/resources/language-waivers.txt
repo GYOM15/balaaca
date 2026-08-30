@@ -1,0 +1,31 @@
+# French prose that predates the gate. This list IS the debt.
+#
+# code-language has required English since the pack was written - down to the
+# ADRs and the commit messages - and it was broken anyway. Freezing the debt is
+# worth more than paying it today: nothing new can be written in French while
+# the product is still being built, and the translation pass is finished when
+# this file holds nothing but comments.
+#
+# Format: path: reason
+#
+# Do not add a line here to make a build pass. If the file is new, write it in
+# English; that costs less than the line.
+
+README.md:                     Written before the gate. The first thing anyone reads, so the first thing to translate.
+docs/DEPLOYMENT.md:            Written before the gate. An operator runbook, and the reader most likely not to speak French.
+docs/BACKLOG.md:               Written before the gate. Records this very debt, which is a good reason to translate it early.
+
+# The ADRs. They are the record of why this system is shaped as it is, and the
+# audience for that record is whoever maintains it next - so they are English by
+# rule and French by accident. Translated as a set, because a half-French
+# decision log is worse than a French one.
+docs/adr/README.md:                                          The index. Translate with the set.
+docs/adr/0001-monolithe-modulaire-hexagonal.md:              Translate with the set.
+docs/adr/0002-resolution-du-tenant-en-base.md:               Translate with the set.
+docs/adr/0003-exclusion-postgresql-contre-la-double-reservation.md: Translate with the set.
+docs/adr/0004-outbox-en-table-sans-broker.md:                Translate with the set.
+docs/adr/0005-perimetre-du-paiement.md:                      Translate with the set.
+docs/adr/0006-modele-de-branches.md:                         Translate with the set.
+docs/adr/0007-modelisation-du-temps.md:                      Translate with the set.
+docs/adr/0008-sql-natif-sans-mapping-orm.md:                 Translate with the set.
+docs/adr/0009-inscription-autonome-d-un-prestataire.md:      Translate with the set.

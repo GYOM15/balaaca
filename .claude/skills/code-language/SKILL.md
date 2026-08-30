@@ -30,6 +30,14 @@ directions, no drift.
 
 ## The rules
 
+0. **The repository is English, not only the code.** README, `docs/`, every
+   ADR, commit messages **and pull request titles and descriptions**. This was
+   the rule from the start and it was broken anyway - in the README, in the
+   runbook, in nine ADRs and in every pull request - because nothing measured
+   it. `RepositoryLanguageTest` measures it now, and
+   `language-waivers.txt` is the debt that predates it. Do not add a line to
+   that file to make a build pass: if a document is new, write it in English,
+   which costs less than the waiver.
 1. **Code is English. Always.** Class, method, variable, package, and file
    names; comments and Javadoc; log event names and exception messages; RFC
    7807 `title`/`detail` written by the server; metric, span, and config keys —
