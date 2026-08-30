@@ -14,6 +14,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceException;
 import java.sql.SQLException;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -165,6 +166,29 @@ public class AppointmentSqlRepository implements AppointmentRepository {
                               AND a.status IN ('PENDING','CONFIRMED')), s.id
                 """).getResultList();
         return ids.stream().map(StaffId::of).toList();
+    }
+
+    @Override
+    public long freeStaffCount(Optional<StaffId> staffId, Instant blockedFrom, Instant blockedUntil) {
+        // The same bookable predicate eligibleStaff uses, so the two agree on
+        // who counts. The optional filter casts its parameter: PostgreSQL
+        // refuses a statement whose only unambiguous use of a parameter is
+        // beside IS NULL, with 42P18, rather than guessing its type.
+        Number free = (Number) em.createNativeQuery("""
+                SELECT count(*) FROM provider_staff s
+                 WHERE s.bookable AND s.status = 'ACTIVE'
+                   AND (CAST(:staffId AS uuid) IS NULL OR s.id = CAST(:staffId AS uuid))
+                   AND NOT EXISTS (
+                       SELECT 1 FROM appointments a
+                        WHERE a.staff_id = s.id
+                          AND a.status IN ('PENDING','CONFIRMED')
+                          AND a.blocked_range && tstzrange(:from, :until, '[)'))
+                """)
+                .setParameter("staffId", staffId.map(StaffId::value).orElse(null))
+                .setParameter("from", java.sql.Timestamp.from(blockedFrom))
+                .setParameter("until", java.sql.Timestamp.from(blockedUntil))
+                .getSingleResult();
+        return free.longValue();
     }
 
     @Override

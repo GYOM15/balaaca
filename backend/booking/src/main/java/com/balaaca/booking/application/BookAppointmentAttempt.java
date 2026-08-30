@@ -121,6 +121,25 @@ public class BookAppointmentAttempt {
                 .orElseGet(() -> appointments.eligibleStaff(command.serviceOfferingId()));
     }
 
+    /**
+     * Whether the committed data already accounts for every chair in this
+     * window.
+     *
+     * <p>Asked only once the loop has given up. The retry budget measures how
+     * hard this request tried, not what the answer is, and the two are not the
+     * same thing: N racers on one slot leave one winner and N-1 losers whose
+     * SQLSTATE happened to be a deadlock, and reporting congestion to all of
+     * them tells a customer to wait for a chair that will never open.
+     */
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    public boolean everyChairIsTaken(BookAppointmentCommand command) {
+        BookableOffering offering = offerings.requireBookable(command.serviceOfferingId());
+        BookedSlot slot = BookedSlot.from(command.startsAt(), offering.duration(),
+                                          offering.bufferBefore(), offering.bufferAfter());
+        return appointments.freeStaffCount(
+                command.staffId(), slot.blockedFrom(), slot.blockedUntil()) == 0;
+    }
+
     private static SlotRequest slotRequest(BookAppointmentCommand command,
                                            BookableOffering offering) {
         // A single day: the question is whether this one start is bookable, and
