@@ -28,9 +28,12 @@
     <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-micrometer-registry-prometheus</artifactId></dependency>
     <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-logging-json</artifactId></dependency>
 
+    <!-- Version from the Quarkus BOM, never pinned: it manages the
+         testcontainers core, and a module pinned beside it resolves a core of
+         another major. -->
     <dependency>
-      <groupId>org.testcontainers</groupId><artifactId>postgresql</artifactId>
-      <version>1.21.3</version><scope>test</scope>
+      <groupId>org.testcontainers</groupId><artifactId>testcontainers-postgresql</artifactId>
+      <scope>test</scope>
     </dependency>
   </dependencies>
 
