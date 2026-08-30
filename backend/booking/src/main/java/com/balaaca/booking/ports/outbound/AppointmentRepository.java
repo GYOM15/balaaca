@@ -74,6 +74,11 @@ public interface AppointmentRepository {
             Optional<String> idempotencyRequestHash) {
     }
 
-    record InsertOutcome(AppointmentId appointmentId, boolean replayed) {
+    /**
+     * @param reference the capability the customer keeps. Minted at insert and
+     *                  read back on a replay, so a retried booking is handed the
+     *                  same one rather than a second that reaches the same row
+     */
+    record InsertOutcome(AppointmentId appointmentId, String reference, boolean replayed) {
     }
 }

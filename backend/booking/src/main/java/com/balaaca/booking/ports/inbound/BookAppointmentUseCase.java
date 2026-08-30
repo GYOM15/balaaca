@@ -43,6 +43,12 @@ public interface BookAppointmentUseCase {
     }
 
     /** @param replayed true when an identical request had already created it */
-    record BookingResult(AppointmentId appointmentId, boolean replayed) {
+    /**
+     * @param reference what the customer keeps. The only thing that lets someone
+     *                  without an account come back to this appointment, so it
+     *                  is returned once, here, and travels on in the
+     *                  confirmation message
+     */
+    record BookingResult(AppointmentId appointmentId, String reference, boolean replayed) {
     }
 }

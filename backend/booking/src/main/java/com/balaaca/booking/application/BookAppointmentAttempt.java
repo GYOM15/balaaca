@@ -99,8 +99,8 @@ public class BookAppointmentAttempt {
         // dual write the outbox exists to avoid. Not on a replay - the rows are
         // already there, and their dedupe keys would absorb them anyway.
         if (!outcome.replayed()) {
-            notifications.planFor(outcome.appointmentId(), command.startsAt(),
-                                  offering, command.customer());
+            notifications.planFor(outcome.appointmentId(), outcome.reference(),
+                                  command.startsAt(), offering, command.customer());
         }
         return outcome;
     }

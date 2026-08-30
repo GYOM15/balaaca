@@ -39,6 +39,9 @@ import org.junit.jupiter.api.Test;
  */
 class BookingNotificationsTest {
 
+    /** The capability the confirmation carries. Any opaque string does here. */
+    private static final String REFERENCE = "cGFzLXVuLXZyYWktc2VjcmV0LWRlLXRlc3Q";
+
     private static final Instant NOW = Instant.parse("2026-09-01T08:00:00Z");
     private static final AppointmentId APPOINTMENT =
             AppointmentId.of(UUID.fromString("aaaaaaaa-0000-0000-0000-000000000001"));
@@ -89,7 +92,7 @@ class BookingNotificationsTest {
     }
 
     private List<PlannedNotification> planFor(NoticeProfile profile, Instant startsAt) {
-        plannerFor(profile).planFor(APPOINTMENT, startsAt, offering(), customer());
+        plannerFor(profile).planFor(APPOINTMENT, REFERENCE, startsAt, offering(), customer());
         return outbox.planned;
     }
 

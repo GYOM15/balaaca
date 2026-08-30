@@ -101,4 +101,25 @@ public final class BookingExceptions {
                   Map.of("appointment_id", String.valueOf(id)));
         }
     }
+    /**
+     * Too late for the customer to call it off.
+     *
+     * <p>The window is the provider's own {@code cancellation_deadline_minutes},
+     * a column that existed from V004 and was enforced nowhere - which is the
+     * same as not having it. It binds the customer only: a salon cancelling its
+     * own appointment is managing its diary, and refusing that would be absurd.
+     *
+     * <p>It carries the deadline so a client can say when it passed. That is not
+     * a disclosure: the customer was told the policy when they booked, and it is
+     * computed from their own appointment.
+     */
+    public static final class CancellationDeadlinePassedException extends DomainException {
+
+        public CancellationDeadlinePassedException(Instant deadline) {
+            super("CANCELLATION_DEADLINE_PASSED", 422,
+                  "It is too late to cancel this appointment online",
+                  Map.of("deadline", String.valueOf(deadline)));
+        }
+    }
+
 }

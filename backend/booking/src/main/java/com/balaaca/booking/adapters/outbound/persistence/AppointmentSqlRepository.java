@@ -13,7 +13,9 @@ import com.balaaca.sharedkernel.ids.StaffId;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceException;
+import java.security.SecureRandom;
 import java.sql.SQLException;
+import java.util.Base64;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -26,6 +28,8 @@ import java.util.UUID;
  */
 @ApplicationScoped
 public class AppointmentSqlRepository implements AppointmentRepository {
+
+    private static final SecureRandom RANDOM = new SecureRandom();
 
     private static final String EXCLUSION_VIOLATION = "23P01";
     private static final String UNIQUE_VIOLATION = "23505";
@@ -49,18 +53,26 @@ public class AppointmentSqlRepository implements AppointmentRepository {
         String key = a.idempotencyKey().orElse(null);
 
         try {
+            // A capability, minted here and nowhere else. 256 bits from a
+            // SecureRandom: it is the only thing standing between a stranger
+            // and one customer's appointment, so it is not derived from the
+            // id, the phone or the time - all of which someone could know.
+            String reference = mintReference();
+
             int inserted = em.createNativeQuery("""
                     INSERT INTO appointments (
                         id, provider_id, staff_id, service_offering_id, customer_id,
                         starts_at, ends_at, buffer_before_minutes, buffer_after_minutes,
                         blocked_from, blocked_until, service_name,
                         customer_price_amount_minor, customer_price_currency,
-                        duration_minutes, source, idempotency_key, idempotency_request_hash)
+                        duration_minutes, source, idempotency_key, idempotency_request_hash,
+                        public_reference)
                     VALUES (
                         :id, :providerId, :staffId, :offeringId, :customerId,
                         :startsAt, :endsAt, :bufferBefore, :bufferAfter,
                         :blockedFrom, :blockedUntil, :serviceName,
-                        :priceMinor, :currency, :duration, :source, :key, :hash)
+                        :priceMinor, :currency, :duration, :source, :key, :hash,
+                        :reference)
                     ON CONFLICT (provider_id, idempotency_key)
                         WHERE idempotency_key IS NOT NULL
                     DO NOTHING
@@ -83,10 +95,11 @@ public class AppointmentSqlRepository implements AppointmentRepository {
                     .setParameter("source", a.source().name())
                     .setParameter("key", key)
                     .setParameter("hash", a.idempotencyRequestHash().orElse(null))
+                    .setParameter("reference", reference)
                     .executeUpdate();
 
             if (inserted == 1) {
-                return new InsertOutcome(a.id(), false);
+                return new InsertOutcome(a.id(), reference, false);
             }
             // Zero rows means the conflict target fired, so the key exists and
             // a row must be readable. Finding none would mean the index and the
@@ -108,7 +121,7 @@ public class AppointmentSqlRepository implements AppointmentRepository {
     @SuppressWarnings("unchecked")
     private Optional<InsertOutcome> findReplay(UUID providerId, String key, String hash) {
         List<Object[]> rows = em.createNativeQuery("""
-                SELECT id, idempotency_request_hash FROM appointments
+                SELECT id, idempotency_request_hash, public_reference FROM appointments
                  WHERE provider_id = :providerId AND idempotency_key = :key
                 """)
                 .setParameter("providerId", providerId)
@@ -122,7 +135,10 @@ public class AppointmentSqlRepository implements AppointmentRepository {
         if (hash != null && !hash.equals(r[1])) {
             throw new IdempotencyKeyReusedException(key);
         }
-        return Optional.of(new InsertOutcome(AppointmentId.of((UUID) r[0]), true));
+        // The stored one, never a fresh mint: a retry that came back with a
+        // different reference would leave the customer holding a key to nothing.
+        return Optional.of(new InsertOutcome(AppointmentId.of((UUID) r[0]),
+                                             (String) r[2], true));
     }
 
     /**
@@ -212,4 +228,16 @@ public class AppointmentSqlRepository implements AppointmentRepository {
                 .getSingleResult();
         return CustomerId.of(id);
     }
+    /**
+     * URL-safe, unpadded, 43 characters. Deliberately not the appointment's id:
+     * the id appears on the provider's agenda, in the audit trail and in log
+     * lines, and a capability has to be a value whose only job is to be one, so
+     * that widening where the id is used never widens what the id can do.
+     */
+    private static String mintReference() {
+        byte[] raw = new byte[32];
+        RANDOM.nextBytes(raw);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(raw);
+    }
+
 }

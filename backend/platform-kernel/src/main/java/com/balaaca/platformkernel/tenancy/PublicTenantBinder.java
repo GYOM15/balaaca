@@ -29,6 +29,23 @@ public class PublicTenantBinder {
         return providerId;
     }
 
+    /**
+     * Binds from a booking reference instead of a slug.
+     *
+     * <p>The same capability shape: the caller passes a value the server minted
+     * and handed to one customer, never a {@link ProviderId}. It throws rather
+     * than returning empty so the edge never has to name a business context's
+     * own exception to say "not found" - which is a boundary ArchUnit enforces.
+     *
+     * @throws BookingNotFoundException the reference names nothing reachable
+     */
+    public ProviderId bindBooking(String reference) {
+        ProviderId providerId = memberships.resolveBooking(reference)
+                .orElseThrow(BookingNotFoundException::new);
+        tenantContext.assign(providerId);
+        return providerId;
+    }
+
     public void clear() {
         tenantContext.clear();
     }

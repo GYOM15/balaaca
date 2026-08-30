@@ -71,4 +71,13 @@ public class ProviderMembershipSqlResolver implements ProviderMembershipResolver
         }
         return ProviderId.of(id);
     }
+    @Override
+    public java.util.Optional<ProviderId> resolveBooking(String reference) {
+        UUID id = (UUID) em.createNativeQuery(
+                        "SELECT app_resolve_booking_provider(:reference)")
+                .setParameter("reference", reference)
+                .getSingleResult();
+        return java.util.Optional.ofNullable(id).map(ProviderId::of);
+    }
+
 }

@@ -21,4 +21,19 @@ public interface ProviderMembershipResolver {
 
     /** @throws ProviderNotPublishedException when the slug is unknown or unpublished */
     ProviderId requirePublished(String slug);
+
+    /**
+     * The tenant one booking belongs to, from the reference minted for its
+     * customer.
+     *
+     * <p>Unlike a slug this does not require the provider to be published - a
+     * salon that took a booking and then unpublished still owes that customer a
+     * way to see and cancel it. A suspended or closed business is another
+     * matter, and resolves to nothing.
+     *
+     * @throws com.balaaca.booking.domain.BookingExceptions.AppointmentNotFoundException
+     *         is NOT thrown here; an unknown reference returns empty and the
+     *         caller decides, because this module knows nothing about bookings
+     */
+    java.util.Optional<ProviderId> resolveBooking(String reference);
 }
