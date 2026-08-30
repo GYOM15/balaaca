@@ -7,12 +7,6 @@
     <groupId>com.balaaca</groupId>
     <artifactId>balaaca-backend</artifactId>
     <version>0.1.0-SNAPSHOT</version>
-    <!-- Explicit, though it is also the default. Maven infers it either way;
-         OSV-Scanner does not, and without it the parent is looked for in a
-         registry that has never held a SNAPSHOT of this project. It then
-         resolves no version for any dependency the parent's BOM manages, and
-         reports nothing - which reads exactly like a clean module. -->
-    <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>identity</artifactId>
   <dependencies>
