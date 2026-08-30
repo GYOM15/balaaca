@@ -2,6 +2,7 @@ package com.balaaca.scheduling.ports.outbound;
 
 import com.balaaca.scheduling.ports.inbound.ManageAvailabilityUseCase.Closure;
 import com.balaaca.scheduling.ports.inbound.ManageAvailabilityUseCase.WeeklySegment;
+import com.balaaca.scheduling.domain.OpenWindow;
 import com.balaaca.sharedkernel.ids.StaffId;
 import java.time.LocalDate;
 import java.util.List;
@@ -17,6 +18,14 @@ public interface AvailabilityAdminRepository {
     boolean staffExists(StaffId staffId);
 
     List<WeeklySegment> segmentsOf(StaffId staffId);
+
+    /**
+     * Every currently-effective rule of every bookable, active staff member,
+     * unmerged and in order. What "currently" means is decided by the database
+     * against the provider's own timezone: a rule that starts on Monday starts
+     * when it is Monday where the shop is, not where the server is.
+     */
+    List<OpenWindow> effectiveWindows();
 
     /** Replaces every rule for that staff member, in one transaction. */
     List<WeeklySegment> replaceSegments(StaffId staffId, List<WeeklySegment> segments);

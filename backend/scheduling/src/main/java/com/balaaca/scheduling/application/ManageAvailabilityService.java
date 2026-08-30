@@ -3,6 +3,8 @@ package com.balaaca.scheduling.application;
 import com.balaaca.scheduling.domain.AvailabilityExceptions.ClosureNotFoundException;
 import com.balaaca.scheduling.domain.AvailabilityExceptions.EmptyWindowException;
 import com.balaaca.scheduling.domain.AvailabilityExceptions.UnknownStaffException;
+import com.balaaca.scheduling.domain.OpenWindow;
+import com.balaaca.scheduling.domain.OpeningWeek;
 import com.balaaca.scheduling.ports.inbound.ManageAvailabilityUseCase;
 import com.balaaca.scheduling.ports.outbound.AvailabilityAdminRepository;
 import com.balaaca.sharedkernel.ids.StaffId;
@@ -34,6 +36,12 @@ public class ManageAvailabilityService implements ManageAvailabilityUseCase {
     public List<WeeklySegment> openingHours(StaffId staffId) {
         requireStaff(staffId);
         return availability.segmentsOf(staffId);
+    }
+
+    @Override
+    @Transactional(Transactional.TxType.REQUIRED)
+    public List<OpenWindow> combinedOpeningHours() {
+        return OpeningWeek.merge(availability.effectiveWindows());
     }
 
     @Override

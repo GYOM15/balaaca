@@ -4,6 +4,7 @@ import com.balaaca.platformkernel.tenancy.TenantContext;
 import com.balaaca.scheduling.ports.inbound.ManageAvailabilityUseCase.Closure;
 import com.balaaca.scheduling.ports.inbound.ManageAvailabilityUseCase.LocalTimeRange;
 import com.balaaca.scheduling.ports.inbound.ManageAvailabilityUseCase.WeeklySegment;
+import com.balaaca.scheduling.domain.OpenWindow;
 import com.balaaca.scheduling.ports.outbound.AvailabilityAdminRepository;
 import com.balaaca.sharedkernel.ids.StaffId;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -59,6 +60,34 @@ public class AvailabilityAdminSqlRepository implements AvailabilityAdminReposito
                 localTime(r[1]), localTime(r[2]),
                 Optional.ofNullable(r[3]).map(AvailabilityAdminSqlRepository::localDate),
                 Optional.ofNullable(r[4]).map(AvailabilityAdminSqlRepository::localDate))).toList();
+    }
+
+    /**
+     * The joins are the point. provider_staff decides who counts - a disabled
+     * employee's leftover rules would otherwise keep the shop open on a day
+     * nobody works - and providers supplies the timezone the effective dates are
+     * read in. RLS still confines every one of the three tables to the tenant
+     * bound on this connection.
+     */
+    @Override
+    @SuppressWarnings("unchecked")
+    public List<OpenWindow> effectiveWindows() {
+        List<Object[]> rows = em.createNativeQuery("""
+                SELECT r.day_of_week, r.start_time, r.end_time
+                  FROM availability_rules r
+                  JOIN provider_staff s
+                    ON s.provider_id = r.provider_id AND s.id = r.staff_id
+                  JOIN providers p ON p.id = r.provider_id
+                 WHERE s.status = 'ACTIVE' AND s.bookable
+                   AND (r.effective_from IS NULL
+                        OR r.effective_from <= (now() AT TIME ZONE p.timezone)::date)
+                   AND (r.effective_to IS NULL
+                        OR r.effective_to >= (now() AT TIME ZONE p.timezone)::date)
+                 ORDER BY r.day_of_week, r.start_time
+                """).getResultList();
+
+        return rows.stream().map(r -> new OpenWindow(
+                ((Number) r[0]).intValue(), localTime(r[1]), localTime(r[2]))).toList();
     }
 
     @Override
