@@ -67,6 +67,13 @@ class BookingConcurrencyIT {
         assertThat(byStatus.getOrDefault(500, 0L))
                 .as("a deadlock must never reach the client as an unhandled error")
                 .isZero();
+        // The retry budget measures effort, not truth. A loser whose attempts
+        // ran out on deadlocks used to be told the system was busy and to try
+        // again - for a slot that was gone. The answer now comes from the
+        // committed data instead of the counter.
+        assertThat(byStatus.getOrDefault(503, 0L))
+                .as("a loser is told the slot is taken, never that the system is busy")
+                .isZero();
 
         assertThat(fixtures.activeAppointments(BookingFixtures.SOLO))
                 .as("the database holds one row, whatever the API said")
@@ -96,6 +103,7 @@ class BookingConcurrencyIT {
                     .mapToObj(i -> pool.submit(() -> {
                         releaseAll.await();
                         return given().contentType("application/json")
+                                .header("Idempotency-Key", "racer-" + startsAt + "-" + i)
                                 .body("""
                                       {"service_offering_id":"%s","starts_at":"%s",
                                        "customer":{"full_name":"Client %d","phone":"+22462200%04d"}}

@@ -24,7 +24,7 @@
     <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-rest</artifactId></dependency>
     <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-rest-jackson</artifactId></dependency>
     <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-hibernate-validator</artifactId></dependency>
-    <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-hibernate-orm-panache</artifactId></dependency>
+    <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-hibernate-orm</artifactId></dependency>
     <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-jdbc-postgresql</artifactId></dependency>
     <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-flyway</artifactId></dependency>
     <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-database-postgresql</artifactId></dependency>
@@ -34,10 +34,20 @@
     <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-micrometer-registry-prometheus</artifactId></dependency>
     <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-logging-json</artifactId></dependency>
 
+    <!-- Version from the Quarkus BOM, never pinned: it manages the
+         testcontainers core, and a module pinned beside it resolves a core of
+         another major. -->
     <dependency>
-      <groupId>org.testcontainers</groupId><artifactId>postgresql</artifactId>
-      <version>1.21.3</version><scope>test</scope>
+      <groupId>org.testcontainers</groupId><artifactId>testcontainers-postgresql</artifactId>
+      <scope>test</scope>
     </dependency>
+    <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-jacoco</artifactId><scope>test</scope></dependency>
+    <!-- Mints the verified subject the tenant chain resolves from, without a
+         Keycloak in the loop: what these tests exist to prove is what the
+         database does with a subject, not that an identity provider can sign a
+         token. -->
+    <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-test-security</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-test-security-oidc</artifactId><scope>test</scope></dependency>
     <dependency><groupId>io.rest-assured</groupId><artifactId>rest-assured</artifactId><scope>test</scope></dependency>
     <dependency>
       <groupId>com.tngtech.archunit</groupId><artifactId>archunit-junit5</artifactId>
@@ -47,6 +57,109 @@
 
   <build>
     <plugins>
+      <!--
+        quarkus-jacoco, not the bare agent, and the bare agent is switched off
+        here so two of them do not instrument one JVM. Quarkus rewrites classes
+        during augmentation, so an exec file recorded at runtime carries class
+        ids that no longer match the .class files on disk: jacoco:report-aggregate
+        reads every adapter as 0% covered while 29 integration tests drive them
+        on every request. Measured, not assumed - the same run reports 79.6% for
+        the providers adapter through the extension and 0.0% without it.
+
+        This is where the gate lives, because this is where the number means
+        something: every context's classes are exercised from here.
+      -->
+      <plugin>
+        <groupId>org.jacoco</groupId>
+        <artifactId>jacoco-maven-plugin</artifactId>
+        <version>${jacoco.version}</version>
+        <executions>
+          <execution><id>unit-agent</id><phase>none</phase></execution>
+          <execution><id>integration-agent</id><phase>none</phase></execution>
+          <execution><id>merge</id><phase>none</phase></execution>
+          <execution><id>report</id><phase>none</phase></execution>
+          <execution>
+            <id>coverage-gate</id>
+            <phase>verify</phase>
+            <goals><goal>check</goal></goals>
+            <configuration>
+              <dataFile>${project.build.directory}/jacoco-quarkus.exec</dataFile>
+              <!-- The wire types are generated from the contract, so their
+                   getters, equals and toString are the generator's work. Left
+                   in, they moved the ratio from 83% to 50% the day the contract
+                   landed, without a single test having got worse. A gate that
+                   answers to that is measuring the wrong thing. -->
+              <excludes>
+                <exclude>com/balaaca/app/api/**</exclude>
+              </excludes>
+              <rules>
+                <rule>
+                  <element>BUNDLE</element>
+                  <limits>
+                    <!-- 83.3% the day this was set. The gate sits below it, not
+                         at it: a threshold equal to the current number turns the
+                         next honest refactor red and gets the gate deleted. -->
+                    <limit>
+                      <counter>INSTRUCTION</counter>
+                      <value>COVEREDRATIO</value>
+                      <minimum>0.78</minimum>
+                    </limit>
+                  </limits>
+                </rule>
+              </rules>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <!--
+        The contract compiles into interfaces and wire types, and nothing it
+        produces is committed. There is therefore no checked-in copy to drift
+        from the spec and no drift job to write: the only way to change the
+        interface is to change META-INF/openapi.yaml, and javac catches a
+        resource that no longer matches it.
+      -->
+      <plugin>
+        <groupId>org.openapitools</groupId>
+        <artifactId>openapi-generator-maven-plugin</artifactId>
+        <version>${openapi-generator.version}</version>
+        <executions>
+          <execution>
+            <id>generate-api</id>
+            <phase>generate-sources</phase>
+            <goals><goal>generate</goal></goals>
+            <configuration>
+              <inputSpec>${project.basedir}/src/main/resources/META-INF/openapi.yaml</inputSpec>
+              <generatorName>jaxrs-spec</generatorName>
+              <output>${project.build.directory}/generated-sources/openapi</output>
+              <apiPackage>com.balaaca.app.api</apiPackage>
+              <modelPackage>com.balaaca.app.api.model</modelPackage>
+              <generateApiTests>false</generateApiTests>
+              <generateModelTests>false</generateModelTests>
+              <generateApiDocumentation>false</generateApiDocumentation>
+              <generateModelDocumentation>false</generateModelDocumentation>
+              <configOptions>
+                <!-- Interfaces only: the resource is ours, its shape is not. -->
+                <interfaceOnly>true</interfaceOnly>
+                <returnResponse>true</returnResponse>
+                <useJakartaEe>true</useJakartaEe>
+                <useTags>true</useTags>
+                <sourceFolder>src/gen/java</sourceFolder>
+                <openApiNullable>false</openApiNullable>
+                <!-- Swagger 1.x annotations describe the contract a second
+                     time, in Java, from the file that already is the contract.
+                     They also need a dependency this project has no other use
+                     for. Scanning is off, so nothing reads them anyway. -->
+                <useSwaggerAnnotations>false</useSwaggerAnnotations>
+                <!-- java.util.Date otherwise, which is a wall clock with no
+                     zone and a mutable one at that. date-time becomes
+                     OffsetDateTime, which carries the offset the contract
+                     promises (ADR-0007). -->
+                <dateLibrary>java8</dateLibrary>
+              </configOptions>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
       <plugin>
         <groupId>${quarkus.platform.group-id}</groupId>
         <artifactId>quarkus-maven-plugin</artifactId>

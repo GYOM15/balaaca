@@ -59,8 +59,22 @@ public final class BookingExceptions {
     /** Retries exhausted. The system is contended, not the slot. */
     public static final class BookingContendedException extends DomainException {
         public BookingContendedException(Instant startsAt) {
-            super("RATE_LIMITED", 503, "Too many bookings at once, please retry",
+            super("RATE_LIMITED", 429, "Too many bookings at once, please retry",
                   Map.of("starts_at", startsAt.toString()));
+        }
+    }
+
+    /** The appointment cannot leave the state it is in. */
+    public static final class InvalidStateTransitionException extends DomainException {
+        public InvalidStateTransitionException(AppointmentStatus from, AppointmentStatus to) {
+            // The states are in details, not in the message. Which state an
+            // appointment is in is the caller's own business here, but the
+            // message is the one thing that reaches a client verbatim and the
+            // habit of putting data in it is what eventually leaks somebody
+            // else's.
+            super("INVALID_STATE_TRANSITION", 409,
+                  "That appointment can no longer change",
+                  Map.of("from", from.name(), "to", to.name()));
         }
     }
 

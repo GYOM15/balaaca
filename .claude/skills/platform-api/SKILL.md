@@ -134,7 +134,8 @@ code that is not here.
    | `CANCELLATION_DEADLINE_PASSED` | 422 | The cancellation window for this appointment has closed. |
    | `CURRENCY_MISMATCH` | 422 | Two amounts in different currencies were combined. |
    | `IDEMPOTENCY_KEY_REUSED` | 422 | The key was replayed with a different request body. |
-   | `RATE_LIMITED` | 429 | The documented quota for this operation is exhausted. |
+   | `RATE_LIMITED` | 429 | The documented quota for this operation is exhausted, or a contended resource could not be ordered. |
+   | `INTERNAL_ERROR` | 500 | The server failed in a way it does not model. |
 
    Two entries carry a deliberate design decision. **`RESOURCE_NOT_FOUND` is
    one code for both a genuine miss and a cross-tenant read**, and the two
@@ -143,7 +144,12 @@ code that is not here.
    exists but is not yours" is precisely the existence oracle the 404 rule
    exists to prevent, and it also leaks the word *tenant*, an internal
    concept, into a public contract; there is no `TENANT_FORBIDDEN`, and there
-   are no per-resource 404 codes. **`PLAN_LIMIT_REACHED` is 403, never 402**:
+   are no per-resource 404 codes. **`INTERNAL_ERROR` is in the list because a
+   500 has to carry something**: the catalogue is closed and `Problem.code` is
+   required, so an unhandled failure with no code would either return a body the
+   published schema forbids or force every client to handle a missing field.
+   Nothing else about it is public - the cause goes to the log with the trace id
+   the response carries, and never into the body. **`PLAN_LIMIT_REACHED` is 403, never 402**:
    `402 Payment Required` asserts a payment path this product does not have.
    Codes are `SCREAMING_SNAKE_CASE` and **never renamed or reused** once
    published — a client branches on them. `title`/`detail` are human text and
@@ -377,6 +383,7 @@ components:
             - CURRENCY_MISMATCH
             - IDEMPOTENCY_KEY_REUSED
             - RATE_LIMITED
+            - INTERNAL_ERROR
 ```
 
 No provider identifier anywhere in a request, no internal type, no module

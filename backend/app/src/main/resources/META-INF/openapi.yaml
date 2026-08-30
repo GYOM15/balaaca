@@ -1,0 +1,1396 @@
+openapi: 3.0.3
+
+# The published contract. One document, hand-authored, in the deployable that
+# assembles the contexts - never one per Maven module: every module's
+# META-INF/openapi.yaml lands at the same classpath path, SmallRye serves
+# whichever wins the scan, and the rest disappear at runtime with no error.
+#
+# Runtime annotation scanning is off (mp.openapi.scan.disable), so what is
+# served is this file and only this file. The server interfaces and the wire
+# types are generated from it into target/generated-sources and never
+# committed: the only way to change the interface is to change the contract,
+# and the compiler catches a resource that no longer matches.
+info:
+  title: Balaaca API
+  version: "1.0.0"
+  description: |
+    The surface a client can call: today the two public operations a customer
+    reaches from a provider's page. Provider-scoped operations arrive with
+    authentication and will carry OAuth2 scopes; they will carry no tenant
+    identifier, because the tenant is resolved server-side from the verified
+    subject.
+
+    Every property and query parameter is snake_case. Instants are UTC
+    date-times. Money is `{ amount_minor, currency }`, never a bare number.
+  contact:
+    name: Balaaca
+    url: https://github.com/GYOM15/balaaca
+  license:
+    name: PolyForm Noncommercial 1.0.0
+    url: https://polyformproject.org/licenses/noncommercial/1.0.0/
+
+servers:
+  # Relative on purpose: no public hostname is published yet, and inventing one
+  # would put a URL in the contract that resolves to nothing.
+  - url: /
+    description: The deployable serving this document.
+
+tags:
+  - name: schedule
+    description: When a provider is open, and when they are not.
+  - name: catalogue
+    description: The services a provider offers.
+  - name: agenda
+    description: What a provider sees of their own bookings.
+  - name: availability
+    description: What a customer can book, from a provider's public page.
+  - name: booking
+    description: Taking a slot.
+
+paths:
+  /v1/appointments:
+    get:
+      operationId: listAppointments
+      tags: [agenda]
+      summary: List the caller's own appointments
+      description: |
+        The provider's agenda. There is no provider identifier anywhere in this
+        request - not a path segment, not a query parameter, not a header. The
+        tenant is resolved server-side from the verified subject through `users`
+        and `provider_staff`, so a scope grants access inside the caller's own
+        provider and can never reach across.
+
+        A subject that resolves to no active membership is `403 FORBIDDEN`. That
+        is not the same as `401`: the token was valid, it simply belongs to
+        nobody here.
+      security:
+        - oauth2: [dashboard:read]
+      parameters:
+        - name: from
+          in: query
+          required: false
+          description: Only appointments starting at or after this instant.
+            Defaults to now.
+          schema:
+            type: string
+            format: date-time
+        - name: status
+          in: query
+          required: false
+          description: Narrow to one status. Omit for the active ones -
+            `PENDING` and `CONFIRMED`.
+          schema:
+            $ref: '#/components/schemas/AppointmentStatus'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: The caller's appointments, earliest first.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: '`UNAUTHENTICATED` - no verified token, or it expired.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: '`FORBIDDEN` - the subject belongs to no active provider.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /v1/appointments/{id}/cancellation:
+    post:
+      operationId: cancelAppointment
+      tags: [agenda]
+      summary: Cancel one of the caller's appointments
+      description: |
+        A capability, not a status field. There is no operation that sets an
+        appointment's state directly: the machine is internal, and what a client
+        can express is the thing it wants to happen.
+
+        Cancelling frees the slot as a side effect of the same statement - the
+        exclusion constraint is partial on the active statuses - so there is no
+        moment in which the slot is neither taken nor free.
+
+        The provider's own cancellation deadline does not apply here. It is a
+        promise made to customers about how late they may cancel, and the
+        provider is not bound by their own policy.
+
+        An appointment that is not the caller's answers exactly as one that does
+        not exist.
+      security:
+        - oauth2: [appointments:write]
+      parameters:
+        - $ref: '#/components/parameters/AppointmentId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelAppointmentRequest'
+      responses:
+        '200':
+          description: The appointment as it now stands.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: '`UNAUTHENTICATED` - no verified token, or it expired.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: '`FORBIDDEN` - the subject belongs to no active provider.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: |
+            `INVALID_STATE_TRANSITION` - the appointment has already reached a
+            state it cannot leave. Cancelling twice lands here, and so does
+            cancelling something already completed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /v1/staff:
+    get:
+      operationId: listStaff
+      tags: [schedule]
+      summary: List the caller's own staff
+      description: |
+        Opening hours and closures belong to a person, not to a business: a
+        salon where one stylist works Saturdays and another does not is the
+        normal case, and a schedule that could not say so would be wrong for
+        everyone but the solo provider.
+      security:
+        - oauth2: [dashboard:read]
+      responses:
+        '200':
+          description: The caller's staff, active first.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffList'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/opening-hours:
+    get:
+      operationId: listOpeningHours
+      tags: [schedule]
+      summary: Read one staff member's weekly hours
+      description: |
+        The segments of each day, in the provider's own local time. Breaks are
+        the gaps between segments; there is no separate notion of one.
+      security:
+        - oauth2: [dashboard:read]
+      parameters:
+        - $ref: '#/components/parameters/StaffIdQuery'
+      responses:
+        '200':
+          description: The weekly hours.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpeningHours'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      operationId: replaceOpeningHours
+      tags: [schedule]
+      summary: Replace one staff member's weekly hours
+      description: |
+        The whole week, not a day at a time. A provider thinks in weeks, and a
+        per-day edit leaves the question of what happens to the days that were
+        not mentioned - which is exactly the ambiguity that empties a Saturday
+        nobody meant to close.
+
+        An end before a start is a window that wraps past midnight, which is a
+        real thing for a provider open until one in the morning. Equal is the
+        only nonsense, and it is refused.
+
+        Changing hours never moves an appointment already booked. What is
+        already taken stays taken; the new hours decide what can still be.
+      security:
+        - oauth2: [schedule:write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpeningHoursRequest'
+      responses:
+        '200':
+          description: The hours as they now stand.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpeningHours'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/closures:
+    get:
+      operationId: listClosures
+      tags: [schedule]
+      summary: List the days that differ from the weekly hours
+      description: |
+        A closure replaces the week's rules for that date rather than adding to
+        them: a provider who declares a holiday means closed, not closed except
+        for the usual hours.
+      security:
+        - oauth2: [dashboard:read]
+      parameters:
+        - $ref: '#/components/parameters/StaffIdQuery'
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: The closures and one-off hours in the range.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClosureList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: createClosure
+      tags: [schedule]
+      summary: Close a day, or give it different hours
+      description: |
+        `CLOSED` carries no times and `CUSTOM_HOURS` requires both; the database
+        states that as its own constraint, so a request that gets it wrong is
+        refused rather than stored as a day that means nothing.
+      security:
+        - oauth2: [schedule:write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClosureRequest'
+      responses:
+        '201':
+          description: The closure as created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClosureView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/closures/{id}:
+    delete:
+      operationId: deleteClosure
+      tags: [schedule]
+      summary: Remove a closure, restoring the weekly hours for that day
+      description: |
+        Deleted rather than retired, unlike a service. Nothing was ever booked
+        against a closure, so there is no history in it to keep.
+      security:
+        - oauth2: [schedule:write]
+      parameters:
+        - $ref: '#/components/parameters/ClosureId'
+      responses:
+        '204':
+          description: The day follows the weekly hours again.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/service-offerings:
+    get:
+      operationId: listServiceOfferings
+      tags: [catalogue]
+      summary: List the caller's own services
+      description: |
+        Every service the caller owns, retired ones included unless narrowed.
+        The provider's own view, so it carries the price whether or not the
+        public page shows it.
+      security:
+        - oauth2: [dashboard:read]
+      parameters:
+        - name: active
+          in: query
+          required: false
+          description: Omit for every service. A retired one is kept, never
+            deleted - appointments that were booked at its price still name it.
+          schema:
+            type: boolean
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: The caller's services, in their display order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceOfferingPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: createServiceOffering
+      tags: [catalogue]
+      summary: Add a service
+      description: |
+        The name is unique among the caller's active services, case-insensitively:
+        two live services called Tresses are two things a customer cannot choose
+        between.
+      security:
+        - oauth2: [catalog:write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceOfferingRequest'
+      responses:
+        '201':
+          description: The service as created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceOfferingView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: |
+            `INVALID_STATE_TRANSITION` - an active service already carries that
+            name.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /v1/service-offerings/{id}:
+    put:
+      operationId: replaceServiceOffering
+      tags: [catalogue]
+      summary: Change a service, or retire it
+      description: |
+        The whole representation, not a patch: a partial update over a price and
+        two buffers is a shape where forgetting a field silently changes it.
+
+        Changing a price or a duration never moves an appointment already
+        booked. Those were frozen onto the row at the time, which is what makes
+        a past booking still say what the customer was quoted.
+
+        Retiring is `active: false`. There is no delete.
+      security:
+        - oauth2: [catalog:write]
+      parameters:
+        - $ref: '#/components/parameters/ServiceOfferingId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceOfferingRequest'
+      responses:
+        '200':
+          description: The service as it now stands.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceOfferingView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: |
+            `INVALID_STATE_TRANSITION` - another active service already carries
+            that name.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /v1/appointments/{id}/reschedule:
+    post:
+      operationId: rescheduleAppointment
+      tags: [agenda]
+      summary: Move an appointment to another slot
+      description: |
+        Recomputed server-side from the service's own duration and buffers, and
+        arbitrated by the same exclusion constraint a first booking faces: the
+        slot is either free at the new time or it is not. The appointment keeps
+        its id, so its history and its notifications follow it.
+
+        Reminders owed for the old time are withdrawn and the new ones planned,
+        in the same transaction as the move.
+      security:
+        - oauth2: [appointments:write]
+      parameters:
+        - $ref: '#/components/parameters/AppointmentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RescheduleAppointmentRequest'
+      responses:
+        '200':
+          description: The appointment as it now stands.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: '`UNAUTHENTICATED` - no verified token, or it expired.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: '`FORBIDDEN` - the subject belongs to no active provider.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: |
+            `SLOT_UNAVAILABLE` if the new slot is taken, or
+            `INVALID_STATE_TRANSITION` if the appointment can no longer move.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          description: |
+            `SLOT_OUTSIDE_AVAILABILITY` - the new start falls outside what the
+            provider published.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /v1/appointments/{id}/confirmation:
+    post:
+      operationId: confirmAppointment
+      tags: [agenda]
+      summary: Confirm a pending appointment
+      description: |
+        Only a `PENDING` appointment can be confirmed. Confirming one twice is
+        refused rather than silently repeated: the second caller believed
+        something was still pending that was not.
+      security:
+        - oauth2: [appointments:write]
+      parameters:
+        - $ref: '#/components/parameters/AppointmentId'
+      responses:
+        '200':
+          description: The appointment as it now stands.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: '`UNAUTHENTICATED` - no verified token, or it expired.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: '`FORBIDDEN` - the subject belongs to no active provider.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: |
+            `INVALID_STATE_TRANSITION` - only a pending appointment confirms.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /v1/appointments/{id}/completion:
+    post:
+      operationId: completeAppointment
+      tags: [agenda]
+      summary: Mark an appointment as honoured
+      description: |
+        Only a `CONFIRMED` appointment completes. The slot is already past; what
+        this records is that the customer came.
+      security:
+        - oauth2: [appointments:write]
+      parameters:
+        - $ref: '#/components/parameters/AppointmentId'
+      responses:
+        '200':
+          description: The appointment as it now stands.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: '`UNAUTHENTICATED` - no verified token, or it expired.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: '`FORBIDDEN` - the subject belongs to no active provider.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: |
+            `INVALID_STATE_TRANSITION` - only a confirmed appointment completes.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /v1/appointments/{id}/no-show:
+    post:
+      operationId: markAppointmentNoShow
+      tags: [agenda]
+      summary: Record that the customer did not come
+      description: |
+        Only a `CONFIRMED` appointment can be a no-show. Kept apart from
+        cancellation on purpose: a customer who cancelled and a customer who
+        simply did not arrive are different facts about the same empty chair,
+        and a provider deciding whom to take next time needs to tell them
+        apart.
+      security:
+        - oauth2: [appointments:write]
+      parameters:
+        - $ref: '#/components/parameters/AppointmentId'
+      responses:
+        '200':
+          description: The appointment as it now stands.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: '`UNAUTHENTICATED` - no verified token, or it expired.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: '`FORBIDDEN` - the subject belongs to no active provider.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: |
+            `INVALID_STATE_TRANSITION` - only a confirmed appointment can be a no-show.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /v1/providers/{slug}/available-slots:
+    get:
+      operationId: listAvailableSlots
+      tags: [availability]
+      summary: List the slots a customer could book
+      description: |
+        Returns only slots that can actually be booked right now. Busy time is
+        not represented at all - no `available: false` entries, no busy
+        intervals, no annotated gaps.
+
+        That is not a timing precaution. A uniform grid with an availability
+        flag is a minute-by-minute occupancy map of a named person at a named
+        address, served to anyone who can spell the slug and trivially scraped
+        on a schedule. A client that wants a grid for layout lays these slots
+        over the provider's opening hours, which are public in their own right.
+
+        An unknown slug and an unpublished provider answer identically.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProviderSlug'
+        - name: service_offering_id
+          in: query
+          required: true
+          description: Which service is being booked; its duration and buffers
+            decide what a slot occupies.
+          schema:
+            type: string
+            format: uuid
+        - name: staff_id
+          in: query
+          required: false
+          description: Ask about one staff member. Omit for the whole bookable
+            team.
+          schema:
+            type: string
+            format: uuid
+        - name: from
+          in: query
+          required: true
+          description: First date to consider, in the provider's own zone.
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          required: true
+          description: Last date to consider. A range longer than 31 days is
+            truncated to 31 days from `from`.
+          schema:
+            type: string
+            format: date
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: The bookable slots in the requested range.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailableSlotPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/providers/{slug}/appointments:
+    post:
+      operationId: bookAppointment
+      tags: [booking]
+      summary: Book an appointment on a provider's public page
+      description: |
+        Creates a `PENDING` appointment. The slug carries the tenant here, and
+        only here: a customer is not staff, so membership resolution yields
+        nothing for them and a booking route with no tenant identifier would
+        answer 403 to the very people it exists for. The slug grants nothing
+        beyond what the public page already shows, and this path may do exactly
+        two things - create a pending appointment, and read the public
+        projections.
+
+        The server recomputes the window from the offering's own duration and
+        buffers, and freezes the price from the offering. Neither is accepted
+        from the client.
+
+        Retry semantics: a `409` means the slot is gone, so re-read
+        availability rather than retrying the same body. A `429` and a `5xx`
+        are safe to retry with the same `Idempotency-Key`; no `4xx` other than
+        `429` is.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProviderSlug'
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: |
+            The same key with the same body replays the first result and
+            returns `200`. The same key with a different body is `422
+            IDEMPOTENCY_KEY_REUSED`. The key is retained for the life of the
+            appointment - not for a fixed window.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 80
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookAppointmentRequest'
+      responses:
+        '201':
+          description: The appointment was created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentCreatedView'
+        '200':
+          description: |
+            This key already created this appointment. The body is the first
+            result, unchanged.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentCreatedView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: |
+            `SLOT_UNAVAILABLE` - the slot was taken between the availability
+            read and this write.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          description: |
+            `SLOT_OUTSIDE_AVAILABILITY` when the start falls outside what the
+            provider published, or `IDEMPOTENCY_KEY_REUSED` when the key was
+            replayed with a different body.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '429':
+          description: |
+            `RATE_LIMITED` - too many bookings arrived at once for this slot
+            and none of the attempts could be ordered. The slot may still be
+            free: retry with the same key.
+          headers:
+            Retry-After:
+              description: Seconds to wait before retrying.
+              schema:
+                type: integer
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+components:
+
+  securitySchemes:
+    oauth2:
+      type: oauth2
+      description: |
+        Scopes are coarse capability grants, checked at the service layer as
+        well as here. None of them crosses a provider: the tenant comes from the
+        database via the subject, so a scope says what the caller may do inside
+        their own provider and nothing about whose data they reach.
+      flows:
+        authorizationCode:
+          authorizationUrl: /realms/balaaca/protocol/openid-connect/auth
+          tokenUrl: /realms/balaaca/protocol/openid-connect/token
+          scopes:
+            dashboard:read: Read the caller's own agenda and settings.
+            catalog:write: Create and change the caller's own services.
+            schedule:write: Set the caller's own opening hours and closures.
+            appointments:write: Create and move the caller's own appointments.
+
+  parameters:
+    AppointmentId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    StaffIdQuery:
+      name: staff_id
+      in: query
+      required: true
+      description: Whose schedule. A provider identifier never appears in a
+        request; a staff identifier is one of the caller's own people, and the
+        database confines it to them.
+      schema:
+        type: string
+        format: uuid
+    ClosureId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ServiceOfferingId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ProviderSlug:
+      name: slug
+      in: path
+      required: true
+      description: The provider's public handle - the string on the QR code.
+      schema:
+        type: string
+        pattern: '^[a-z0-9]([a-z0-9-]{1,58}[a-z0-9])$'
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque. Pass back the `next_cursor` of the previous page.
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: How many entries to return.
+      schema:
+        type: integer
+        minimum: 1
+        default: 50
+        maximum: 200
+
+  responses:
+    Unauthenticated:
+      description: '`UNAUTHENTICATED` - no verified token, or it expired.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Forbidden:
+      description: '`FORBIDDEN` - the subject belongs to no active provider, or
+        the token does not carry the scope this operation needs.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    BadRequest:
+      description: '`VALIDATION_FAILED`, or `IDEMPOTENCY_KEY_REQUIRED` when a
+        mutating operation arrived without the header.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    NotFound:
+      description: |
+        `RESOURCE_NOT_FOUND`. One answer for a resource that does not exist and
+        for one that is not the caller's, byte for byte: any way to tell them
+        apart is an oracle for whether a hidden resource exists.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+
+  schemas:
+
+    Problem:
+      type: object
+      description: RFC 7807. `code` is the stable value a client branches on;
+        `title` is human text and may change.
+      required: [type, title, status, code]
+      properties:
+        type:
+          type: string
+          format: uri
+          example: https://errors.balaaca.com/slot-unavailable
+        title:
+          type: string
+          example: That slot is no longer available
+        status:
+          type: integer
+          format: int32
+          example: 409
+        code:
+          $ref: '#/components/schemas/ErrorCode'
+        instance:
+          type: string
+          description: The trace id for this request. Quote it in a bug report;
+            it is what ties the response to the server log.
+
+    ErrorCode:
+      type: string
+      description: |
+        The closed catalogue. Values are never renamed or reused once
+        published, because clients branch on them. There is no code that
+        distinguishes "not yours" from "does not exist", and none that names an
+        internal concept.
+      enum:
+        - VALIDATION_FAILED
+        - IDEMPOTENCY_KEY_REQUIRED
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - PLAN_LIMIT_REACHED
+        - RESOURCE_NOT_FOUND
+        - SLOT_UNAVAILABLE
+        - INVALID_STATE_TRANSITION
+        - SLOT_OUTSIDE_AVAILABILITY
+        - CANCELLATION_DEADLINE_PASSED
+        - CURRENCY_MISMATCH
+        - IDEMPOTENCY_KEY_REUSED
+        - RATE_LIMITED
+        - INTERNAL_ERROR
+
+    AvailableSlot:
+      type: object
+      description: A slot a customer could take. Carries when it starts and
+        when it ends, and nothing about who is free or busy.
+      required: [starts_at, ends_at]
+      properties:
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+
+    AvailableSlotPage:
+      type: object
+      required: [data, next_cursor]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AvailableSlot'
+        next_cursor:
+          type: string
+          nullable: true
+          description: Opaque; null on the last page.
+
+    CustomerContact:
+      type: object
+      description: How the customer is reached. The phone is normalised to
+        E.164 server-side from the provider's country.
+      required: [full_name, phone]
+      properties:
+        full_name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        phone:
+          type: string
+          minLength: 1
+          maxLength: 24
+          example: "622000001"
+        email:
+          type: string
+          maxLength: 255
+
+    BookAppointmentRequest:
+      type: object
+      description: |
+        No provider identifier: the tenant comes from the slug in the path. No
+        end time, no duration and no price: all three follow from the offering
+        and are recomputed server-side, because a client-supplied price is the
+        oldest trick there is.
+      required: [service_offering_id, starts_at, customer]
+      properties:
+        service_offering_id:
+          type: string
+          format: uuid
+        staff_id:
+          type: string
+          format: uuid
+          description: Ask for one person. Omit - never send null - to let the
+            server choose an available one.
+        starts_at:
+          type: string
+          format: date-time
+          description: The requested start, as a UTC instant.
+        customer:
+          $ref: '#/components/schemas/CustomerContact'
+        customer_note:
+          type: string
+          maxLength: 500
+
+    StaffView:
+      type: object
+      required: [staff_id, display_name, role, bookable, active]
+      properties:
+        staff_id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+        role:
+          type: string
+        bookable:
+          type: boolean
+        active:
+          type: boolean
+
+    StaffList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/StaffView'
+
+    OpeningHoursSegment:
+      type: object
+      description: One stretch of a day, in the provider's own local time.
+      required: [day_of_week, start_time, end_time]
+      properties:
+        day_of_week:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 7
+          description: ISO numbering, 1 is Monday.
+        start_time:
+          type: string
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+          example: "08:00"
+        end_time:
+          type: string
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+          example: "20:00"
+        effective_from:
+          type: string
+          format: date
+          description: Omit for hours that have always applied.
+        effective_to:
+          type: string
+          format: date
+
+    OpeningHours:
+      type: object
+      required: [staff_id, timezone, data]
+      properties:
+        staff_id:
+          type: string
+          format: uuid
+        timezone:
+          type: string
+          description: The IANA zone the times are written in. A local time
+            without one is not a moment.
+          example: Africa/Conakry
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpeningHoursSegment'
+
+    OpeningHoursRequest:
+      type: object
+      required: [staff_id, data]
+      properties:
+        staff_id:
+          type: string
+          format: uuid
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpeningHoursSegment'
+
+    ClosureKind:
+      type: string
+      enum: [CLOSED, CUSTOM_HOURS]
+
+    ClosureRequest:
+      type: object
+      required: [staff_id, date, kind]
+      properties:
+        staff_id:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date
+        kind:
+          $ref: '#/components/schemas/ClosureKind'
+        start_time:
+          type: string
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+          description: Required for CUSTOM_HOURS, refused for CLOSED.
+        end_time:
+          type: string
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+        reason:
+          type: string
+          maxLength: 200
+
+    ClosureView:
+      type: object
+      required: [closure_id, staff_id, date, kind]
+      properties:
+        closure_id:
+          type: string
+          format: uuid
+        staff_id:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date
+        kind:
+          $ref: '#/components/schemas/ClosureKind'
+        start_time:
+          type: string
+        end_time:
+          type: string
+        reason:
+          type: string
+
+    ClosureList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClosureView'
+
+    ServiceOfferingRequest:
+      type: object
+      description: |
+        No provider identifier: the tenant comes from the token. The duration is
+        what the appointment will occupy, and the buffers are the quiet either
+        side of it - a cleaning slot, a chair to be swept.
+      required: [name, duration_minutes, price]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        description:
+          type: string
+        duration_minutes:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 720
+          description: Never zero. A zero-length service occupies an empty range,
+            and an empty range collides with nothing.
+        buffer_before_minutes:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 240
+          default: 0
+        buffer_after_minutes:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 240
+          default: 0
+        price:
+          $ref: '#/components/schemas/Money'
+        price_visible:
+          type: boolean
+          default: true
+          description: Whether the public page shows the price.
+        sort_order:
+          type: integer
+          format: int32
+          default: 0
+        active:
+          type: boolean
+          default: true
+
+    ServiceOfferingView:
+      type: object
+      required: [service_offering_id, name, duration_minutes, buffer_before_minutes,
+                 buffer_after_minutes, price, price_visible, sort_order, active]
+      properties:
+        service_offering_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        duration_minutes:
+          type: integer
+          format: int32
+        buffer_before_minutes:
+          type: integer
+          format: int32
+        buffer_after_minutes:
+          type: integer
+          format: int32
+        price:
+          $ref: '#/components/schemas/Money'
+        price_visible:
+          type: boolean
+        sort_order:
+          type: integer
+          format: int32
+        active:
+          type: boolean
+
+    ServiceOfferingPage:
+      type: object
+      required: [data, next_cursor]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ServiceOfferingView'
+        next_cursor:
+          type: string
+          nullable: true
+
+    AppointmentStatus:
+      type: string
+      description: Where an appointment is in its life. Closed and named, so a
+        client can switch on it.
+      enum: [PENDING, CONFIRMED, CANCELLED, COMPLETED, NO_SHOW]
+
+    Money:
+      type: object
+      description: Never a bare number and never a float. The scale is the
+        currency's own - GNF has none, so 150000 is 150000 francs.
+      required: [amount_minor, currency]
+      properties:
+        amount_minor:
+          type: integer
+          format: int64
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          example: GNF
+
+    AppointmentCustomerView:
+      type: object
+      description: |
+        What the provider sees of the person who booked. This is their own
+        address book, so the number is theirs to have - it appears in no public
+        projection and in no notification payload.
+      required: [full_name, phone]
+      properties:
+        full_name:
+          type: string
+        phone:
+          type: string
+          description: E.164.
+
+    AppointmentView:
+      type: object
+      description: |
+        One row of the caller's agenda. A separate schema from the public
+        projection rather than the same one with fields stripped at runtime: a
+        projection enforced by shape cannot be leaked by a forgotten condition.
+
+        The service name and price are what was frozen at booking, not what the
+        offering says today - repricing a service must not rewrite what a
+        customer was quoted.
+      required: [appointment_id, starts_at, ends_at, status, service_name, price, customer]
+      properties:
+        appointment_id:
+          type: string
+          format: uuid
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        status:
+          $ref: '#/components/schemas/AppointmentStatus'
+        service_name:
+          type: string
+        price:
+          $ref: '#/components/schemas/Money'
+        customer:
+          $ref: '#/components/schemas/AppointmentCustomerView'
+
+    AppointmentPage:
+      type: object
+      required: [data, next_cursor]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AppointmentView'
+        next_cursor:
+          type: string
+          nullable: true
+          description: Opaque; null on the last page.
+
+    RescheduleAppointmentRequest:
+      type: object
+      description: |
+        The new start, and nothing else about time. No end and no duration: both
+        follow from the service the appointment already carries, and accepting
+        either would let a caller shrink its own footprint and move inside
+        someone else's appointment.
+      required: [starts_at]
+      properties:
+        starts_at:
+          type: string
+          format: date-time
+
+    CancelAppointmentRequest:
+      type: object
+      description: What the provider wants recorded about why. Private to them -
+        it appears in no customer-facing message.
+      properties:
+        reason:
+          type: string
+          maxLength: 200
+
+    AppointmentCreatedView:
+      type: object
+      description: Deliberately thin. An id is all a customer needs, and all
+        the public path should hand back.
+      required: [appointment_id]
+      properties:
+        appointment_id:
+          type: string
+          format: uuid

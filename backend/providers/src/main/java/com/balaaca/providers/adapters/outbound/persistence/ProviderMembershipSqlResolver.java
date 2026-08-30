@@ -19,11 +19,11 @@ import java.util.UUID;
  * to be.
  */
 @ApplicationScoped
-public class ProviderMembershipPanacheResolver implements ProviderMembershipResolver {
+public class ProviderMembershipSqlResolver implements ProviderMembershipResolver {
 
     private final EntityManager em;
 
-    public ProviderMembershipPanacheResolver(EntityManager em) {
+    public ProviderMembershipSqlResolver(EntityManager em) {
         this.em = em;
     }
 

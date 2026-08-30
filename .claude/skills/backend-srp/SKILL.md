@@ -60,7 +60,7 @@ kind of work in its own layer.
    `CancelAppointmentService`, `RescheduleAppointmentService` — each
    fulfils one inbound port, not five unrelated ones.
 5. **I/O plumbing is its own class at the edge.** An outbound adapter
-   (`AppointmentPanacheRepository`, `TwilioSmsAdapter`) shuttles bytes
+   (`AppointmentSqlRepository`, `TwilioSmsAdapter`) shuttles bytes
    and maps rows/responses. It makes no business decision. The service
    decides; the adapter transports. Keep persistence mapping, and the
    SQL text itself, out of the application service.
@@ -222,7 +222,7 @@ public class RescheduleAppointmentService
 ```
 
 ```sql
--- inside AppointmentPanacheRepository.applyReschedule; the service never
+-- inside AppointmentSqlRepository.applyReschedule; the service never
 -- sees this text. buffer_before_minutes / buffer_after_minutes are frozen
 -- and untouched, so ck_appointments_block_derived still holds.
 UPDATE appointments

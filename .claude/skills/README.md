@@ -166,7 +166,7 @@ elsewhere — other files point here.
 | Concept | Canonical form |
 |---|---|
 | Use case | port `BookAppointmentUseCase` (interface, `ports/inbound`) + bean `BookAppointmentService` — **never `*ServiceImpl`** |
-| Adapter | named for its technology: `AppointmentPanacheRepository`, `SmsNotificationGateway` — **never `*Impl`** |
+| Adapter | named for its technology: `AppointmentSqlRepository`, `SmsNotificationGateway` — **never `*Impl`** |
 | Packages | `domain` · `ports/inbound\|outbound` · `application` · `adapters/inbound/{rest}` and `adapters/outbound/{persistence,gateway,messaging}`. `shared-kernel` is exempt: `com.balaaca.sharedkernel.{money,time,logging,tenancy,error}` |
 | Tables | English **snake_case plural**: `users`, `providers`, `provider_staff`, `provider_categories`, `service_offerings`, `availability_rules`, `availability_overrides`, `customers`, `appointments`, `notifications`, `subscriptions`, `audit_logs` |
 | Catalogue aggregate | Java `ServiceOffering` · table `service_offerings` · FK `service_offering_id` · route `/v1/service-offerings` · wire field `service_offering_id` · inbound port `LookupServiceOfferingUseCase` |

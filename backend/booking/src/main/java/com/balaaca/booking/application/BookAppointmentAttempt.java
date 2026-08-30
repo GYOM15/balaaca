@@ -8,12 +8,18 @@ import com.balaaca.booking.ports.outbound.AppointmentRepository.InsertOutcome;
 import com.balaaca.booking.ports.outbound.AppointmentRepository.NewAppointment;
 import com.balaaca.catalog.ports.inbound.BookableOffering;
 import com.balaaca.catalog.ports.inbound.LookupServiceOfferingUseCase;
+import com.balaaca.booking.domain.BookingExceptions.SlotOutsideAvailabilityException;
+import com.balaaca.scheduling.ports.inbound.CalculateSlotsUseCase;
+import com.balaaca.scheduling.ports.inbound.CalculateSlotsUseCase.SlotRequest;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import com.balaaca.sharedkernel.ids.AppointmentId;
 import com.balaaca.sharedkernel.ids.CustomerId;
 import com.balaaca.sharedkernel.ids.StaffId;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.transaction.Transactional;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -27,12 +33,18 @@ import java.util.UUID;
 public class BookAppointmentAttempt {
 
     private final LookupServiceOfferingUseCase offerings;
+    private final CalculateSlotsUseCase slots;
     private final AppointmentRepository appointments;
+    private final BookingNotifications notifications;
 
     public BookAppointmentAttempt(LookupServiceOfferingUseCase offerings,
-                                  AppointmentRepository appointments) {
+                                  CalculateSlotsUseCase slots,
+                                  AppointmentRepository appointments,
+                                  BookingNotifications notifications) {
         this.offerings = offerings;
+        this.slots = slots;
         this.appointments = appointments;
+        this.notifications = notifications;
     }
 
     /**
@@ -47,10 +59,32 @@ public class BookAppointmentAttempt {
         BookedSlot slot = BookedSlot.from(command.startsAt(), offering.duration(),
                                           offering.bufferBefore(), offering.bufferAfter());
 
+        // A retry is not a new request and must not be judged as one. Answered
+        // first, before any rule is applied: the slot it took may since have
+        // fallen inside the lead time or been closed by an override, and
+        // refusing the retry would leave the caller believing nothing was
+        // booked while the appointment stands. Only a request carrying a key
+        // can be a retry, so this reads on exactly those.
+        Optional<InsertOutcome> replay = command.idempotency()
+                .flatMap(i -> appointments.replayOf(i.key(), i.requestHash()));
+        if (replay.isPresent()) {
+            return replay.get();
+        }
+
+        // Checked inside the transaction, against the same calculation that
+        // produced the public list. The exclusion constraint stops a slot being
+        // sold twice; nothing else stops one being sold at 3am on a closed day.
+        // The two questions stay separate: this one never asks whether the slot
+        // is free, so a taken slot still answers 409 and not 422.
+        if (!slots.isWithinAvailability(command.startsAt(), slotRequest(command, offering))) {
+            throw new SlotOutsideAvailabilityException(command.startsAt(),
+                    "outside the provider's declared availability");
+        }
+
         StaffId staffId = command.staffId().orElseGet(() -> pick(command, excluded));
         CustomerId customerId = appointments.upsertCustomer(command.customer());
 
-        return appointments.insertIfAbsent(new NewAppointment(
+        InsertOutcome outcome = appointments.insertIfAbsent(new NewAppointment(
                 AppointmentId.of(UUID.randomUUID()),
                 staffId,
                 offering,
@@ -59,6 +93,16 @@ public class BookAppointmentAttempt {
                 command.source(),
                 command.idempotency().map(i -> i.key()),
                 command.idempotency().map(i -> i.requestHash())));
+
+        // In this transaction, after the appointment exists: the notifications
+        // carry a foreign key to it, and committing them separately would be the
+        // dual write the outbox exists to avoid. Not on a replay - the rows are
+        // already there, and their dedupe keys would absorb them anyway.
+        if (!outcome.replayed()) {
+            notifications.planFor(outcome.appointmentId(), command.startsAt(),
+                                  offering, command.customer());
+        }
+        return outcome;
     }
 
     /**
@@ -75,6 +119,35 @@ public class BookAppointmentAttempt {
         return command.staffId()
                 .map(List::of)
                 .orElseGet(() -> appointments.eligibleStaff(command.serviceOfferingId()));
+    }
+
+    /**
+     * Whether the committed data already accounts for every chair in this
+     * window.
+     *
+     * <p>Asked only once the loop has given up. The retry budget measures how
+     * hard this request tried, not what the answer is, and the two are not the
+     * same thing: N racers on one slot leave one winner and N-1 losers whose
+     * SQLSTATE happened to be a deadlock, and reporting congestion to all of
+     * them tells a customer to wait for a chair that will never open.
+     */
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    public boolean everyChairIsTaken(BookAppointmentCommand command) {
+        BookableOffering offering = offerings.requireBookable(command.serviceOfferingId());
+        BookedSlot slot = BookedSlot.from(command.startsAt(), offering.duration(),
+                                          offering.bufferBefore(), offering.bufferAfter());
+        return appointments.freeStaffCount(
+                command.staffId(), slot.blockedFrom(), slot.blockedUntil()) == 0;
+    }
+
+    private static SlotRequest slotRequest(BookAppointmentCommand command,
+                                           BookableOffering offering) {
+        // A single day: the question is whether this one start is bookable, and
+        // widening the range would only cost work.
+        LocalDate day = command.startsAt().atZone(ZoneId.of("UTC")).toLocalDate();
+        return new SlotRequest(command.serviceOfferingId(), command.staffId(),
+                day.minusDays(1), day.plusDays(1),
+                offering.duration(), offering.bufferBefore(), offering.bufferAfter());
     }
 
     private StaffId pick(BookAppointmentCommand command, List<StaffId> excluded) {

@@ -6,6 +6,8 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
@@ -25,6 +27,11 @@ public class BookingFixtures {
     public static final UUID HIDDEN = UUID.fromString("22222222-2222-2222-2222-222222222222");
     public static final UUID SOLO = UUID.fromString("33333333-3333-3333-3333-333333333333");
 
+    /** Keycloak subjects. The staff row is what ties one to a provider. */
+    public static final String SALON_SUBJECT = "kc-salon-fatou";
+    public static final String SOLO_SUBJECT = "kc-coiffeur-solo";
+    public static final String STRANGER_SUBJECT = "kc-nobody";
+
     public static final UUID SALON_OFFERING = UUID.fromString("5e111111-0000-0000-0000-000000000001");
     public static final UUID HIDDEN_OFFERING = UUID.fromString("5e222222-0000-0000-0000-000000000001");
     public static final UUID SOLO_OFFERING = UUID.fromString("50103333-0000-0000-0000-000000000001");
@@ -36,19 +43,47 @@ public class BookingFixtures {
     }
 
     public void reset() {
-        run("TRUNCATE appointments, customers, service_offerings, provider_staff, providers CASCADE");
         run("""
-            INSERT INTO providers (id, slug, business_name, country_code, published, status) VALUES
-              ('%s','salon-fatou','Salon Fatou','GN',true,'ACTIVE'),
-              ('%s','barbier-cache','Barbier Cache','GN',false,'PENDING'),
-              ('%s','coiffeur-solo','Coiffeur Solo','GN',true,'ACTIVE')
+            TRUNCATE notifications, appointments, customers, availability_overrides,
+                     availability_rules, service_offerings, provider_staff, providers,
+                     users CASCADE
+            """);
+        // A user with no staff row exists on purpose: a valid token whose
+        // subject belongs to nobody here must be told 403, not handed an empty
+        // agenda that looks like a working account.
+        run("""
+            INSERT INTO users (id, keycloak_user_id, display_name) VALUES
+              ('d1d1d1d1-0000-0000-0000-000000000001','%s','Fatou'),
+              ('d2d2d2d2-0000-0000-0000-000000000001','%s','Solo'),
+              ('d3d3d3d3-0000-0000-0000-000000000001','%s','Personne')
+            """.formatted(SALON_SUBJECT, SOLO_SUBJECT, STRANGER_SUBJECT));
+        // Only the salon publishes a way to be reached. coiffeur-solo deliberately
+        // does not: a provider with no contact must still be bookable, and the
+        // staff notice is simply not planned.
+        run("""
+            INSERT INTO providers (id, slug, business_name, country_code, published, status,
+                                   whatsapp_phone_e164) VALUES
+              ('%s','salon-fatou','Salon Fatou','GN',true,'ACTIVE','+224622999001'),
+              ('%s','barbier-cache','Barbier Cache','GN',false,'PENDING',NULL),
+              ('%s','coiffeur-solo','Coiffeur Solo','GN',true,'ACTIVE',NULL)
             """.formatted(SALON, HIDDEN, SOLO));
         run("""
-            INSERT INTO provider_staff (id, provider_id, display_name, role) VALUES
-              ('a1a1a1a1-0000-0000-0000-000000000001','%s','Fatou','OWNER'),
-              ('b1b1b1b1-0000-0000-0000-000000000001','%s','Cache','OWNER'),
-              ('c3c3c3c3-0000-0000-0000-000000000001','%s','Solo','OWNER')
+            INSERT INTO provider_staff (id, provider_id, user_id, display_name, role) VALUES
+              ('a1a1a1a1-0000-0000-0000-000000000001','%s','d1d1d1d1-0000-0000-0000-000000000001','Fatou','OWNER'),
+              ('b1b1b1b1-0000-0000-0000-000000000001','%s',NULL,'Cache','OWNER'),
+              ('c3c3c3c3-0000-0000-0000-000000000001','%s','d2d2d2d2-0000-0000-0000-000000000001','Solo','OWNER')
             """.formatted(SALON, HIDDEN, SOLO));
+        // Monday to Saturday, 08:00 to 20:00 local. Without these every booking
+        // is now correctly refused as outside the provider's declared hours,
+        // which is the point of this increment.
+        for (int day = 1; day <= 6; day++) {
+            run("""
+                INSERT INTO availability_rules
+                  (id, provider_id, staff_id, day_of_week, start_time, end_time) VALUES
+                  (gen_random_uuid(),'%s','a1a1a1a1-0000-0000-0000-000000000001',%d,'08:00','20:00'),
+                  (gen_random_uuid(),'%s','c3c3c3c3-0000-0000-0000-000000000001',%d,'08:00','20:00')
+                """.formatted(SALON, day, SOLO, day));
+        }
         run("""
             INSERT INTO service_offerings
               (id, provider_id, name, duration_minutes, buffer_before_minutes,
@@ -59,11 +94,44 @@ public class BookingFixtures {
             """.formatted(SALON_OFFERING, SALON, HIDDEN_OFFERING, HIDDEN, SOLO_OFFERING, SOLO));
     }
 
+    /** One outbox row, as the worker would read it. */
+    public record NotificationRow(String kind, String recipientKind, String toPhone,
+                                  String dedupeKey, String status, String payload) {
+    }
+
+    public List<NotificationRow> notifications(UUID providerId) {
+        String sql = """
+                SELECT kind, recipient_kind, coalesce(to_phone_e164,''), dedupe_key,
+                       status, payload::text
+                  FROM notifications WHERE provider_id = '%s'
+                 ORDER BY scheduled_at, kind
+                """.formatted(providerId);
+        List<NotificationRow> rows = new ArrayList<>();
+        try (Connection c = admin(); Statement s = c.createStatement(); ResultSet rs = s.executeQuery(sql)) {
+            while (rs.next()) {
+                rows.add(new NotificationRow(rs.getString(1), rs.getString(2), rs.getString(3),
+                                             rs.getString(4), rs.getString(5), rs.getString(6)));
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+        return rows;
+    }
+
     public long activeAppointments(UUID providerId) {
         return query("""
                 SELECT count(*) FROM appointments
                  WHERE provider_id = '%s' AND status IN ('PENDING','CONFIRMED')
                 """.formatted(providerId));
+    }
+
+    /** Closes a single date for the salon, to exercise an override. */
+    public void closeSalonOn(String isoDate) {
+        run("""
+            INSERT INTO availability_overrides
+              (id, provider_id, staff_id, override_date, kind, reason) VALUES
+              (gen_random_uuid(),'%s','a1a1a1a1-0000-0000-0000-000000000001','%s','CLOSED','ferie')
+            """.formatted(SALON, isoDate));
     }
 
     public long distinctStaffBooked(UUID providerId) {

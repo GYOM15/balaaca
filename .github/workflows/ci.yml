@@ -79,6 +79,12 @@ jobs:
       # three exists outside PostgreSQL.
       - run: mvn -B -f backend/pom.xml verify
 
+      # The satellite is its own Maven project, outside the backend reactor on
+      # purpose, so the verify above does not reach it. Its suites need the same
+      # PostgreSQL: they run the real migrations against a container and drain
+      # under the worker's own least-privilege role.
+      - run: mvn -B -f notification-worker/pom.xml verify
+
       - if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -86,7 +92,57 @@ jobs:
           path: |
             backend/**/target/surefire-reports/**
             backend/**/target/failsafe-reports/**
+            notification-worker/target/surefire-reports/**
+            notification-worker/target/failsafe-reports/**
           if-no-files-found: ignore
+
+  contract:
+    name: published contract
+    needs: secrets
+    runs-on: ubuntu-latest
+    steps:
+      # Full history: the breaking-change check needs the version of the
+      # document that is already on develop to compare against.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      # The document is what is published, so it is what is linted - not the
+      # code that implements it and not the runtime /q/openapi, which is served
+      # from this same file with annotation scanning off.
+      - name: Lint the OpenAPI document
+        run: |
+          npx --yes @stoplight/spectral-cli@6.15.0 lint \
+            backend/app/src/main/resources/META-INF/openapi.yaml \
+            --ruleset .spectral.yaml --fail-severity=error
+
+      # A pinned, checksummed binary, like gitleaks and osv-scanner above: an
+      # action that resolves a tag at run time decides what runs in this gate.
+      - name: Check for breaking changes
+        env:
+          OASDIFF_VERSION: 1.29.1
+          OASDIFF_SHA256: 541f7c66c933495fceef24eaf5c48aa66c19069f366f7bd0a60a6a4820c5e533
+        run: |
+          set -uo pipefail
+          spec=backend/app/src/main/resources/META-INF/openapi.yaml
+
+          # Nothing to compare against the first time the document appears, and
+          # that is not a failure - it is the base case.
+          if ! git show "origin/${{ github.base_ref || 'develop' }}:$spec" > /tmp/published.yaml 2>/dev/null; then
+            echo "::notice::no published contract to compare against yet"
+            exit 0
+          fi
+
+          archive="oasdiff_${OASDIFF_VERSION}_linux_amd64.tar.gz"
+          curl -sSfL --retry 3 -o "$archive" \
+            "https://github.com/oasdiff/oasdiff/releases/download/v${OASDIFF_VERSION}/${archive}"
+          echo "${OASDIFF_SHA256}  ${archive}" | sha256sum -c -
+          tar -xzf "$archive" oasdiff
+
+          # Additive changes pass. Removing a field, tightening a type, renaming
+          # an error code or making an optional parameter required does not:
+          # inside /v1 the promise is compatibility, and breaking it needs /v2.
+          ./oasdiff breaking /tmp/published.yaml "$spec" --fail-on ERR
 
   lint:
     name: shell and compose
@@ -101,7 +157,11 @@ jobs:
           # shellcheck ships on the runner image, so there is nothing to pin.
           shellcheck --version
           shellcheck --severity=warning \
-            infrastructure/postgres/bootstrap.sh
+            infrastructure/postgres/bootstrap.sh \
+            infrastructure/keycloak/smoke.sh
+          # The entrypoint is POSIX sh: the Keycloak image has no bash.
+          shellcheck --shell=sh --severity=warning \
+            infrastructure/keycloak/init-realm.sh
           # The hooks are POSIX sh, not bash: check them as such.
           shellcheck --shell=sh --severity=warning \
             .githooks/commit-msg .githooks/pre-push .githooks/pre-commit
@@ -151,6 +211,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@dded0888837ed1f317902acf8a20df0ad188d165 # v5.0.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      # Scanning the poms directly sees nothing here, and says so only if you
+      # read stderr: OSV resolves through the registry, every backend module
+      # depends on sibling com.balaaca artifacts, and no SNAPSHOT of this
+      # project is in Central. Resolution aborts on the first missing sibling
+      # and drops the whole tree, so a module with 52 known vulnerabilities
+      # reported zero. Only notification-worker was ever resolved, because it
+      # depends on no Balaaca artifact.
+      #
+      # An SBOM is what Maven itself resolved, so there is nothing left to look
+      # up. makeAggregateBom covers every module in the reactor.
+      - name: Build the SBOMs
+        run: |
+          mvn -B -f backend/pom.xml -DskipTests \
+            org.cyclonedx:cyclonedx-maven-plugin:2.9.3:makeAggregateBom -DoutputFormat=json
+          mvn -B -f notification-worker/pom.xml -DskipTests \
+            org.cyclonedx:cyclonedx-maven-plugin:2.9.3:makeAggregateBom -DoutputFormat=json
 
       # Keyless by design. OWASP Dependency-Check throttles to a multi-minute
       # NVD warm-up without an API key and its recent releases fail outright
@@ -177,11 +259,19 @@ jobs:
           # `|| code=$?` and not a bare call: an Actions run step already
           # executes under `bash -e`, so a non-zero exit aborts the step before
           # the case below is ever reached.
-          code=0
-          ./osv-scanner --config=osv-scanner.toml --recursive --allow-no-lockfiles ./ || code=$?
+          # The recursive pass still runs: it covers every ecosystem that is
+          # not Maven, and it is what the plexus-utils waiver is written
+          # against. The two SBOMs are what actually covers the Java trees.
+          scan() {
+            code=0
+            ./osv-scanner --config=osv-scanner.toml "$@" || code=$?
+            case "$code" in
+              0)   echo "no known vulnerabilities in $*" ;;
+              127) echo "::notice::every finding in $* matched a waiver" ;;
+              *)   echo "::error::osv-scanner failed with exit $code on $*"; exit "$code" ;;
+            esac
+          }
 
-          case "$code" in
-            0)   echo "no known vulnerabilities" ;;
-            127) echo "::notice::every finding matched a waiver in osv-scanner.toml" ;;
-            *)   echo "::error::osv-scanner failed with exit $code"; exit "$code" ;;
-          esac
+          scan --recursive --allow-no-lockfiles ./
+          scan --sbom=backend/target/bom.json
+          scan --sbom=notification-worker/target/bom.json

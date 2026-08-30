@@ -16,6 +16,7 @@ Nommage : `NNNN-titre-en-kebab-case.md`, numerotation continue.
 | [0005](0005-perimetre-du-paiement.md) | Aucun paiement construit maintenant, coutures preparees | Accepte |
 | [0006](0006-modele-de-branches.md) | `main` + `develop` + branches de feature | Accepte |
 | [0007](0007-modelisation-du-temps.md) | Instants en UTC, regles recurrentes en heure locale | Accepte |
+| [0008](0008-sql-natif-sans-mapping-orm.md) | SQL natif dans les adaptateurs, sans mapping ORM | Accepte |
 
 ## Amendement plutot que remplacement
 

@@ -1,5 +1,6 @@
 package com.balaaca.app.rest;
 
+import com.balaaca.app.api.model.BookAppointmentRequest;
 import com.balaaca.booking.domain.BookingSource;
 import com.balaaca.booking.domain.CustomerContact;
 import com.balaaca.booking.ports.inbound.BookAppointmentUseCase.BookAppointmentCommand;
@@ -36,9 +37,12 @@ public class BookAppointmentRequestMapper {
                                             String defaultRegion,
                                             BookingSource source) {
         return new BookAppointmentCommand(
-                ServiceOfferingId.of(request.serviceOfferingId()),
-                Optional.ofNullable(request.staffId()).map(StaffId::of),
-                request.startsAt(),
+                ServiceOfferingId.of(request.getServiceOfferingId()),
+                Optional.ofNullable(request.getStaffId()).map(StaffId::of),
+                // The contract says date-time, so the wire type carries an
+                // offset. The domain carries an instant, and this is the one
+                // place the two meet.
+                request.getStartsAt().toInstant(),
                 toContact(request, defaultRegion),
                 toIdempotency(idempotencyKey, request),
                 source);
@@ -46,15 +50,18 @@ public class BookAppointmentRequestMapper {
 
     private CustomerContact toContact(BookAppointmentRequest request, String defaultRegion) {
         return new CustomerContact(
-                request.customer().fullName().trim(),
-                PhoneNumber.parse(request.customer().phone(), defaultRegion),
-                Optional.ofNullable(request.customer().email()).filter(e -> !e.isBlank()));
+                request.getCustomer().getFullName().trim(),
+                PhoneNumber.parse(request.getCustomer().getPhone(), defaultRegion),
+                Optional.ofNullable(request.getCustomer().getEmail()).filter(e -> !e.isBlank()));
     }
 
+    /**
+     * Always present: the contract declares the header required, so a request
+     * that reached this method carries one. The Optional stays in the command
+     * because the dashboard and the chatbot will book without a customer's
+     * retry semantics.
+     */
     private Optional<Idempotency> toIdempotency(String key, BookAppointmentRequest request) {
-        if (key == null || key.isBlank()) {
-            return Optional.empty();
-        }
         return Optional.of(new Idempotency(key, RequestFingerprint.of(request)));
     }
 }

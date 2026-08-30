@@ -62,7 +62,7 @@ public class BookAppointmentService implements BookAppointmentUseCase {
 
             } catch (TransientBookingConflictException e) {
                 if (++deadlocks > MAX_DEADLOCK_RETRIES) {
-                    throw new BookingContendedException(command.startsAt());
+                    throw exhausted(command);
                 }
 
             } catch (SlotUnavailableException e) {
@@ -82,7 +82,23 @@ public class BookAppointmentService implements BookAppointmentUseCase {
                 }
             }
         }
-        throw new BookingContendedException(command.startsAt());
+        throw exhausted(command);
+    }
+
+    /**
+     * What to tell a caller whose attempts are spent.
+     *
+     * <p>Not the counter's answer, the database's. A deadlock says this
+     * transaction lost, never why; and on this schema a storm of them is
+     * exactly what N racers on one slot produce. Reporting congestion to every
+     * loser sends a customer back to a slot that is gone, so the committed data
+     * is read once, here, where there is nothing left to attempt and the read
+     * can no longer be raced by this request.
+     */
+    private RuntimeException exhausted(BookAppointmentCommand command) {
+        return attempt.everyChairIsTaken(command)
+                ? new SlotUnavailableException(command.startsAt())
+                : new BookingContendedException(command.startsAt());
     }
 
     /**

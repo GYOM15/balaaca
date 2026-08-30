@@ -177,7 +177,7 @@ not just warn.
 
 ## Anti-patterns
 
-- Mocking `PanacheRepository` / `EntityManager` to "unit test" a query -> rule 3;
+- Mocking the repository port / `EntityManager` to "unit test" a query -> rule 3;
   write an `*IT` against the PostgreSQL container.
 - `@QuarkusTest` with an H2 or in-memory datasource for speed -> rule 3; H2 has
   no `EXCLUDE USING gist` and no RLS, so the suite would be green and the

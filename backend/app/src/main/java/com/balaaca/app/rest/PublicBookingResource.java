@@ -1,20 +1,21 @@
 package com.balaaca.app.rest;
 
+import com.balaaca.app.api.BookingApi;
+import com.balaaca.app.api.model.AppointmentCreatedView;
+import com.balaaca.app.api.model.BookAppointmentRequest;
 import com.balaaca.booking.domain.BookingSource;
 import com.balaaca.booking.ports.inbound.BookAppointmentUseCase;
 import com.balaaca.platformkernel.tenancy.PublicTenantBinder;
-import jakarta.validation.Valid;
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.HeaderParam;
-import jakarta.ws.rs.POST;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.PathParam;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
 /**
  * Booking, from the provider's public page.
+ *
+ * <p>It implements {@link BookingApi}, which is generated from
+ * META-INF/openapi.yaml. The path, the required header, the status codes and
+ * the request shape are therefore not decided here at all - change the contract
+ * and this class stops compiling, which is the only drift check the project
+ * needs.
  *
  * <p>The slug carries the tenant here, unlike every authenticated route, which
  * carries no tenant identifier at all. That is not the IDOR the rule guards
@@ -29,8 +30,7 @@ import jakarta.ws.rs.core.Response;
  * the single {@link DomainExceptionMapper}, which is the only place that knows
  * what a client may see.
  */
-@Path("/v1/providers/{slug}/appointments")
-public class PublicBookingResource {
+public class PublicBookingResource implements BookingApi {
 
     private final PublicTenantBinder tenants;
     private final BookAppointmentRequestMapper mapper;
@@ -44,13 +44,9 @@ public class PublicBookingResource {
         this.booking = booking;
     }
 
-    @POST
-    @Consumes(MediaType.APPLICATION_JSON)
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response book(@PathParam("slug") String slug,
-                         @HeaderParam("Idempotency-Key") String idempotencyKey,
-                         @Valid BookAppointmentRequest request) {
-
+    @Override
+    public Response bookAppointment(String slug, String idempotencyKey,
+                                    BookAppointmentRequest request) {
         // Resolves through a published-only lookup: an unknown slug and an
         // unpublished provider are the same 404.
         tenants.bindPublished(slug);
@@ -60,7 +56,7 @@ public class PublicBookingResource {
 
             // A replay returns the original booking, not a second one.
             return Response.status(result.replayed() ? 200 : 201)
-                    .entity(new AppointmentCreatedResponse(result.appointmentId().value()))
+                    .entity(new AppointmentCreatedView().appointmentId(result.appointmentId().value()))
                     .build();
         } finally {
             tenants.clear();

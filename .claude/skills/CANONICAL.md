@@ -478,6 +478,18 @@ every server-chosen booking into a spurious "no eligible staff".
 The rule: **if a method touches a tenant table, it is `@Transactional`, even if
 it only reads.**
 
+### A second policy makes RLS stop identifying one row
+
+Policies are OR'd. `providers` carries the tenant policy plus a public-read
+policy, so the hub can list published providers with no tenant bound. With a
+tenant bound, a bare `SELECT ... FROM providers` therefore returns my provider
+**and** every published one.
+
+Any query meaning "the current tenant's row" must say so:
+`WHERE id = app_current_provider()`. RLS gives singularity only where the tenant
+policy is the sole policy - which is true of every other table here, and not of
+this one.
+
 ### ON CONFLICT cannot see a partial index by itself
 
 The idempotency index is partial, because a key is optional:

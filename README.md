@@ -35,7 +35,7 @@ nulle part une devise, un indicatif telephonique ou un fuseau unique.
 balaaca/
 ├── backend/              # Quarkus — monolithe modulaire (source de verite metier)
 ├── frontend/             # Next.js — pages publiques, tableau de bord, back-office
-├── notification-worker/  # envoi asynchrone : WhatsApp, SMS, email
+├── notification-worker/  # draine la table notifications et envoie
 ├── chatbot-service/      # squelette, appelle l'API metier — jamais la base
 ├── infrastructure/       # docker, nginx, keycloak, postgres
 ├── docs/                 # architecture, base de donnees, securite, ADR
@@ -107,6 +107,114 @@ git config core.hooksPath .githooks
 
 Ce sont des pre-filtres, pas des garanties : `--no-verify` les contourne. La
 verification qui fait autorite est la CI, qui rejoue tout cote serveur.
+
+### Lancer les tests
+
+```bash
+cd backend
+mvn test      # unitaires seuls, rapide, aucun Docker requis
+mvn verify    # ajoute les suites *IT sur Testcontainers
+```
+
+`notification-worker` est un projet Maven separe, volontairement hors du
+reacteur de `backend` : il ne depend d'aucun artefact Balaaca. Il se construit
+et se teste a part.
+
+```bash
+cd notification-worker
+mvn verify
+```
+
+Il ne demarre pas sans canal nomme explicitement :
+
+```bash
+balaaca.notification.channel=console
+```
+
+Il n'y a pas de valeur par defaut, et c'est voulu. Le seul canal existant
+aujourd'hui ecrit dans le log et n'envoie rien : un worker qui marquerait des
+lignes `SENT` que personne n'a recues serait pire qu'un worker qui refuse de
+demarrer. Aucune passerelle reelle n'est branchee — WhatsApp Business ou
+agregateur SMS est une decision commerciale, pas un detail de code.
+
+Sur **macOS avec Docker Desktop**, Testcontainers reste bloque a la decouverte
+du socket (`DockerClientProviderStrategy.getFirstValidStrategy`) : il sonde des
+strategies qui n'aboutissent pas, sans echouer franchement, ce qui ressemble a
+un test qui ne repond plus. Lui indiquer le socket regle le probleme :
+
+```bash
+export DOCKER_HOST="unix://$HOME/.docker/run/docker.sock"
+export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
+```
+
+Inutile sur les runners Linux, ou le socket est a l'emplacement standard.
+
+### Identite
+
+Le realm est un fichier versionne, [`infrastructure/keycloak/realm-balaaca.json`](infrastructure/keycloak/realm-balaaca.json),
+importe par compose au demarrage. Une configuration d'identite que personne ne
+peut recreer pose le meme probleme qu'un schema sans migrations.
+
+Trois clients : `balaaca-backend` (serveur de ressources, ne connecte personne),
+`balaaca-frontend` (confidentiel, pilote par le BFF Next.js — le code n'est
+jamais echange dans le navigateur), et `balaaca-dev-cli` (public, password
+grant, **developpement local uniquement** — un realm de production est
+provisionne separement et ne le porte pas).
+
+Le fichier est un **template** : `balaaca-frontend` est confidentiel, et un
+secret dans un fichier committe est un secret. `init-realm.sh` remplit les
+marqueurs `__VARIABLE__` depuis l'environnement au demarrage, echoue si une
+variable requise manque, et refuse de demarrer s'il reste un marqueur non
+resolu — sans quoi le realm importerait le marqueur litteral comme secret.
+
+Le meme script fait ensuite ce que `--import-realm` ne sait pas faire :
+
+- **Creer les client scopes.** Les declarer dans le fichier de realm
+  **remplace** l'ensemble integre de Keycloak au lieu de s'y ajouter, et le
+  scope integre `basic` porte le claim `sub`. Les creer apres l'import laisse
+  les integres intacts, et evite d'en garder ici une copie qui vieillirait.
+- **Mettre a jour un client existant.** `--import-realm` laisse tel quel un
+  realm deja present, donc le secret et les scopes sont reappliques a chaque
+  demarrage : faire tourner un secret est un redemarrage.
+
+La sonde du conteneur attend un sentinelle ecrit en toute fin de configuration,
+pas seulement `/health/ready` : celui-ci passe au vert des le demarrage du
+serveur, quelques secondes avant que les scopes existent — assez pour qu'un
+service dependant obtienne un jeton sans scope et le garde en cache pendant
+toute sa duree de vie.
+
+Apres un `docker compose up`, cette verification dit si le realm delivre un
+jeton que l'API peut reellement utiliser :
+
+```bash
+./infrastructure/keycloak/smoke.sh <utilisateur> <mot-de-passe>
+```
+
+Elle existe parce qu'un import de realm peut reussir en etant faux. Declarer
+`clientScopes` dans un fichier de realm **remplace** l'ensemble integre de
+Keycloak au lieu de s'y ajouter, et le scope integre `basic` est celui qui porte
+le claim `sub`. Sans lui, chaque jeton est valide, bien signe — et sans sujet,
+donc la resolution du tenant ne trouve personne et tout appel authentifie repond
+403. C'est exactement ce qui s'est passe a la premiere ecriture de ce realm.
+
+### Le contrat public
+
+`backend/app/src/main/resources/META-INF/openapi.yaml` **est** l'API. Les
+interfaces JAX-RS et les types de la couche transport en sont generes a chaque
+build, dans `target/generated-sources`, et ne sont jamais committes : il n'y a
+donc aucune copie qui puisse deriver, et la seule facon de changer une signature
+est de changer le contrat. Une ressource qui ne colle plus ne compile pas.
+
+Le scan d'annotations est desactive (`mp.openapi.scan.disable=true`) : ce qui
+est publie est ce fichier, pas ce que le classpath contient.
+
+```bash
+npx @stoplight/spectral-cli lint \
+  backend/app/src/main/resources/META-INF/openapi.yaml --ruleset .spectral.yaml
+```
+
+La CI relance ce lint et compare le document a celui de `develop` avec
+`oasdiff` : dans `/v1`, seules les evolutions additives passent.
 
 ## Integration continue
 

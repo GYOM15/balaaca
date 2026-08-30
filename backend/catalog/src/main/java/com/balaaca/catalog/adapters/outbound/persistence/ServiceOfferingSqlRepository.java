@@ -8,20 +8,30 @@ import com.balaaca.sharedkernel.money.Currency;
 import com.balaaca.sharedkernel.money.Money;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.persistence.EntityManager;
+import jakarta.transaction.Transactional;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 
 @ApplicationScoped
-public class ServiceOfferingPanacheRepository implements LookupServiceOfferingUseCase {
+public class ServiceOfferingSqlRepository implements LookupServiceOfferingUseCase {
 
     private final EntityManager em;
 
-    public ServiceOfferingPanacheRepository(EntityManager em) {
+    public ServiceOfferingSqlRepository(EntityManager em) {
         this.em = em;
     }
 
+    /**
+     * Transactional even though it only reads. The tenant reaches PostgreSQL as
+     * a {@code set_config(..., true)}, which is SET LOCAL: outside a transaction
+     * it is discarded before the next statement runs, so this SELECT would see
+     * no tenant, return nothing, and answer 404 for a published provider's own
+     * offering. REQUIRED rather than REQUIRES_NEW, so the booking path's
+     * transaction is joined instead of a second one being opened beside it.
+     */
     @Override
+    @Transactional(Transactional.TxType.REQUIRED)
     @SuppressWarnings("unchecked")
     public BookableOffering requireBookable(ServiceOfferingId id) {
         // No provider_id predicate: RLS supplies it. Adding one by hand would

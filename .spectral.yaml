@@ -1,0 +1,37 @@
+# The lint the CI gate runs. spectral:oas is the OpenAPI ruleset; the changes
+# below encode two house rules the stock ruleset has no opinion about.
+extends: ["spectral:oas"]
+rules:
+  # Rule 9 of platform-api: the wire is snake_case, everywhere, without
+  # exception. A single camelCase property means every client has to remember
+  # which convention each endpoint uses.
+  balaaca-snake-case-properties:
+    description: Wire properties and query parameters are snake_case.
+    severity: error
+    given:
+      - $.components.schemas..properties
+      - $.paths..parameters[?(@.in == 'query')]
+    then:
+      - field: "@key"
+        function: pattern
+        functionOptions:
+          match: "^[a-z][a-z0-9_]*$|^properties$"
+  # Rule 8: a generated SDK is only usable if every operation has a stable,
+  # hand-written id.
+  balaaca-operation-id-required:
+    description: Every operation carries a hand-written operationId.
+    severity: error
+    given: $.paths[*][get,put,post,delete,patch]
+    then:
+      field: operationId
+      function: truthy
+  # Rule 10 of platform-api: nowhere to put the next version otherwise.
+  balaaca-versioned-paths:
+    description: Every published path carries the version segment.
+    severity: error
+    given: $.paths
+    then:
+      field: "@key"
+      function: pattern
+      functionOptions:
+        match: "^/v[0-9]+/"
