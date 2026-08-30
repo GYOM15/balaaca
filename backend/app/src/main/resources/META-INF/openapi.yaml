@@ -238,6 +238,132 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
+  /v1/provider-profile/logo:
+    post:
+      operationId: replaceProviderLogo
+      tags: [profile]
+      summary: Replace the caller's own logo
+      description: |
+        The bytes, with their type in `Content-Type`. No multipart and no
+        filename: a filename is a value the server would have to distrust and
+        would gain nothing from trusting.
+
+        JPEG and PNG only, and the check is on the bytes rather than on the
+        header - a declared type is a claim, and the first two bytes are a fact.
+        The image is decoded and re-encoded server-side, which proves it is an
+        image at all and strips every piece of metadata that came with it,
+        including the GPS coordinates a phone writes into a photo without being
+        asked.
+
+        Replacing one drops the previous file.
+      security:
+        - oauth2: [profile:write]
+      requestBody:
+        required: true
+        content:
+          image/jpeg:
+            schema:
+              type: string
+              format: binary
+          image/png:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '200':
+          description: The profile, carrying the new URL.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderProfileView'
+        '400':
+          description: '`VALIDATION_FAILED` - not an image, too large, or a type
+            this platform does not accept.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/provider-profile/cover:
+    post:
+      operationId: replaceProviderCover
+      tags: [profile]
+      summary: Replace the caller's own cover image
+      description: |
+        The same rules as the logo, and a larger bound: a cover is the width of
+        the page.
+      security:
+        - oauth2: [profile:write]
+      requestBody:
+        required: true
+        content:
+          image/jpeg:
+            schema:
+              type: string
+              format: binary
+          image/png:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '200':
+          description: The profile, carrying the new URL.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderProfileView'
+        '400':
+          description: '`VALIDATION_FAILED` - not an image, too large, or a type
+            this platform does not accept.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/media/{name}:
+    get:
+      operationId: getMedia
+      tags: [discovery]
+      summary: An image a provider published
+      description: |
+        Public, because the page that shows it is. The name is minted by the
+        server and carries no meaning - not the provider, not the kind, not the
+        original filename - so the URL discloses nothing and cannot be walked.
+
+        Served by the application today, which is honest rather than ideal: this
+        belongs behind a CDN, and the store is a port precisely so moving it
+        there changes one adapter.
+      security: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[A-Za-z0-9_-]{16,64}\.(jpg|png)$'
+      responses:
+        '200':
+          description: The image.
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /v1/staff/{id}:
     put:
       operationId: replaceStaffMember
@@ -2013,6 +2139,12 @@ components:
         public_email:
           type: string
         whatsapp_phone_e164:
+          type: string
+        logo_url:
+          type: string
+          description: Absent until one is uploaded. Set through
+            `replaceProviderLogo`, never through this profile.
+        cover_url:
           type: string
         timezone:
           type: string

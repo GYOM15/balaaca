@@ -11,4 +11,12 @@ public interface ProviderProfileRepository {
     ProviderProfile current();
 
     ProviderProfile update(ProfileEdit edit, Optional<UUID> categoryId);
+
+    /**
+     * @return the name the row held before, so the caller can drop the file it
+     *         pointed at. Empty when there was none
+     */
+    Optional<String> replaceLogo(String name);
+
+    Optional<String> replaceCover(String name);
 }
