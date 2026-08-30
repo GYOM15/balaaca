@@ -4,20 +4,20 @@ import java.time.ZoneId;
 import java.util.Optional;
 
 /**
- * What providers publishes about the current tenant to the rest of the core.
+ * What a notification has to say about the current tenant.
  *
- * <p>Not the provider aggregate: publishing it would let every other context
- * depend on this one's domain, and every reshape would ripple outward. This
- * carries what a message has to say about a business - its name, the zone its
- * opening hours are written in, and where a notice reaches it - and nothing
- * providers might want to change.
+ * <p>Not the provider aggregate, and not the profile a provider edits: this is
+ * the projection {@code booking} needs to address a message - the name to put
+ * in it, the zone its times are written in, and where it reaches the business.
+ * Publishing the aggregate would let every context depend on this one's domain,
+ * and every reshape would ripple outward.
  *
  * @param noticeDestination where a staff-facing message goes, empty when the
  *                          provider has published no way to be reached
  */
-public record ProviderProfile(String businessName,
-                              ZoneId timezone,
-                              Optional<NoticeDestination> noticeDestination) {
+public record NoticeProfile(String businessName,
+                            ZoneId timezone,
+                            Optional<NoticeDestination> noticeDestination) {
 
     /**
      * A phone or an email, never neither: the notifications table refuses a row

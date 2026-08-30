@@ -12,7 +12,7 @@ import com.balaaca.app.api.model.StaffList;
 import com.balaaca.app.api.model.StaffView;
 import com.balaaca.platformkernel.tenancy.TenantBound;
 import com.balaaca.providers.ports.inbound.ListStaffUseCase;
-import com.balaaca.providers.ports.inbound.LookupProviderProfileUseCase;
+import com.balaaca.providers.ports.inbound.LookupNoticeProfileUseCase;
 import com.balaaca.scheduling.ports.inbound.ManageAvailabilityUseCase;
 import com.balaaca.scheduling.ports.inbound.ManageAvailabilityUseCase.Closure;
 import com.balaaca.scheduling.ports.inbound.ManageAvailabilityUseCase.LocalTimeRange;
@@ -41,11 +41,11 @@ import java.util.UUID;
 public class ScheduleResource implements ScheduleApi {
 
     private final ListStaffUseCase staff;
-    private final LookupProviderProfileUseCase providers;
+    private final LookupNoticeProfileUseCase providers;
     private final ManageAvailabilityUseCase availability;
 
     public ScheduleResource(ListStaffUseCase staff,
-                            LookupProviderProfileUseCase providers,
+                            LookupNoticeProfileUseCase providers,
                             ManageAvailabilityUseCase availability) {
         this.staff = staff;
         this.providers = providers;
@@ -111,7 +111,7 @@ public class ScheduleResource implements ScheduleApi {
     private OpeningHours hoursOf(StaffId staffId, List<WeeklySegment> segments) {
         return new OpeningHours()
                 .staffId(staffId.value())
-                .timezone(providers.currentProfile().timezone().getId())
+                .timezone(providers.currentNoticeProfile().timezone().getId())
                 .data(segments.stream().map(ScheduleResource::toView).toList());
     }
 

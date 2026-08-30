@@ -7,8 +7,8 @@ import com.balaaca.booking.domain.PlannedNotification;
 import com.balaaca.booking.ports.inbound.ListAppointmentsUseCase.AgendaEntry;
 import com.balaaca.booking.ports.outbound.NotificationOutboxPort;
 import com.balaaca.catalog.ports.inbound.BookableOffering;
-import com.balaaca.providers.ports.inbound.LookupProviderProfileUseCase;
-import com.balaaca.providers.ports.inbound.ProviderProfile;
+import com.balaaca.providers.ports.inbound.LookupNoticeProfileUseCase;
+import com.balaaca.providers.ports.inbound.NoticeProfile;
 import com.balaaca.sharedkernel.ids.AppointmentId;
 import jakarta.enterprise.context.ApplicationScoped;
 import java.time.Clock;
@@ -49,11 +49,11 @@ public class BookingNotifications {
     private static final DateTimeFormatter LOCAL_TIME =
             DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 
-    private final LookupProviderProfileUseCase providers;
+    private final LookupNoticeProfileUseCase providers;
     private final NotificationOutboxPort outbox;
     private final Clock clock;
 
-    public BookingNotifications(LookupProviderProfileUseCase providers,
+    public BookingNotifications(LookupNoticeProfileUseCase providers,
                                 NotificationOutboxPort outbox,
                                 Clock clock) {
         this.providers = providers;
@@ -67,7 +67,7 @@ public class BookingNotifications {
                         BookableOffering offering,
                         CustomerContact customer) {
 
-        ProviderProfile provider = providers.currentProfile();
+        NoticeProfile provider = providers.currentNoticeProfile();
         Instant now = clock.instant();
         Map<String, String> payload = payloadOf(provider, offering, customer, startsAt);
 
@@ -97,7 +97,7 @@ public class BookingNotifications {
     }
 
     private void planOne(AgendaEntry cancelled, NotificationKind kind) {
-        ProviderProfile provider = providers.currentProfile();
+        NoticeProfile provider = providers.currentNoticeProfile();
         Map<String, String> payload = Map.of(
                 "business_name", provider.businessName(),
                 "service_name", cancelled.serviceName(),
@@ -131,7 +131,7 @@ public class BookingNotifications {
     }
 
     private static PlannedNotification notice(AppointmentId id, Instant startsAt, Instant now,
-                                              ProviderProfile.NoticeDestination to,
+                                              NoticeProfile.NoticeDestination to,
                                               Map<String, String> payload) {
         return new PlannedNotification(id, NotificationKind.BOOKING_NOTICE,
                 NotificationRecipient.PROVIDER,
@@ -159,7 +159,7 @@ public class BookingNotifications {
      * payload would spread the same personal datum across a second column for
      * nothing the provider cannot already see in their own agenda.
      */
-    private static Map<String, String> payloadOf(ProviderProfile provider,
+    private static Map<String, String> payloadOf(NoticeProfile provider,
                                                  BookableOffering offering,
                                                  CustomerContact customer,
                                                  Instant startsAt) {
