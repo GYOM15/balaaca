@@ -21,7 +21,13 @@ public interface NotificationOutbox {
     void markSent(java.util.UUID id, Channel channel, Instant sentAt);
 
     /** Increments the attempt, pushes the row out, and turns it DEAD at its cap. */
-    void scheduleRetry(java.util.UUID id, Instant nextAttemptAt, String failureCode);
+    /**
+     * @return true when this attempt was the last one and the row is now DEAD.
+     *         The caller has to know, because a message that dies in silence is
+     *         a message nobody ever finds out about - and the outbox doctrine
+     *         asks for the opposite in as many words.
+     */
+    boolean scheduleRetry(java.util.UUID id, Instant nextAttemptAt, String failureCode);
 
     /**
      * Returns rows a worker claimed and never finished to PENDING.

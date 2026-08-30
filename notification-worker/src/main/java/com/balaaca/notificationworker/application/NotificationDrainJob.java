@@ -106,11 +106,28 @@ public class NotificationDrainJob {
             Channel used = channel.get().send(n, n.dedupeKey());
             outbox.markSent(n.id(), used, clock.instant());
         } catch (ChannelException e) {
-            outbox.scheduleRetry(n.id(),
+            boolean died = outbox.scheduleRetry(n.id(),
                                  backoff.nextAttemptAt(n.attempts(), clock.instant()),
                                  e.failureCode());
-            LOG.warnf("notification.send.failed id=%s code=%s attempt=%d",
-                      n.id(), e.failureCode(), n.attempts() + 1);
+            if (died) {
+                // ERROR, not WARN, and said differently: every other failure is
+                // a retry that will happen, and this one is a message that will
+                // never be sent to a customer who is expecting it. The outbox
+                // doctrine asks for an alert here and there was none - the row
+                // simply stopped moving and nothing said so.
+                //
+                // provider_id and the dedupe key, never the recipient: an
+                // operator needs to know whose message died and which one, and
+                // a phone number in a log line is a phone number in a log
+                // aggregator for as long as it is retained.
+                LOG.errorf("notification.dead id=%s provider_id=%s kind=%s "
+                           + "dedupe_key=%s code=%s attempts=%d",
+                           n.id(), n.providerId(), n.kind(), n.dedupeKey(),
+                           e.failureCode(), n.attempts() + 1);
+            } else {
+                LOG.warnf("notification.send.failed id=%s code=%s attempt=%d",
+                          n.id(), e.failureCode(), n.attempts() + 1);
+            }
         }
     }
 }
