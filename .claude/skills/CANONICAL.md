@@ -69,6 +69,8 @@ than its first referencing migration breaks a fresh database.
 | `V014__enable_provider_registration.sql` | registration policies and grants, `app_register_provider()` | the signup seam - see 4.4 |
 | `V015__enforce_membership_and_isolation.sql` | `app_resolve_membership()`, status filters, RLS on `users` and `audit_logs`, maintenance policies | see 4.5 |
 | `V016__seed_provider_categories.sql` | the curated trade taxonomy | `provider_categories` was empty in production |
+| `V017__narrow_two_policies.sql` | `providers_public_read` restricted to unbound connections; the registrar may add an owner only to a provider with no staff | |
+| `V018__record_the_audit_trail.sql` | `app_resolve_membership()` returns the account; `audit_logs` accepts a platform row | see 4.6 |
 
 Tables are plural snake_case. `staff_id` references `provider_staff`; the
 shortened stem is the one deliberate exception to "foreign key = singular stem
@@ -177,7 +179,7 @@ CREATE POLICY provider_staff_resolution ON provider_staff
     FOR SELECT TO balaaca_resolver USING (true);
 
 CREATE FUNCTION app_resolve_membership(p_subject varchar)
-RETURNS TABLE (provider_id uuid, staff_id uuid, staff_role varchar)
+RETURNS TABLE (provider_id uuid, staff_id uuid, user_id uuid, staff_role varchar)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS
 $$ SELECT ps.provider_id FROM provider_staff ps JOIN users u ON u.id = ps.user_id
     WHERE u.keycloak_user_id = p_subject AND ps.status = 'ACTIVE' $$;

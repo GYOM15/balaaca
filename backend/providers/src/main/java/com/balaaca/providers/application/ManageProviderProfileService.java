@@ -5,11 +5,15 @@ import com.balaaca.providers.domain.NothingToPublishException;
 import com.balaaca.providers.domain.UnknownCategoryException;
 import com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase;
 import com.balaaca.providers.ports.outbound.ProviderProfileRepository;
+import com.balaaca.platformkernel.audit.AuditEvent;
+import com.balaaca.platformkernel.audit.AuditOutcome;
+import com.balaaca.platformkernel.audit.AuditTrail;
 import com.balaaca.platformkernel.tenancy.TenantContext;
 import com.balaaca.providers.ports.outbound.ProviderRegistrationRepository;
 import com.balaaca.scheduling.ports.inbound.ManageAvailabilityUseCase;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.transaction.Transactional;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -34,17 +38,20 @@ public class ManageProviderProfileService implements ManageProviderProfileUseCas
     private final PublishedCatalogueUseCase catalogue;
     private final ManageAvailabilityUseCase availability;
     private final TenantContext tenant;
+    private final AuditTrail audit;
 
     public ManageProviderProfileService(ProviderProfileRepository profiles,
                                         ProviderRegistrationRepository categories,
                                         PublishedCatalogueUseCase catalogue,
                                         ManageAvailabilityUseCase availability,
-                                        TenantContext tenant) {
+                                        TenantContext tenant,
+                                        AuditTrail audit) {
         this.profiles = profiles;
         this.categories = categories;
         this.catalogue = catalogue;
         this.availability = availability;
         this.tenant = tenant;
+        this.audit = audit;
     }
 
     @Override
@@ -64,7 +71,16 @@ public class ManageProviderProfileService implements ManageProviderProfileUseCas
             requireSomethingBookable();
         }
         Optional<UUID> categoryId = edit.categorySlug().map(this::requireCategory);
-        return profiles.update(edit, categoryId);
+        ProviderProfile updated = profiles.update(edit, categoryId);
+
+        // Whether the page is live is the one field worth reading back off the
+        // trail months later: it is the difference between a business that took
+        // no bookings and one that was never reachable.
+        audit.record(new AuditEvent("PROVIDER_PROFILE_UPDATED", "provider",
+                Optional.of(updated.slug()), AuditOutcome.SUCCESS,
+                Map.of("published", String.valueOf(updated.published()))));
+
+        return updated;
     }
 
     /**
