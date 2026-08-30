@@ -9,12 +9,18 @@ import com.balaaca.app.api.model.PublicServiceOffering;
 import com.balaaca.catalog.ports.inbound.PublishedCatalogueUseCase;
 import com.balaaca.catalog.ports.inbound.PublishedCatalogueUseCase.PublishedService;
 import com.balaaca.platformkernel.tenancy.PublicTenantBinder;
+import com.balaaca.app.api.model.ProviderSummary;
+import com.balaaca.app.api.model.ProviderSummaryPage;
 import com.balaaca.providers.ports.inbound.LookupPublicProviderUseCase;
 import com.balaaca.providers.ports.inbound.LookupPublicProviderUseCase.PublicProvider;
+import com.balaaca.providers.ports.inbound.SearchProvidersUseCase;
+import com.balaaca.providers.ports.inbound.SearchProvidersUseCase.ProviderCard;
+import com.balaaca.providers.ports.inbound.SearchProvidersUseCase.Query;
 import com.balaaca.scheduling.domain.OpenWindow;
 import com.balaaca.scheduling.ports.inbound.ManageAvailabilityUseCase;
 import jakarta.ws.rs.core.Response;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * A provider's public page, and the hours to lay a grid over it.
@@ -34,17 +40,54 @@ public class PublicProviderResource implements DiscoveryApi {
 
     private final PublicTenantBinder tenants;
     private final LookupPublicProviderUseCase providers;
+    private final SearchProvidersUseCase directory;
     private final PublishedCatalogueUseCase catalogue;
     private final ManageAvailabilityUseCase availability;
 
     public PublicProviderResource(PublicTenantBinder tenants,
                                   LookupPublicProviderUseCase providers,
+                                  SearchProvidersUseCase directory,
                                   PublishedCatalogueUseCase catalogue,
                                   ManageAvailabilityUseCase availability) {
         this.tenants = tenants;
         this.providers = providers;
+        this.directory = directory;
         this.catalogue = catalogue;
         this.availability = availability;
+    }
+
+    /**
+     * The hub. No tenant is bound and none is wanted: this is the one public
+     * read that spans providers, and what makes it safe is the database's own
+     * public-read policy, which admits published rows to an unbound connection
+     * and nothing else.
+     */
+    @Override
+    public Response listProviders(String q, String categorySlug, String city,
+                                  String cursor, Integer limit) {
+        var found = directory.search(new Query(
+                Optional.ofNullable(q).filter(v -> !v.isBlank()),
+                Optional.ofNullable(categorySlug).filter(v -> !v.isBlank()),
+                Optional.ofNullable(city).filter(v -> !v.isBlank()),
+                Cursors.directoryPosition(cursor),
+                limit == null ? Cursors.DEFAULT_LIMIT : limit));
+
+        return Response.ok(new ProviderSummaryPage()
+                .data(found.cards().stream().map(PublicProviderResource::card).toList())
+                .nextCursor(found.next().map(Cursors::encodeDirectory).orElse(null)))
+                .build();
+    }
+
+    private static ProviderSummary card(ProviderCard found) {
+        ProviderSummary summary = new ProviderSummary()
+                .slug(found.slug())
+                .businessName(found.businessName());
+
+        found.description().ifPresent(summary::setDescription);
+        found.categorySlug().ifPresent(summary::setCategorySlug);
+        found.city().ifPresent(summary::setCity);
+        found.logoUrl().ifPresent(summary::setLogoUrl);
+        return summary;
     }
 
     @Override

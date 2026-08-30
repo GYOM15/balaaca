@@ -833,6 +833,63 @@ paths:
                 $ref: '#/components/schemas/Problem'
 
   /v1/providers:
+    get:
+      operationId: listProviders
+      tags: [discovery]
+      summary: Find a provider
+      description: |
+        The hub itself. Without it a business is reachable only by someone who
+        already has its handle, which makes the platform a set of unconnected
+        pages rather than a place to look for a hairdresser near you.
+
+        Only published providers appear, and the same is true of every other
+        public operation. A provider that has not published is not hidden from
+        this list by a filter written here - it is invisible to the database
+        role serving the request.
+
+        Ordered by name, always, and never by how well a result matches. A
+        cursor over a ranked sequence is only meaningful while the ranking
+        holds still, and a similarity score moves every time any provider edits
+        its name - so a client paging through search results would silently skip
+        and repeat businesses. Alphabetical is stable, predictable, and lets the
+        cursor be exactly the position the caller already read.
+
+        `q` matches the business name. It needs two characters: below that it
+        matches most of the directory and answers nothing.
+      security: []
+      parameters:
+        - name: q
+          in: query
+          required: false
+          description: Part of a business name.
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 120
+        - name: category_slug
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 60
+        - name: city
+          in: query
+          required: false
+          description: Matched whole and case-insensitively, not as a prefix.
+          schema:
+            type: string
+            maxLength: 80
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: The matching providers.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderSummaryPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
     post:
       operationId: registerProvider
       tags: [onboarding]
@@ -1823,3 +1880,40 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PublicOpeningHoursSegment'
+
+    ProviderSummary:
+      type: object
+      description: |
+        Enough to draw a card and decide whether to open the page, and nothing
+        more. Not PublicProviderView with fields removed: a list of every
+        provider is a far easier thing to scrape than one page at a time, so
+        what it carries is chosen once and stays small. No contact details in
+        particular - a directory that hands out every provider's phone number
+        in one request is a marketing list.
+      required: [slug, business_name]
+      properties:
+        slug:
+          type: string
+        business_name:
+          type: string
+        description:
+          type: string
+        category_slug:
+          type: string
+        city:
+          type: string
+        logo_url:
+          type: string
+
+    ProviderSummaryPage:
+      type: object
+      required: [data, next_cursor]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProviderSummary'
+        next_cursor:
+          type: string
+          nullable: true
+          description: Opaque; null on the last page.
