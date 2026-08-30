@@ -11,6 +11,20 @@
 -- It is a separate role from balaaca_resolver, which stays read-only: "what can
 -- bring a provider into existence" then has exactly one answer.
 
+-- Roles cannot be created by a migration: balaaca_migrator is NOCREATEROLE, on
+-- purpose. So this fails early and legibly instead of at the first CREATE
+-- POLICY, where the message names a policy and not the thing that is missing.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'balaaca_registrar') THEN
+        RAISE EXCEPTION 'role balaaca_registrar does not exist'
+            USING HINT = 'This migration adds a role the cluster predates. '
+                         'Re-run infrastructure/postgres/bootstrap.sh as superuser '
+                         '- it is idempotent - then start the application again. '
+                         'See docs/DEPLOYMENT.md.';
+    END IF;
+END $$;
+
 GRANT CREATE ON SCHEMA public TO balaaca_registrar;
 
 -- The registrar may only ever create a DORMANT provider. published and status

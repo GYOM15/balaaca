@@ -1,9 +1,18 @@
 #!/bin/bash
 # Creates the least-privilege roles the application needs, and Keycloak's own
-# database. Runs once, as superuser, when the data directory is initialised.
+# database. Runs as superuser when the data directory is initialised - and
+# again, by hand, whenever a migration needs a role this file has learned about
+# since. That second case is why every statement below is IDEMPOTENT.
 #
-# On a VPS the container init does not run against an existing cluster: execute
-# the equivalent by hand once. See docs/DEPLOYMENT.md.
+# It was not, and that was a live outage waiting: balaaca_registrar arrived with
+# V014, this script only runs on an EMPTY data directory, and no migration can
+# create a role because balaaca_migrator is NOCREATEROLE. On any cluster that
+# already held data, Flyway reached V014, PostgreSQL answered 'role
+# balaaca_registrar does not exist', and with migrate-at-start the API never
+# came up. Re-running this file is now the documented remedy, and V014 says so
+# in the error it raises.
+#
+# See docs/DEPLOYMENT.md.
 #
 # Passwords arrive as psql variables and are interpolated with :'name', which
 # quotes them as literals. Never build this SQL by string concatenation.
@@ -18,31 +27,53 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
      -v worker_password="${BALAACA_DB_WORKER_PASSWORD}" \
      -v db_name="${POSTGRES_DB}" <<'SQL'
 
+-- Every role is created only if absent, so this file is safe to re-run against
+-- a cluster that already holds data. An existing role's password is NOT
+-- re-applied: rotating a credential out from under a running application is a
+-- separate, deliberate act, not a side effect of adding a role.
+--
+-- \gexec runs each row the query returns as its own statement. quote_ident and
+-- quote_literal do the escaping, so nothing here is string concatenation of
+-- untrusted text.
+
 -- Owns the schema and runs Flyway. Never used at runtime.
-CREATE ROLE :"migrator_user" LOGIN PASSWORD :'migrator_password'
-    NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+SELECT 'CREATE ROLE ' || quote_ident(:'migrator_user')
+    || ' LOGIN PASSWORD ' || quote_literal(:'migrator_password')
+    || ' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS'
+ WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'migrator_user')
+\gexec
 
 -- The application connection. It must NOT own tables and must NOT hold
 -- BYPASSRLS, or Row-Level Security is silently inert for it.
-CREATE ROLE :"app_user" LOGIN PASSWORD :'app_password'
-    NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+SELECT 'CREATE ROLE ' || quote_ident(:'app_user')
+    || ' LOGIN PASSWORD ' || quote_literal(:'app_password')
+    || ' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS'
+ WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'app_user')
+\gexec
 
 -- Owns the SECURITY DEFINER resolution functions. It is the only role that may
 -- read provider_staff before a tenant is bound, which is what breaks the
 -- circularity of resolving a tenant from a tenant-scoped table. NOLOGIN: it is
 -- never connected as, only impersonated by its own functions.
-CREATE ROLE balaaca_resolver NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+SELECT 'CREATE ROLE balaaca_resolver NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS'
+ WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'balaaca_resolver')
+\gexec
 
 -- Owns the one SECURITY DEFINER function that creates a tenant. Separate from
 -- balaaca_resolver, which stays read-only: "who can bring a provider into
 -- existence" then has exactly one answer, and it is this role. NOLOGIN, so its
 -- INSERT grants are reachable through that function and nowhere else.
-CREATE ROLE balaaca_registrar NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+SELECT 'CREATE ROLE balaaca_registrar NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS'
+ WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'balaaca_registrar')
+\gexec
 
 -- The notification worker, restricted to the notifications table by its
 -- policies and grants.
-CREATE ROLE :"worker_user" LOGIN PASSWORD :'worker_password'
-    NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+SELECT 'CREATE ROLE ' || quote_ident(:'worker_user')
+    || ' LOGIN PASSWORD ' || quote_literal(:'worker_password')
+    || ' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS'
+ WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'worker_user')
+\gexec
 
 -- The schema belongs to the migrator; the application only uses it.
 ALTER SCHEMA public OWNER TO :"migrator_user";
@@ -73,11 +104,19 @@ SQL
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
      -v kc_user="${KEYCLOAK_DB_USER}" \
      -v kc_password="${KEYCLOAK_DB_PASSWORD}" <<'SQL'
-CREATE ROLE :"kc_user" LOGIN PASSWORD :'kc_password'
-    NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+SELECT 'CREATE ROLE ' || quote_ident(:'kc_user')
+    || ' LOGIN PASSWORD ' || quote_literal(:'kc_password')
+    || ' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS'
+ WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'kc_user')
+\gexec
 SQL
 
-psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
-     -c "CREATE DATABASE \"${KEYCLOAK_DB}\" OWNER \"${KEYCLOAK_DB_USER}\""
+# CREATE DATABASE cannot run inside a transaction or a DO block, so the
+# existence test is a separate query and the creation is conditional on it.
+if [ "$(psql -tAX --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
+          -c "SELECT 1 FROM pg_database WHERE datname = '${KEYCLOAK_DB}'")" != "1" ]; then
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
+         -c "CREATE DATABASE \"${KEYCLOAK_DB}\" OWNER \"${KEYCLOAK_DB_USER}\""
+fi
 
-echo "bootstrap: roles and keycloak database created"
+echo "bootstrap: roles and keycloak database present"
