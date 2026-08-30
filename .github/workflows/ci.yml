@@ -110,11 +110,15 @@ jobs:
       # The document is what is published, so it is what is linted - not the
       # code that implements it and not the runtime /q/openapi, which is served
       # from this same file with annotation scanning off.
+      # npm ci, not npx. Every other tool in this workflow is pinned to a SHA or
+      # a checksum, with a comment saying why; `npx --yes` resolved and executed
+      # spectral's entire transitive tree from the registry on every run, with no
+      # lockfile and no integrity check. package-lock.json pins all 247 packages
+      # by integrity hash, and `npm ci` refuses to install anything else.
       - name: Lint the OpenAPI document
         run: |
-          npx --yes @stoplight/spectral-cli@6.15.0 lint \
-            backend/app/src/main/resources/META-INF/openapi.yaml \
-            --ruleset .spectral.yaml --fail-severity=error
+          npm ci --ignore-scripts
+          npm run lint:openapi
 
       # A pinned, checksummed binary, like gitleaks and osv-scanner above: an
       # action that resolves a tag at run time decides what runs in this gate.

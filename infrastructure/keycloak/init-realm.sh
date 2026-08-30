@@ -192,15 +192,31 @@ done
 
 # The secret lives in the environment, and --import-realm ignores it on a realm
 # that already exists. Re-applied every boot so rotating it is a restart.
+#
+# This was the one step in the file with no failure branch: it echoed on success
+# and said nothing otherwise, with stdout and stderr discarded, and the sentinel
+# was touched unconditionally two lines below. So a rotation that failed - an
+# expired kcadm session, a client list not yet consistent, client_id_of coming
+# back empty - printed nothing, went green on the healthcheck, and left Keycloak
+# accepting the OLD secret while the operator believed the leak was closed. The
+# header of this file promises the opposite, in those words.
 FRONTEND_CID=$(client_id_of "balaaca-frontend")
-if [ -n "$FRONTEND_CID" ]; then
-    $KCADM update "clients/$FRONTEND_CID" -r "$REALM" \
+if [ -z "$FRONTEND_CID" ]; then
+    echo "[init-realm] FATAL: client balaaca-frontend not found; secret not applied" >&2
+    exit 1
+fi
+if ! $KCADM update "clients/$FRONTEND_CID" -r "$REALM" \
         -s publicClient=false \
         -s clientAuthenticatorType=client-secret \
-        -s "secret=$KEYCLOAK_FRONTEND_CLIENT_SECRET" >/dev/null 2>&1 \
-        && echo "[init-realm]   balaaca-frontend secret applied"
+        -s "secret=$KEYCLOAK_FRONTEND_CLIENT_SECRET" >/dev/null 2>&1; then
+    echo "[init-realm] FATAL: could not apply the balaaca-frontend secret." >&2
+    echo "[init-realm]        Keycloak still accepts the previous one." >&2
+    exit 1
 fi
+echo "[init-realm]   balaaca-frontend secret applied"
 
+# Only now. The sentinel is what the compose healthcheck waits on, so touching
+# it after a failed step is the same as reporting a realm that works.
 touch "$SENTINEL"
 echo "[init-realm] realm configured"
 

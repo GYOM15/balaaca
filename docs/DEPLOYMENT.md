@@ -27,19 +27,15 @@ passe d'un role existant n'est jamais reapplique. Le rejouer sur une base a jour
 ne fait rien.
 
 ```bash
-docker compose exec -T postgres bash -lc '
-  BALAACA_DB_APP_USER="$BALAACA_DB_APP_USER" \
-  BALAACA_DB_APP_PASSWORD="$BALAACA_DB_APP_PASSWORD" \
-  BALAACA_DB_MIGRATOR_USER="$BALAACA_DB_MIGRATOR_USER" \
-  BALAACA_DB_MIGRATOR_PASSWORD="$BALAACA_DB_MIGRATOR_PASSWORD" \
-  BALAACA_DB_WORKER_USER="$BALAACA_DB_WORKER_USER" \
-  BALAACA_DB_WORKER_PASSWORD="$BALAACA_DB_WORKER_PASSWORD" \
-  KEYCLOAK_DB_USER="$KEYCLOAK_DB_USER" \
-  KEYCLOAK_DB_PASSWORD="$KEYCLOAK_DB_PASSWORD" \
-  KEYCLOAK_DB="$KEYCLOAK_DB" \
-  POSTGRES_USER="$POSTGRES_USER" POSTGRES_DB="$POSTGRES_DB" \
-  bash /docker-entrypoint-initdb.d/bootstrap.sh'
+docker compose exec -T postgres bash /docker-entrypoint-initdb.d/bootstrap.sh
 ```
+
+Les variables dont il a besoin sont deja dans l'environnement du conteneur,
+posees par compose. Les **noms** de roles n'en font pas partie : ils sont fixes,
+parce que les migrations accordent leurs droits a ces identifiants litteralement.
+Une variable qui pretendait les configurer produisait un bootstrap reussi suivi
+d'un Flyway qui echoue sur `role "balaaca_app" does not exist` ; elle a ete
+supprimee.
 
 Si vous l'oubliez, la migration ne vous laisse pas deviner :
 

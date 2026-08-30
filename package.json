@@ -1,0 +1,11 @@
+{
+  "name": "balaaca-tooling",
+  "private": true,
+  "description": "Pins the one Node tool the pipeline runs. Nothing here ships.",
+  "scripts": {
+    "lint:openapi": "spectral lint backend/app/src/main/resources/META-INF/openapi.yaml --ruleset .spectral.yaml --fail-severity=error"
+  },
+  "devDependencies": {
+    "@stoplight/spectral-cli": "6.15.0"
+  }
+}

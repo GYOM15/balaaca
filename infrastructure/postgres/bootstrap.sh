@@ -16,15 +16,19 @@
 #
 # Passwords arrive as psql variables and are interpolated with :'name', which
 # quotes them as literals. Never build this SQL by string concatenation.
+#
+# The role NAMES are fixed, not configurable. They used to come from
+# BALAACA_DB_*_USER, which application.properties and .env.example both echoed -
+# so all three looked like settings. They were not: V013 and V014 grant to the
+# literal identifiers, so an operator who renamed the application role got a
+# cluster where bootstrap succeeded and Flyway aborted with 'role balaaca_app
+# does not exist'. The variables were a lie; they are gone.
 set -euo pipefail
 
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
-     -v app_user="${BALAACA_DB_APP_USER}" \
-     -v app_password="${BALAACA_DB_APP_PASSWORD}" \
-     -v migrator_user="${BALAACA_DB_MIGRATOR_USER}" \
-     -v migrator_password="${BALAACA_DB_MIGRATOR_PASSWORD}" \
-     -v worker_user="${BALAACA_DB_WORKER_USER}" \
-     -v worker_password="${BALAACA_DB_WORKER_PASSWORD}" \
+         -v app_password="${BALAACA_DB_APP_PASSWORD}" \
+         -v migrator_password="${BALAACA_DB_MIGRATOR_PASSWORD}" \
+         -v worker_password="${BALAACA_DB_WORKER_PASSWORD}" \
      -v db_name="${POSTGRES_DB}" <<'SQL'
 
 -- Every role is created only if absent, so this file is safe to re-run against
@@ -37,18 +41,18 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
 -- untrusted text.
 
 -- Owns the schema and runs Flyway. Never used at runtime.
-SELECT 'CREATE ROLE ' || quote_ident(:'migrator_user')
+SELECT 'CREATE ROLE ' || 'balaaca_migrator'
     || ' LOGIN PASSWORD ' || quote_literal(:'migrator_password')
     || ' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS'
- WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'migrator_user')
+ WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'balaaca_migrator')
 \gexec
 
 -- The application connection. It must NOT own tables and must NOT hold
 -- BYPASSRLS, or Row-Level Security is silently inert for it.
-SELECT 'CREATE ROLE ' || quote_ident(:'app_user')
+SELECT 'CREATE ROLE ' || 'balaaca_app'
     || ' LOGIN PASSWORD ' || quote_literal(:'app_password')
     || ' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS'
- WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'app_user')
+ WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'balaaca_app')
 \gexec
 
 -- Owns the SECURITY DEFINER resolution functions. It is the only role that may
@@ -69,45 +73,45 @@ SELECT 'CREATE ROLE balaaca_registrar NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROL
 
 -- The notification worker, restricted to the notifications table by its
 -- policies and grants.
-SELECT 'CREATE ROLE ' || quote_ident(:'worker_user')
+SELECT 'CREATE ROLE ' || 'balaaca_notification_worker'
     || ' LOGIN PASSWORD ' || quote_literal(:'worker_password')
     || ' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS'
- WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'worker_user')
+ WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'balaaca_notification_worker')
 \gexec
 
 -- The schema belongs to the migrator; the application only uses it.
-ALTER SCHEMA public OWNER TO :"migrator_user";
+ALTER SCHEMA public OWNER TO balaaca_migrator;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
-GRANT  USAGE  ON SCHEMA public TO :"app_user", :"worker_user",
+GRANT  USAGE  ON SCHEMA public TO balaaca_app, balaaca_notification_worker,
                                   balaaca_resolver, balaaca_registrar;
 
 -- The migrations transfer ownership of the SECURITY DEFINER resolution
 -- functions to balaaca_resolver, and ALTER FUNCTION ... OWNER TO requires
 -- membership of the target role. The migrator is the schema owner already and
 -- is never used at runtime, so this grants it nothing it did not have.
-GRANT balaaca_resolver, balaaca_registrar TO :"migrator_user";
+GRANT balaaca_resolver, balaaca_registrar TO balaaca_migrator;
 
 -- CREATE on the database so the migrations can install their own extensions.
 -- btree_gist, citext and pg_trgm are trusted extensions since PostgreSQL 13, so
 -- this needs no superuser. Keeping extensions in a versioned migration rather
 -- than here means a fresh VPS gets the same schema from Flyway alone.
-GRANT CREATE ON DATABASE :"db_name" TO :"migrator_user";
+GRANT CREATE ON DATABASE :"db_name" TO balaaca_migrator;
 
 -- Anything Flyway creates later is usable by the application without a further
 -- GRANT pass. Table-level grants stay explicit in the migrations.
-ALTER DEFAULT PRIVILEGES FOR ROLE :"migrator_user" IN SCHEMA public
-    GRANT USAGE, SELECT ON SEQUENCES TO :"app_user";
+ALTER DEFAULT PRIVILEGES FOR ROLE balaaca_migrator IN SCHEMA public
+    GRANT USAGE, SELECT ON SEQUENCES TO balaaca_app;
 SQL
 
 # Keycloak keeps its own database in the same instance: one less container to
 # run, and its schema never mixes with the application's.
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
-     -v kc_user="${KEYCLOAK_DB_USER}" \
+         -v kc_user_name="${KEYCLOAK_DB_USER}" \
      -v kc_password="${KEYCLOAK_DB_PASSWORD}" <<'SQL'
-SELECT 'CREATE ROLE ' || quote_ident(:'kc_user')
+SELECT 'CREATE ROLE ' || quote_ident(:'kc_user_name')
     || ' LOGIN PASSWORD ' || quote_literal(:'kc_password')
     || ' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS'
- WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'kc_user')
+ WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'kc_user_name')
 \gexec
 SQL
 
