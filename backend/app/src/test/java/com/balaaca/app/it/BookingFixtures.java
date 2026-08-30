@@ -187,6 +187,22 @@ public class BookingFixtures {
             """.formatted(EMPLOYEE_SUBJECT, SALON_EMPLOYEE_STAFF, SALON));
     }
 
+    /**
+     * An unclaimed chair carrying a known invitation code.
+     *
+     * <p>Minted in SQL rather than through the API because redeeming it needs a
+     * DIFFERENT subject from the one that minted it, and @TestSecurity binds one
+     * per method. The minting path has its own tests.
+     */
+    public void seedInvitation(String code) {
+        run("""
+            INSERT INTO provider_staff (id, provider_id, user_id, display_name, role,
+                                        invitation_token, invitation_expires_at)
+                 VALUES ('a5a5a5a5-0000-0000-0000-000000000001','%s',NULL,'Mariama','STAFF',
+                         '%s', now() + interval '7 days')
+            """.formatted(SALON, code));
+    }
+
     /** Arbitrary SQL, for the one-off row a single test needs and no other. */
     public void execute(String sql) {
         run(sql);

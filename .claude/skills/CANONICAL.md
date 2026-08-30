@@ -73,6 +73,7 @@ than its first referencing migration breaks a fresh database.
 | `V018__record_the_audit_trail.sql` | `app_resolve_membership()` returns the account; `audit_logs` accepts a platform row | |
 | `V019__let_a_customer_reach_their_booking.sql` | `appointments.public_reference`, `app_resolve_booking_provider()` | a third tenant source - see 4.6 |
 | `V020__answer_the_caller_before_the_slug.sql` | `app_register_provider()` refuses a registered account before arbitrating the handle | closes a slug oracle |
+| `V021__let_an_employee_be_invited.sql` | `provider_staff.invitation_token`, `app_accept_staff_invitation()`, `app_describe_membership()` | the fourth tenant source - see 4.7 |
 
 Tables are plural snake_case. `staff_id` references `provider_staff`; the
 shortened stem is the one deliberate exception to "foreign key = singular stem
@@ -355,6 +356,43 @@ Three things distinguish it from the slug:
 It binds the customer, not the provider: a salon cancelling its own appointment
 is managing its diary. The column existed from V004 and was enforced nowhere,
 which is the same as not having had it.
+
+### 4.7 Joining a team - from an invitation code
+
+The STAFF role V015 drew was **unreachable in production**:
+`provider_staff.user_id` was written by exactly one thing, `app_register_provider`,
+for the owner. No employee had ever had an account outside a test fixture - the
+third time this shape appeared, after "nothing creates a provider" and "nothing
+creates a second staff member".
+
+```
+POST /v1/staff/{id}/invitation        owner mints a code for a chair
+POST /v1/invitations/{code}/acceptance  the invitee redeems it
+```
+
+A capability, like a booking reference: 256 bits, seven days, spent by the first
+redemption. Nothing is sent - the owner already has a way to reach their own
+employee.
+
+`app_accept_staff_invitation` is owned by **balaaca_registrar**, the same role as
+signing up, because it is the same privilege: writing a membership before one
+exists. Two things constrain it beyond the function body:
+
+```sql
+CREATE POLICY provider_staff_invitation ON provider_staff
+    FOR UPDATE TO balaaca_registrar
+    USING      (user_id IS NULL AND status = 'ACTIVE' AND role = 'STAFF')
+    WITH CHECK (user_id IS NOT NULL AND status = 'ACTIVE' AND role = 'STAFF');
+```
+
+`USING` admits only an unclaimed STAFF row, so **an owner's seat cannot be taken
+over by an invitation** even if the function were rewritten wrongly, and a
+claimed one cannot be reassigned. `WITH CHECK` demands the result carry an
+account, so the policy cannot be used to unbind a member either.
+
+The code is spent in the same UPDATE that claims it, so two people reading the
+same message cannot both take the seat. Unknown, expired, already redeemed and
+at a suspended business are one `404`.
 
 ---
 

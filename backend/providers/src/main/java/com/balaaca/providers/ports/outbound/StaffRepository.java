@@ -23,4 +23,18 @@ public interface StaffRepository {
      * so the answer cannot drift from what the slot calculator will see.
      */
     long otherBookableStaff(StaffId excluding);
+
+    /**
+     * Writes a code onto an unclaimed STAFF row, replacing any it held.
+     *
+     * <p>The conditions travel into the UPDATE rather than being checked around
+     * it: a row that already has an account, or is the owner's, matches nothing
+     * and the caller is told so.
+     *
+     * @return false when no such invitable member exists
+     */
+    boolean issueInvitation(StaffId id, String code, java.time.Instant expiresAt);
+
+    /** Whether the member exists at all, to tell a 404 from a 409. */
+    boolean exists(StaffId id);
 }

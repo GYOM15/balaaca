@@ -1,5 +1,6 @@
 package com.balaaca.providers.application;
 
+import com.balaaca.providers.domain.NotInvitableException;
 import com.balaaca.providers.domain.NothingToPublishException;
 import com.balaaca.providers.domain.StaffNotFoundException;
 import com.balaaca.providers.ports.inbound.ListStaffUseCase;
@@ -12,6 +13,11 @@ import com.balaaca.providers.ports.outbound.StaffRepository;
 import com.balaaca.sharedkernel.ids.StaffId;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.transaction.Transactional;
+import java.security.SecureRandom;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Base64;
 import java.util.List;
 
 /**
@@ -35,17 +41,24 @@ import java.util.List;
 @ApplicationScoped
 public class ManageStaffService implements ListStaffUseCase {
 
+    /** Long enough to find a moment, short enough that a stale code stops working. */
+    private static final Duration INVITATION_VALID_FOR = Duration.ofDays(7);
+
+    private static final SecureRandom RANDOM = new SecureRandom();
+
     private final StaffRepository staff;
     private final ProviderProfileRepository profiles;
     private final TenantContext tenant;
     private final AuditTrail audit;
+    private final Clock clock;
 
     public ManageStaffService(StaffRepository staff, ProviderProfileRepository profiles,
-                              TenantContext tenant, AuditTrail audit) {
+                              TenantContext tenant, AuditTrail audit, Clock clock) {
         this.staff = staff;
         this.profiles = profiles;
         this.tenant = tenant;
         this.audit = audit;
+        this.clock = clock;
     }
 
     @Override
@@ -85,6 +98,49 @@ public class ManageStaffService implements ListStaffUseCase {
                                  "bookable", String.valueOf(changed.bookable()))));
 
         return changed;
+    }
+
+    /**
+     * Mints a code for a member who should be able to sign in.
+     *
+     * <p>Owner-only, like everything else about who works here. The conditions
+     * live in the UPDATE rather than around it, so this reads the answer rather
+     * than deciding it: a member who already has an account, or the owner's own
+     * row, matches nothing.
+     *
+     * <p>Seven days. Long enough for someone to find a moment to sign up, short
+     * enough that a code left in a message thread stops working.
+     */
+    @Override
+    @Transactional(Transactional.TxType.REQUIRED)
+    public StaffInvitation invite(StaffId id) {
+        tenant.requireOwner("invite_staff_member");
+
+        String code = mintCode();
+        Instant expiresAt = clock.instant().plus(INVITATION_VALID_FOR);
+
+        if (!staff.issueInvitation(id, code, expiresAt)) {
+            // Two different answers, and the difference matters to an owner: a
+            // member who is not there at all, and one who is there and cannot
+            // be invited.
+            throw staff.exists(id)
+                    ? new NotInvitableException("they already have an account, or own this business")
+                    : new StaffNotFoundException(id.value());
+        }
+
+        audit.record(AuditEvent.success("STAFF_INVITED", "provider_staff", id.toString()));
+        return new StaffInvitation(code, expiresAt);
+    }
+
+    /**
+     * 256 bits, like a booking reference and for the same reason: it is the
+     * whole authorisation for a seat at a business, and it is not derived from
+     * anything a guesser could know.
+     */
+    private static String mintCode() {
+        byte[] raw = new byte[32];
+        RANDOM.nextBytes(raw);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(raw);
     }
 
     /** Active and bookable are two different things, and both are required. */

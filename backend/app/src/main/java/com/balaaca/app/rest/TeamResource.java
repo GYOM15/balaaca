@@ -1,6 +1,7 @@
 package com.balaaca.app.rest;
 
 import com.balaaca.app.api.TeamApi;
+import com.balaaca.app.api.model.StaffInvitationView;
 import com.balaaca.app.api.model.StaffList;
 import com.balaaca.app.api.model.StaffRequest;
 import com.balaaca.app.api.model.StaffView;
@@ -52,6 +53,17 @@ public class TeamResource implements TeamApi {
     @RolesAllowed("staff:write")
     public Response replaceStaffMember(UUID id, StaffRequest request) {
         return Response.ok(view(staff.replace(StaffId.of(id), definition(request)))).build();
+    }
+
+    @Override
+    @RolesAllowed("staff:write")
+    public Response inviteStaffMember(UUID id) {
+        var invitation = staff.invite(StaffId.of(id));
+        return Response.status(201).entity(new StaffInvitationView()
+                .code(invitation.code())
+                .expiresAt(java.time.OffsetDateTime.ofInstant(
+                        invitation.expiresAt(), java.time.ZoneOffset.UTC)))
+                .build();
     }
 
     private static StaffDefinition definition(StaffRequest request) {
