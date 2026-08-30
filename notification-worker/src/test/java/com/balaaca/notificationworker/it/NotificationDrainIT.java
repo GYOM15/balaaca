@@ -109,8 +109,15 @@ class NotificationDrainIT {
     @Test
     @DisplayName("A released lease is picked up again rather than stranded")
     void releasesStaleLeases() {
-        UUID abandoned = fixtures.stale(OutboxFixtures.SALON, "appointment:8:REMINDER:1", "10 minutes");
-        UUID working = fixtures.stale(OutboxFixtures.SALON, "appointment:9:REMINDER:1", "10 seconds");
+        // An hour against a five-minute lease, not ten minutes. The margin is
+        // not fussiness: this assertion failed twice on CI and never once in
+        // seven local runs, and the only difference between the two sides that
+        // could produce it is the clock the two statements read. An hour
+        // absorbs any correction a runner might apply between them; if it fails
+        // again, the clock was never the reason and the age assertion above
+        // will say so.
+        UUID abandoned = fixtures.stale(OutboxFixtures.SALON, "appointment:8:REMINDER:1", "1 hour");
+        UUID working = fixtures.stale(OutboxFixtures.SALON, "appointment:9:REMINDER:1", "1 second");
 
         // The premise, then the outcome. This failed on CI and passed seven
         // times locally, and "no rows released" has two causes that look
