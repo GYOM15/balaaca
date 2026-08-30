@@ -82,6 +82,22 @@ class BookingPolicyIT {
     }
 
     @Test
+    @DisplayName("A customer's number is normalised against the PROVIDER's country")
+    void normalisesThePhoneAgainstTheProvidersCountry() {
+        // "GN" was hardcoded at the booking edge while providers.country_code
+        // existed and nothing read it - against a product rule saying nothing
+        // may hardcode a single market, and against PhoneNumber's own javadoc.
+        fixtures.execute("UPDATE providers SET country_code = 'CI' WHERE slug = 'coiffeur-solo'");
+
+        book("coiffeur-solo", BookingFixtures.SOLO_OFFERING,
+             "2026-09-04T10:00:00Z", "0707070707");
+
+        assertThat(fixtures.customerPhones(BookingFixtures.SOLO))
+                .as("an Ivorian number at an Ivorian salon is +225, not +224")
+                .containsExactly("+2250707070707");
+    }
+
+    @Test
     @DisplayName("The hub has trades to browse by")
     void publishesTheTaxonomy() {
         var trades = given().when().get("/v1/categories").then().statusCode(200)

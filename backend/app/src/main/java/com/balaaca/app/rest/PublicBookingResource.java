@@ -9,6 +9,7 @@ import com.balaaca.app.api.model.CustomerBookingView;
 import com.balaaca.app.api.model.Money;
 import com.balaaca.booking.domain.BookingSource;
 import com.balaaca.booking.ports.inbound.BookAppointmentUseCase;
+import com.balaaca.providers.ports.inbound.LookupNoticeProfileUseCase;
 import com.balaaca.booking.ports.inbound.CustomerBookingUseCase;
 import com.balaaca.booking.ports.inbound.CustomerBookingUseCase.CustomerBooking;
 import com.balaaca.platformkernel.tenancy.PublicTenantBinder;
@@ -45,15 +46,18 @@ public class PublicBookingResource implements BookingApi {
     private final BookAppointmentRequestMapper mapper;
     private final BookAppointmentUseCase booking;
     private final CustomerBookingUseCase bookings;
+    private final LookupNoticeProfileUseCase providers;
 
     public PublicBookingResource(PublicTenantBinder tenants,
                                  BookAppointmentRequestMapper mapper,
                                  BookAppointmentUseCase booking,
-                                 CustomerBookingUseCase bookings) {
+                                 CustomerBookingUseCase bookings,
+                                 LookupNoticeProfileUseCase providers) {
         this.tenants = tenants;
         this.mapper = mapper;
         this.booking = booking;
         this.bookings = bookings;
+        this.providers = providers;
     }
 
     @Override
@@ -63,8 +67,14 @@ public class PublicBookingResource implements BookingApi {
         // unpublished provider are the same 404.
         tenants.bindPublished(slug);
         try {
-            var result = booking.book(
-                    mapper.toCommand(request, idempotencyKey, "GN", BookingSource.PUBLIC));
+            // The provider's own country, not this platform's launch market.
+            // "GN" stood here while providers.country_code existed and nothing
+            // read it - against a product rule that says nothing may hardcode a
+            // single market, and against PhoneNumber's own javadoc, which says
+            // the region comes from the provider.
+            var result = booking.book(mapper.toCommand(
+                    request, idempotencyKey,
+                    providers.currentNoticeProfile().countryCode(), BookingSource.PUBLIC));
 
             // A replay returns the original booking, not a second one.
             return Response.status(result.replayed() ? 200 : 201)
