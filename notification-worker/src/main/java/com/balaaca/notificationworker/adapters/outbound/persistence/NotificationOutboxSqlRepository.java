@@ -120,11 +120,17 @@ public class NotificationOutboxSqlRepository implements NotificationOutbox {
     public int releaseStaleLeases(Duration olderThan) {
         // updated_at is the lease: the claim is the only statement that sets it
         // on a SENDING row, so its age is exactly how long the row has been held.
+        // The parameter carries its type. make_interval's secs argument is
+        // double precision, and a parameter whose type PostgreSQL has to infer
+        // in that position is the same trap the availability filters hit with
+        // 42P18 - except here it does not raise, it just may not match, and a
+        // release that quietly matches nothing strands every crashed lease for
+        // ever with no error anywhere.
         String sql = """
                 UPDATE notifications
                    SET status = 'PENDING', updated_at = now()
                  WHERE status = 'SENDING'
-                   AND updated_at < now() - make_interval(secs => ?)
+                   AND updated_at < now() - make_interval(secs => CAST(? AS double precision))
                 """;
         try (Connection c = dataSource.getConnection();
              PreparedStatement s = c.prepareStatement(sql)) {

@@ -112,7 +112,12 @@ class NotificationDrainIT {
         UUID abandoned = fixtures.stale(OutboxFixtures.SALON, "appointment:8:REMINDER:1", "10 minutes");
         UUID working = fixtures.stale(OutboxFixtures.SALON, "appointment:9:REMINDER:1", "10 seconds");
 
-        drain.releaseStaleLeases();
+        // The count first. This assertion failed once in CI and could not be
+        // reproduced, and the status alone does not say whether the statement
+        // matched nothing or matched and was undone - which are different bugs.
+        assertThat(outbox.releaseStaleLeases(java.time.Duration.ofMinutes(5)))
+                .as("leases released")
+                .isEqualTo(1);
 
         assertThat(fixtures.status(abandoned)).isEqualTo("PENDING");
         // A row claimed seconds ago belongs to a worker that is still sending it.
