@@ -154,7 +154,6 @@ export default async function Profile({
         <div className="row row-4 row--wrap row--top">
           <form
             action={uploadLogo}
-            encType="multipart/form-data"
             className="card card--pad stack stack-3 grow"
           >
             <p className="t-label">Logo</p>
@@ -175,7 +174,6 @@ export default async function Profile({
 
           <form
             action={uploadCover}
-            encType="multipart/form-data"
             className="card card--pad stack stack-3 grow"
           >
             <p className="t-label">Couverture</p>

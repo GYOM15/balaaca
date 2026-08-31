@@ -27,6 +27,29 @@ const nextConfig: NextConfig = {
   // that it found two. Saying which one is meant costs nothing and stops the
   // build from guessing.
   outputFileTracingRoot: path.dirname(fileURLToPath(import.meta.url)),
+
+  experimental: {
+    serverActions: {
+      /**
+       * Six megabytes, and the number is not arbitrary: it must sit ABOVE what
+       * the API accepts, which is five.
+       *
+       * Next buffers a server action's whole body and refuses anything over
+       * this limit with a runtime error of its own - a red overlay naming a
+       * configuration key, before a single line of our code runs. So a limit
+       * equal to or below the API's would mean the API's own refusal, which is
+       * a sentence a provider can act on, could never be reached: every photo
+       * between the two numbers would die as a stack trace instead.
+       *
+       * The default is one megabyte, and a photograph from any telephone made
+       * in the last decade is two to five. Uploading a logo was therefore
+       * impossible, not merely awkward.
+       *
+       * If SanitisedImage.MAX_BYTES moves, this moves with it.
+       */
+      bodySizeLimit: "6mb",
+    },
+  },
 };
 
 export default nextConfig;
