@@ -20,6 +20,13 @@ public final class RequestFingerprint {
     private RequestFingerprint() {
     }
 
+    private static String address(BookAppointmentRequest r) {
+        return r.getServiceAddress() == null ? "" : String.join("~",
+                String.valueOf(r.getServiceAddress().getLocalitySlug()),
+                String.valueOf(r.getServiceAddress().getArea()),
+                String.valueOf(r.getServiceAddress().getDirections()));
+    }
+
     public static String of(BookAppointmentRequest r) {
         String canonical = String.join("|",
                 String.valueOf(r.getServiceOfferingId()),
@@ -29,7 +36,13 @@ public final class RequestFingerprint {
                 // same request.
                 String.valueOf(r.getStartsAt().toInstant()),
                 String.valueOf(r.getCustomer().getPhone()),
-                String.valueOf(r.getCustomer().getFullName()));
+                String.valueOf(r.getCustomer().getFullName()),
+                // In, because a replay returns the FIRST request's appointment:
+                // a customer who noticed the wrong street and sent the booking
+                // again would be told it worked while a tradesman drove to the
+                // old address. The note is deliberately not here - a different
+                // message for the salon is cosmetic, a different house is not.
+                address(r));
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256")
                     .digest(canonical.getBytes(StandardCharsets.UTF_8));

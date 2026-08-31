@@ -1,6 +1,7 @@
 package com.balaaca.catalog.adapters.outbound.persistence;
 
 import com.balaaca.catalog.domain.ServiceOfferingNotFoundException;
+import com.balaaca.catalog.ports.inbound.ServiceLocation;
 import com.balaaca.catalog.ports.inbound.BookableOffering;
 import com.balaaca.sharedkernel.ids.ServiceOfferingId;
 import com.balaaca.catalog.ports.inbound.LookupServiceOfferingUseCase;
@@ -10,6 +11,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
 import java.time.Duration;
+import java.util.Optional;
 import java.util.List;
 import java.util.UUID;
 
@@ -39,7 +41,8 @@ public class ServiceOfferingSqlRepository implements LookupServiceOfferingUseCas
         // holds when application code does.
         List<Object[]> rows = em.createNativeQuery("""
                 SELECT name, duration_minutes, buffer_before_minutes, buffer_after_minutes,
-                       price_amount_minor, price_currency, active
+                       price_amount_minor, price_currency, active, turnaround_hours,
+                       location_kind
                   FROM service_offerings
                  WHERE id = :id AND active
                 """).setParameter("id", id.value()).getResultList();
@@ -54,6 +57,10 @@ public class ServiceOfferingSqlRepository implements LookupServiceOfferingUseCas
                 Duration.ofMinutes(((Number) r[1]).longValue()),
                 Duration.ofMinutes(((Number) r[2]).longValue()),
                 Duration.ofMinutes(((Number) r[3]).longValue()),
+                // NULL is the whole discriminant: no delay announced means the
+                // customer waits for the work.
+                Optional.ofNullable((Number) r[7]).map(h -> Duration.ofHours(h.longValue())),
+                ServiceLocation.valueOf((String) r[8]),
                 Money.ofMinor(((Number) r[4]).longValue(), Currency.of((String) r[5])));
     }
 }

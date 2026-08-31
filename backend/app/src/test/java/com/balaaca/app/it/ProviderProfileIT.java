@@ -97,7 +97,7 @@ class ProviderProfileIT {
     @OidcSecurity(claims = @Claim(key = "sub", value = BookingFixtures.SALON_SUBJECT))
     void refusesAnUnknownCategoryOnEdit() {
         put("""
-            {"business_name":"Salon Fatou","category_slug":"plomberie",
+            {"business_name":"Salon Fatou","category_slug":"plomberie-quantique",
              "timezone":"Africa/Conakry","published":true}
             """).then().statusCode(400).body("code", equalTo("VALIDATION_FAILED"));
     }

@@ -1,6 +1,7 @@
 package com.balaaca.app.rest;
 
 import com.balaaca.app.api.ProvidersApi;
+import com.balaaca.app.api.model.LocalityRef;
 import com.balaaca.app.api.model.ProviderRegisteredView;
 import com.balaaca.app.api.model.ProviderSummary;
 import com.balaaca.app.api.model.ProviderSummaryPage;
@@ -56,13 +57,15 @@ public class ProvidersResource implements ProvidersApi {
      * and nothing else.
      */
     @Override
-    public Response listProviders(String q, List<String> categorySlug, String city,
-                                  String cursor, Integer limit) {
+    public Response listProviders(String q, List<String> categorySlug, String locality,
+                                  String area, String city, String cursor, Integer limit) {
         var found = directory.search(new Query(
-                Optional.ofNullable(q).filter(v -> !v.isBlank()),
+                trimmed(q),
                 categorySlug == null ? List.of()
                         : categorySlug.stream().filter(v -> !v.isBlank()).toList(),
-                Optional.ofNullable(city).filter(v -> !v.isBlank()),
+                trimmed(city),
+                trimmed(locality),
+                trimmed(area),
                 Cursors.directoryPosition(cursor),
                 limit == null ? Cursors.DEFAULT_LIMIT : limit));
 
@@ -106,8 +109,20 @@ public class ProvidersResource implements ProvidersApi {
         found.description().ifPresent(summary::setDescription);
         found.categorySlug().ifPresent(summary::setCategorySlug);
         found.city().ifPresent(summary::setCity);
+        found.area().ifPresent(summary::setArea);
         found.logoUrl().ifPresent(summary::setLogoUrl);
+
+        // Both halves or neither: a slug with no label draws an empty chip, and
+        // a label with no slug is a filter the client cannot then apply.
+        found.localitySlug().flatMap(slug -> found.localityLabel()
+                        .map(label -> new LocalityRef().slug(slug).labelFr(label)))
+                .ifPresent(summary::setLocality);
         return summary;
+    }
+
+    /** A blank query parameter is an absent one, not a value to match on. */
+    private static Optional<String> trimmed(String value) {
+        return Optional.ofNullable(value).map(String::trim).filter(v -> !v.isEmpty());
     }
 
     /**

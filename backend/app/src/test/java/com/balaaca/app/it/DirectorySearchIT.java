@@ -106,7 +106,7 @@ class DirectorySearchIT {
     @DisplayName("Public answers say how long they may be reused, and slots say never")
     void declaresItsCaching() {
         given().when().get("/v1/categories").then()
-                .header("Cache-Control", equalTo("public, max-age=3600"));
+                .header("Cache-Control", equalTo("public, max-age=300"));
         given().when().get("/v1/providers").then()
                 .header("Cache-Control", equalTo("public, max-age=60"));
         given().when().get("/v1/providers/salon-fatou").then()

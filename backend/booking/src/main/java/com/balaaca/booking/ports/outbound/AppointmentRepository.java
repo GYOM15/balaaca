@@ -4,6 +4,7 @@ import com.balaaca.booking.domain.AppointmentStatus;
 import com.balaaca.booking.domain.BookedSlot;
 import com.balaaca.booking.domain.BookingSource;
 import com.balaaca.booking.domain.CustomerContact;
+import com.balaaca.booking.domain.ServiceAddress;
 import com.balaaca.catalog.ports.inbound.BookableOffering;
 import com.balaaca.sharedkernel.ids.AppointmentId;
 import com.balaaca.sharedkernel.ids.CustomerId;
@@ -42,8 +43,25 @@ public interface AppointmentRepository {
      */
     Optional<InsertOutcome> replayOf(String idempotencyKey, String requestHash);
 
-    /** Staff who could take this booking, most lightly loaded first. */
+    /**
+     * Staff who could take this booking, most lightly loaded first.
+     *
+     * <p>Bookable, active, AND recorded as performing this service. The last of
+     * the three is what the parameter is for: before V032 it was accepted and
+     * ignored, and a salon's least busy chair took a booking for work the
+     * person in it does not do.
+     */
     List<StaffId> eligibleStaff(ServiceOfferingId serviceOfferingId);
+
+    /**
+     * Whether this person performs this service.
+     *
+     * <p>Asked of a client-NAMED staff member, where the eligibility list is
+     * not consulted. It says nothing about whether they are bookable or
+     * active: a provider entering a walk-in may name somebody the public list
+     * never offers, and that is the point of a walk-in.
+     */
+    boolean performs(StaffId staffId, ServiceOfferingId serviceOfferingId);
 
     /**
      * How many bookable staff have nothing overlapping this window.
@@ -59,7 +77,8 @@ public interface AppointmentRepository {
      *
      * @param staffId empty asks about the whole bookable team
      */
-    long freeStaffCount(Optional<StaffId> staffId, Instant blockedFrom, Instant blockedUntil);
+    long freeStaffCount(ServiceOfferingId serviceOfferingId, Optional<StaffId> staffId,
+                        Instant blockedFrom, Instant blockedUntil);
 
     /** Upserts on (provider_id, phone_e164) without overwriting the provider's own edits. */
     CustomerId upsertCustomer(CustomerContact contact);
@@ -70,6 +89,12 @@ public interface AppointmentRepository {
             BookableOffering offering,
             BookedSlot slot,
             CustomerId customerId,
+            /**
+             * Resolved and validated before it gets here: present iff the
+             * offering travels, and its locality slug already checked against
+             * the published map.
+             */
+            Optional<ServiceAddress> serviceAddress,
             BookingSource source,
             Optional<String> customerNote,
             Optional<String> idempotencyKey,

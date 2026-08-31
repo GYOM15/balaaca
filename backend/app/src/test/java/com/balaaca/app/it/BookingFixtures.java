@@ -118,6 +118,27 @@ public class BookingFixtures {
               ('%s','%s','Coupe',30,0,0,50000,'GNF'),
               ('%s','%s','Coupe',60,0,0,80000,'GNF')
             """.formatted(SALON_OFFERING, SALON, HIDDEN_OFFERING, HIDDEN, SOLO_OFFERING, SOLO));
+        grantEveryCompetence();
+    }
+
+    /**
+     * Everybody performs everything, which is what the application does on its
+     * own when a service or a colleague is created.
+     *
+     * <p>These rows have to be here because the decor above is written straight
+     * to the tables rather than through the API, so the grants the create path
+     * performs never run. Without them competence is strict and empty, and every
+     * booking test in this package would fail as "no eligible staff" - a green
+     * suite turning red for a reason that has nothing to do with what it tests.
+     */
+    public void grantEveryCompetence() {
+        run("""
+            INSERT INTO staff_service_offerings (provider_id, staff_id, service_offering_id)
+            SELECT s.provider_id, s.id, o.id
+              FROM provider_staff s
+              JOIN service_offerings o ON o.provider_id = s.provider_id
+            ON CONFLICT DO NOTHING
+            """);
     }
 
     /** One line of the audit trail, as an operator would read it. */
@@ -196,6 +217,7 @@ public class BookingFixtures {
             INSERT INTO provider_staff (id, provider_id, user_id, display_name, role)
                  VALUES ('%s','%s','d4d4d4d4-0000-0000-0000-000000000001','Mariama','STAFF')
             """.formatted(EMPLOYEE_SUBJECT, SALON_EMPLOYEE_STAFF, SALON));
+        grantEveryCompetence();
     }
 
     /**
@@ -212,6 +234,7 @@ public class BookingFixtures {
                  VALUES ('a5a5a5a5-0000-0000-0000-000000000001','%s',NULL,'Mariama','STAFF',
                          '%s', now() + interval '7 days')
             """.formatted(SALON, code));
+        grantEveryCompetence();
     }
 
     /** Every customer phone this provider has stored, as E.164. */
@@ -229,9 +252,21 @@ public class BookingFixtures {
         return phones;
     }
 
-    /** Arbitrary SQL, for the one-off row a single test needs and no other. */
+    /**
+     * Arbitrary SQL, for the one-off row a single test needs and no other.
+     *
+     * <p>Re-grants competence afterwards, and that is not magic: half the decor
+     * in this package adds a chair or a service by writing the table directly,
+     * which skips the grant the create path performs. Without this, adding a
+     * second chair would silently make it able to perform nothing, and a test
+     * about availability would fail for a reason about competence.
+     *
+     * <p>A test that means to RESTRICT competence does it through the API,
+     * after its decor is placed, so this never undoes it.
+     */
     public void execute(String sql) {
         run(sql);
+        grantEveryCompetence();
     }
 
     /** Closes a single date for the salon, to exercise an override. */

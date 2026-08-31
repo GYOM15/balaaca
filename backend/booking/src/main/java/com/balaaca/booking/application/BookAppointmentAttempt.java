@@ -1,6 +1,11 @@
 package com.balaaca.booking.application;
 
 import com.balaaca.booking.domain.BookedSlot;
+import com.balaaca.booking.domain.BookingExceptions.ServiceAddressMismatchException;
+import com.balaaca.booking.domain.BookingExceptions.UnknownServiceLocalityException;
+import com.balaaca.booking.domain.ServiceAddress;
+import com.balaaca.catalog.ports.inbound.ServiceLocation;
+import com.balaaca.providers.ports.inbound.ListLocalitiesUseCase;
 import com.balaaca.booking.domain.BookingExceptions.NoEligibleStaffException;
 import com.balaaca.booking.ports.inbound.BookAppointmentUseCase.BookAppointmentCommand;
 import com.balaaca.booking.ports.outbound.AppointmentRepository;
@@ -8,6 +13,7 @@ import com.balaaca.booking.ports.outbound.AppointmentRepository.InsertOutcome;
 import com.balaaca.booking.ports.outbound.AppointmentRepository.NewAppointment;
 import com.balaaca.catalog.ports.inbound.BookableOffering;
 import com.balaaca.catalog.ports.inbound.LookupServiceOfferingUseCase;
+import com.balaaca.booking.domain.BookingExceptions.StaffCannotPerformServiceException;
 import com.balaaca.booking.domain.BookingExceptions.SlotOutsideAvailabilityException;
 import com.balaaca.scheduling.ports.inbound.CalculateSlotsUseCase;
 import com.balaaca.scheduling.ports.inbound.CalculateSlotsUseCase.SlotRequest;
@@ -35,15 +41,18 @@ public class BookAppointmentAttempt {
     private final LookupServiceOfferingUseCase offerings;
     private final CalculateSlotsUseCase slots;
     private final AppointmentRepository appointments;
+    private final ListLocalitiesUseCase localities;
     private final BookingNotifications notifications;
 
     public BookAppointmentAttempt(LookupServiceOfferingUseCase offerings,
                                   CalculateSlotsUseCase slots,
                                   AppointmentRepository appointments,
+                                  ListLocalitiesUseCase localities,
                                   BookingNotifications notifications) {
         this.offerings = offerings;
         this.slots = slots;
         this.appointments = appointments;
+        this.localities = localities;
         this.notifications = notifications;
     }
 
@@ -88,7 +97,20 @@ public class BookAppointmentAttempt {
                     "outside the provider's declared availability");
         }
 
+        // After the replay check, for the same reason as availability: a retry
+        // is not a new request and must not be judged as one.
+        Optional<ServiceAddress> address = addressFor(command, offering);
+
         StaffId staffId = command.staffId().orElseGet(() -> pick(command, excluded));
+
+        // The server's own pick came off a list that already joins competence.
+        // A name the CLIENT chose did not, so it is checked here - once, in the
+        // transaction that books it.
+        if (command.staffId().isPresent()
+                && !appointments.performs(staffId, command.serviceOfferingId())) {
+            throw new StaffCannotPerformServiceException(
+                    staffId.value(), command.serviceOfferingId().value());
+        }
         CustomerId customerId = appointments.upsertCustomer(command.customer());
 
         InsertOutcome outcome = appointments.insertIfAbsent(new NewAppointment(
@@ -97,6 +119,7 @@ public class BookAppointmentAttempt {
                 offering,
                 slot,
                 customerId,
+                address,
                 command.source(),
                 command.customerNote(),
                 command.idempotency().map(i -> i.key()),
@@ -124,6 +147,14 @@ public class BookAppointmentAttempt {
      */
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public List<StaffId> candidates(BookAppointmentCommand command) {
+        // The offering is resolved BEFORE eligibility, and the order is the
+        // whole point. Since competence is strict, a service that is not this
+        // provider's joins to nobody - so an id belonging to another salon
+        // produced an empty candidate list and answered 409 "that slot is gone"
+        // for a service that does not exist here. The contract promises 404 for
+        // an unknown offering, and this read is what still gives it.
+        offerings.requireBookable(command.serviceOfferingId());
+
         return command.staffId()
                 .map(List::of)
                 .orElseGet(() -> appointments.eligibleStaff(command.serviceOfferingId()));
@@ -144,8 +175,41 @@ public class BookAppointmentAttempt {
         BookableOffering offering = offerings.requireBookable(command.serviceOfferingId());
         BookedSlot slot = BookedSlot.from(command.startsAt(), offering.duration(),
                                           offering.bufferBefore(), offering.bufferAfter());
-        return appointments.freeStaffCount(
-                command.staffId(), slot.blockedFrom(), slot.blockedUntil()) == 0;
+        return appointments.freeStaffCount(command.serviceOfferingId(), command.staffId(),
+                slot.blockedFrom(), slot.blockedUntil()) == 0;
+    }
+
+    /**
+     * The address, checked against the offering rather than against what the
+     * client sent.
+     *
+     * <p>Both directions are refused. A call-out with no directions is a job
+     * nobody can do; a shop appointment carrying an address is a customer's home
+     * address stored for no reason, which is how a directory turns into a list
+     * of where its customers live.
+     */
+    private Optional<ServiceAddress> addressFor(BookAppointmentCommand command,
+                                                BookableOffering offering) {
+        boolean callOut = offering.location() == ServiceLocation.AT_CUSTOMER;
+        if (callOut != command.serviceAddress().isPresent()) {
+            throw new ServiceAddressMismatchException(callOut);
+        }
+        return command.serviceAddress().map(this::canonicalise);
+    }
+
+    /**
+     * The commune as the map spells it, or a refusal.
+     *
+     * <p>Resolved through providers' own port rather than read from here: the
+     * table belongs to that module, and a slug stored without being checked is
+     * a filter nobody can select and a value nobody is told is wrong.
+     */
+    private ServiceAddress canonicalise(ServiceAddress address) {
+        return new ServiceAddress(
+                address.localitySlug().map(slug -> localities.canonicalSlug(slug)
+                        .orElseThrow(() -> new UnknownServiceLocalityException(slug))),
+                address.area().map(String::trim).filter(a -> !a.isEmpty()),
+                address.directions());
     }
 
     private static SlotRequest slotRequest(BookAppointmentCommand command,

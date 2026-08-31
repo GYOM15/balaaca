@@ -68,7 +68,7 @@ public class CalculateSlotsService implements CalculateSlotsUseCase {
         // Distinct by start: two people free at ten is one slot offered, not
         // two. What the customer is choosing is a time; who takes it is the
         // server's problem, and the booking path resolves it.
-        return availability.bookableStaff().stream()
+        return availability.bookableStaff(request.serviceOfferingId()).stream()
                 .map(request::forStaff)
                 .flatMap(one -> slotsFor(one, zone, policy, busyIn(one, zone)).stream())
                 .collect(Collectors.toMap(AvailableSlot::startsAt, s -> s, (a, b) -> a,
@@ -102,7 +102,7 @@ public class CalculateSlotsService implements CalculateSlotsUseCase {
         // rules would let two people's hours add up to a window neither of them
         // works, and the appointment would be judged inside availability that
         // belongs to nobody.
-        return availability.bookableStaff().stream()
+        return availability.bookableStaff(request.serviceOfferingId()).stream()
                 .anyMatch(staff -> SlotCalculator.isBookable(
                         startsAt, queryFor(request.forStaff(staff), zone, policy, List.of())));
     }

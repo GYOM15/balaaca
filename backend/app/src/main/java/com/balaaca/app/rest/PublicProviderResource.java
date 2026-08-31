@@ -2,9 +2,12 @@ package com.balaaca.app.rest;
 
 import com.balaaca.app.api.DiscoveryApi;
 import com.balaaca.app.api.model.Money;
+import com.balaaca.app.api.model.LocalityList;
+import com.balaaca.app.api.model.LocalityView;
 import com.balaaca.app.api.model.PublicOpeningHours;
 import com.balaaca.app.api.model.PublicOpeningHoursSegment;
 import com.balaaca.app.api.model.PublicProviderView;
+import com.balaaca.app.api.model.Fulfilment;
 import com.balaaca.app.api.model.PublicServiceOffering;
 import com.balaaca.app.api.model.PublicStaffList;
 import com.balaaca.app.api.model.PublicStaffMember;
@@ -15,9 +18,13 @@ import com.balaaca.platformkernel.tenancy.PublicTenantBinder;
 import com.balaaca.providers.ports.inbound.LookupPublicProviderUseCase;
 import com.balaaca.providers.ports.inbound.LookupPublicProviderUseCase.PublicProvider;
 import com.balaaca.providers.ports.inbound.LookupPublicStaffUseCase;
+import com.balaaca.app.api.model.CategoryFamily;
+import com.balaaca.app.api.model.AreaList;
+import com.balaaca.app.api.model.AreaView;
 import com.balaaca.app.api.model.CategoryList;
 import com.balaaca.app.api.model.CategoryView;
 import com.balaaca.providers.ports.inbound.ListCategoriesUseCase;
+import com.balaaca.providers.ports.inbound.ListLocalitiesUseCase;
 import com.balaaca.providers.ports.inbound.LookupProviderImageUseCase;
 import com.balaaca.scheduling.domain.OpenWindow;
 import com.balaaca.scheduling.ports.inbound.ManageAvailabilityUseCase;
@@ -48,6 +55,7 @@ public class PublicProviderResource implements DiscoveryApi {
     private final ManageAvailabilityUseCase availability;
     private final LookupProviderImageUseCase images;
     private final ListCategoriesUseCase categories;
+    private final ListLocalitiesUseCase localities;
 
     public PublicProviderResource(PublicTenantBinder tenants,
                                   LookupPublicProviderUseCase providers,
@@ -55,7 +63,8 @@ public class PublicProviderResource implements DiscoveryApi {
                                   PublishedCatalogueUseCase catalogue,
                                   ManageAvailabilityUseCase availability,
                                   LookupProviderImageUseCase images,
-                                  ListCategoriesUseCase categories) {
+                                  ListCategoriesUseCase categories,
+                                  ListLocalitiesUseCase localities) {
         this.tenants = tenants;
         this.providers = providers;
         this.staff = staff;
@@ -63,6 +72,7 @@ public class PublicProviderResource implements DiscoveryApi {
         this.availability = availability;
         this.images = images;
         this.categories = categories;
+        this.localities = localities;
     }
 
     /**
@@ -74,12 +84,80 @@ public class PublicProviderResource implements DiscoveryApi {
     public Response listCategories() {
         return Response.ok(new CategoryList().data(
                 categories.offered().stream().map(c -> {
-                    CategoryView view = new CategoryView().slug(c.slug()).labelFr(c.labelFr());
+                    CategoryView view = new CategoryView()
+                            .slug(c.slug())
+                            .labelFr(c.labelFr())
+                            // What lets a client show the trades that hold
+                            // somebody and keep the rest behind "see all".
+                            .providerCount(c.providerCount());
                     c.icon().ifPresent(view::setIcon);
+                    c.family().ifPresent(f -> {
+                        CategoryFamily family = new CategoryFamily()
+                                .slug(f.slug()).labelFr(f.labelFr());
+                        f.icon().ifPresent(family::setIcon);
+                        view.setFamily(family);
+                    });
                     return view;
                 }).toList()))
                 .header("Cache-Control", PublicCaching.TAXONOMY)
                 .build();
+    }
+
+    /**
+     * The map a business is filed against. No tenant, no cursor: fifty-one rows
+     * is one page and a country does not paginate.
+     */
+    @Override
+    public Response listLocalities() {
+        return Response.ok(new LocalityList().data(
+                localities.all().stream().map(l -> {
+                    LocalityView view = new LocalityView()
+                            .slug(l.slug())
+                            .labelFr(l.labelFr())
+                            .kind(LocalityView.KindEnum.fromString(l.kind()));
+                    l.parentSlug().ifPresent(view::setParentSlug);
+                    l.iso31662().ifPresent(view::setIso31662);
+                    return view;
+                }).toList()))
+                .header("Cache-Control", PublicCaching.MAP)
+                .build();
+    }
+
+    /**
+     * The quartiers, which are not a taxonomy and are not cached like one.
+     *
+     * <p>This answer moves every time a provider publishes, and it is what the
+     * registration form suggests from - so a minute of staleness is the most it
+     * can carry without offering the tenth hairdresser in Nongo an empty list
+     * the nine before them already filled.
+     */
+    @Override
+    public Response listAreas(String q, String locality) {
+        return Response.ok(new AreaList().data(
+                localities.areas(trimmed(q), trimmed(locality)).stream()
+                        .map(a -> new AreaView()
+                                .label(a.label())
+                                .providerCount(a.providerCount()))
+                        .toList()))
+                .header("Cache-Control", PublicCaching.DIRECTORY)
+                .build();
+    }
+
+    /**
+     * One derived value out of two stored ones. A CHECK on the table refuses an
+     * offering that is both dropped off and travelled to, so these cannot
+     * overlap - which is why this reads as a chain rather than a matrix.
+     */
+    private static Fulfilment fulfilmentOf(PublishedService s) {
+        if (s.isCallOut()) {
+            return Fulfilment.AT_CUSTOMER;
+        }
+        return s.isDropOff() ? Fulfilment.DROP_OFF : Fulfilment.ON_SITE;
+    }
+
+    /** A blank query parameter is an absent one, not a value to match on. */
+    private static Optional<String> trimmed(String value) {
+        return Optional.ofNullable(value).map(String::trim).filter(v -> !v.isEmpty());
     }
 
     /**
@@ -177,8 +255,13 @@ public class PublicProviderResource implements DiscoveryApi {
         PublicServiceOffering service = new PublicServiceOffering()
                 .serviceOfferingId(published.id().value())
                 .name(published.name())
-                .durationMinutes((int) published.duration().toMinutes());
+                .durationMinutes((int) published.duration().toMinutes())
+                .fulfilment(fulfilmentOf(published));
 
+        // "Ready in 48 h" is what a customer needs before choosing. Without it
+        // a drop-off reads as a ten-minute service, because ten minutes is what
+        // the handover takes.
+        published.turnaround().ifPresent(t -> service.setTurnaroundHours((int) t.toHours()));
         published.description().ifPresent(service::setDescription);
         // Absent, not zero: a hidden price rendered as 0 reads as free.
         published.price().ifPresent(price -> service.setPrice(new Money()

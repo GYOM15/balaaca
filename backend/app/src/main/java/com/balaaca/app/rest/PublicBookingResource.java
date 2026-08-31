@@ -134,6 +134,10 @@ public class PublicBookingResource implements BookingApi {
                         .amountMinor(booking.price().amountMinor())
                         .currency(booking.price().currency().name()));
 
+        booking.readyBy().ifPresent(at ->
+                view.setReadyBy(OffsetDateTime.ofInstant(at, ZoneOffset.UTC)));
+        booking.readyAt().ifPresent(at ->
+                view.setReadyAt(OffsetDateTime.ofInstant(at, ZoneOffset.UTC)));
         booking.cancellableUntil().ifPresent(until -> view.setCancellableUntil(
                 OffsetDateTime.ofInstant(until, ZoneOffset.UTC)));
         return view;

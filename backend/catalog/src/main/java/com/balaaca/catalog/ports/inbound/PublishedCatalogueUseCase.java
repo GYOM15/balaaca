@@ -32,6 +32,28 @@ public interface PublishedCatalogueUseCase {
                             String name,
                             Optional<String> description,
                             Duration duration,
+                            /**
+                             * Present when the customer hands the work over
+                             * rather than waiting for it. "Ready in 48 h" is
+                             * something they need BEFORE choosing, which is why
+                             * it is published rather than kept for the ticket.
+                             */
+                            Optional<Duration> turnaround,
+                            /**
+                             * Whether the provider travels. Published for the
+                             * same reason as the delay: it changes what the
+                             * customer is agreeing to, and the booking form
+                             * asks for an address only when it is a call-out.
+                             */
+                            ServiceLocation location,
                             Optional<Money> price) {
+
+        public boolean isDropOff() {
+            return turnaround.isPresent();
+        }
+
+        public boolean isCallOut() {
+            return location == ServiceLocation.AT_CUSTOMER;
+        }
     }
 }

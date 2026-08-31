@@ -3,8 +3,10 @@ package com.balaaca.providers.application;
 import com.balaaca.catalog.ports.inbound.PublishedCatalogueUseCase;
 import com.balaaca.providers.domain.NothingToPublishException;
 import com.balaaca.providers.domain.UnknownCategoryException;
+import com.balaaca.providers.domain.UnknownLocalityException;
 import com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase;
 import com.balaaca.providers.ports.outbound.ImageStore;
+import com.balaaca.providers.ports.outbound.LocalityRepository;
 import com.balaaca.providers.ports.outbound.ProviderProfileRepository;
 import com.balaaca.platformkernel.audit.AuditEvent;
 import com.balaaca.platformkernel.audit.AuditOutcome;
@@ -36,6 +38,7 @@ public class ManageProviderProfileService implements ManageProviderProfileUseCas
 
     private final ProviderProfileRepository profiles;
     private final ProviderRegistrationRepository categories;
+    private final LocalityRepository localities;
     private final PublishedCatalogueUseCase catalogue;
     private final ManageAvailabilityUseCase availability;
     private final TenantContext tenant;
@@ -44,6 +47,7 @@ public class ManageProviderProfileService implements ManageProviderProfileUseCas
 
     public ManageProviderProfileService(ProviderProfileRepository profiles,
                                         ProviderRegistrationRepository categories,
+                                        LocalityRepository localities,
                                         PublishedCatalogueUseCase catalogue,
                                         ManageAvailabilityUseCase availability,
                                         TenantContext tenant,
@@ -51,6 +55,7 @@ public class ManageProviderProfileService implements ManageProviderProfileUseCas
                                         ImageStore images) {
         this.profiles = profiles;
         this.categories = categories;
+        this.localities = localities;
         this.catalogue = catalogue;
         this.availability = availability;
         this.tenant = tenant;
@@ -75,7 +80,11 @@ public class ManageProviderProfileService implements ManageProviderProfileUseCas
             requireSomethingBookable();
         }
         Optional<UUID> categoryId = edit.categorySlug().map(this::requireCategory);
-        ProviderProfile updated = profiles.update(edit, categoryId);
+        // Canonicalised rather than trusted: a provider who typed "Kaloum" gets
+        // the row an alias points at, and one who typed a name this map does not
+        // hold is refused instead of quietly filed nowhere.
+        Optional<String> locality = edit.localitySlug().map(this::requireLocality);
+        ProviderProfile updated = profiles.update(edit, categoryId, locality);
 
         // Whether the page is live is the one field worth reading back off the
         // trail months later: it is the difference between a business that took
@@ -105,6 +114,11 @@ public class ManageProviderProfileService implements ManageProviderProfileUseCas
     private UUID requireCategory(String slug) {
         return categories.activeCategoryId(slug)
                 .orElseThrow(() -> new UnknownCategoryException(slug));
+    }
+
+    private String requireLocality(String slug) {
+        return localities.canonicalSlug(slug)
+                .orElseThrow(() -> new UnknownLocalityException(slug));
     }
     @Override
     @Transactional(Transactional.TxType.REQUIRED)

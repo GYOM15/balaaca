@@ -3,6 +3,7 @@ package com.balaaca.app.rest;
 import com.balaaca.app.api.model.BookAppointmentRequest;
 import com.balaaca.booking.domain.BookingSource;
 import com.balaaca.booking.domain.CustomerContact;
+import com.balaaca.booking.domain.ServiceAddress;
 import com.balaaca.booking.ports.inbound.BookAppointmentUseCase.BookAppointmentCommand;
 import com.balaaca.booking.ports.inbound.BookAppointmentUseCase.Idempotency;
 import com.balaaca.sharedkernel.ids.ServiceOfferingId;
@@ -44,12 +45,30 @@ public class BookAppointmentRequestMapper {
                 // place the two meet.
                 request.getStartsAt().toInstant(),
                 toContact(request, defaultRegion),
+                toAddress(request),
                 // Published since the contract was written and dropped here
                 // ever since: the box said "Message for the salon" and the
                 // message went nowhere.
                 Optional.ofNullable(request.getCustomerNote()).filter(n -> !n.isBlank()),
                 toIdempotency(idempotencyKey, request),
                 source);
+    }
+
+    /**
+     * Parsed, not judged. Whether an address is owed at all depends on the
+     * offering, which this class does not read - the booking service checks it
+     * against the offering it loads inside the transaction.
+     */
+    private Optional<ServiceAddress> toAddress(BookAppointmentRequest request) {
+        return Optional.ofNullable(request.getServiceAddress())
+                .map(a -> new ServiceAddress(
+                        trimmed(a.getLocalitySlug()),
+                        trimmed(a.getArea()),
+                        a.getDirections()));
+    }
+
+    private static Optional<String> trimmed(String value) {
+        return Optional.ofNullable(value).map(String::trim).filter(v -> !v.isEmpty());
     }
 
     private CustomerContact toContact(BookAppointmentRequest request, String defaultRegion) {

@@ -24,9 +24,20 @@ public interface SearchProvidersUseCase {
      * @param after the last card of the previous page, so paging resumes
      *              exactly where the caller stopped reading
      */
+    /**
+     * @param locality a region, a prefecture or a commune of Conakry, by slug or
+     *                 by one of its accepted spellings. Matched down the TREE:
+     *                 asking for Conakry returns a business filed under Ratoma,
+     *                 and asking for Ratoma returns only Ratoma
+     * @param area     the quartier the provider wrote for themselves. Folded
+     *                 before it is compared, which is what makes "Ratoma",
+     *                 "ratoma" and "RATOMA" one value rather than three
+     */
     record Query(Optional<String> nameContains,
                  List<String> categorySlugs,
                  Optional<String> city,
+                 Optional<String> locality,
+                 Optional<String> area,
                  Optional<Position> after,
                  int limit) {
 
@@ -63,6 +74,9 @@ public interface SearchProvidersUseCase {
                         Optional<String> categorySlug,
                         Optional<String> city,
                         Optional<String> logoUrl,
+                        Optional<String> localitySlug,
+                        Optional<String> localityLabel,
+                        Optional<String> area,
                         Position position) {
     }
 

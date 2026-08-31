@@ -63,8 +63,12 @@ class ArchitectureTest {
     // record started carrying it. The list is meant to grow slowly and to be
     // argued about; a wildcard would end the argument by conceding it.
     private static final String PUBLISHED_DOMAIN_TYPES =
+            // ServiceAddress: the booking command carries it, and it is a
+            // record of three strings the edge has to build from what a
+            // customer typed. Not an id and not behaviour - the same category
+            // as CustomerContact beside it.
             "com\\.balaaca\\.(booking\\.domain\\.(BookingSource|CustomerContact"
-            + "|AppointmentStatus)"
+            + "|AppointmentStatus|ServiceAddress)"
             // AvailabilityOverride$Kind: the Closure command carries it, since
             // the day the third kind arrived. Two kinds could be inferred from
             // whether a window was present; three cannot - TIME_OFF carries one

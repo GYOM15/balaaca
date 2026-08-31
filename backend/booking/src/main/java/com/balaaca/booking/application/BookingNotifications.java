@@ -70,19 +70,30 @@ public class BookingNotifications {
 
         NoticeProfile provider = providers.currentNoticeProfile();
         Instant now = clock.instant();
-        Map<String, String> payload =
-                payloadOf(provider, offering, customer, startsAt, bookingReference);
+
+        // Three payloads, not one. They used to be the same map handed to all
+        // four rows, which put the booking reference - the customer's ONLY way
+        // back to this appointment, and the only thing that authorises
+        // cancelling it - into the provider's notice and into both reminders.
+        // The comment beside it said it went in the confirmation and nowhere
+        // else; the code disagreed, and the code is what the worker drains.
+        Map<String, String> forCustomer = customerPayload(provider, offering, customer, startsAt);
+        Map<String, String> withReference = new java.util.LinkedHashMap<>(forCustomer);
+        withReference.put("booking_reference", bookingReference);
+        Map<String, String> forProvider = providerPayload(offering, customer, provider, startsAt);
 
         List<PlannedNotification> planned = new ArrayList<>();
-        planned.add(confirmation(appointmentId, startsAt, now, customer, payload));
+        planned.add(confirmation(appointmentId, startsAt, now, customer, withReference));
         provider.noticeDestination()
-                .map(to -> notice(appointmentId, startsAt, now, to, payload))
+                .map(to -> notice(appointmentId, startsAt, now, to, forProvider))
                 .ifPresent(planned::add);
         // A booking taken an hour beforehand owes no day-before reminder. Writing
         // one anyway would make the worker send it the moment it drains, which
         // is a reminder about an appointment the customer is already walking to.
-        reminder(appointmentId, startsAt, DAY_BEFORE, now, customer, payload).ifPresent(planned::add);
-        reminder(appointmentId, startsAt, HOURS_BEFORE, now, customer, payload).ifPresent(planned::add);
+        reminder(appointmentId, startsAt, DAY_BEFORE, now, customer, forCustomer)
+                .ifPresent(planned::add);
+        reminder(appointmentId, startsAt, HOURS_BEFORE, now, customer, forCustomer)
+                .ifPresent(planned::add);
 
         outbox.plan(planned);
     }
@@ -173,11 +184,22 @@ public class BookingNotifications {
      * payload would spread the same personal datum across a second column for
      * nothing the provider cannot already see in their own agenda.
      */
-    private static Map<String, String> payloadOf(NoticeProfile provider,
-                                                 BookableOffering offering,
-                                                 CustomerContact customer,
-                                                 Instant startsAt,
-                                                 String bookingReference) {
+    /**
+     * What a message TO THE CUSTOMER says.
+     *
+     * <p>Their own name is here: a message that opens with it is the one a
+     * salon would write, and it is their datum in their own text.
+     *
+     * <p>The booking_reference is NOT. The confirmation adds it, once, because
+     * that is the message which has to hand it over; a reminder that repeated
+     * it would be a second row holding a capability at rest, and a reminder is
+     * owed for a moment - it can be re-planned by a reschedule, so the copies
+     * would multiply with the moves.
+     */
+    private static Map<String, String> customerPayload(NoticeProfile provider,
+                                                       BookableOffering offering,
+                                                       CustomerContact customer,
+                                                       Instant startsAt) {
         return Map.of(
                 "business_name", provider.businessName(),
                 "service_name", offering.name(),
@@ -186,11 +208,26 @@ public class BookingNotifications {
                 "starts_at", startsAt.toString(),
                 // The provider's zone, because a message that says 10:00 must
                 // mean 10:00 where the appointment happens.
-                "starts_at_local", LOCAL_TIME.format(startsAt.atZone(provider.timezone())),
-                // The customer's only way back to this appointment. It goes in
-                // the confirmation and nowhere else - not in the reminder, not
-                // in the provider's notice - because every extra copy is another
-                // place a capability sits at rest.
-                "booking_reference", bookingReference);
+                "starts_at_local", LOCAL_TIME.format(startsAt.atZone(provider.timezone())));
+    }
+
+    /**
+     * What the notice TO THE PROVIDER says.
+     *
+     * <p>The customer's name, because that is the useful part of "somebody
+     * booked" - and never the reference, which is the customer's key to their
+     * own appointment and gains the provider nothing they cannot read in their
+     * agenda.
+     */
+    private static Map<String, String> providerPayload(BookableOffering offering,
+                                                       CustomerContact customer,
+                                                       NoticeProfile provider,
+                                                       Instant startsAt) {
+        return Map.of(
+                "service_name", offering.name(),
+                "customer_name", customer.fullName(),
+                "duration_minutes", String.valueOf(offering.duration().toMinutes()),
+                "starts_at", startsAt.toString(),
+                "starts_at_local", LOCAL_TIME.format(startsAt.atZone(provider.timezone())));
     }
 }

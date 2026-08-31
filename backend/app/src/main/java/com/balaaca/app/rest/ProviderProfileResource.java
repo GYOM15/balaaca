@@ -3,6 +3,7 @@ package com.balaaca.app.rest;
 import com.balaaca.app.api.ProfileApi;
 import com.balaaca.app.api.model.BookingPolicyRequest;
 import com.balaaca.app.api.model.BookingPolicyView;
+import com.balaaca.app.api.model.LocalityRef;
 import com.balaaca.app.api.model.ProviderProfileRequest;
 import com.balaaca.app.api.model.ProviderProfileView;
 import com.balaaca.app.api.model.ProviderStatus;
@@ -50,6 +51,8 @@ public class ProviderProfileResource implements ProfileApi {
                 request.getBusinessName(),
                 Optional.ofNullable(request.getDescription()),
                 Optional.ofNullable(request.getCategorySlug()),
+                trimmed(request.getLocalitySlug()),
+                trimmed(request.getArea()),
                 Optional.ofNullable(request.getCity()),
                 Optional.ofNullable(request.getAddressLine()),
                 Optional.ofNullable(request.getPublicPhoneE164()),
@@ -124,6 +127,9 @@ public class ProviderProfileResource implements ProfileApi {
 
         profile.description().ifPresent(view::setDescription);
         profile.categorySlug().ifPresent(view::setCategorySlug);
+        profile.locality().ifPresent(l -> view.setLocality(
+                new LocalityRef().slug(l.slug()).labelFr(l.labelFr())));
+        profile.area().ifPresent(view::setArea);
         profile.city().ifPresent(view::setCity);
         profile.addressLine().ifPresent(view::setAddressLine);
         profile.publicPhoneE164().ifPresent(view::setPublicPhoneE164);
@@ -135,6 +141,15 @@ public class ProviderProfileResource implements ProfileApi {
         profile.logoUrl().ifPresent(name -> view.setLogoUrl(MEDIA + name));
         profile.coverUrl().ifPresent(name -> view.setCoverUrl(MEDIA + name));
         return view;
+    }
+
+    /**
+     * A blank field clears the column rather than storing whitespace. The
+     * quartier is free text and the one place a stray space would survive into
+     * an index, a suggestion list and every card that shows it.
+     */
+    private static Optional<String> trimmed(String value) {
+        return Optional.ofNullable(value).map(String::trim).filter(v -> !v.isEmpty());
     }
 
     private static ZoneId zone(String requested) {

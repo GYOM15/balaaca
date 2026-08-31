@@ -55,6 +55,8 @@ public interface ManageProviderProfileUseCase {
                            String businessName,
                            Optional<String> description,
                            Optional<String> categorySlug,
+                           Optional<LocalityRef> locality,
+                           Optional<String> area,
                            Optional<String> city,
                            Optional<String> addressLine,
                            Optional<String> publicPhoneE164,
@@ -80,10 +82,22 @@ public interface ManageProviderProfileUseCase {
                          boolean autoConfirm) {
     }
 
+    /**
+     * Where the business is, at the finest level the published map has.
+     *
+     * <p>Read side only. The write side takes a slug, because that is what a
+     * client selected from {@code listLocalities} - and resolving it here is
+     * what turns a label nobody can filter on into one that is.
+     */
+    record LocalityRef(String slug, String labelFr) {
+    }
+
     /** Everything a provider may change about its own page, and nothing else. */
     record ProfileEdit(String businessName,
                        Optional<String> description,
                        Optional<String> categorySlug,
+                       Optional<String> localitySlug,
+                       Optional<String> area,
                        Optional<String> city,
                        Optional<String> addressLine,
                        Optional<String> publicPhoneE164,
