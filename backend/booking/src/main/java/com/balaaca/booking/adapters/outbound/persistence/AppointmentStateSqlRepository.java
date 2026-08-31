@@ -67,7 +67,7 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                    AND status IN ('PENDING','CONFIRMED')
                 RETURNING id, starts_at, ends_at, status, service_name,
                           customer_price_amount_minor, customer_price_currency,
-                          customer_id
+                          customer_id, customer_note
                 """)
                 .setParameter("id", id.value())
                 .setParameter("reason", reason.orElse(null))
@@ -103,7 +103,7 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                    AND status IN ('PENDING','CONFIRMED')
                 RETURNING id, starts_at, ends_at, status, service_name,
                           customer_price_amount_minor, customer_price_currency,
-                          customer_id
+                          customer_id, customer_note
                 """)
                 .setParameter("id", id.value())
                 .setParameter("startsAt", Timestamp.from(slot.startsAt()))
@@ -163,7 +163,7 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                    AND status = ANY(CAST(:accepted AS varchar[]))
                 RETURNING id, starts_at, ends_at, status, service_name,
                           customer_price_amount_minor, customer_price_currency,
-                          customer_id
+                          customer_id, customer_note
                 """)
                 .setParameter("id", id.value())
                 .setParameter("to", to.name())
@@ -212,7 +212,8 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                 (String) r[4],
                 Money.ofMinor(((Number) r[5]).longValue(), Currency.of((String) r[6])),
                 new CustomerContact((String) c[0], new PhoneNumber((String) c[1]),
-                                    Optional.ofNullable((String) c[2])));
+                                    Optional.ofNullable((String) c[2])),
+                Optional.ofNullable((String) r[8]).filter(n -> !n.isBlank()));
     }
 
     private static Instant instant(Object value) {

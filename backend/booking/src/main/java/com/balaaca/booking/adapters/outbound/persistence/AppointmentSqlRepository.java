@@ -1,5 +1,6 @@
 package com.balaaca.booking.adapters.outbound.persistence;
 
+import com.balaaca.booking.domain.AppointmentStatus;
 import com.balaaca.booking.domain.BookingExceptions.IdempotencyKeyReusedException;
 import com.balaaca.booking.domain.BookingExceptions.SlotUnavailableException;
 import com.balaaca.booking.domain.BookingExceptions.TransientBookingConflictException;
@@ -59,20 +60,20 @@ public class AppointmentSqlRepository implements AppointmentRepository {
             // id, the phone or the time - all of which someone could know.
             String reference = mintReference();
 
-            int inserted = em.createNativeQuery("""
+            List<Object[]> inserted = em.createNativeQuery("""
                     INSERT INTO appointments (
                         id, provider_id, staff_id, service_offering_id, customer_id,
                         starts_at, ends_at, buffer_before_minutes, buffer_after_minutes,
                         blocked_from, blocked_until, service_name,
                         customer_price_amount_minor, customer_price_currency,
                         duration_minutes, source, idempotency_key, idempotency_request_hash,
-                        public_reference, status)
+                        public_reference, customer_note, status)
                     VALUES (
                         :id, :providerId, :staffId, :offeringId, :customerId,
                         :startsAt, :endsAt, :bufferBefore, :bufferAfter,
                         :blockedFrom, :blockedUntil, :serviceName,
                         :priceMinor, :currency, :duration, :source, :key, :hash,
-                        :reference,
+                        :reference, :customerNote,
                         -- auto_confirm was a column with a DEFAULT of true and
                         -- no reader, so every appointment was born PENDING and
                         -- every salon confirmed by hand - the schema promising
@@ -88,6 +89,7 @@ public class AppointmentSqlRepository implements AppointmentRepository {
                     ON CONFLICT (provider_id, idempotency_key)
                         WHERE idempotency_key IS NOT NULL
                     DO NOTHING
+                    RETURNING id, status
                     """)
                     .setParameter("id", a.id().value())
                     .setParameter("providerId", providerId)
@@ -108,10 +110,18 @@ public class AppointmentSqlRepository implements AppointmentRepository {
                     .setParameter("key", key)
                     .setParameter("hash", a.idempotencyRequestHash().orElse(null))
                     .setParameter("reference", reference)
-                    .executeUpdate();
+                    .setParameter("customerNote", a.customerNote().orElse(null))
+                    // RETURNING rather than a row count: the status is decided
+                    // by the provider's auto_confirm inside this statement, and
+                    // reading it back afterwards would be a second query
+                    // answering about a row another request may have moved.
+                    // Zero rows still means the conflict target fired.
+                    .getResultList();
 
-            if (inserted == 1) {
-                return new InsertOutcome(a.id(), reference, false);
+            if (!inserted.isEmpty()) {
+                Object[] row = (Object[]) inserted.get(0);
+                return new InsertOutcome(a.id(), reference,
+                                         AppointmentStatus.valueOf((String) row[1]), false);
             }
             // Zero rows means the conflict target fired, so the key exists and
             // a row must be readable. Finding none would mean the index and the
@@ -133,7 +143,8 @@ public class AppointmentSqlRepository implements AppointmentRepository {
     @SuppressWarnings("unchecked")
     private Optional<InsertOutcome> findReplay(UUID providerId, String key, String hash) {
         List<Object[]> rows = em.createNativeQuery("""
-                SELECT id, idempotency_request_hash, public_reference FROM appointments
+                SELECT id, idempotency_request_hash, public_reference, status
+                  FROM appointments
                  WHERE provider_id = :providerId AND idempotency_key = :key
                 """)
                 .setParameter("providerId", providerId)
@@ -149,8 +160,8 @@ public class AppointmentSqlRepository implements AppointmentRepository {
         }
         // The stored one, never a fresh mint: a retry that came back with a
         // different reference would leave the customer holding a key to nothing.
-        return Optional.of(new InsertOutcome(AppointmentId.of((UUID) r[0]),
-                                             (String) r[2], true));
+        return Optional.of(new InsertOutcome(AppointmentId.of((UUID) r[0]), (String) r[2],
+                                             AppointmentStatus.valueOf((String) r[3]), true));
     }
 
     /**

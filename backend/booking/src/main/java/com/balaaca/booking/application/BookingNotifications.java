@@ -120,6 +120,18 @@ public class BookingNotifications {
         planOne(moved, NotificationKind.RESCHEDULE);
     }
 
+    /**
+     * What an accepted appointment owes.
+     *
+     * <p>Only a provider that vets its bookings ever gets here - one that
+     * confirms on arrival has nothing left to accept. Until this existed,
+     * confirming notified nobody, so the customer of exactly those providers
+     * waited for a message that was never written.
+     */
+    public void planAcceptance(AgendaEntry accepted) {
+        planOne(accepted, NotificationKind.BOOKING_ACCEPTED);
+    }
+
     private static PlannedNotification confirmation(AppointmentId id, Instant startsAt,
                                                     Instant now, CustomerContact customer,
                                                     Map<String, String> payload) {

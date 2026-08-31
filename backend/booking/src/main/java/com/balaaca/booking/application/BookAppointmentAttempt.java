@@ -91,6 +91,7 @@ public class BookAppointmentAttempt {
                 slot,
                 customerId,
                 command.source(),
+                command.customerNote(),
                 command.idempotency().map(i -> i.key()),
                 command.idempotency().map(i -> i.requestHash())));
 

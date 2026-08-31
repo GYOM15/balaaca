@@ -126,7 +126,7 @@ public class AppointmentsResource implements AgendaApi {
     }
 
     private static AppointmentView toView(AgendaEntry e) {
-        return new AppointmentView()
+        AppointmentView view = new AppointmentView()
                 .appointmentId(e.id().value())
                 .startsAt(OffsetDateTime.ofInstant(e.startsAt(), ZoneOffset.UTC))
                 .endsAt(OffsetDateTime.ofInstant(e.endsAt(), ZoneOffset.UTC))
@@ -138,5 +138,11 @@ public class AppointmentsResource implements AgendaApi {
                 .customer(new AppointmentCustomerView()
                         .fullName(e.customer().fullName())
                         .phone(e.customer().phone().e164()));
+
+        // The one screen this was ever for. It was accepted by the booking
+        // request and discarded, so the box said "Message for the salon" and
+        // the message went nowhere.
+        e.customerNote().ifPresent(view::setCustomerNote);
+        return view;
     }
 }

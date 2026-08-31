@@ -35,13 +35,16 @@ public class MoveAppointmentService implements MoveAppointmentUseCase {
 
     private final AppointmentStateRepository appointments;
     private final Clock clock;
+    private final BookingNotifications notifications;
     private final RescheduleAttempt rescheduleAttempt;
 
     public MoveAppointmentService(AppointmentStateRepository appointments,
                                   Clock clock,
+                                  BookingNotifications notifications,
                                   RescheduleAttempt rescheduleAttempt) {
         this.appointments = appointments;
         this.clock = clock;
+        this.notifications = notifications;
         this.rescheduleAttempt = rescheduleAttempt;
     }
 
@@ -76,7 +79,13 @@ public class MoveAppointmentService implements MoveAppointmentUseCase {
     @Override
     @Transactional(Transactional.TxType.REQUIRED)
     public AgendaEntry confirm(AppointmentId id) {
-        return move(id, EnumSet.of(AppointmentStatus.PENDING), AppointmentStatus.CONFIRMED);
+        // In this transaction, like every other notification: an acceptance
+        // that committed while the transition rolled back would tell a customer
+        // to come on a day the salon never agreed to.
+        AgendaEntry accepted = move(id, EnumSet.of(AppointmentStatus.PENDING),
+                                    AppointmentStatus.CONFIRMED);
+        notifications.planAcceptance(accepted);
+        return accepted;
     }
 
     @Override

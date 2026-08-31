@@ -48,7 +48,7 @@ public class AppointmentAgendaSqlRepository implements AppointmentAgendaReposito
         List<Object[]> rows = em.createNativeQuery("""
                 SELECT a.id, a.starts_at, a.ends_at, a.status, a.service_name,
                        a.customer_price_amount_minor, a.customer_price_currency,
-                       c.full_name, c.phone_e164, c.email
+                       c.full_name, c.phone_e164, c.email, a.customer_note
                   FROM appointments a
                   JOIN customers c ON c.id = a.customer_id
                  WHERE a.starts_at >= :from
@@ -86,7 +86,8 @@ public class AppointmentAgendaSqlRepository implements AppointmentAgendaReposito
                 (String) r[4],
                 Money.ofMinor(((Number) r[5]).longValue(), Currency.of((String) r[6])),
                 new CustomerContact((String) r[7], new PhoneNumber((String) r[8]),
-                                    Optional.ofNullable((String) r[9])));
+                                    Optional.ofNullable((String) r[9])),
+                Optional.ofNullable((String) r[10]).filter(n -> !n.isBlank()));
     }
 
     /**

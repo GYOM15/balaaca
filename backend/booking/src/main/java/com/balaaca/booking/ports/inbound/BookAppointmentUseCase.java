@@ -1,5 +1,6 @@
 package com.balaaca.booking.ports.inbound;
 
+import com.balaaca.booking.domain.AppointmentStatus;
 import com.balaaca.booking.domain.BookingSource;
 import com.balaaca.booking.domain.CustomerContact;
 import com.balaaca.sharedkernel.ids.AppointmentId;
@@ -29,6 +30,7 @@ public interface BookAppointmentUseCase {
             Optional<StaffId> staffId,
             Instant startsAt,
             CustomerContact customer,
+            Optional<String> customerNote,
             Optional<Idempotency> idempotency,
             BookingSource source) {
     }
@@ -44,11 +46,16 @@ public interface BookAppointmentUseCase {
 
     /** @param replayed true when an identical request had already created it */
     /**
+     * @param status whether the salon is already expecting them or has yet to
+     *               accept. The contract used to say PENDING and mean it for
+     *               nobody: auto_confirm defaults to true, so most bookings
+     *               arrive CONFIRMED and the customer was never told which
      * @param reference what the customer keeps. The only thing that lets someone
      *                  without an account come back to this appointment, so it
      *                  is returned once, here, and travels on in the
      *                  confirmation message
      */
-    record BookingResult(AppointmentId appointmentId, String reference, boolean replayed) {
+    record BookingResult(AppointmentId appointmentId, String reference,
+                         AppointmentStatus status, boolean replayed) {
     }
 }

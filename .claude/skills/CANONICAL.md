@@ -75,6 +75,7 @@ than its first referencing migration breaks a fresh database.
 | `V020__answer_the_caller_before_the_slug.sql` | `app_register_provider()` refuses a registered account before arbitrating the handle | closes a slug oracle |
 | `V021__let_an_employee_be_invited.sql` | `provider_staff.invitation_token`, `app_accept_staff_invitation()`, `app_describe_membership()` | the fourth tenant source - see 4.7 |
 | `V022__make_the_directory_searchable.sql` | `service_offerings_public_read`, trigram indexes on service and trade names | the search box could not find what a customer types |
+| `V023__tell_a_customer_their_booking_was_accepted.sql` | `BOOKING_ACCEPTED` joins the `kind` CHECK | confirming used to notify nobody |
 
 Tables are plural snake_case. `staff_id` references `provider_staff`; the
 shortened stem is the one deliberate exception to "foreign key = singular stem
