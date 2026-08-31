@@ -13,6 +13,7 @@ import com.balaaca.booking.ports.inbound.ListAppointmentsUseCase;
 import com.balaaca.booking.ports.inbound.MoveAppointmentUseCase;
 import com.balaaca.booking.ports.inbound.ListAppointmentsUseCase.AgendaEntry;
 import com.balaaca.booking.ports.inbound.ListAppointmentsUseCase.AgendaQuery;
+import com.balaaca.sharedkernel.ids.StaffId;
 import com.balaaca.platformkernel.tenancy.TenantBound;
 import com.balaaca.sharedkernel.ids.AppointmentId;
 import io.quarkus.security.Authenticated;
@@ -101,12 +102,17 @@ public class AppointmentsResource implements AgendaApi {
     @Override
     @RolesAllowed("dashboard:read")
     public Response listAppointments(OffsetDateTime from, AppointmentStatus status,
+                                     OffsetDateTime to, UUID staffId,
                                      String cursor, Integer limit) {
         var page = appointments.list(new AgendaQuery(
                 // A provider opening their dashboard means "from now", not
                 // "from the beginning of time": yesterday's bookings are a
                 // different question and will be a different parameter.
                 from == null ? clock.instant() : from.toInstant(),
+                // Without a bound the agenda is a ray, and a day view reads
+                // pages it throws away.
+                Optional.ofNullable(to).map(OffsetDateTime::toInstant),
+                Optional.ofNullable(staffId).map(StaffId::of),
                 Optional.ofNullable(status).map(s -> toDomain(s)),
                 Cursors.agendaPosition(cursor),
                 limit == null ? Cursors.DEFAULT_LIMIT : limit));
@@ -137,7 +143,13 @@ public class AppointmentsResource implements AgendaApi {
                         .currency(e.price().currency().name()))
                 .customer(new AppointmentCustomerView()
                         .fullName(e.customer().fullName())
-                        .phone(e.customer().phone().e164()));
+                        .phone(e.customer().phone().e164()))
+                // NOT NULL on every appointment, the resource key of the
+                // constraint that stops double booking, and until now neither
+                // returned nor filterable - so a salon with five chairs got one
+                // undifferentiated stream and could not label a row.
+                .staffId(e.staffId().value())
+                .staffName(e.staffName());
 
         // The one screen this was ever for. It was accepted by the booking
         // request and discarded, so the box said "Message for the salon" and

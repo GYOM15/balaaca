@@ -143,4 +143,26 @@ public class ManageProviderProfileService implements ManageProviderProfileUseCas
         return profiles.current();
     }
 
+    @Override
+    @Transactional(Transactional.TxType.REQUIRED)
+    public BookingPolicy currentPolicy() {
+        return profiles.currentPolicy();
+    }
+
+    @Override
+    @Transactional(Transactional.TxType.REQUIRED)
+    public BookingPolicy replacePolicy(BookingPolicy policy) {
+        // Owner-only, like the public page: these five decide when the business
+        // can be booked at all, and an employee changing the notice period
+        // changes what every colleague's day looks like.
+        tenant.requireOwner("replace_booking_policy");
+
+        BookingPolicy updated = profiles.updatePolicy(policy);
+        audit.record(new AuditEvent("BOOKING_POLICY_UPDATED", "provider",
+                Optional.empty(), AuditOutcome.SUCCESS,
+                Map.of("auto_confirm", String.valueOf(updated.autoConfirm()),
+                       "min_lead_time_minutes", String.valueOf(updated.minLeadTimeMinutes()))));
+        return updated;
+    }
+
 }

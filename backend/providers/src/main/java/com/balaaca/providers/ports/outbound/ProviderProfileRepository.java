@@ -16,6 +16,11 @@ public interface ProviderProfileRepository {
      * @return the name the row held before, so the caller can drop the file it
      *         pointed at. Empty when there was none
      */
+    com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase.BookingPolicy currentPolicy();
+
+    com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase.BookingPolicy updatePolicy(
+            com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase.BookingPolicy policy);
+
     Optional<String> replaceLogo(String name);
 
     Optional<String> replaceCover(String name);

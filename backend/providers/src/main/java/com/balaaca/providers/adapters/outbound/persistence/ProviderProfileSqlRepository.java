@@ -1,6 +1,7 @@
 package com.balaaca.providers.adapters.outbound.persistence;
 
 import com.balaaca.providers.domain.ProviderStatus;
+import com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase.BookingPolicy;
 import com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase.ProfileEdit;
 import com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase.ProviderProfile;
 import com.balaaca.providers.ports.outbound.ProviderProfileRepository;
@@ -136,6 +137,45 @@ public class ProviderProfileSqlRepository implements ProviderProfileRepository {
         return previous.isEmpty()
                 ? Optional.empty()
                 : Optional.ofNullable(previous.get(0)).filter(v -> !v.isBlank());
+    }
+
+    @Override
+    public BookingPolicy currentPolicy() {
+        Object[] r = (Object[]) em.createNativeQuery("""
+                SELECT slot_granularity_minutes, min_lead_time_minutes, max_advance_days,
+                       cancellation_deadline_minutes, auto_confirm
+                  FROM providers WHERE id = app_current_provider()
+                """).getSingleResult();
+
+        return new BookingPolicy(((Number) r[0]).intValue(), ((Number) r[1]).intValue(),
+                                 ((Number) r[2]).intValue(), ((Number) r[3]).intValue(),
+                                 (Boolean) r[4]);
+    }
+
+    @Override
+    public BookingPolicy updatePolicy(BookingPolicy policy) {
+        // The CHECK constraints on these five columns are the guarantee; the
+        // contract's own bounds are the message. A value that gets past the
+        // schema and fails here would surface as a 500, which is why the two
+        // agree rather than one trusting the other.
+        em.createNativeQuery("""
+                UPDATE providers
+                   SET slot_granularity_minutes      = :granularity,
+                       min_lead_time_minutes         = :leadTime,
+                       max_advance_days              = :horizon,
+                       cancellation_deadline_minutes = :cancellation,
+                       auto_confirm                  = :autoConfirm,
+                       updated_at                    = now()
+                 WHERE id = app_current_provider()
+                """)
+                .setParameter("granularity", policy.slotGranularityMinutes())
+                .setParameter("leadTime", policy.minLeadTimeMinutes())
+                .setParameter("horizon", policy.maxAdvanceDays())
+                .setParameter("cancellation", policy.cancellationDeadlineMinutes())
+                .setParameter("autoConfirm", policy.autoConfirm())
+                .executeUpdate();
+
+        return currentPolicy();
     }
 
 }

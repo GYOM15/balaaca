@@ -96,6 +96,30 @@ paths:
             `PENDING` and `CONFIRMED`.
           schema:
             $ref: '#/components/schemas/AppointmentStatus'
+        - name: to
+          in: query
+          required: false
+          description: |
+            Latest start to return. Without it the agenda is a ray - "show me
+            Saturday" pages into next month - so a day or a week view has to
+            read pages it will throw away.
+          schema:
+            type: string
+            format: date-time
+        - name: staff_id
+          in: query
+          required: false
+          description: |
+            One person's appointments. Omit for the whole business.
+
+            The agenda used to return an undifferentiated stream: `staff_id` is
+            NOT NULL on every appointment and is the resource key of the
+            constraint that stops double booking, and it was neither returned
+            nor filterable - so a salon with five chairs could not draw a column
+            per chair, nor label a row.
+          schema:
+            type: string
+            format: uuid
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
       responses:
@@ -235,6 +259,67 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/StaffList'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/booking-policy:
+    get:
+      operationId: getBookingPolicy
+      tags: [profile]
+      summary: The rules the caller's own diary runs by
+      description: |
+        Five values that were declared in the schema, enforced everywhere, and
+        writable by nothing. Every provider on the platform was frozen on the
+        defaults - a fifteen-minute grid, an hour of notice, a sixty-day
+        horizon, two hours to cancel, and confirmation on arrival - and a
+        caterer who needs two days' notice had no request that said so.
+
+        Its own resource rather than five more fields on the public profile.
+        That one is what a customer reads; this one is how the business runs,
+        and mixing them would mean an edit to an address could quietly reset a
+        notice period - a loss nobody notices until a customer books too late.
+      security:
+        - oauth2: [dashboard:read]
+      responses:
+        '200':
+          description: The policy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingPolicyView'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    put:
+      operationId: replaceBookingPolicy
+      tags: [profile]
+      summary: Change the rules the caller's own diary runs by
+      description: |
+        All five together, because they are one policy and a partial edit leaves
+        the question of what happened to the ones nobody mentioned.
+
+        Changing them never moves an appointment already taken. What is booked
+        stays booked; the new rules decide what can still be.
+      security:
+        - oauth2: [profile:write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingPolicyRequest'
+      responses:
+        '200':
+          description: The policy as it now stands.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingPolicyView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
@@ -2089,7 +2174,8 @@ components:
         The service name and price are what was frozen at booking, not what the
         offering says today - repricing a service must not rewrite what a
         customer was quoted.
-      required: [appointment_id, starts_at, ends_at, status, service_name, price, customer]
+      required: [appointment_id, starts_at, ends_at, status, service_name, price,
+                 customer, staff_id, staff_name]
       properties:
         appointment_id:
           type: string
@@ -2108,6 +2194,13 @@ components:
           $ref: '#/components/schemas/Money'
         customer:
           $ref: '#/components/schemas/AppointmentCustomerView'
+        staff_id:
+          type: string
+          format: uuid
+          description: Whose chair this appointment occupies. Never null - the
+            server resolves one at booking even when the customer named nobody.
+        staff_name:
+          type: string
         customer_note:
           type: string
           description: What the customer wrote when booking. Published here
@@ -2584,3 +2677,66 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/CategoryView'
+
+    BookingPolicyRequest:
+      type: object
+      description: |
+        The bounds match the database's own CHECK constraints, so a value this
+        schema accepts is a value the row accepts. They are stated twice on
+        purpose: the constraint is the guarantee, and this is the message.
+      required: [slot_granularity_minutes, min_lead_time_minutes, max_advance_days,
+                 cancellation_deadline_minutes, auto_confirm]
+      properties:
+        slot_granularity_minutes:
+          type: integer
+          format: int32
+          minimum: 5
+          maximum: 120
+          description: The grid offered times fall on. Fifteen suits a salon;
+            a photographer working in half-days does not want thirty-two
+            starts before lunch.
+        min_lead_time_minutes:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 20160
+          description: How much notice you need. Zero means a customer standing
+            at the counter can book the next slot.
+        max_advance_days:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 365
+          description: How far ahead the calendar is open.
+        cancellation_deadline_minutes:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 20160
+          description: How late a CUSTOMER may call it off online. It never
+            binds you - cancelling your own appointment is managing your diary.
+        auto_confirm:
+          type: boolean
+          description: True accepts a booking on arrival. False leaves it
+            pending until you accept it, which sends the customer a second
+            message.
+
+    BookingPolicyView:
+      type: object
+      required: [slot_granularity_minutes, min_lead_time_minutes, max_advance_days,
+                 cancellation_deadline_minutes, auto_confirm]
+      properties:
+        slot_granularity_minutes:
+          type: integer
+          format: int32
+        min_lead_time_minutes:
+          type: integer
+          format: int32
+        max_advance_days:
+          type: integer
+          format: int32
+        cancellation_deadline_minutes:
+          type: integer
+          format: int32
+        auto_confirm:
+          type: boolean
