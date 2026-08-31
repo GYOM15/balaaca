@@ -1,4 +1,4 @@
-package com.balaaca.providers.domain;
+package com.balaaca.platformkernel.media;
 
 import com.balaaca.sharedkernel.error.DomainException;
 import java.util.Map;

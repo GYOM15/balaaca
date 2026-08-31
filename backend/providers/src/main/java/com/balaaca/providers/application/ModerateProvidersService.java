@@ -4,11 +4,13 @@ import com.balaaca.platformkernel.audit.AuditEvent;
 import com.balaaca.platformkernel.audit.AuditOutcome;
 import com.balaaca.platformkernel.audit.AuditTrail;
 import com.balaaca.providers.domain.BlankModerationReasonException;
+import com.balaaca.providers.domain.ContestationNotFoundException;
 import com.balaaca.providers.domain.NothingToModerateException;
 import com.balaaca.providers.domain.ReportNotFoundException;
 import com.balaaca.providers.domain.UnknownBookingReferenceException;
 import com.balaaca.providers.ports.inbound.ModerateProvidersUseCase;
 import com.balaaca.providers.ports.inbound.ReportProviderUseCase;
+import com.balaaca.providers.ports.outbound.ContestationRepository;
 import com.balaaca.providers.ports.outbound.ModerationRepository;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.transaction.Transactional;
@@ -31,10 +33,14 @@ import java.util.UUID;
 public class ModerateProvidersService implements ModerateProvidersUseCase, ReportProviderUseCase {
 
     private final ModerationRepository moderation;
+    private final ContestationRepository contestations;
     private final AuditTrail audit;
 
-    public ModerateProvidersService(ModerationRepository moderation, AuditTrail audit) {
+    public ModerateProvidersService(ModerationRepository moderation,
+                                    ContestationRepository contestations,
+                                    AuditTrail audit) {
         this.moderation = moderation;
+        this.contestations = contestations;
         this.audit = audit;
     }
 
@@ -106,4 +112,30 @@ public class ModerateProvidersService implements ModerateProvidersUseCase, Repor
         moderation.fileReport(reference, reason, details)
                 .orElseThrow(UnknownBookingReferenceException::new);
     }
+    @Override
+    @Transactional(Transactional.TxType.REQUIRED)
+    public ContestationPage contestations(Optional<String> status, Optional<UUID> after,
+                                          int limit) {
+        List<ContestationView> fetched = contestations.queue(status, after, limit);
+
+        boolean more = fetched.size() > limit;
+        List<ContestationView> entries = more ? fetched.subList(0, limit) : fetched;
+
+        return new ContestationPage(List.copyOf(entries),
+                more ? Optional.of(entries.get(entries.size() - 1).id()) : Optional.empty());
+    }
+
+    @Override
+    @Transactional(Transactional.TxType.REQUIRED)
+    public ContestationView read(UUID contestationId) {
+        ContestationView seen = contestations.markRead(contestationId)
+                .orElseThrow(() -> new ContestationNotFoundException(contestationId));
+
+        audit.record(new AuditEvent("CONTESTATION_READ", "provider_contestation",
+                Optional.of(contestationId.toString()), AuditOutcome.SUCCESS,
+                Map.of("provider_slug", seen.providerSlug())));
+
+        return seen;
+    }
+
 }

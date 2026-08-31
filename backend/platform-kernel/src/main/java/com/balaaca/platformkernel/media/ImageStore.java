@@ -1,4 +1,4 @@
-package com.balaaca.providers.ports.outbound;
+package com.balaaca.platformkernel.media;
 
 import java.util.Optional;
 
@@ -20,13 +20,36 @@ public interface ImageStore {
      * @return the name to publish. Minted by the store, meaningless by design -
      *         not the provider, not the kind, not the original filename - so a
      *         URL discloses nothing and cannot be walked
-     * @throws com.balaaca.providers.domain.ImageRejectedException not an image
+     * @throws com.balaaca.platformkernel.media.ImageRejectedException not an image
      *         this platform will publish
      */
     String store(byte[] raw);
 
     /** Best effort. A file that outlives its row costs disk, not correctness. */
     void discard(String name);
+
+    /**
+     * The bytes back, for whoever serves them.
+     *
+     * <p>On the store rather than on a context's port because reading what was
+     * written is what a store does: {@code providers} and {@code catalog} both
+     * publish images now, and a read that lived on one of them would be the
+     * other's dependency for no reason.
+     */
+    Optional<PublishedImage> image(String name);
+
+    /** @param content a defensive copy in and out - the array is mutable */
+    record PublishedImage(byte[] content, String contentType) {
+
+        public PublishedImage {
+            content = content.clone();
+        }
+
+        @Override
+        public byte[] content() {
+            return content.clone();
+        }
+    }
 
     /** What content type a stored name carries, for the caller's audit line. */
     Optional<String> contentTypeOf(String name);

@@ -50,10 +50,17 @@ pour cela.
 A faire quand il y aura assez de salons pour que la liste vaille la peine d'etre
 enumeree.
 
-### Un vrai systeme d'alerte
-Le worker journalise chaque notification morte en `ERROR`, avec le
-`provider_id`, le type et la cle de deduplication. Cela suffit a une recherche,
-pas a reveiller quelqu'un. Voir `DEPLOYMENT.md`.
+### ~~Un vrai systeme d'alerte~~ (fait)
+Un port `Alerter`, deux canaux - le journal par defaut, un webhook si
+`balaaca.alerts.channel=webhook`. La destination reste ton choix : un bot
+Telegram, un hook Discord, un sujet ntfy, un webhook Slack acceptent tous la
+meme forme.
+
+Le point difficile n'etait pas d'envoyer un message mais de ne pas en envoyer
+quatre cents : une panne de canal produit une notification morte par message, et
+un canal qui en recoit quatre cents est un canal qu'on coupe - apres quoi plus
+rien n'alerte. Une alerte par type et par fenetre, et la suivante dit combien
+elle represente.
 
 ### Deploiement, sauvegardes
 La CI construit, teste et verifie le contrat. **Rien ne pousse sur le VPS**, il
@@ -94,6 +101,13 @@ repository is English, not that the product is.
   completement detache, et pas maintenant.
 
 ## Fait
+
+Le recours : un prestataire suspendu repond a la plateforme, relit son message,
+et l'exploitant le lit dans une file a cote des signalements. Les photos par
+prestation, cinq au plus, avec redimensionnement a 1600 px qui regle le poids et
+ferme la steganographie dans les bits de poids faible. Le fil d'onboarding :
+`GET /v1/provider-profile/readiness` dit ce qui manque AVANT le refus, avec les
+memes predicats que la barriere.
 
 Transfert de propriete, la clientele (trois routes plus les ecrans),
 `latitude`/`longitude` retires et remplaces par la commune et le quartier sur la

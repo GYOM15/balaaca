@@ -1,7 +1,5 @@
-package com.balaaca.providers.adapters.outbound.storage;
+package com.balaaca.platformkernel.media;
 
-import com.balaaca.providers.ports.inbound.LookupProviderImageUseCase;
-import com.balaaca.providers.ports.outbound.ImageStore;
 import jakarta.enterprise.context.ApplicationScoped;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -29,7 +27,7 @@ import org.jboss.logging.Logger;
  * chose, and the only safe answer to that is not to use it.
  */
 @ApplicationScoped
-public class FilesystemImageStore implements ImageStore, LookupProviderImageUseCase {
+public class FilesystemImageStore implements ImageStore {
 
     private static final Logger LOG = Logger.getLogger(FilesystemImageStore.class);
 
@@ -115,10 +113,10 @@ public class FilesystemImageStore implements ImageStore, LookupProviderImageUseC
     }
 
     @Override
-    public Optional<PublishedImage> image(String name) {
+    public Optional<ImageStore.PublishedImage> image(String name) {
         return resolve(name).filter(Files::isRegularFile).map(path -> {
             try {
-                return new PublishedImage(Files.readAllBytes(path), typeOf(path));
+                return new ImageStore.PublishedImage(Files.readAllBytes(path), typeOf(path));
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }

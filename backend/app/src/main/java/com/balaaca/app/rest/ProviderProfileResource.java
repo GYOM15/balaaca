@@ -1,12 +1,17 @@
 package com.balaaca.app.rest;
 
 import com.balaaca.app.api.ProfileApi;
+import java.time.ZoneOffset;
+import com.balaaca.providers.ports.inbound.ContestSuspensionUseCase;
+import com.balaaca.app.api.model.ContestationView;
+import com.balaaca.app.api.model.ContestationRequest;
 import com.balaaca.app.api.model.BookingPolicyRequest;
 import com.balaaca.app.api.model.BookingPolicyView;
 import com.balaaca.app.api.model.LocalityRef;
 import com.balaaca.app.api.model.ProviderProfileRequest;
 import com.balaaca.app.api.model.ProviderProfileView;
 import com.balaaca.app.api.model.ProviderStatus;
+import com.balaaca.app.api.model.ReadinessView;
 import com.balaaca.platformkernel.tenancy.TenantBound;
 import com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase;
 import com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase.BookingPolicy;
@@ -15,6 +20,7 @@ import com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase.Provider
 import io.quarkus.security.Authenticated;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.ws.rs.core.Response;
+import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.Optional;
 
@@ -34,9 +40,12 @@ public class ProviderProfileResource implements ProfileApi {
 
     private final ManageProviderProfileUseCase profiles;
     private final PublicLink links;
+    private final ContestSuspensionUseCase contestations;
 
     public ProviderProfileResource(ManageProviderProfileUseCase profiles,
-                                   PublicLink links) {
+                                   PublicLink links,
+                                   ContestSuspensionUseCase contestations) {
+        this.contestations = contestations;
         this.links = links;
         this.profiles = profiles;
     }
@@ -184,4 +193,44 @@ public class ProviderProfileResource implements ProfileApi {
             throw new UnknownTimezoneException(requested);
         }
     }
+    @Override
+    @RolesAllowed("dashboard:read")
+    public Response getContestation() {
+        // 204 rather than an empty object: there is nothing to show, and a
+        // shape full of nulls would make a client decide what that meant.
+        return contestations.current()
+                .map(c -> Response.ok(view(c)).build())
+                .orElseGet(() -> Response.noContent().build());
+    }
+
+    @Override
+    @RolesAllowed("profile:write")
+    public Response contestSuspension(ContestationRequest request) {
+        return Response.status(201)
+                .entity(view(contestations.contest(request.getMessage())))
+                .build();
+    }
+
+    private static ContestationView view(ContestSuspensionUseCase.Contestation c) {
+        return new ContestationView()
+                .message(c.message())
+                .submittedAt(OffsetDateTime.ofInstant(c.submittedAt(), ZoneOffset.UTC))
+                .aboutSuspensionAt(
+                        OffsetDateTime.ofInstant(c.aboutSuspensionAt(), ZoneOffset.UTC))
+                .read(c.read());
+    }
+
+    @Override
+    @RolesAllowed("dashboard:read")
+    public Response getReadiness() {
+        var r = profiles.readiness();
+        return Response.ok(new ReadinessView()
+                .hasService(r.hasService())
+                .hasHours(r.hasHours())
+                .hasBookableStaff(r.hasBookableStaff())
+                .canPublish(r.canPublish())
+                .published(r.published()))
+                .build();
+    }
+
 }

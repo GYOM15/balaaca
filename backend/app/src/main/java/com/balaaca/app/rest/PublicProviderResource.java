@@ -25,7 +25,7 @@ import com.balaaca.app.api.model.CategoryList;
 import com.balaaca.app.api.model.CategoryView;
 import com.balaaca.providers.ports.inbound.ListCategoriesUseCase;
 import com.balaaca.providers.ports.inbound.ListLocalitiesUseCase;
-import com.balaaca.providers.ports.inbound.LookupProviderImageUseCase;
+import com.balaaca.platformkernel.media.ImageStore;
 import com.balaaca.scheduling.domain.OpenWindow;
 import com.balaaca.scheduling.ports.inbound.ManageAvailabilityUseCase;
 import jakarta.ws.rs.core.Response;
@@ -48,12 +48,24 @@ import java.util.Optional;
  */
 public class PublicProviderResource implements DiscoveryApi {
 
+    /** Where a stored name becomes something a browser can fetch. */
+    private static final String MEDIA = "/v1/media/";
+
     private final PublicTenantBinder tenants;
     private final LookupPublicProviderUseCase providers;
     private final LookupPublicStaffUseCase staff;
     private final PublishedCatalogueUseCase catalogue;
     private final ManageAvailabilityUseCase availability;
-    private final LookupProviderImageUseCase images;
+    /**
+     * The store itself, not a context's port.
+     *
+     * <p>There was a LookupProviderImageUseCase in providers whose only
+     * implementation was the filesystem store. Now that catalog publishes
+     * images too, a read that belonged to one context would be the other's
+     * dependency for no reason - so reading what was written sits where
+     * writing does.
+     */
+    private final ImageStore images;
     private final ListCategoriesUseCase categories;
     private final ListLocalitiesUseCase localities;
 
@@ -62,7 +74,7 @@ public class PublicProviderResource implements DiscoveryApi {
                                   LookupPublicStaffUseCase staff,
                                   PublishedCatalogueUseCase catalogue,
                                   ManageAvailabilityUseCase availability,
-                                  LookupProviderImageUseCase images,
+                                  ImageStore images,
                                   ListCategoriesUseCase categories,
                                   ListLocalitiesUseCase localities) {
         this.tenants = tenants;
@@ -258,7 +270,8 @@ public class PublicProviderResource implements DiscoveryApi {
                 .serviceOfferingId(published.id().value())
                 .name(published.name())
                 .durationMinutes((int) published.duration().toMinutes())
-                .fulfilment(fulfilmentOf(published));
+                .fulfilment(fulfilmentOf(published))
+                .photos(published.photos().stream().map(name -> MEDIA + name).toList());
 
         // "Ready in 48 h" is what a customer needs before choosing. Without it
         // a drop-off reads as a ten-minute service, because ten minutes is what

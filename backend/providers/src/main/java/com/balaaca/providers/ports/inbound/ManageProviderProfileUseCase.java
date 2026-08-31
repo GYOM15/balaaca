@@ -15,6 +15,22 @@ public interface ManageProviderProfileUseCase {
     ProviderProfile current();
 
     /**
+     * What is still missing before this page can go on the public path.
+     *
+     * <p>The three conditions have existed since publishing had a gate, and
+     * until now they were only ever spoken as a REFUSAL - a provider filled in
+     * a form, pressed publish, and was told what they should have done first.
+     * Registration then dropped them on that form with no idea any of it
+     * existed.
+     *
+     * <p>Answered by the same predicates the gate itself uses, in one call.
+     * Three separate reads from the edge would put the definition of "ready" in
+     * two places, and the second one would drift the first time a condition
+     * changed.
+     */
+    Readiness readiness();
+
+    /**
      * The whole profile, for the same reason opening hours are replaced a week
      * at a time: a partial edit leaves the question of what happened to the
      * fields nobody mentioned.
@@ -77,6 +93,25 @@ public interface ManageProviderProfileUseCase {
                             */
                            Optional<java.time.Instant> suspendedAt,
                            Optional<String> suspensionReason) {
+    }
+
+    /**
+     * @param hasService a service a customer can choose. Empty catalogue is the
+     *                   one a salon is most likely to have forgotten
+     * @param hasHours the week, without which the diary can offer nothing
+     * @param hasBookableStaff somebody a customer can be given. A solo barber
+     *                         has this from the moment they register - the
+     *                         owner row is bookable - so it is the condition
+     *                         that fails only after somebody stood everybody
+     *                         down
+     */
+    record Readiness(boolean hasService, boolean hasHours, boolean hasBookableStaff,
+                     boolean published) {
+
+        /** What the gate will answer, computed the same way it computes it. */
+        public boolean canPublish() {
+            return hasService && hasHours && hasBookableStaff;
+        }
     }
 
     /**

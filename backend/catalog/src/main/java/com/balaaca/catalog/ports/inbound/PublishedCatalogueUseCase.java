@@ -46,6 +46,13 @@ public interface PublishedCatalogueUseCase {
                              * asks for an address only when it is a call-out.
                              */
                             ServiceLocation location,
+                            /**
+                             * What it looks like, in the provider's own order.
+                             * A customer choosing between two kinds of braids
+                             * cannot tell them apart from the words: here the
+                             * photograph is the specification, not decoration.
+                             */
+                            List<String> photos,
                             Optional<Money> price) {
 
         public boolean isDropOff() {

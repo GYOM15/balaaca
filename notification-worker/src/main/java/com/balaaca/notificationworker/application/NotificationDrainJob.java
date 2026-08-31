@@ -3,6 +3,7 @@ package com.balaaca.notificationworker.application;
 import com.balaaca.notificationworker.domain.Backoff;
 import com.balaaca.notificationworker.domain.Channel;
 import com.balaaca.notificationworker.domain.ClaimedNotification;
+import com.balaaca.notificationworker.ports.Alerter;
 import com.balaaca.notificationworker.ports.NotificationChannel;
 import com.balaaca.notificationworker.ports.NotificationChannel.ChannelException;
 import com.balaaca.notificationworker.ports.NotificationOutbox;
@@ -41,14 +42,17 @@ public class NotificationDrainJob {
     private final Instance<NotificationChannel> channel;
     private final Backoff backoff;
     private final Clock clock;
+    private final Alerter alerts;
 
     public NotificationDrainJob(NotificationOutbox outbox,
                                 Instance<NotificationChannel> channel,
-                                Clock clock) {
+                                Clock clock,
+                                Alerter alerts) {
         this.outbox = outbox;
         this.channel = channel;
         this.backoff = new Backoff(RandomGenerator.getDefault());
         this.clock = clock;
+        this.alerts = alerts;
     }
 
     /**
@@ -124,6 +128,21 @@ public class NotificationDrainJob {
                            + "dedupe_key=%s code=%s attempts=%d",
                            n.id(), n.providerId(), n.kind(), n.dedupeKey(),
                            e.failureCode(), n.attempts() + 1);
+
+                // And now it also reaches somebody. The log line above is what
+                // an operator finds when they already know to look; this is
+                // what tells them to. Throttled by kind, so a channel outage
+                // sends one message saying how many rather than four hundred
+                // saying one each - which is how an alert channel gets muted.
+                //
+                // No recipient in the details, ever: an alert lands in whatever
+                // the operator pointed it at, and a customer's telephone number
+                // does not belong there.
+                alerts.raise("notification.dead",
+                        "Un message ne partira jamais : " + n.kind(),
+                        java.util.Map.of("provider_id", String.valueOf(n.providerId()),
+                                         "kind", String.valueOf(n.kind()),
+                                         "failure", String.valueOf(e.failureCode())));
             } else {
                 LOG.warnf("notification.send.failed id=%s code=%s attempt=%d",
                           n.id(), e.failureCode(), n.attempts() + 1);
