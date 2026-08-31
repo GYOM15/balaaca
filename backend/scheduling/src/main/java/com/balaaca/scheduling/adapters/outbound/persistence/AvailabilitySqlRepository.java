@@ -19,6 +19,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Reads the provider's declared hours.
@@ -154,4 +155,19 @@ public class AvailabilitySqlRepository implements AvailabilityRepository {
                 .map(r -> new InstantRange(instant(r[0]), instant(r[1])))
                 .toList();
     }
+    @Override
+    @SuppressWarnings("unchecked")
+    public List<StaffId> bookableStaff() {
+        // The same predicate the public staff list uses. If the two disagreed,
+        // a customer would be offered a name whose calendar is never consulted,
+        // or denied one whose is.
+        List<UUID> rows = em.createNativeQuery("""
+                SELECT id FROM provider_staff
+                 WHERE status = 'ACTIVE' AND bookable
+                 ORDER BY id
+                """).getResultList();
+
+        return rows.stream().map(StaffId::of).toList();
+    }
+
 }

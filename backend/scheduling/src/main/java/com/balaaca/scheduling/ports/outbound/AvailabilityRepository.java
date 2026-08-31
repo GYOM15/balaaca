@@ -17,6 +17,17 @@ public interface AvailabilityRepository {
 
     BookingPolicy policyOfCurrentProvider();
 
+    /**
+     * Who could take a booking at all: active and bookable.
+     *
+     * <p>Needed because "any available staff" is the UNION of what each person
+     * can take, and a union has to be computed per person. Asking the database
+     * for everyone's rules at once and calculating on the pile answers a
+     * different question - it treats the salon as one calendar, so one busy
+     * chair closes the shop.
+     */
+    List<StaffId> bookableStaff();
+
     List<AvailabilityRule> rulesFor(Optional<StaffId> staffId);
 
     List<AvailabilityOverride> overridesFor(Optional<StaffId> staffId, LocalDate from, LocalDate to);

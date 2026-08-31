@@ -1,6 +1,7 @@
 package com.balaaca.scheduling.application;
 
 import com.balaaca.scheduling.domain.AvailableSlot;
+import com.balaaca.scheduling.domain.BookingPolicy;
 import com.balaaca.scheduling.domain.InstantRange;
 import com.balaaca.scheduling.domain.SlotCalculator;
 import com.balaaca.scheduling.domain.SlotQuery;
@@ -13,6 +14,8 @@ import java.time.Instant;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.TreeMap;
+import java.util.stream.Collectors;
 
 /**
  * Gathers what the calculation needs and hands it to a pure function.
@@ -33,11 +36,45 @@ public class CalculateSlotsService implements CalculateSlotsUseCase {
         this.clock = clock;
     }
 
+    /**
+     * What a customer can book.
+     *
+     * <p>With no staff member named, this is the UNION of what each bookable
+     * person can take - computed per person and merged, never pooled.
+     *
+     * <p>Pooling is what it used to do, and it was wrong in three ways at once:
+     * every appointment in the salon was treated as busy for everybody, so one
+     * braider booked at ten made the salon unbookable at ten while another chair
+     * sat empty; everyone's rules were unioned without merging, so three people
+     * on identical hours emitted every slot three times into a paginated list;
+     * and one person's day off closed the whole shop. Worst of all, the booking
+     * path did not agree - it counts free chairs individually, so it accepted
+     * starts this list refused to show, and the customer never found out the
+     * slot was there.
+     *
+     * <p>It costs a few queries per person. A salon has chairs, not thousands of
+     * them, and being wrong is not cheaper.
+     */
     @Override
     @Transactional(Transactional.TxType.REQUIRED)
     public List<AvailableSlot> bookable(SlotRequest request) {
         ZoneId zone = availability.zoneOfCurrentProvider();
-        return SlotCalculator.bookable(queryFor(request, zone, busyIn(request, zone)));
+        BookingPolicy policy = availability.policyOfCurrentProvider();
+
+        if (request.staffId().isPresent()) {
+            return slotsFor(request, zone, policy, busyIn(request, zone));
+        }
+
+        // Distinct by start: two people free at ten is one slot offered, not
+        // two. What the customer is choosing is a time; who takes it is the
+        // server's problem, and the booking path resolves it.
+        return availability.bookableStaff().stream()
+                .map(request::forStaff)
+                .flatMap(one -> slotsFor(one, zone, policy, busyIn(one, zone)).stream())
+                .collect(Collectors.toMap(AvailableSlot::startsAt, s -> s, (a, b) -> a,
+                                          TreeMap::new))
+                .values().stream()
+                .toList();
     }
 
     /**
@@ -55,7 +92,24 @@ public class CalculateSlotsService implements CalculateSlotsUseCase {
     @Transactional(Transactional.TxType.REQUIRED)
     public boolean isWithinAvailability(Instant startsAt, SlotRequest request) {
         ZoneId zone = availability.zoneOfCurrentProvider();
-        return SlotCalculator.isBookable(startsAt, queryFor(request, zone, List.of()));
+        BookingPolicy policy = availability.policyOfCurrentProvider();
+
+        if (request.staffId().isPresent()) {
+            return SlotCalculator.isBookable(startsAt, queryFor(request, zone, policy, List.of()));
+        }
+
+        // ANY bookable person, for the mirror of the reason above: pooling the
+        // rules would let two people's hours add up to a window neither of them
+        // works, and the appointment would be judged inside availability that
+        // belongs to nobody.
+        return availability.bookableStaff().stream()
+                .anyMatch(staff -> SlotCalculator.isBookable(
+                        startsAt, queryFor(request.forStaff(staff), zone, policy, List.of())));
+    }
+
+    private List<AvailableSlot> slotsFor(SlotRequest request, ZoneId zone,
+                                         BookingPolicy policy, List<InstantRange> busy) {
+        return SlotCalculator.bookable(queryFor(request, zone, policy, busy));
     }
 
     /**
@@ -70,7 +124,8 @@ public class CalculateSlotsService implements CalculateSlotsUseCase {
         return availability.busyRanges(request.staffId(), window);
     }
 
-    private SlotQuery queryFor(SlotRequest request, ZoneId zone, List<InstantRange> busy) {
+    private SlotQuery queryFor(SlotRequest request, ZoneId zone, BookingPolicy policy,
+                               List<InstantRange> busy) {
         return new SlotQuery(
                 request.fromDate(),
                 request.toDate(),
@@ -81,7 +136,7 @@ public class CalculateSlotsService implements CalculateSlotsUseCase {
                 request.serviceDuration(),
                 request.bufferBefore(),
                 request.bufferAfter(),
-                availability.policyOfCurrentProvider(),
+                policy,
                 // Injected, never Instant.now(): a calculation that reads the
                 // system clock cannot be tested at a boundary.
                 clock.instant());

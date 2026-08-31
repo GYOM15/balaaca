@@ -178,6 +178,11 @@ public class BookingFixtures {
      * An employee with an account at the salon, added on request rather than to
      * the shared decor.
      *
+     * <p>Note what the shared decor still gives every provider: exactly ONE
+     * bookable person. That is why the whole any-staff availability path could
+     * be wrong in three ways at once without a test noticing - see
+     * MultiChairAvailabilityIT, which adds the second chair on purpose.
+     *
      * <p>A second bookable member is not a neutral addition: the booking path
      * resolves "any available staff" by retrying against the next candidate, so
      * a salon with two chairs answers 201 where a salon with one answers 409.

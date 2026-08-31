@@ -45,5 +45,11 @@ public interface CalculateSlotsUseCase {
             Duration serviceDuration,
             Duration bufferBefore,
             Duration bufferAfter) {
+
+        /** The same request, asked of one person. */
+        public SlotRequest forStaff(StaffId staff) {
+            return new SlotRequest(serviceOfferingId, Optional.of(staff), fromDate, toDate,
+                                   serviceDuration, bufferBefore, bufferAfter);
+        }
     }
 }
