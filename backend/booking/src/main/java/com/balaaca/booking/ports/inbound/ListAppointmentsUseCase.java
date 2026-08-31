@@ -59,7 +59,14 @@ public interface ListAppointmentsUseCase {
                        StaffId staffId,
                        String staffName,
                        CustomerContact customer,
-                       java.util.Optional<String> customerNote) {
+                       java.util.Optional<String> customerNote,
+                       /**
+                        * Both empty on an on-site appointment: the customer sat
+                        * down and left with the result, so there is nothing to
+                        * promise and nothing to declare ready.
+                        */
+                       java.util.Optional<Instant> readyBy,
+                       java.util.Optional<Instant> readyAt) {
     }
 
     /** @param next empty on the last page */

@@ -4,6 +4,8 @@ import com.balaaca.booking.domain.AppointmentStatus;
 import com.balaaca.booking.domain.BookingExceptions.AppointmentNotFoundException;
 import com.balaaca.booking.domain.BookingExceptions.BookingContendedException;
 import com.balaaca.booking.domain.BookingExceptions.InvalidStateTransitionException;
+import com.balaaca.booking.domain.BookingExceptions.NotADropOffException;
+import com.balaaca.booking.domain.BookingExceptions.PromiseBeforeHandoverException;
 import com.balaaca.booking.domain.BookingExceptions.TransientBookingConflictException;
 import com.balaaca.booking.ports.inbound.ListAppointmentsUseCase.AgendaEntry;
 import com.balaaca.booking.ports.inbound.MoveAppointmentUseCase;
@@ -87,6 +89,61 @@ public class MoveAppointmentService implements MoveAppointmentUseCase {
                                     AppointmentStatus.CONFIRMED);
         notifications.planAcceptance(accepted);
         return accepted;
+    }
+
+    /**
+     * Says a dropped-off job is ready.
+     *
+     * <p>Idempotent in the statement rather than around it: a second call keeps
+     * the first instant and returns the same row, because the customer was told
+     * once. So the only refusals left are the two the UPDATE cannot satisfy, and
+     * they are worked out from the snapshot only once it has found no row.
+     */
+    @Override
+    @Transactional(Transactional.TxType.REQUIRED)
+    public AgendaEntry markReady(AppointmentId id) {
+        return appointments.markReady(id, clock.instant())
+                .orElseThrow(() -> refusalForReadiness(id));
+    }
+
+    /**
+     * Moves the promised date.
+     *
+     * <p>The statement refuses a date before the handover ended, so the two
+     * possible refusals are told apart here from what the row actually says -
+     * never from a constraint name, which tells a provider nothing.
+     */
+    @Override
+    @Transactional(Transactional.TxType.REQUIRED)
+    public AgendaEntry promiseFor(AppointmentId id, Instant readyBy) {
+        return appointments.replaceReadyBy(id, readyBy, clock.instant())
+                .orElseThrow(() -> refusalForPromise(id, readyBy));
+    }
+
+    private RuntimeException refusalForReadiness(AppointmentId id) {
+        return appointments.snapshotOf(id)
+                .<RuntimeException>map(s -> s.status() == AppointmentStatus.CANCELLED
+                        ? new InvalidStateTransitionException(s.status(), s.status())
+                        : new NotADropOffException(id.value()))
+                .orElseGet(() -> new AppointmentNotFoundException(id.value()));
+    }
+
+    private RuntimeException refusalForPromise(AppointmentId id, Instant readyBy) {
+        return appointments.snapshotOf(id)
+                .<RuntimeException>map(s -> {
+                    if (s.status() == AppointmentStatus.CANCELLED) {
+                        return new InvalidStateTransitionException(s.status(), s.status());
+                    }
+                    // The snapshot carries the start, and the handover ends at
+                    // start plus the service's own duration - but the row knows
+                    // its own ends_at, and the statement already compared it.
+                    // Reaching here with a plausible date means it was not a
+                    // drop-off at all.
+                    return readyBy.isBefore(s.startsAt())
+                            ? new PromiseBeforeHandoverException(readyBy)
+                            : new NotADropOffException(id.value());
+                })
+                .orElseGet(() -> new AppointmentNotFoundException(id.value()));
     }
 
     @Override

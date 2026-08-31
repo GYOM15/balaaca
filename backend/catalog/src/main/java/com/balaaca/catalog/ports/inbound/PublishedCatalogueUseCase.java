@@ -32,6 +32,17 @@ public interface PublishedCatalogueUseCase {
                             String name,
                             Optional<String> description,
                             Duration duration,
+                            /**
+                             * Present when the customer hands the work over
+                             * rather than waiting for it. "Ready in 48 h" is
+                             * something they need BEFORE choosing, which is why
+                             * it is published rather than kept for the ticket.
+                             */
+                            Optional<Duration> turnaround,
                             Optional<Money> price) {
+
+        public boolean isDropOff() {
+            return turnaround.isPresent();
+        }
     }
 }

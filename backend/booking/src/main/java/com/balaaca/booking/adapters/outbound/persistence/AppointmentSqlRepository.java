@@ -67,13 +67,30 @@ public class AppointmentSqlRepository implements AppointmentRepository {
                         blocked_from, blocked_until, service_name,
                         customer_price_amount_minor, customer_price_currency,
                         duration_minutes, source, idempotency_key, idempotency_request_hash,
-                        public_reference, customer_note, status)
+                        public_reference, customer_note, turnaround_hours, ready_by, status)
                     VALUES (
                         :id, :providerId, :staffId, :offeringId, :customerId,
                         :startsAt, :endsAt, :bufferBefore, :bufferAfter,
                         :blockedFrom, :blockedUntil, :serviceName,
                         :priceMinor, :currency, :duration, :source, :key, :hash,
                         :reference, :customerNote,
+                        -- Frozen from the offering, like the price and the
+                        -- buffers. The promise is derived here rather than by
+                        -- the application so the two cannot disagree: ready_by
+                        -- is always ends_at plus the delay that was announced
+                        -- WHEN THIS WAS BOOKED, and re-announcing a shorter one
+                        -- tomorrow leaves this row alone.
+                        CAST(:turnaround AS int),
+                        -- endsAt is CAST here as well as bound: in this
+                        -- position PostgreSQL cannot infer a parameter's type
+                        -- from the other operand, so the addition was read as
+                        -- interval + interval and the column refused it. The
+                        -- same reason every optional filter in this codebase
+                        -- casts its parameter.
+                        CASE WHEN CAST(:turnaround AS int) IS NULL THEN NULL
+                             ELSE CAST(:endsAt AS timestamptz)
+                                  + make_interval(hours => CAST(:turnaround AS int))
+                        END,
                         -- auto_confirm was a column with a DEFAULT of true and
                         -- no reader, so every appointment was born PENDING and
                         -- every salon confirmed by hand - the schema promising
@@ -119,6 +136,8 @@ public class AppointmentSqlRepository implements AppointmentRepository {
                     .setParameter("hash", a.idempotencyRequestHash().orElse(null))
                     .setParameter("reference", reference)
                     .setParameter("customerNote", a.customerNote().orElse(null))
+                    .setParameter("turnaround",
+                            a.offering().turnaround().map(t -> (int) t.toHours()).orElse(null))
                     // RETURNING rather than a row count: the status is decided
                     // by the provider's auto_confirm inside this statement, and
                     // reading it back afterwards would be a second query

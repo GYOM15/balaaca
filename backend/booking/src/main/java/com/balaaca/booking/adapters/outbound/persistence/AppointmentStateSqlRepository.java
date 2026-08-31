@@ -67,7 +67,7 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                    AND status IN ('PENDING','CONFIRMED')
                 RETURNING id, starts_at, ends_at, status, service_name,
                           customer_price_amount_minor, customer_price_currency,
-                          customer_id, customer_note, staff_id
+                          customer_id, customer_note, staff_id, ready_by, ready_at
                 """)
                 .setParameter("id", id.value())
                 .setParameter("reason", reason.orElse(null))
@@ -111,7 +111,7 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                    AND status IN ('PENDING','CONFIRMED')
                 RETURNING id, starts_at, ends_at, status, service_name,
                           customer_price_amount_minor, customer_price_currency,
-                          customer_id, customer_note, staff_id
+                          customer_id, customer_note, staff_id, ready_by, ready_at
                 """)
                 .setParameter("id", id.value())
                 .setParameter("startsAt", Timestamp.from(slot.startsAt()))
@@ -140,6 +140,64 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
             }
             throw e;
         }
+
+        return rows.isEmpty() ? Optional.empty() : Optional.of(toEntry(rows.get(0)));
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public Optional<AgendaEntry> markReady(AppointmentId id, Instant at) {
+        // Every condition is in the WHERE, so two people tapping "ready" at
+        // once produce one affected row and one zero - and the second does not
+        // move a date the customer has already been given.
+        List<Object[]> rows = em.createNativeQuery("""
+                UPDATE appointments
+                   -- COALESCE, not a WHERE on ready_at IS NULL: saying it twice
+                   -- keeps the FIRST instant, because the customer was told
+                   -- once and a second date would move a fact - and the row
+                   -- still comes back, so the second tap is answered rather
+                   -- than refused for something that already happened.
+                   SET ready_at = COALESCE(ready_at, :at),
+                       version = version + 1,
+                       updated_at = :at
+                 WHERE id = :id
+                   AND turnaround_hours IS NOT NULL
+                   AND status <> 'CANCELLED'
+                RETURNING id, starts_at, ends_at, status, service_name,
+                          customer_price_amount_minor, customer_price_currency,
+                          customer_id, customer_note, staff_id, ready_by, ready_at
+                """)
+                .setParameter("id", id.value())
+                .setParameter("at", Timestamp.from(at))
+                .getResultList();
+
+        return rows.isEmpty() ? Optional.empty() : Optional.of(toEntry(rows.get(0)));
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public Optional<AgendaEntry> replaceReadyBy(AppointmentId id, Instant readyBy, Instant at) {
+        // ends_at is compared in the statement rather than read first: a
+        // read-then-write would be a window in which the appointment moves, and
+        // ck_appointments_ready_after_handover would then answer with a
+        // constraint name instead of a sentence.
+        List<Object[]> rows = em.createNativeQuery("""
+                UPDATE appointments
+                   SET ready_by = :readyBy,
+                       version = version + 1,
+                       updated_at = :at
+                 WHERE id = :id
+                   AND turnaround_hours IS NOT NULL
+                   AND status <> 'CANCELLED'
+                   AND :readyBy >= ends_at
+                RETURNING id, starts_at, ends_at, status, service_name,
+                          customer_price_amount_minor, customer_price_currency,
+                          customer_id, customer_note, staff_id, ready_by, ready_at
+                """)
+                .setParameter("id", id.value())
+                .setParameter("readyBy", Timestamp.from(readyBy))
+                .setParameter("at", Timestamp.from(at))
+                .getResultList();
 
         return rows.isEmpty() ? Optional.empty() : Optional.of(toEntry(rows.get(0)));
     }
@@ -183,7 +241,7 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                    AND status = ANY(CAST(:accepted AS varchar[]))
                 RETURNING id, starts_at, ends_at, status, service_name,
                           customer_price_amount_minor, customer_price_currency,
-                          customer_id, customer_note, staff_id
+                          customer_id, customer_note, staff_id, ready_by, ready_at
                 """)
                 .setParameter("id", id.value())
                 .setParameter("to", to.name())
@@ -240,7 +298,9 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                 staffName,
                 new CustomerContact((String) c[0], new PhoneNumber((String) c[1]),
                                     Optional.ofNullable((String) c[2])),
-                Optional.ofNullable((String) r[8]).filter(n -> !n.isBlank()));
+                Optional.ofNullable((String) r[8]).filter(n -> !n.isBlank()),
+                Optional.ofNullable(r[10]).map(AppointmentStateSqlRepository::instant),
+                Optional.ofNullable(r[11]).map(AppointmentStateSqlRepository::instant));
     }
 
     private static Instant instant(Object value) {

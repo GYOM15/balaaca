@@ -31,6 +31,21 @@ public interface MoveAppointmentUseCase {
 
     AgendaEntry confirm(AppointmentId id);
 
+    /**
+     * Says that a dropped-off job is ready to collect.
+     *
+     * <p>Not a state of the appointment - that happened when the work was
+     * handed over - but a fact about the work, which is why it is its own
+     * operation rather than a sixth status.
+     *
+     * @throws com.balaaca.booking.domain.BookingExceptions.NotADropOffException
+     *         on an appointment the customer waited for
+     */
+    AgendaEntry markReady(AppointmentId id);
+
+    /** Moves the promised date. Never before the handover ended. */
+    AgendaEntry promiseFor(AppointmentId id, Instant readyBy);
+
     AgendaEntry complete(AppointmentId id);
 
     AgendaEntry markNoShow(AppointmentId id);

@@ -4,6 +4,7 @@ import com.balaaca.app.api.CatalogueApi;
 import com.balaaca.app.api.model.Money;
 import com.balaaca.app.api.model.ServiceOfferingPage;
 import com.balaaca.app.api.model.ServiceOfferingRequest;
+import com.balaaca.app.api.model.Fulfilment;
 import com.balaaca.app.api.model.ServiceOfferingView;
 import com.balaaca.catalog.ports.inbound.ManageServiceOfferingsUseCase;
 import com.balaaca.catalog.ports.inbound.ManageServiceOfferingsUseCase.OfferingDefinition;
@@ -76,6 +77,10 @@ public class ServiceOfferingsResource implements CatalogueApi {
                 Duration.ofMinutes(r.getDurationMinutes()),
                 Duration.ofMinutes(Optional.ofNullable(r.getBufferBeforeMinutes()).orElse(0)),
                 Duration.ofMinutes(Optional.ofNullable(r.getBufferAfterMinutes()).orElse(0)),
+                // Its presence is the whole discriminant. No fulfilment field is
+                // accepted here: two sources of truth for one fact is one
+                // source of truth fewer.
+                Optional.ofNullable(r.getTurnaroundHours()).map(Duration::ofHours),
                 com.balaaca.sharedkernel.money.Money.ofMinor(
                         r.getPrice().getAmountMinor(), Currency.of(r.getPrice().getCurrency())),
                 Optional.ofNullable(r.getPriceVisible()).orElse(true),
@@ -95,6 +100,10 @@ public class ServiceOfferingsResource implements CatalogueApi {
                 .price(new Money()
                         .amountMinor(d.price().amountMinor())
                         .currency(d.price().currency().name()))
+                .turnaroundHours(d.turnaround().map(t -> (int) t.toHours()).orElse(null))
+                // Derived, never accepted: a client must not have to branch on
+                // the absence of a field to know which kind of service it is.
+                .fulfilment(d.isDropOff() ? Fulfilment.DROP_OFF : Fulfilment.ON_SITE)
                 .priceVisible(d.priceVisible())
                 .sortOrder(d.sortOrder())
                 .active(d.active());

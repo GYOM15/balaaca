@@ -1112,6 +1112,106 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
 
+  /v1/appointments/{id}/readiness:
+    post:
+      operationId: markAppointmentReady
+      tags: [agenda]
+      summary: Say that a dropped-off job is ready
+      description: |
+        The customer left the work and went away; this is what tells them to
+        come back. It is the only thing they are actually waiting for.
+
+        Not a status. `AppointmentStatus` is a closed, published enum that
+        clients branch on, and "ready" is not a state of the APPOINTMENT - the
+        appointment happened when the work was handed over. It is a fact about
+        the work, so it is its own field and its own operation.
+
+        Only on a drop-off. An on-site appointment has nothing to be ready:
+        the customer sat in the chair and left with the result, and `422` says
+        so rather than writing a date nobody can act on.
+
+        Idempotent by nature: saying it twice keeps the first instant, because
+        the customer was told once.
+      security:
+        - oauth2: [appointments:write]
+      parameters:
+        - $ref: '#/components/parameters/AppointmentId'
+      responses:
+        '200':
+          description: The appointment, now carrying `ready_at`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentView'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`INVALID_STATE_TRANSITION` - the appointment was
+            cancelled, so there is nobody to come back.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          description: '`VALIDATION_FAILED` - this appointment is not a
+            drop-off.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /v1/appointments/{id}/promise:
+    put:
+      operationId: replaceReadyBy
+      tags: [agenda]
+      summary: Move the promised date of a dropped-off job
+      description: |
+        "The machine broke, it will be Friday." It is the most frequent event
+        of these trades, and a promise that could not move would be a promise
+        the provider breaks in silence.
+
+        A whole replace of one value rather than a patch, for the same reason
+        every other write here is: what is sent is what stands.
+
+        It may not fall before the handover ended - a job cannot be ready
+        before it was given - and the database says so as well as this.
+      security:
+        - oauth2: [appointments:write]
+      parameters:
+        - $ref: '#/components/parameters/AppointmentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReadyByRequest'
+      responses:
+        '200':
+          description: The appointment, carrying the new promise.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: '`VALIDATION_FAILED` - not a drop-off, or a date before
+            the handover.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
   /v1/appointments/{id}/confirmation:
     post:
       operationId: confirmAppointment
@@ -2259,6 +2359,25 @@ components:
           minimum: 0
           maximum: 240
           default: 0
+        turnaround_hours:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2160
+          description: |
+            The workshop delay, for a service the customer HANDS OVER rather
+            than waits for: a garage, a phone repairer, an alteration.
+
+            Its presence is what makes the offering a drop-off. There is no
+            second flag to set, because two fields can disagree and one of the
+            two disagreements - a drop-off with no delay announced - is a
+            promise nobody made.
+
+            Omit it for anything performed while the customer is there. And
+            when it IS present, `duration_minutes` stops being the length of
+            the work and becomes the length of the HANDOVER at the counter:
+            the work occupies the workshop, not a chair, and a tailor sews
+            twelve boubous at once.
         price:
           $ref: '#/components/schemas/Money'
         price_visible:
@@ -2276,7 +2395,8 @@ components:
     ServiceOfferingView:
       type: object
       required: [service_offering_id, name, duration_minutes, buffer_before_minutes,
-                 buffer_after_minutes, price, price_visible, sort_order, active]
+                 buffer_after_minutes, price, price_visible, sort_order, active,
+                 fulfilment]
       properties:
         service_offering_id:
           type: string
@@ -2294,6 +2414,12 @@ components:
         buffer_after_minutes:
           type: integer
           format: int32
+        turnaround_hours:
+          type: integer
+          format: int32
+          description: Absent on an on-site service.
+        fulfilment:
+          $ref: '#/components/schemas/Fulfilment'
         price:
           $ref: '#/components/schemas/Money'
         price_visible:
@@ -2303,6 +2429,22 @@ components:
           format: int32
         active:
           type: boolean
+
+    Fulfilment:
+      type: string
+      description: |
+        What the customer does with their time.
+
+        `ON_SITE`: they sit down and wait, and `duration_minutes` is how long.
+        `DROP_OFF`: they hand the work over and come back, `duration_minutes`
+        is the handover at the counter, and `turnaround_hours` is what was
+        promised.
+
+        Required on every view and never accepted on a request: the server
+        derives it from whether a turnaround was announced. A client must not
+        have to branch on the absence of a field, and a request that carried
+        both would carry two sources of truth for one fact.
+      enum: [ON_SITE, DROP_OFF]
 
     ServiceOfferingPage:
       type: object
@@ -2394,6 +2536,18 @@ components:
             because this is the only screen it was ever for - it was accepted
             by the booking request and discarded, so the box said "Message for
             the salon" and the message went nowhere.
+        ready_by:
+          type: string
+          format: date-time
+          description: |
+            What was promised, on a drop-off. Absent on an on-site
+            appointment - the customer never left. Movable: "the machine broke,
+            it will be Friday" is the most frequent event of these trades.
+        ready_at:
+          type: string
+          format: date-time
+          description: When the work was actually declared ready. Absent until
+            it is.
 
     AppointmentPage:
       type: object
@@ -2432,6 +2586,17 @@ components:
             not a no-op: the exclusion constraint keys on the staff member, so
             the appointment is being taken off one resource and put onto
             another.
+
+    ReadyByRequest:
+      type: object
+      description: The new promise, and nothing else about the appointment.
+      required: [ready_by]
+      properties:
+        ready_by:
+          type: string
+          format: date-time
+          description: A UTC instant. It may not precede the end of the
+            handover.
 
     CancelAppointmentRequest:
       type: object
@@ -2482,6 +2647,16 @@ components:
           $ref: '#/components/schemas/AppointmentStatus'
         price:
           $ref: '#/components/schemas/Money'
+        ready_by:
+          type: string
+          format: date-time
+          description: When the provider promised it would be ready. Absent
+            unless this was a drop-off.
+        ready_at:
+          type: string
+          format: date-time
+          description: When it was declared ready. This is the field that turns
+            "come back Friday" into "it is waiting for you".
         cancellable_until:
           type: string
           format: date-time
@@ -2655,7 +2830,7 @@ components:
         A service as a customer sees it. The buffers padding each appointment
         are internal and absent, and `price` is absent - not null, not zero -
         when the provider chose not to publish it.
-      required: [service_offering_id, name, duration_minutes]
+      required: [service_offering_id, name, duration_minutes, fulfilment]
       properties:
         service_offering_id:
           type: string
@@ -2667,6 +2842,18 @@ components:
         duration_minutes:
           type: integer
           format: int32
+          description: |
+            On an `ON_SITE` offering, how long the customer is there. On a
+            `DROP_OFF` one, how long the handover takes - a page that showed it
+            as the length of the work would tell somebody a repair takes ten
+            minutes.
+        turnaround_hours:
+          type: integer
+          format: int32
+          description: Absent on an on-site service. "Ready in 48 h" is what a
+            customer needs before choosing, which is why it is published.
+        fulfilment:
+          $ref: '#/components/schemas/Fulfilment'
         price:
           $ref: '#/components/schemas/Money'
 
@@ -2862,7 +3049,7 @@ components:
 
     CategoryView:
       type: object
-      required: [slug, label_fr]
+      required: [slug, label_fr, provider_count]
       properties:
         slug:
           type: string
@@ -2872,6 +3059,37 @@ components:
         icon:
           type: string
           description: A name a client resolves in its own icon set, never a URL.
+        family:
+          $ref: '#/components/schemas/CategoryFamily'
+        provider_count:
+          type: integer
+          format: int32
+          description: |
+            How many PUBLISHED providers hold this trade, counted exactly the
+            way the directory counts - a suspended business is not in it.
+
+            It exists so a client can show the trades that hold somebody and
+            keep the rest behind "see all". That is what makes adding a trade
+            cost nothing on the day it lands: it is invisible until the first
+            provider registers under it, and appears by itself afterwards.
+
+    CategoryFamily:
+      type: object
+      description: |
+        The heading a client groups a trade under. Absent on one that belongs
+        to none, which lands in a "Divers" bucket rather than nowhere.
+
+        Eighteen trades fitted in one grid; thirty-five do not, and the
+        alternative to a grouping is a client scrolling past thirty-four to
+        reach theirs.
+      required: [slug, label_fr]
+      properties:
+        slug:
+          type: string
+        label_fr:
+          type: string
+        icon:
+          type: string
 
     CategoryList:
       type: object

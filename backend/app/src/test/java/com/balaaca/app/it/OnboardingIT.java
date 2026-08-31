@@ -180,7 +180,8 @@ class OnboardingIT {
     @OidcSecurity(claims = @Claim(key = "sub", value = BookingFixtures.NEWCOMER_SUBJECT))
     void refusesAnUnknownCategory() {
         register("""
-                {"slug":"salon-awa","business_name":"Salon Awa","category_slug":"plomberie"}
+                {"slug":"salon-awa","business_name":"Salon Awa",
+                 "category_slug":"plomberie-quantique"}
                 """).then().statusCode(400).body("code", equalTo("VALIDATION_FAILED"));
     }
 

@@ -50,7 +50,7 @@ public class AppointmentAgendaSqlRepository implements AppointmentAgendaReposito
                 SELECT a.id, a.starts_at, a.ends_at, a.status, a.service_name,
                        a.customer_price_amount_minor, a.customer_price_currency,
                        c.full_name, c.phone_e164, c.email, a.customer_note,
-                       a.staff_id, s.display_name
+                       a.staff_id, s.display_name, a.ready_by, a.ready_at
                   FROM appointments a
                   JOIN customers c ON c.id = a.customer_id
                   JOIN provider_staff s
@@ -99,7 +99,9 @@ public class AppointmentAgendaSqlRepository implements AppointmentAgendaReposito
                 (String) r[12],
                 new CustomerContact((String) r[7], new PhoneNumber((String) r[8]),
                                     Optional.ofNullable((String) r[9])),
-                Optional.ofNullable((String) r[10]).filter(n -> !n.isBlank()));
+                Optional.ofNullable((String) r[10]).filter(n -> !n.isBlank()),
+                Optional.ofNullable(r[13]).map(AppointmentAgendaSqlRepository::instant),
+                Optional.ofNullable(r[14]).map(AppointmentAgendaSqlRepository::instant));
     }
 
     /**

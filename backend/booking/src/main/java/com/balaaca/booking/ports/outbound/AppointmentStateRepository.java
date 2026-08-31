@@ -80,6 +80,28 @@ public interface AppointmentStateRepository {
                                      AppointmentStatus to, Instant at);
 
     /**
+     * Records that a dropped-off job is ready.
+     *
+     * <p>One conditional UPDATE, and its WHERE carries every condition: the
+     * appointment is a drop-off, it is not cancelled, and it has not already
+     * been declared ready. Saying it twice keeps the FIRST instant, because the
+     * customer was told once and a second date would move a fact.
+     *
+     * @return the appointment, or empty when no row met all of that - which the
+     *         caller then has to tell apart from a row that is not theirs
+     */
+    Optional<AgendaEntry> markReady(AppointmentId id, Instant at);
+
+    /**
+     * Moves the promise.
+     *
+     * <p>"The machine broke, it will be Friday" is the most frequent event of
+     * these trades. The UPDATE refuses a promise that falls before the handover
+     * ended, so the check is in the statement rather than around it.
+     */
+    Optional<AgendaEntry> replaceReadyBy(AppointmentId id, Instant readyBy, Instant at);
+
+    /**
      * What the caller needs to know about a row before touching it, and to tell
      * a refusal apart from a miss afterwards.
      *

@@ -35,7 +35,7 @@ public class ServiceOfferingCatalogueSqlRepository implements ServiceOfferingRep
     private static final String COLUMNS = """
             id, name, description, duration_minutes, buffer_before_minutes,
             buffer_after_minutes, price_amount_minor, price_currency,
-            price_visible, sort_order, active
+            price_visible, sort_order, active, turnaround_hours
             """;
 
     private final EntityManager em;
@@ -81,10 +81,11 @@ public class ServiceOfferingCatalogueSqlRepository implements ServiceOfferingRep
                         id, provider_id, name, description, duration_minutes,
                         buffer_before_minutes, buffer_after_minutes,
                         price_amount_minor, price_currency, price_visible,
-                        sort_order, active)
+                        sort_order, active, turnaround_hours)
                     VALUES (:id, :providerId, :name, :description, :duration,
                             :bufferBefore, :bufferAfter, :priceMinor, :currency,
-                            :priceVisible, :sortOrder, :active)
+                            :priceVisible, :sortOrder, :active,
+                            CAST(:turnaround AS int))
                     RETURNING %s
                     """.formatted(COLUMNS))
                     .setParameter("id", id.value())
@@ -99,6 +100,7 @@ public class ServiceOfferingCatalogueSqlRepository implements ServiceOfferingRep
                     .setParameter("priceVisible", d.priceVisible())
                     .setParameter("sortOrder", d.sortOrder())
                     .setParameter("active", d.active())
+                    .setParameter("turnaround", turnaroundOf(d))
                     .getSingleResult();
             return toOffering(row);
         } catch (PersistenceException e) {
@@ -122,6 +124,7 @@ public class ServiceOfferingCatalogueSqlRepository implements ServiceOfferingRep
                            price_visible = :priceVisible,
                            sort_order = :sortOrder,
                            active = :active,
+                           turnaround_hours = CAST(:turnaround AS int),
                            updated_at = now()
                      WHERE id = :id
                     RETURNING %s
@@ -137,6 +140,7 @@ public class ServiceOfferingCatalogueSqlRepository implements ServiceOfferingRep
                     .setParameter("priceVisible", d.priceVisible())
                     .setParameter("sortOrder", d.sortOrder())
                     .setParameter("active", d.active())
+                    .setParameter("turnaround", turnaroundOf(d))
                     .getResultList();
 
             return rows.isEmpty() ? Optional.empty() : Optional.of(toOffering(rows.get(0)));
@@ -159,6 +163,18 @@ public class ServiceOfferingCatalogueSqlRepository implements ServiceOfferingRep
         return e;
     }
 
+    /**
+     * The delay in hours, or null.
+     *
+     * <p>Cast on the SQL side rather than typed here: PostgreSQL refuses a
+     * statement whose only unambiguous use of a parameter is beside a NULL, with
+     * 42P18, rather than guessing its type. The same reason the optional staff
+     * filter of the agenda casts its own.
+     */
+    private static Integer turnaroundOf(OfferingDefinition d) {
+        return d.turnaround().map(t -> (int) t.toHours()).orElse(null);
+    }
+
     private static ServiceOffering toOffering(Object[] r) {
         return new ServiceOffering(
                 ServiceOfferingId.of((UUID) r[0]),
@@ -168,6 +184,7 @@ public class ServiceOfferingCatalogueSqlRepository implements ServiceOfferingRep
                         Duration.ofMinutes(((Number) r[3]).longValue()),
                         Duration.ofMinutes(((Number) r[4]).longValue()),
                         Duration.ofMinutes(((Number) r[5]).longValue()),
+                        Optional.ofNullable((Number) r[11]).map(h -> Duration.ofHours(h.longValue())),
                         Money.ofMinor(((Number) r[6]).longValue(), Currency.of((String) r[7])),
                         (Boolean) r[8],
                         ((Number) r[9]).intValue(),

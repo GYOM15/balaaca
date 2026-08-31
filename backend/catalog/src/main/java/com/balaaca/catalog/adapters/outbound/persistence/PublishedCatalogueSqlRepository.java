@@ -39,7 +39,8 @@ public class PublishedCatalogueSqlRepository implements PublishedCatalogueUseCas
         List<Object[]> rows = em.createNativeQuery("""
                 SELECT id, name, description, duration_minutes,
                        CASE WHEN price_visible THEN price_amount_minor END,
-                       CASE WHEN price_visible THEN price_currency END
+                       CASE WHEN price_visible THEN price_currency END,
+                       turnaround_hours
                   FROM service_offerings
                  WHERE active
                  ORDER BY sort_order, name
@@ -50,6 +51,7 @@ public class PublishedCatalogueSqlRepository implements PublishedCatalogueUseCas
                 (String) r[1],
                 Optional.ofNullable((String) r[2]),
                 Duration.ofMinutes(((Number) r[3]).longValue()),
+                Optional.ofNullable((Number) r[6]).map(h -> Duration.ofHours(h.longValue())),
                 Optional.ofNullable(r[4]).map(amount -> Money.ofMinor(
                         ((Number) amount).longValue(),
                         Currency.of((String) r[5]))))).toList();

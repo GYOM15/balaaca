@@ -125,7 +125,7 @@ class ProviderDirectoryIT {
     @DisplayName("The category filter is exact")
     void filtersByCategory() {
         assertThat(names("?category_slug=coiffure")).containsExactly("Salon Fatou");
-        assertThat(names("?category_slug=plomberie")).isEmpty();
+        assertThat(names("?category_slug=plomberie-quantique")).isEmpty();
     }
 
     @Test

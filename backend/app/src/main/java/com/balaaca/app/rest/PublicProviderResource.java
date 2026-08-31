@@ -5,6 +5,7 @@ import com.balaaca.app.api.model.Money;
 import com.balaaca.app.api.model.PublicOpeningHours;
 import com.balaaca.app.api.model.PublicOpeningHoursSegment;
 import com.balaaca.app.api.model.PublicProviderView;
+import com.balaaca.app.api.model.Fulfilment;
 import com.balaaca.app.api.model.PublicServiceOffering;
 import com.balaaca.app.api.model.PublicStaffList;
 import com.balaaca.app.api.model.PublicStaffMember;
@@ -15,6 +16,7 @@ import com.balaaca.platformkernel.tenancy.PublicTenantBinder;
 import com.balaaca.providers.ports.inbound.LookupPublicProviderUseCase;
 import com.balaaca.providers.ports.inbound.LookupPublicProviderUseCase.PublicProvider;
 import com.balaaca.providers.ports.inbound.LookupPublicStaffUseCase;
+import com.balaaca.app.api.model.CategoryFamily;
 import com.balaaca.app.api.model.CategoryList;
 import com.balaaca.app.api.model.CategoryView;
 import com.balaaca.providers.ports.inbound.ListCategoriesUseCase;
@@ -74,8 +76,19 @@ public class PublicProviderResource implements DiscoveryApi {
     public Response listCategories() {
         return Response.ok(new CategoryList().data(
                 categories.offered().stream().map(c -> {
-                    CategoryView view = new CategoryView().slug(c.slug()).labelFr(c.labelFr());
+                    CategoryView view = new CategoryView()
+                            .slug(c.slug())
+                            .labelFr(c.labelFr())
+                            // What lets a client show the trades that hold
+                            // somebody and keep the rest behind "see all".
+                            .providerCount(c.providerCount());
                     c.icon().ifPresent(view::setIcon);
+                    c.family().ifPresent(f -> {
+                        CategoryFamily family = new CategoryFamily()
+                                .slug(f.slug()).labelFr(f.labelFr());
+                        f.icon().ifPresent(family::setIcon);
+                        view.setFamily(family);
+                    });
                     return view;
                 }).toList()))
                 .header("Cache-Control", PublicCaching.TAXONOMY)
@@ -177,8 +190,13 @@ public class PublicProviderResource implements DiscoveryApi {
         PublicServiceOffering service = new PublicServiceOffering()
                 .serviceOfferingId(published.id().value())
                 .name(published.name())
-                .durationMinutes((int) published.duration().toMinutes());
+                .durationMinutes((int) published.duration().toMinutes())
+                .fulfilment(published.isDropOff() ? Fulfilment.DROP_OFF : Fulfilment.ON_SITE);
 
+        // "Ready in 48 h" is what a customer needs before choosing. Without it
+        // a drop-off reads as a ten-minute service, because ten minutes is what
+        // the handover takes.
+        published.turnaround().ifPresent(t -> service.setTurnaroundHours((int) t.toHours()));
         published.description().ifPresent(service::setDescription);
         // Absent, not zero: a hidden price rendered as 0 reads as free.
         published.price().ifPresent(price -> service.setPrice(new Money()

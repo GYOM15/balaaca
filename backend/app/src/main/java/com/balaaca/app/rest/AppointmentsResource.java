@@ -7,6 +7,7 @@ import com.balaaca.app.api.model.AppointmentPage;
 import com.balaaca.app.api.model.AppointmentStatus;
 import com.balaaca.app.api.model.AppointmentView;
 import com.balaaca.app.api.model.Money;
+import com.balaaca.app.api.model.ReadyByRequest;
 import com.balaaca.app.api.model.CancelAppointmentRequest;
 import com.balaaca.app.api.model.RescheduleAppointmentRequest;
 import com.balaaca.app.api.model.BookAppointmentRequest;
@@ -120,6 +121,26 @@ public class AppointmentsResource implements AgendaApi {
         return Response.ok(toView(moves.confirm(AppointmentId.of(id)))).build();
     }
 
+    /**
+     * The customer left the work and went away; this is what calls them back.
+     *
+     * <p>Not a status. AppointmentStatus is closed and published and clients
+     * branch on it, and "ready" is not a state of the appointment - that
+     * happened when the work was handed over. It is a fact about the work.
+     */
+    @Override
+    @RolesAllowed("appointments:write")
+    public Response markAppointmentReady(UUID id) {
+        return Response.ok(toView(moves.markReady(AppointmentId.of(id)))).build();
+    }
+
+    @Override
+    @RolesAllowed("appointments:write")
+    public Response replaceReadyBy(UUID id, ReadyByRequest request) {
+        return Response.ok(toView(moves.promiseFor(
+                AppointmentId.of(id), request.getReadyBy().toInstant()))).build();
+    }
+
     @Override
     @RolesAllowed("appointments:write")
     public Response completeAppointment(UUID id) {
@@ -200,6 +221,11 @@ public class AppointmentsResource implements AgendaApi {
         // request and discarded, so the box said "Message for the salon" and
         // the message went nowhere.
         e.customerNote().ifPresent(view::setCustomerNote);
+        // Absent on an on-site appointment, and absent means absent: a null
+        // would make a client ask whether nothing was promised or whether the
+        // promise was cleared.
+        e.readyBy().ifPresent(at -> view.setReadyBy(OffsetDateTime.ofInstant(at, ZoneOffset.UTC)));
+        e.readyAt().ifPresent(at -> view.setReadyAt(OffsetDateTime.ofInstant(at, ZoneOffset.UTC)));
         return view;
     }
 }

@@ -18,8 +18,16 @@ final class PublicCaching {
     private PublicCaching() {
     }
 
-    /** The trade taxonomy. It changes by migration, so an hour is conservative. */
-    static final String TAXONOMY = "public, max-age=3600";
+    /**
+     * The trade taxonomy. Five minutes, not the hour it used to be.
+     *
+     * <p>The list itself changes by migration and an hour would be generous for
+     * it. What changes far more often is the provider_count each row now
+     * carries, and that count decides whether a client shows the trade at all:
+     * at an hour, the first provider to register under a new trade would watch
+     * their own category stay hidden for an hour after they published.
+     */
+    static final String TAXONOMY = "public, max-age=300";
 
     /** The directory and a provider's page. A minute of staleness costs nothing. */
     static final String DIRECTORY = "public, max-age=60";

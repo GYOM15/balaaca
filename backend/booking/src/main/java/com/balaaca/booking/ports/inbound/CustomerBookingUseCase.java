@@ -54,6 +54,9 @@ public interface CustomerBookingUseCase {
                            Money price,
                            /** The provider's IANA zone: what turns the instants into a reading. */
                            String timezone,
+                           /** Both empty unless the work was handed over. */
+                           Optional<Instant> readyBy,
+                           Optional<Instant> readyAt,
                            Optional<Instant> cancellableUntil) {
     }
 }

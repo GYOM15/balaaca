@@ -32,16 +32,26 @@ public class CategorySqlRepository implements ListCategoriesUseCase {
     @Transactional(Transactional.TxType.REQUIRED)
     @SuppressWarnings("unchecked")
     public List<Category> offered() {
+        // Ordered by the family first, so a client that groups them reads them
+        // in one pass instead of sorting thirty-five rows itself.
         List<Object[]> rows = em.createNativeQuery("""
-                SELECT slug, label_fr, icon
-                  FROM provider_categories
-                 WHERE active
-                 ORDER BY sort_order, label_fr
+                SELECT c.slug, c.label_fr, c.icon,
+                       f.slug, f.label_fr, f.icon,
+                       n.provider_count
+                  FROM provider_categories c
+                  LEFT JOIN provider_category_families f
+                         ON f.id = c.family_id AND f.active
+                  JOIN provider_category_counts n ON n.category_id = c.id
+                 WHERE c.active
+                 ORDER BY f.sort_order NULLS LAST, c.sort_order, c.label_fr
                 """).getResultList();
 
         return rows.stream()
-                .map(r -> new Category((String) r[0], (String) r[1],
-                                       Optional.ofNullable((String) r[2])))
+                .map(r -> new ListCategoriesUseCase.Category(
+                        (String) r[0], (String) r[1], Optional.ofNullable((String) r[2]),
+                        Optional.ofNullable((String) r[3]).map(slug -> new ListCategoriesUseCase.Family(
+                                slug, (String) r[4], Optional.ofNullable((String) r[5]))),
+                        ((Number) r[6]).intValue()))
                 .toList();
     }
 }

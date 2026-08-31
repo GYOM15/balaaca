@@ -69,6 +69,7 @@ class BookingNotificationsTest {
         return new BookableOffering(
                 ServiceOfferingId.of(UUID.fromString("5e111111-0000-0000-0000-000000000001")),
                 "Tresses", Duration.ofMinutes(60), Duration.ofMinutes(15), Duration.ofMinutes(10),
+                Optional.empty(),
                 Money.ofMinor(150000, Currency.of("GNF")));
     }
 
@@ -162,6 +163,37 @@ class BookingNotificationsTest {
                     .containsEntry("customer_name", "Mariama B.")
                     .containsEntry("duration_minutes", "60")
                     .containsEntry("starts_at_local", "04/09/2026 10:00");
+        }
+
+        @Test
+        @DisplayName("hands the reference to the confirmation and to nothing else")
+        void theReferenceIsNotCopiedAround() {
+            List<PlannedNotification> planned = planFor(reachable(), STARTS_AT);
+
+            // Four rows are written: the confirmation, the provider's notice,
+            // and two reminders. They used to share ONE map, so the reference -
+            // the customer's only way back to this appointment, and the only
+            // thing that authorises cancelling it - sat in all four. The
+            // comment beside it claimed otherwise; this asserts it.
+            assertThat(planned).hasSizeGreaterThan(1);
+            assertThat(planned.stream()
+                    .filter(p -> p.payload().containsKey("booking_reference"))
+                    .map(PlannedNotification::kind))
+                    .containsExactly(NotificationKind.BOOKING_CONFIRMATION);
+        }
+
+        @Test
+        @DisplayName("never puts the customer's reference in the provider's notice")
+        void theProviderGetsNoCapability() {
+            PlannedNotification notice = planFor(reachable(), STARTS_AT).stream()
+                    .filter(p -> p.recipient() == NotificationRecipient.PROVIDER)
+                    .findFirst().orElseThrow();
+
+            assertThat(notice.payload()).doesNotContainKey("booking_reference");
+            // What the provider does need: who booked, and for what.
+            assertThat(notice.payload())
+                    .containsEntry("customer_name", "Mariama B.")
+                    .containsEntry("service_name", "Tresses");
         }
     }
 

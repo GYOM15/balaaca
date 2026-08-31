@@ -109,6 +109,33 @@ public final class BookingExceptions {
         }
     }
 
+    /**
+     * Nothing to be ready.
+     *
+     * <p>The customer sat in the chair and left with the result. Writing a
+     * ready date on that appointment would put a message in front of somebody
+     * telling them to come back for something they already have.
+     *
+     * <p>422 and not 409: the appointment is in a perfectly good state, the
+     * request simply does not apply to this kind of service.
+     */
+    public static final class NotADropOffException extends DomainException {
+        public NotADropOffException(UUID appointmentId) {
+            super("VALIDATION_FAILED", 422,
+                  "This appointment is not a drop-off",
+                  Map.of("appointment_id", String.valueOf(appointmentId)));
+        }
+    }
+
+    /** A promise cannot fall before the work was handed over. */
+    public static final class PromiseBeforeHandoverException extends DomainException {
+        public PromiseBeforeHandoverException(java.time.Instant readyBy) {
+            super("VALIDATION_FAILED", 422,
+                  "A job cannot be ready before it was handed over",
+                  Map.of("ready_by", String.valueOf(readyBy)));
+        }
+    }
+
     public static final class AppointmentNotFoundException extends DomainException {
         public AppointmentNotFoundException(UUID id) {
             super("RESOURCE_NOT_FOUND", 404, "No such appointment",
