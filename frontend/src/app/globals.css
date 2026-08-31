@@ -1,0 +1,50 @@
+/*
+ * Readable defaults, and deliberately nothing more.
+ *
+ * The interfaces are being designed elsewhere and will replace this wholesale.
+ * What is here exists so a page can be read and a form can be filled while the
+ * behaviour is being proved - a system font, a measure that does not run the
+ * width of a monitor, and enough spacing to tell one control from the next.
+ * Any styling beyond that would be work thrown away twice: once when the
+ * designs land, and once more by whoever has to tell them apart.
+ */
+:root {
+  color-scheme: light dark;
+  --gap: 1rem;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0 auto;
+  padding: var(--gap);
+  max-width: 60rem;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  line-height: 1.5;
+}
+
+h1, h2, h3 { line-height: 1.2; }
+
+a { color: inherit; }
+
+form { display: grid; gap: 0.5rem; margin-block: var(--gap); }
+
+label { display: grid; gap: 0.25rem; }
+
+input, select, textarea, button {
+  font: inherit;
+  padding: 0.4rem 0.5rem;
+}
+
+button { cursor: pointer; }
+
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid; }
+
+ul { padding-left: 1.2rem; }
+
+nav ul { display: flex; flex-wrap: wrap; gap: var(--gap); list-style: none; padding: 0; }
+
+.problem { padding: 0.5rem; border: 1px solid; }
+
+.row { display: flex; flex-wrap: wrap; gap: var(--gap); align-items: flex-end; }

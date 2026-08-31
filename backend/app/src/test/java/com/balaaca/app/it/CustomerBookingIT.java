@@ -62,6 +62,9 @@ class CustomerBookingIT {
                 .body("staff_name", equalTo("Fatou"))
                 .body("status", equalTo("PENDING"))
                 .body("price.amount_minor", equalTo(150000))
+                // The instants are UTC and mean nothing to a reader without
+                // this: "14:00" is the time at the salon, not where the phone is.
+                .body("timezone", equalTo("Africa/Conakry"))
                 .body("cancellable_until", notNullValue());
     }
 

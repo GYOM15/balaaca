@@ -1,0 +1,3 @@
+# Generated from the OpenAPI document on every build. Committing it would create
+# a second copy of the contract that could drift from the first.
+/src/generated/

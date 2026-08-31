@@ -37,7 +37,8 @@ public class CustomerBookingSqlRepository implements CustomerBookingRepository {
                 SELECT a.id, a.public_reference, p.slug, p.business_name,
                        a.service_name, s.display_name, a.starts_at, a.ends_at,
                        a.status, a.customer_price_amount_minor,
-                       a.customer_price_currency, p.cancellation_deadline_minutes
+                       a.customer_price_currency, p.timezone,
+                       p.cancellation_deadline_minutes
                   FROM appointments a
                   JOIN providers p ON p.id = a.provider_id
                   JOIN provider_staff s
@@ -51,7 +52,8 @@ public class CustomerBookingSqlRepository implements CustomerBookingRepository {
                 instant(r[6]), instant(r[7]),
                 (String) r[8],
                 Money.ofMinor(((Number) r[9]).longValue(), Currency.of((String) r[10])),
-                Duration.ofMinutes(((Number) r[11]).longValue())));
+                (String) r[11],
+                Duration.ofMinutes(((Number) r[12]).longValue())));
     }
     /**
      * The type a timestamptz comes back as depends on the driver and its

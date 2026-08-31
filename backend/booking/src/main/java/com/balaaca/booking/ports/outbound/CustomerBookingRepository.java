@@ -31,6 +31,7 @@ public interface CustomerBookingRepository {
                            Instant endsAt,
                            String status,
                            Money price,
+                           String timezone,
                            Duration cancellationWindow) {
     }
 }

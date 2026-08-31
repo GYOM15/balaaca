@@ -154,6 +154,41 @@ export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
 
 Inutile sur les runners Linux, ou le socket est a l'emplacement standard.
 
+### The frontend
+
+`frontend/` is a Next.js BFF. It holds every credential this product has and the
+browser never sees one: pages are rendered on this server with the data already
+in them, forms post to server actions, and the session is one httpOnly cookie
+sealed with AES-256-GCM. There is no proxy route and no client-side call to the
+API, so there is nowhere for an access token to leak to.
+
+```bash
+cd frontend
+npm ci
+npm run typecheck   # regenerates the API types from the OpenAPI document first
+npm run test        # the wall-clock-to-instant conversion, where it can fail
+npm run lint
+npm run dev
+```
+
+`src/generated/` is written from `backend/app/src/main/resources/META-INF/openapi.yaml`
+on every build and is **not committed**: a checked-in copy would be a second
+statement of the contract that can drift from the first. Change a field in the
+document and the pages that read it stop compiling, which is the only drift
+check a client needs.
+
+Two variables have to be set beyond what the stack already provides - see
+`.env.example`:
+
+| Variable | Role |
+|---|---|
+| `BALAACA_API_BASE_URL` | where this server reaches the API. Server-side only; the browser never addresses the backend |
+| `BALAACA_SESSION_SECRET` | seals the session cookie. Rotating it signs everybody out, which is the correct behaviour |
+
+The design is deliberately absent. The interfaces are being produced separately
+and will replace `globals.css` and the markup wholesale; what is here is enough
+to read a page and fill a form while the behaviour is proved.
+
 ### Identite
 
 Le realm est un fichier versionne, [`infrastructure/keycloak/realm-balaaca.json`](infrastructure/keycloak/realm-balaaca.json),
