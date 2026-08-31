@@ -1852,3 +1852,13 @@ button.svc-row:hover { background: var(--brand-tint-04); }
     max-width: 18ch;
   }
 }
+
+/* La hiérarchie de poids que demande la charte (section 05).
+   Le système posait 700 sur les cinq niveaux de titre, ce qui donne cinq
+   tailles et un seul poids : un h3 pèse alors autant qu'un h1, et la
+   différence de rang ne tient plus qu'à la taille. La charte tranche —
+   H1 ExtraBold, H2 Bold, H3 SemiBold, corps Regular — et c'est écrit ici
+   plutôt que dans le bloc porté, pour que la divergence reste visible. */
+.t-display, .t-h1 { font-weight: var(--weight-extrabold); }
+.t-h2            { font-weight: var(--weight-bold); }
+.t-h3, .t-h4     { font-weight: var(--weight-semibold); }

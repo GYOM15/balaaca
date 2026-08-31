@@ -65,7 +65,7 @@ export function Mark({ size = 24, tone }: { size?: number; tone?: "inverse" }) {
     // eslint-disable-next-line @next/next/no-img-element
     <img
       className="wordmark__glyph"
-      src={tone === "inverse" ? "/brand/logo-inverse.svg" : "/brand/logo.svg"}
+      src={tone === "inverse" ? "/brand/logo-inverse.png" : "/brand/logo.png"}
       alt=""
       width={size}
       height={size}
