@@ -21,6 +21,14 @@ const manrope = Manrope({
 });
 
 export const metadata: Metadata = {
+  // The mark, as the tab and a phone's home screen show it. The round tile of
+  // the brand sheet rather than the square one: at 32 px a rounded square and
+  // a circle are one pixel apart, and the circle survives the crop every
+  // platform applies without asking.
+  icons: {
+    icon: [{ url: "/brand/favicon-512.png", type: "image/png", sizes: "512x512" }],
+    apple: "/brand/favicon-512.png",
+  },
   title: {
     default: "Balaaca — trouver un professionnel",
     // Every page says what it is; the tab of a provider's page must read the
