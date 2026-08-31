@@ -2449,7 +2449,7 @@ components:
         identifier, no customer identifier: the reference is the only handle, and
         publishing a second one would be publishing a second way in.
       required: [reference, provider_slug, provider_name, service_name,
-                 staff_name, starts_at, ends_at, status, price]
+                 staff_name, starts_at, ends_at, status, price, timezone]
       properties:
         reference:
           type: string
@@ -2459,6 +2459,15 @@ components:
           type: string
         service_name:
           type: string
+        timezone:
+          type: string
+          description: |
+            The provider's own IANA zone. The instants above are UTC, and a
+            customer reading "14:00" wants the time at the salon, not the time
+            where their phone happens to be - so the one thing that turns the
+            instant into that reading travels with it, rather than being
+            fetched from the provider's page or guessed from the browser.
+          example: Africa/Conakry
         staff_name:
           type: string
           description: Who they booked with. They chose or were told; it is not

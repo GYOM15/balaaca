@@ -52,6 +52,8 @@ public interface CustomerBookingUseCase {
                            Instant endsAt,
                            String status,
                            Money price,
+                           /** The provider's IANA zone: what turns the instants into a reading. */
+                           String timezone,
                            Optional<Instant> cancellableUntil) {
     }
 }

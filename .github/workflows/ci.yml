@@ -96,6 +96,43 @@ jobs:
             notification-worker/target/failsafe-reports/**
           if-no-files-found: ignore
 
+  frontend:
+    name: frontend
+    needs: secrets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # ci, not install: it installs exactly the lockfile and fails if
+      # package.json and the lock disagree, which is the only way a pinned tree
+      # stays pinned.
+      - run: npm ci
+        working-directory: frontend
+
+      # typecheck regenerates the API types from META-INF/openapi.yaml first,
+      # so this is also the drift check: the contract is the source, nothing is
+      # committed from it, and a page reading a field the document no longer
+      # publishes stops compiling here.
+      - run: npm run typecheck
+        working-directory: frontend
+
+      - run: npm run test
+        working-directory: frontend
+
+      - run: npm run lint
+        working-directory: frontend
+
+      # The build is what proves every page actually renders on the server -
+      # a bad import or a client hook in a server component fails here and
+      # nowhere earlier.
+      - run: npm run build
+        working-directory: frontend
+
   contract:
     name: published contract
     needs: secrets

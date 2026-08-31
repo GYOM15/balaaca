@@ -129,6 +129,7 @@ public class PublicBookingResource implements BookingApi {
                 .startsAt(OffsetDateTime.ofInstant(booking.startsAt(), ZoneOffset.UTC))
                 .endsAt(OffsetDateTime.ofInstant(booking.endsAt(), ZoneOffset.UTC))
                 .status(AppointmentStatus.fromValue(booking.status()))
+                .timezone(booking.timezone())
                 .price(new Money()
                         .amountMinor(booking.price().amountMinor())
                         .currency(booking.price().currency().name()));
