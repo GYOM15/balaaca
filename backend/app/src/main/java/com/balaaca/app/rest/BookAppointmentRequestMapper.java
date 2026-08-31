@@ -44,6 +44,10 @@ public class BookAppointmentRequestMapper {
                 // place the two meet.
                 request.getStartsAt().toInstant(),
                 toContact(request, defaultRegion),
+                // Published since the contract was written and dropped here
+                // ever since: the box said "Message for the salon" and the
+                // message went nowhere.
+                Optional.ofNullable(request.getCustomerNote()).filter(n -> !n.isBlank()),
                 toIdempotency(idempotencyKey, request),
                 source);
     }

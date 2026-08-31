@@ -1,5 +1,6 @@
 package com.balaaca.booking.ports.outbound;
 
+import com.balaaca.booking.domain.AppointmentStatus;
 import com.balaaca.booking.domain.BookedSlot;
 import com.balaaca.booking.domain.BookingSource;
 import com.balaaca.booking.domain.CustomerContact;
@@ -70,6 +71,7 @@ public interface AppointmentRepository {
             BookedSlot slot,
             CustomerId customerId,
             BookingSource source,
+            Optional<String> customerNote,
             Optional<String> idempotencyKey,
             Optional<String> idempotencyRequestHash) {
     }
@@ -79,6 +81,7 @@ public interface AppointmentRepository {
      *                  read back on a replay, so a retried booking is handed the
      *                  same one rather than a second that reaches the same row
      */
-    record InsertOutcome(AppointmentId appointmentId, String reference, boolean replayed) {
+    record InsertOutcome(AppointmentId appointmentId, String reference,
+                         AppointmentStatus status, boolean replayed) {
     }
 }

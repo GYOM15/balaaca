@@ -49,7 +49,8 @@ public interface ListAppointmentsUseCase {
                        AppointmentStatus status,
                        String serviceName,
                        Money price,
-                       CustomerContact customer) {
+                       CustomerContact customer,
+                       java.util.Optional<String> customerNote) {
     }
 
     /** @param next empty on the last page */

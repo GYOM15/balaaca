@@ -59,7 +59,7 @@ public class BookAppointmentService implements BookAppointmentUseCase {
             try {
                 InsertOutcome outcome = attempt.once(command, tried);
                 return new BookingResult(outcome.appointmentId(), outcome.reference(),
-                                         outcome.replayed());
+                                         outcome.status(), outcome.replayed());
 
             } catch (TransientBookingConflictException e) {
                 if (++deadlocks > MAX_DEADLOCK_RETRIES) {

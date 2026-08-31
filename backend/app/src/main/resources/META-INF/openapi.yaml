@@ -885,7 +885,12 @@ paths:
       tags: [agenda]
       summary: Confirm a pending appointment
       description: |
-        Only a `PENDING` appointment can be confirmed. Confirming one twice is
+        Only a `PENDING` appointment can be confirmed, so a provider that
+        confirms on arrival never needs this - there is nothing left to accept.
+        Accepting one sends the customer the message they have been waiting for;
+        until this was wired, confirming notified nobody.
+
+        Confirming one twice is
         refused rather than silently repeated: the second caller believed
         something was still pending that was not.
       security:
@@ -1164,7 +1169,12 @@ paths:
       tags: [booking]
       summary: Book an appointment on a provider's public page
       description: |
-        Creates a `PENDING` appointment. The slug carries the tenant here, and
+        Creates the appointment, `PENDING` or `CONFIRMED` according to the
+        provider's own policy - most confirm on arrival, and the response says
+        which so a client never has to guess. This paragraph said `PENDING`
+        unconditionally and was wrong for almost every provider.
+
+        The slug carries the tenant here, and
         only here: a customer is not staff, so membership resolution yields
         nothing for them and a booking route with no tenant identifier would
         answer 403 to the very people it exists for. The slug grants nothing
@@ -2098,6 +2108,12 @@ components:
           $ref: '#/components/schemas/Money'
         customer:
           $ref: '#/components/schemas/AppointmentCustomerView'
+        customer_note:
+          type: string
+          description: What the customer wrote when booking. Published here
+            because this is the only screen it was ever for - it was accepted
+            by the booking request and discarded, so the box said "Message for
+            the salon" and the message went nowhere.
 
     AppointmentPage:
       type: object
@@ -2181,7 +2197,11 @@ components:
         The identifier was all the public path handed back, and it left the
         customer with no way to return: the reference is what `getBooking` and
         `cancelBooking` take, and it travels on in the confirmation message.
-      required: [appointment_id, reference]
+
+        `status` is here because the answer differs by provider and the customer
+        has to be told which. `PENDING` means the request is with the salon;
+        `CONFIRMED` means it is already expecting you.
+      required: [appointment_id, reference, status]
       properties:
         appointment_id:
           type: string
@@ -2190,6 +2210,8 @@ components:
           type: string
           description: Keep it. It is the only way back to this appointment
             without an account, and it is returned once.
+        status:
+          $ref: '#/components/schemas/AppointmentStatus'
 
     RegisterProviderRequest:
       type: object

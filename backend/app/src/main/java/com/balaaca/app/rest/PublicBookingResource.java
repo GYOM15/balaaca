@@ -80,7 +80,10 @@ public class PublicBookingResource implements BookingApi {
             return Response.status(result.replayed() ? 200 : 201)
                     .entity(new AppointmentCreatedView()
                             .appointmentId(result.appointmentId().value())
-                            .reference(result.reference()))
+                            .reference(result.reference())
+                            // The provider's policy decides this, so the
+                            // customer is told rather than left to assume.
+                            .status(AppointmentStatus.fromValue(result.status().name())))
                     .build();
         } finally {
             tenants.clear();
