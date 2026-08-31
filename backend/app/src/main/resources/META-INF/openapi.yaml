@@ -144,6 +144,103 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
 
+    post:
+      operationId: bookWalkIn
+      tags: [agenda]
+      summary: Write an appointment straight into the diary
+      description: |
+        The counter, not the public page. Somebody is standing in the salon, or
+        on the telephone, and the provider is writing them into the book.
+
+        It differs from the public booking route in exactly one way, and the
+        difference is deliberate: **the booking policy and the published
+        availability are not applied.** Those rules protect a customer from
+        booking too close to the hour or a year ahead, and they keep a stranger
+        from taking a slot at three in the morning. A provider writing in their
+        own diary is not a stranger, and a diary that refuses to record what
+        already happened is a diary the salon keeps on paper instead.
+
+        What still arbitrates is the exclusion constraint. Two people cannot
+        hold one chair at one time, whoever entered them, so a walk-in that
+        collides with a booked appointment is `409` exactly as a public booking
+        would be.
+
+        The appointment is created `CONFIRMED`: the provider entering it is the
+        acceptance, and there is nobody left to accept it afterwards.
+      security:
+        - oauth2: [appointments:write]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: |
+            The same hazard as on the public route - a retried request must not
+            burn a second chair. The same key with the same body replays the
+            first result and returns `200`; with a different body it is `422
+            IDEMPOTENCY_KEY_REUSED`.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 80
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookAppointmentRequest'
+      responses:
+        '201':
+          description: The appointment was written into the diary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentCreatedView'
+        '200':
+          description: |
+            This key already created this appointment. The body is the first
+            result, unchanged.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentCreatedView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: |
+            `SLOT_UNAVAILABLE` - that chair is taken at that time. The only
+            rule this route does not waive.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          description: |
+            `IDEMPOTENCY_KEY_REUSED` - the key was replayed with a different
+            body.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '429':
+          description: |
+            `RATE_LIMITED` - too many writes arrived at once for this slot and
+            none could be ordered. Retry with the same key.
+          headers:
+            Retry-After:
+              description: Seconds to wait before retrying.
+              schema:
+                type: integer
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
   /v1/appointments/{id}/cancellation:
     post:
       operationId: cancelAppointment
@@ -695,9 +792,10 @@ paths:
       tags: [schedule]
       summary: List the days that differ from the weekly hours
       description: |
-        A closure replaces the week's rules for that date rather than adding to
-        them: a provider who declares a holiday means closed, not closed except
-        for the usual hours.
+        A date may carry several entries and they compose in one order:
+        `CLOSED` anywhere on the date wins, otherwise `CUSTOM_HOURS` windows
+        replace the day's weekly rules, and `TIME_OFF` windows are then taken
+        out of whatever is left.
       security:
         - oauth2: [dashboard:read]
       parameters:
@@ -730,11 +828,16 @@ paths:
     post:
       operationId: createClosure
       tags: [schedule]
-      summary: Close a day, or give it different hours
+      summary: Close a day, change its hours, or take an hour out of it
       description: |
-        `CLOSED` carries no times and `CUSTOM_HOURS` requires both; the database
-        states that as its own constraint, so a request that gets it wrong is
-        refused rather than stored as a day that means nothing.
+        `CLOSED` carries no times; `CUSTOM_HOURS` and `TIME_OFF` require both.
+        The database states that as its own constraint, so a request that gets
+        it wrong is refused rather than stored as a day that means nothing.
+
+        Post several entries for one date when the day needs them: a morning
+        window and an afternoon window, or an ordinary day with one hour taken
+        out of it. They all apply. Until now only one of them did, chosen
+        arbitrarily, and the rest were accepted with `201` and then ignored.
       security:
         - oauth2: [schedule:write]
       requestBody:
@@ -905,12 +1008,18 @@ paths:
     post:
       operationId: rescheduleAppointment
       tags: [agenda]
-      summary: Move an appointment to another slot
+      summary: Move an appointment to another slot, or another chair
       description: |
         Recomputed server-side from the service's own duration and buffers, and
         arbitrated by the same exclusion constraint a first booking faces: the
         slot is either free at the new time or it is not. The appointment keeps
         its id, so its history and its notifications follow it.
+
+        `staff_id` moves it to another colleague. A salon reassigns work all
+        day - somebody calls in sick, a regular asks for a particular pair of
+        hands - and the constraint keys on the staff member, so the move is
+        arbitrated as a booking on the new chair and releases the old one in
+        the same statement.
 
         Reminders owed for the old time are withdrawn and the new ones planned,
         in the same transaction as the move.
@@ -1983,7 +2092,17 @@ components:
 
     ClosureKind:
       type: string
-      enum: [CLOSED, CUSTOM_HOURS]
+      description: |
+        `CLOSED` takes the whole day away. `CUSTOM_HOURS` replaces the day's
+        weekly rules with the window given. `TIME_OFF` keeps the weekly rules
+        and takes one window out of them - a dentist appointment on a Thursday
+        afternoon, which was previously inexpressible: the only way to say it
+        was to close the whole day or to restate the whole day by hand.
+
+        Several entries may share one date. Every `CUSTOM_HOURS` window on a
+        date is open, every `TIME_OFF` window on it is not, and one `CLOSED`
+        entry overrides them all.
+      enum: [CLOSED, CUSTOM_HOURS, TIME_OFF]
 
     ClosureRequest:
       type: object
@@ -2000,7 +2119,8 @@ components:
         start_time:
           type: string
           pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
-          description: Required for CUSTOM_HOURS, refused for CLOSED.
+          description: Required for CUSTOM_HOURS and TIME_OFF, refused for
+            CLOSED.
         end_time:
           type: string
           pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
@@ -2233,6 +2353,18 @@ components:
         starts_at:
           type: string
           format: date-time
+        staff_id:
+          type: string
+          format: uuid
+          description: |
+            Move the appointment to another colleague's chair. Omit - never
+            send null - to leave it where it is, which is what a pure time
+            move does.
+
+            A move between chairs at the same time is a legitimate request and
+            not a no-op: the exclusion constraint keys on the staff member, so
+            the appointment is being taken off one resource and put onto
+            another.
 
     CancelAppointmentRequest:
       type: object

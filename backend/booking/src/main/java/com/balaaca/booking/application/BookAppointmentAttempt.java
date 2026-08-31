@@ -76,7 +76,14 @@ public class BookAppointmentAttempt {
         // sold twice; nothing else stops one being sold at 3am on a closed day.
         // The two questions stay separate: this one never asks whether the slot
         // is free, so a taken slot still answers 409 and not 422.
-        if (!slots.isWithinAvailability(command.startsAt(), slotRequest(command, offering))) {
+        //
+        // Asked of a customer and not of the provider. What was published is
+        // what a stranger may take; a provider writing into their own diary is
+        // recording something that is happening, and the enum says which
+        // sources are which.
+        if (command.source().honoursPublishedAvailability()
+                && !slots.isWithinAvailability(command.startsAt(),
+                                               slotRequest(command, offering))) {
             throw new SlotOutsideAvailabilityException(command.startsAt(),
                     "outside the provider's declared availability");
         }

@@ -1,5 +1,6 @@
 package com.balaaca.scheduling.ports.inbound;
 
+import com.balaaca.scheduling.domain.AvailabilityOverride;
 import com.balaaca.scheduling.domain.OpenWindow;
 import com.balaaca.sharedkernel.ids.StaffId;
 import java.time.LocalDate;
@@ -62,9 +63,27 @@ public interface ManageAvailabilityUseCase {
                          Optional<LocalDate> effectiveFrom, Optional<LocalDate> effectiveTo) {
     }
 
-    /** @param window empty when the day is closed outright */
+    /**
+     * One dated exception to the week.
+     *
+     * <p>The kind is carried rather than inferred from whether a window is
+     * present. It used to be inferred, and that was only possible while two
+     * kinds existed: TIME_OFF carries a window exactly as CUSTOM_HOURS does, and
+     * they mean opposite things - one opens the day, the other takes an hour out
+     * of it.
+     *
+     * @param window empty when and only when the day is closed outright
+     */
     record Closure(Optional<UUID> id, StaffId staffId, LocalDate date,
+                   AvailabilityOverride.Kind kind,
                    Optional<LocalTimeRange> window, Optional<String> reason) {
+
+        public Closure {
+            if ((kind == AvailabilityOverride.Kind.CLOSED) == window.isPresent()) {
+                throw new IllegalArgumentException(
+                        "CLOSED carries no window; CUSTOM_HOURS and TIME_OFF require one");
+            }
+        }
     }
 
     record LocalTimeRange(LocalTime start, LocalTime end) {

@@ -43,9 +43,30 @@ public interface AppointmentStateRepository {
      * change its id, break the audit trail, and open a window in which a third
      * party takes the freed slot.
      *
+     * <p>The chair moves in the same statement when one is named. It has to be
+     * the same statement: releasing the old resource and taking the new one as
+     * two UPDATEs would leave a window in which the appointment holds both, or
+     * neither, and the constraint would arbitrate against the wrong row.
+     *
+     * @param staffId empty leaves the appointment where it is, which is what a
+     *                pure time move does
      * @return the moved appointment, or empty when no row was in a movable state
      */
-    Optional<AgendaEntry> reschedule(AppointmentId id, BookedSlot slot, Instant at);
+    Optional<AgendaEntry> reschedule(AppointmentId id, BookedSlot slot,
+                                     Optional<StaffId> staffId, Instant at);
+
+    /**
+     * Whether that staff member is one of this provider's own, and still there.
+     *
+     * <p>Active rather than bookable: bookable says customers may pick this
+     * person on the public page, and a provider assigning work in their own
+     * diary is not picking from that list. An owner who takes no public bookings
+     * still cuts hair.
+     *
+     * <p>Asked before the move rather than left to the foreign key, so an
+     * unknown chair is a 404 and not a 500 on a constraint name.
+     */
+    boolean activeStaffExists(StaffId staffId);
 
     /**
      * Applies one of the simple transitions.

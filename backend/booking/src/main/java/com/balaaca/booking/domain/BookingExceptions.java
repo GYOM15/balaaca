@@ -95,6 +95,20 @@ public final class BookingExceptions {
         }
     }
 
+    /**
+     * A chair that is not this provider's, or one nobody works any more.
+     *
+     * <p>The same 404 an unknown appointment gets, and deliberately: a colleague
+     * at another salon is invisible to the read that asks, so telling the two
+     * apart would turn the reschedule route into an oracle for who works where.
+     */
+    public static final class UnknownStaffException extends DomainException {
+        public UnknownStaffException(java.util.UUID staffId) {
+            super("RESOURCE_NOT_FOUND", 404, "No such staff member",
+                  Map.of("staff_id", staffId.toString()));
+        }
+    }
+
     public static final class AppointmentNotFoundException extends DomainException {
         public AppointmentNotFoundException(UUID id) {
             super("RESOURCE_NOT_FOUND", 404, "No such appointment",

@@ -127,10 +127,18 @@ public class AvailabilitySqlRepository implements AvailabilityRepository {
 
         return rows.stream().map(r -> {
             LocalDate date = localDate(r[0]);
-            return "CLOSED".equals(r[1])
+            // valueOf, not a chain of equals: the column's CHECK and this enum
+            // are the same closed set, so a value in one and not the other is a
+            // mistake the build should surface rather than a case to fall
+            // through. It used to fall through - anything that was not CLOSED
+            // became CUSTOM_HOURS, which would have turned every absence into
+            // the opposite of itself.
+            AvailabilityOverride.Kind kind = AvailabilityOverride.Kind.valueOf((String) r[1]);
+            return kind == AvailabilityOverride.Kind.CLOSED
                     ? AvailabilityOverride.closed(date)
-                    : AvailabilityOverride.customHours(date,
-                            new LocalWindow(localTime(r[2]), localTime(r[3])));
+                    : new AvailabilityOverride(date, kind,
+                            java.util.Optional.of(
+                                    new LocalWindow(localTime(r[2]), localTime(r[3]))));
         }).toList();
     }
 

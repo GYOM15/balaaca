@@ -65,7 +65,13 @@ class ArchitectureTest {
     private static final String PUBLISHED_DOMAIN_TYPES =
             "com\\.balaaca\\.(booking\\.domain\\.(BookingSource|CustomerContact"
             + "|AppointmentStatus)"
-            + "|scheduling\\.domain\\.(AvailableSlot|OpenWindow)"
+            // AvailabilityOverride$Kind: the Closure command carries it, since
+            // the day the third kind arrived. Two kinds could be inferred from
+            // whether a window was present; three cannot - TIME_OFF carries one
+            // exactly as CUSTOM_HOURS does and means the opposite - so the edge
+            // has to name the enum rather than guess it.
+            + "|scheduling\\.domain\\.(AvailableSlot|OpenWindow"
+            + "|AvailabilityOverride(\\$Kind)?)"
             + "|providers\\.domain\\.ProviderStatus)";
 
     // --- The domain is an island ------------------------------------------

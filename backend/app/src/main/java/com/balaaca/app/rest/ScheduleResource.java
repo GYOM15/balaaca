@@ -10,6 +10,7 @@ import com.balaaca.app.api.model.OpeningHoursRequest;
 import com.balaaca.app.api.model.OpeningHoursSegment;
 import com.balaaca.platformkernel.tenancy.TenantBound;
 import com.balaaca.providers.ports.inbound.LookupNoticeProfileUseCase;
+import com.balaaca.scheduling.domain.AvailabilityOverride;
 import com.balaaca.scheduling.ports.inbound.ManageAvailabilityUseCase;
 import com.balaaca.scheduling.ports.inbound.ManageAvailabilityUseCase.Closure;
 import com.balaaca.scheduling.ports.inbound.ManageAvailabilityUseCase.LocalTimeRange;
@@ -118,20 +119,26 @@ public class ScheduleResource implements ScheduleApi {
      * The shape is decided here as well as by the CHECK, because the message
      * matters: a constraint name tells a provider nothing about what they got
      * wrong, and this one is easy to get wrong.
+     *
+     * <p>CLOSED is the one kind with no times. Written that way round rather
+     * than as "CUSTOM_HOURS has times", so a kind added to the contract without
+     * a thought here is refused rather than silently stored with none.
      */
     private static Closure toClosure(ClosureRequest r) {
-        boolean custom = r.getKind() == ClosureKind.CUSTOM_HOURS;
+        AvailabilityOverride.Kind kind = AvailabilityOverride.Kind.valueOf(r.getKind().toString());
+        boolean windowed = kind != AvailabilityOverride.Kind.CLOSED;
         boolean hasTimes = r.getStartTime() != null && r.getEndTime() != null;
-        if (custom != hasTimes) {
+        if (windowed != hasTimes) {
             throw new MalformedClosure();
         }
         return new Closure(
                 Optional.empty(),
                 StaffId.of(r.getStaffId()),
                 r.getDate(),
-                custom ? Optional.of(new LocalTimeRange(LocalTime.parse(r.getStartTime()),
-                                                        LocalTime.parse(r.getEndTime())))
-                       : Optional.empty(),
+                kind,
+                windowed ? Optional.of(new LocalTimeRange(LocalTime.parse(r.getStartTime()),
+                                                          LocalTime.parse(r.getEndTime())))
+                         : Optional.empty(),
                 Optional.ofNullable(r.getReason()));
     }
 
@@ -154,7 +161,11 @@ public class ScheduleResource implements ScheduleApi {
                 .closureId(c.id().orElse(null))
                 .staffId(c.staffId().value())
                 .date(c.date())
-                .kind(c.window().isPresent() ? ClosureKind.CUSTOM_HOURS : ClosureKind.CLOSED)
+                // The kind is read from the closure, not inferred from whether
+                // it has times. TIME_OFF carries a window exactly as
+                // CUSTOM_HOURS does, so inferring would report every declared
+                // absence as its opposite - an extra open window.
+                .kind(ClosureKind.fromValue(c.kind().name()))
                 .startTime(c.window().map(w -> w.start().toString()).orElse(null))
                 .endTime(c.window().map(w -> w.end().toString()).orElse(null))
                 .reason(c.reason().orElse(null));

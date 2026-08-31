@@ -83,8 +83,15 @@ public class AppointmentSqlRepository implements AppointmentRepository {
                         -- policy belongs to the row, and a value carried in
                         -- from the application is a value that can arrive
                         -- stale.
-                        (SELECT CASE WHEN auto_confirm THEN 'CONFIRMED'
-                                     ELSE 'PENDING' END
+                        --
+                        -- The provider typing it is the acceptance, so a
+                        -- counter entry skips the queue whatever the policy
+                        -- says: auto_confirm answers "do I want to see each
+                        -- request first?", and the request it is about is a
+                        -- stranger's. A walk-in left PENDING would put the
+                        -- salon's own entry in the salon's own queue.
+                        (SELECT CASE WHEN auto_confirm OR CAST(:accepted AS boolean)
+                                     THEN 'CONFIRMED' ELSE 'PENDING' END
                            FROM providers WHERE id = :providerId))
                     ON CONFLICT (provider_id, idempotency_key)
                         WHERE idempotency_key IS NOT NULL
@@ -107,6 +114,7 @@ public class AppointmentSqlRepository implements AppointmentRepository {
                     .setParameter("currency", a.offering().price().currency().name())
                     .setParameter("duration", (int) a.offering().duration().toMinutes())
                     .setParameter("source", a.source().name())
+                    .setParameter("accepted", a.source().arrivesAccepted())
                     .setParameter("key", key)
                     .setParameter("hash", a.idempotencyRequestHash().orElse(null))
                     .setParameter("reference", reference)

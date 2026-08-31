@@ -63,10 +63,11 @@ public class MoveAppointmentService implements MoveAppointmentUseCase {
      * "internal error" would send them to look for a bug that is not there.
      */
     @Override
-    public AgendaEntry reschedule(AppointmentId id, Instant newStartsAt) {
+    public AgendaEntry reschedule(AppointmentId id, Instant newStartsAt,
+                                 java.util.Optional<com.balaaca.sharedkernel.ids.StaffId> staff) {
         for (int attempt = 0; attempt <= MAX_DEADLOCK_RETRIES; attempt++) {
             try {
-                return rescheduleAttempt.once(id, newStartsAt);
+                return rescheduleAttempt.once(id, newStartsAt, staff);
             } catch (TransientBookingConflictException e) {
                 if (attempt == MAX_DEADLOCK_RETRIES) {
                     throw new BookingContendedException(newStartsAt);
