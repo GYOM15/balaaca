@@ -52,6 +52,34 @@ public interface ModerateProvidersUseCase {
      */
     Report review(UUID reportId);
 
+    /** Pending first, oldest first: the longest wait for an answer leads. */
+    ContestationPage contestations(Optional<String> status, Optional<UUID> after, int limit);
+
+    /**
+     * Records that the operator read it. It says nothing about whether the
+     * business was reinstated - that is a separate decision with its own audit
+     * row, and a contestation can be read and refused.
+     *
+     * @throws com.balaaca.providers.domain.ContestationNotFoundException
+     */
+    ContestationView read(UUID contestationId);
+
+    /**
+     * @param currentReason what the provider carries NOW, empty once they have
+     *                      been reinstated. Beside the message it tells the
+     *                      operator at a glance whether this is still about a
+     *                      live decision or one already undone
+     */
+    record ContestationView(UUID id, String providerSlug, String providerName,
+                            String providerStatus, String message,
+                            Instant aboutSuspensionAt, String status,
+                            Instant submittedAt, Optional<Instant> readAt,
+                            Optional<String> currentReason) {
+    }
+
+    record ContestationPage(List<ContestationView> entries, Optional<UUID> next) {
+    }
+
     record Moderation(String slug, String status,
                       Optional<Instant> suspendedAt, Optional<String> reason) {
     }

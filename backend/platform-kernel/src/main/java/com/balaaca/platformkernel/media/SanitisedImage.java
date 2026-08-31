@@ -1,6 +1,5 @@
-package com.balaaca.providers.adapters.outbound.storage;
+package com.balaaca.platformkernel.media;
 
-import com.balaaca.providers.domain.ImageRejectedException;
 
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
@@ -49,6 +48,26 @@ public record SanitisedImage(byte[] content, String contentType, String extensio
     /** Neither dimension may exceed this before decoding is even attempted. */
     public static final int MAX_DIMENSION = 6000;
 
+    /**
+     * What is actually STORED, on the long edge.
+     *
+     * <p>Two problems, one change, and the second was not the one being solved.
+     *
+     * <p>The first is weight. Nothing resized before this, so a five-megabyte
+     * photograph straight off a telephone was served as a logo - to a
+     * mid-range Android on 3G, which is the market. Sixteen hundred pixels is
+     * larger than any place this product shows an image and small enough that
+     * a catalogue of them loads.
+     *
+     * <p>The second is steganography, and it falls out for free. Re-encoding
+     * already destroyed anything hidden in metadata, and JPEG's lossy pass
+     * destroyed most of what was hidden in pixels - but PNG to PNG is
+     * LOSSLESS, so a payload in the least significant bits survived it
+     * perfectly. Resampling does not care: the pixel grid is rebuilt from
+     * neighbours, and there are no original low bits left to carry anything.
+     */
+    public static final int STORED_LONG_EDGE = 1600;
+
     public SanitisedImage {
         content = content.clone();
     }
@@ -74,7 +93,7 @@ public record SanitisedImage(byte[] content, String contentType, String extensio
         String format = png ? "png" : "jpeg";
         refuseIfTooLargeToDecode(raw, format);
 
-        BufferedImage decoded = decode(raw);
+        BufferedImage decoded = downscale(decode(raw));
         return new SanitisedImage(reencode(decoded, format), "image/" + format,
                                  png ? "png" : "jpg");
     }
@@ -115,6 +134,47 @@ public record SanitisedImage(byte[] content, String contentType, String extensio
         } catch (IOException e) {
             throw new ImageRejectedException("the file could not be read as an image");
         }
+    }
+
+    /**
+     * Down to the stored long edge, and never up.
+     *
+     * <p>An image already smaller is returned untouched: enlarging it would
+     * cost bytes to invent detail that is not there. The aspect ratio is kept,
+     * because the alternative is deciding what to crop out of somebody's
+     * photograph of their own work.
+     *
+     * <p>SCALE_SMOOTH rather than a raw drawImage: the fast path leaves visible
+     * aliasing on the fine, repeating patterns this market photographs most -
+     * braids, fabric, tiling - and a picture of braids that looks wrong is
+     * worse than no picture.
+     */
+    private static BufferedImage downscale(BufferedImage image) {
+        int longEdge = Math.max(image.getWidth(), image.getHeight());
+        if (longEdge <= STORED_LONG_EDGE) {
+            return image;
+        }
+
+        double factor = (double) STORED_LONG_EDGE / longEdge;
+        int width = Math.max(1, (int) Math.round(image.getWidth() * factor));
+        int height = Math.max(1, (int) Math.round(image.getHeight() * factor));
+
+        // TYPE_INT_ARGB keeps a PNG's transparency through the resize; the JPEG
+        // path flattens it onto white afterwards, where it already did.
+        BufferedImage scaled = new BufferedImage(width, height,
+                java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        java.awt.Graphics2D canvas = scaled.createGraphics();
+        try {
+            canvas.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION,
+                    java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            canvas.setRenderingHint(java.awt.RenderingHints.KEY_RENDERING,
+                    java.awt.RenderingHints.VALUE_RENDER_QUALITY);
+            canvas.drawImage(image.getScaledInstance(width, height,
+                    java.awt.Image.SCALE_SMOOTH), 0, 0, null);
+        } finally {
+            canvas.dispose();
+        }
+        return scaled;
     }
 
     private static byte[] reencode(BufferedImage image, String format) {

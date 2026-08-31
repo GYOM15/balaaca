@@ -57,9 +57,12 @@ export async function register(formData: FormData): Promise<void> {
     throw error;
   }
 
-  // Dormant, not published: the profile page is where the business is filled
-  // in and put online, and it is the only useful thing to do next.
-  redirect("/dashboard/profile");
+  // Dormant, not published - and the dashboard is where that is now said. It
+  // opens on the three conditions publishing needs, each pointing at the room
+  // that meets it. The profile form was the older answer and it was the wrong
+  // one: it is one of those three rooms, handed over with nothing to say which
+  // of its fields mattered or what else was still missing.
+  redirect("/dashboard");
 }
 
 function refused(

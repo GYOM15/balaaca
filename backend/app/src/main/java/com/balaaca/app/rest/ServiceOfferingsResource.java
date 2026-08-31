@@ -8,10 +8,13 @@ import com.balaaca.app.api.model.Fulfilment;
 import com.balaaca.app.api.model.ServiceOfferingView;
 import com.balaaca.catalog.ports.inbound.ServiceLocation;
 import com.balaaca.app.api.model.PerformerList;
+import com.balaaca.app.api.model.ServicePhotoList;
+import com.balaaca.app.api.model.ServicePhotoView;
 import com.balaaca.app.api.model.PerformerRequest;
 import com.balaaca.catalog.ports.inbound.ManageServiceCompetenceUseCase;
 import com.balaaca.catalog.ports.inbound.ManageServiceCompetenceUseCase.Performer;
 import com.balaaca.catalog.ports.inbound.ManageServiceOfferingsUseCase;
+import com.balaaca.catalog.ports.inbound.ManageServicePhotosUseCase;
 import com.balaaca.catalog.ports.inbound.ManageServiceOfferingsUseCase.OfferingDefinition;
 import com.balaaca.catalog.ports.inbound.ManageServiceOfferingsUseCase.ServiceOffering;
 import com.balaaca.platformkernel.tenancy.TenantBound;
@@ -38,11 +41,17 @@ import java.util.UUID;
 @TenantBound
 public class ServiceOfferingsResource implements CatalogueApi {
 
+    /** Where a stored name becomes something a browser can fetch. */
+    private static final String MEDIA = "/v1/media/";
+
     private final ManageServiceOfferingsUseCase offerings;
     private final ManageServiceCompetenceUseCase competences;
+    private final ManageServicePhotosUseCase photos;
 
     public ServiceOfferingsResource(ManageServiceOfferingsUseCase offerings,
-                                    ManageServiceCompetenceUseCase competences) {
+                                    ManageServiceCompetenceUseCase competences,
+                                    ManageServicePhotosUseCase photos) {
+        this.photos = photos;
         this.offerings = offerings;
         this.competences = competences;
     }
@@ -164,4 +173,54 @@ public class ServiceOfferingsResource implements CatalogueApi {
                 .sortOrder(d.sortOrder())
                 .active(d.active());
     }
+    @Override
+    @RolesAllowed("dashboard:read")
+    public Response listServicePhotos(UUID id) {
+        return Response.ok(photoList(photos.of(ServiceOfferingId.of(id)))).build();
+    }
+
+    @Override
+    @RolesAllowed("catalog:write")
+    public Response addServicePhoto(UUID id, java.io.File body) {
+        return Response.status(201)
+                .entity(photoList(photos.add(ServiceOfferingId.of(id), read(body))))
+                .build();
+    }
+
+    @Override
+    @RolesAllowed("catalog:write")
+    public Response removeServicePhoto(UUID id, UUID photoId) {
+        return Response.ok(photoList(photos.remove(ServiceOfferingId.of(id), photoId)))
+                .build();
+    }
+
+    private static ServicePhotoList photoList(List<ManageServicePhotosUseCase.Photo> all) {
+        return new ServicePhotoList().data(all.stream()
+                .map(p -> new ServicePhotoView()
+                        .photoId(p.id())
+                        // The stored name becomes a URL here and only here. The
+                        // database holds a name, so moving the images behind a
+                        // CDN is a change to this line and to one adapter.
+                        .url(MEDIA + p.name())
+                        .position(p.position()))
+                .toList());
+    }
+
+    /**
+     * The generator hands a temporary file, because that is what the runtime
+     * does with a binary body. Read once, into memory: the size is bounded far
+     * below anything worth streaming, and everything downstream - magic bytes,
+     * header, decode, resize, re-encode - needs the whole thing anyway.
+     */
+    private static byte[] read(java.io.File body) {
+        if (body == null) {
+            throw new UnreadableImageException();
+        }
+        try {
+            return java.nio.file.Files.readAllBytes(body.toPath());
+        } catch (java.io.IOException e) {
+            throw new UnreadableImageException();
+        }
+    }
+
 }

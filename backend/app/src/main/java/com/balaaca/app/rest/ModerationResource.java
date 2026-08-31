@@ -1,6 +1,8 @@
 package com.balaaca.app.rest;
 
 import com.balaaca.app.api.ModerationApi;
+import com.balaaca.app.api.model.ContestationPage;
+import com.balaaca.app.api.model.ContestationQueueView;
 import com.balaaca.app.api.model.ModerationView;
 import com.balaaca.app.api.model.ProviderReportPage;
 import com.balaaca.app.api.model.ProviderReportView;
@@ -108,4 +110,45 @@ public class ModerationResource implements ModerationApi {
                 view.setReviewedAt(OffsetDateTime.ofInstant(at, ZoneOffset.UTC)));
         return view;
     }
+    @Override
+    @RolesAllowed("admin:moderation")
+    public Response listContestations(String status, String cursor, Integer limit) {
+        var page = moderation.contestations(
+                Optional.ofNullable(status).filter(v -> !v.isBlank()),
+                Cursors.rawId(cursor),
+                limit == null ? Cursors.DEFAULT_LIMIT : limit);
+
+        return Response.ok(new ContestationPage()
+                .data(page.entries().stream().map(ModerationResource::view).toList())
+                .nextCursor(page.next().map(Cursors::encodeRawId).orElse(null)))
+                .header("Cache-Control", PublicCaching.NEVER)
+                .build();
+    }
+
+    @Override
+    @RolesAllowed("admin:moderation")
+    public Response readContestation(UUID id) {
+        return Response.ok(view(moderation.read(id)))
+                .header("Cache-Control", PublicCaching.NEVER)
+                .build();
+    }
+
+    private static ContestationQueueView view(ModerateProvidersUseCase.ContestationView c) {
+        ContestationQueueView view = new ContestationQueueView()
+                .contestationId(c.id())
+                .providerSlug(c.providerSlug())
+                .providerName(c.providerName())
+                .providerStatus(ProviderStatus.fromValue(c.providerStatus()))
+                .message(c.message())
+                .aboutSuspensionAt(
+                        OffsetDateTime.ofInstant(c.aboutSuspensionAt(), ZoneOffset.UTC))
+                .status(ContestationQueueView.StatusEnum.fromString(c.status()))
+                .submittedAt(OffsetDateTime.ofInstant(c.submittedAt(), ZoneOffset.UTC));
+
+        c.readAt().ifPresent(at ->
+                view.setReadAt(OffsetDateTime.ofInstant(at, ZoneOffset.UTC)));
+        c.currentReason().ifPresent(view::setCurrentReason);
+        return view;
+    }
+
 }

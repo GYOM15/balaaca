@@ -1,6 +1,5 @@
-package com.balaaca.providers.adapters.outbound.storage;
+package com.balaaca.platformkernel.media;
 
-import com.balaaca.providers.domain.ImageRejectedException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -200,4 +199,86 @@ class SanitisedImageTest {
                     .hasMessageContaining("6000 pixels");
         }
     }
+    @Nested
+    @DisplayName("What is stored is not what was sent")
+    class Downscaled {
+
+        @Test
+        @DisplayName("A photograph off a telephone is stored at the long edge")
+        void aLargePhotographIsResized() throws Exception {
+            // 3000 x 2000 is an ordinary mid-range camera. Nothing resized
+            // before this, so a five-megabyte file was served as a logo to a
+            // phone on 3G - which is the market, not an edge case.
+            byte[] published = SanitisedImage.of(image("jpeg", 3000, 2000, false)).content();
+
+            java.awt.image.BufferedImage stored = javax.imageio.ImageIO.read(
+                    new java.io.ByteArrayInputStream(published));
+
+            assertThat(stored.getWidth()).isEqualTo(SanitisedImage.STORED_LONG_EDGE);
+            // The ratio is kept: cropping would mean deciding what to remove
+            // from somebody's photograph of their own work.
+            assertThat(stored.getHeight())
+                    .isEqualTo(Math.round(SanitisedImage.STORED_LONG_EDGE * 2000f / 3000f));
+        }
+
+        @Test
+        @DisplayName("A small image is left alone rather than enlarged")
+        void aSmallImageIsUntouched() throws Exception {
+            byte[] published = SanitisedImage.of(image("png", 200, 120, false)).content();
+
+            java.awt.image.BufferedImage stored = javax.imageio.ImageIO.read(
+                    new java.io.ByteArrayInputStream(published));
+
+            // Enlarging costs bytes to invent detail that is not there.
+            assertThat(stored.getWidth()).isEqualTo(200);
+            assertThat(stored.getHeight()).isEqualTo(120);
+        }
+
+        @Test
+        @DisplayName("A payload hidden in the low bits of a PNG does not survive")
+        void resamplingDestroysPixelSteganography() throws Exception {
+            // The one thing re-encoding alone did NOT close. PNG to PNG is
+            // lossless, so a least-significant-bit payload came out the far
+            // side intact; JPEG's lossy pass destroyed most of one, PNG's did
+            // not touch it. Resampling rebuilds the grid from neighbours, and
+            // there are no original low bits left to carry anything.
+            java.awt.image.BufferedImage carrier =
+                    new java.awt.image.BufferedImage(2400, 1600,
+                            java.awt.image.BufferedImage.TYPE_INT_RGB);
+            String secret = "BALAACA-SECRET-PAYLOAD";
+            byte[] bits = secret.getBytes(StandardCharsets.US_ASCII);
+
+            for (int y = 0; y < carrier.getHeight(); y++) {
+                for (int x = 0; x < carrier.getWidth(); x++) {
+                    carrier.setRGB(x, y, 0x808080);
+                }
+            }
+            // One character per column, in the blue channel's low bit.
+            for (int i = 0; i < bits.length * 8; i++) {
+                int bit = (bits[i / 8] >> (7 - (i % 8))) & 1;
+                int rgb = (carrier.getRGB(i, 0) & 0xFFFFFFFE) | bit;
+                carrier.setRGB(i, 0, rgb);
+            }
+
+            java.io.ByteArrayOutputStream raw = new java.io.ByteArrayOutputStream();
+            javax.imageio.ImageIO.write(carrier, "png", raw);
+
+            java.awt.image.BufferedImage stored = javax.imageio.ImageIO.read(
+                    new java.io.ByteArrayInputStream(
+                            SanitisedImage.of(raw.toByteArray()).content()));
+
+            StringBuilder recovered = new StringBuilder();
+            for (int i = 0; i < bits.length * 8; i += 8) {
+                int value = 0;
+                for (int b = 0; b < 8; b++) {
+                    int x = Math.min(i + b, stored.getWidth() - 1);
+                    value = (value << 1) | (stored.getRGB(x, 0) & 1);
+                }
+                recovered.append((char) value);
+            }
+
+            assertThat(recovered.toString()).doesNotContain(secret);
+        }
+    }
+
 }

@@ -5,9 +5,10 @@ import com.balaaca.providers.domain.NothingToPublishException;
 import com.balaaca.providers.domain.UnknownCategoryException;
 import com.balaaca.providers.domain.UnknownLocalityException;
 import com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase;
-import com.balaaca.providers.ports.outbound.ImageStore;
+import com.balaaca.platformkernel.media.ImageStore;
 import com.balaaca.providers.ports.outbound.LocalityRepository;
 import com.balaaca.providers.ports.outbound.ProviderProfileRepository;
+import com.balaaca.providers.ports.outbound.StaffRepository;
 import com.balaaca.platformkernel.audit.AuditEvent;
 import com.balaaca.platformkernel.audit.AuditOutcome;
 import com.balaaca.platformkernel.audit.AuditTrail;
@@ -38,6 +39,7 @@ public class ManageProviderProfileService implements ManageProviderProfileUseCas
 
     private final ProviderProfileRepository profiles;
     private final ProviderRegistrationRepository categories;
+    private final StaffRepository staff;
     private final LocalityRepository localities;
     private final PublishedCatalogueUseCase catalogue;
     private final ManageAvailabilityUseCase availability;
@@ -47,6 +49,7 @@ public class ManageProviderProfileService implements ManageProviderProfileUseCas
 
     public ManageProviderProfileService(ProviderProfileRepository profiles,
                                         ProviderRegistrationRepository categories,
+                                        StaffRepository staff,
                                         LocalityRepository localities,
                                         PublishedCatalogueUseCase catalogue,
                                         ManageAvailabilityUseCase availability,
@@ -55,6 +58,7 @@ public class ManageProviderProfileService implements ManageProviderProfileUseCas
                                         ImageStore images) {
         this.profiles = profiles;
         this.categories = categories;
+        this.staff = staff;
         this.localities = localities;
         this.catalogue = catalogue;
         this.availability = availability;
@@ -94,6 +98,25 @@ public class ManageProviderProfileService implements ManageProviderProfileUseCas
                 Map.of("published", String.valueOf(updated.published()))));
 
         return updated;
+    }
+
+    @Override
+    @Transactional(Transactional.TxType.REQUIRED)
+    public Readiness readiness() {
+        // The same three questions the gate asks, asked before the provider
+        // presses anything. Until now the only way to learn them was to fail.
+        //
+        // Staff is asked separately even though no bookable person means no
+        // combined hours either: told "you have no opening hours" when the real
+        // problem is that nobody is bookable, a provider goes and fills in a
+        // week that was already there.
+        boolean bookable = staff.currentStaff().stream()
+                .anyMatch(member -> member.bookable() && member.active());
+
+        return new Readiness(!catalogue.published().isEmpty(),
+                             !availability.combinedOpeningHours().isEmpty(),
+                             bookable,
+                             profiles.current().published());
     }
 
     /**

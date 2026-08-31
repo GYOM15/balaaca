@@ -1,31 +1,52 @@
 import { Icon } from "@/components/icon";
-import { Notice, SectionHead } from "@/components/ui";
+import { ActionButton, Badge, Notice, SectionHead } from "@/components/ui";
 import { api } from "@/lib/api";
 import { dateTime } from "@/lib/format";
-import type { ProviderProfile } from "@/lib/types";
+import type {
+  ContestationView,
+  ProviderProfile,
+} from "@/lib/types";
+import { contest } from "./actions";
 
 /**
- * A suspension explained, and no way to contest it in the product.
+ * A suspension explained, and the one answer the business is allowed.
  *
- * <p>THERE IS NO CONTESTATION ENDPOINT. The contract carries `suspendProvider`
- * and `reinstateProvider`, both reserved to the platform, and nothing a
- * provider may post about a decision taken against them. So this screen only
- * reads `GET /v1/provider-profile` and stops: it says what the suspension did,
- * shows the reason and the date the operator recorded, and hands over an
- * address. That address is the interim answer - a form posting to a route that
- * does not exist would swallow the one message a suspended business is trying
- * to send, which is worse than having no form at all.
+ * <p>The reason and the date come from the profile; `/v1/provider-profile/
+ * contestation` holds whatever has already been said about them. That route
+ * answers 204 far more often than 200 - almost every business is not suspended,
+ * and a suspended one has usually not written yet - so an absent contestation
+ * is the ordinary case here and never a failure.
  *
- * <p>When a contestation operation is published, the mailto below becomes a
- * form and an actions.ts appears beside this file. Until then there is nothing
- * for a server action to call, which is why this route has no actions.ts.
+ * <p>What the platform decides afterwards does not arrive through this screen.
+ * The contract carries "the operator opened it" and nothing more, so the page
+ * says that much and stops: a reinstatement shows up as the suspension being
+ * gone, not as a reply.
  */
 
-/** The one place the support address is written, so it moves in one edit. */
-export const CONTACT_EMAIL = "contact@balaaca.com";
+/** The contract's own type. It belongs in `@/lib/types`, which this pass does not own. */
+type Contestation = ContestationView;
 
 /** A suspension is lifted by somebody else. A cached page would deny it. */
 export const dynamic = "force-dynamic";
+
+/**
+ * What the platform can refuse, in the provider's own terms.
+ *
+ * <p>`NOT_SUSPENDED` is not in the published catalogue. Two refusals answer
+ * VALIDATION_FAILED and the action tells them apart by status, because a
+ * message the API will not take and a page that came back online while it was
+ * being typed have nothing to say to each other.
+ */
+const REFUSALS: Record<string, string> = {
+  VALIDATION_FAILED: "Votre message est vide, ou dépasse 2 000 caractères.",
+  INVALID_STATE_TRANSITION:
+    "Vous avez déjà répondu à cette suspension. C'est votre premier message que la plateforme lit.",
+  // No entity in here, unlike the copy below: these are strings rendered as
+  // text, and an `&nbsp;` would arrive on screen spelled out.
+  NOT_SUSPENDED: "Votre page n'est plus suspendue. Il n'y a plus rien à contester.",
+  FORBIDDEN: "Seul le propriétaire peut répondre à la plateforme.",
+  UNKNOWN: "L'envoi n'a pas abouti.",
+};
 
 /**
  * What a suspension actually does, which is narrower than it feels.
@@ -52,7 +73,12 @@ const EFFECTS: { icon: string; title: string; body: string }[] = [
   },
 ];
 
-export default async function Contestation() {
+export default async function Contestation({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const query = await searchParams;
   const profile = await api<ProviderProfile>("/v1/provider-profile");
 
   // Read from `status` and not from the presence of `suspended_at`: the two
@@ -74,18 +100,19 @@ export default async function Contestation() {
     );
   }
 
-  const mailto =
-    `mailto:${CONTACT_EMAIL}` +
-    // The slug and not the business name: two salons may share a name, and the
-    // slug is what the operator's own tools take.
-    `?subject=${encodeURIComponent(`Contestation de suspension - ${profile.slug}`)}`;
+  // After the status rather than beside it: the route answers 204 for every
+  // business nobody suspended, so asking in parallel would spend a request on
+  // an answer the branch above has already given.
+  const contestation = await api<Contestation | undefined>(
+    "/v1/provider-profile/contestation",
+  );
 
   return (
     <>
       <div className="pro-head stack stack-2">
         <h1 className="pro-head__title">Votre page est suspendue</h1>
         <p className="t-small t-muted measure">
-          Ce que cela change, pourquoi, et comment nous répondre.
+          Ce que cela change, pourquoi, et comment répondre à la plateforme.
         </p>
       </div>
 
@@ -132,33 +159,73 @@ export default async function Contestation() {
         </section>
 
         <section className="stack stack-4">
-          <SectionHead label="Contester" />
+          <SectionHead label="Contester cette décision" />
 
-          {/* Said plainly rather than dressed up as a form. A provider who
-              writes into a box that goes nowhere has lost the days they
-              thought they had spent contesting. */}
-          <Notice tone="info" title="Il n'y a pas encore de formulaire ici">
-            Votre tableau de bord ne sait pas encore transmettre une
-            contestation. En attendant, cela se fait par e-mail&nbsp;: la
-            réponse vous arrivera par e-mail elle aussi, pas sur cette page.
-          </Notice>
+          {/* Above both branches: a second send is refused, and the refusal
+              belongs beside the message that already went rather than beside a
+              form this page no longer shows. */}
+          {query.error ? (
+            <Notice tone="danger" title="Votre message n'est pas parti">
+              {REFUSALS[query.error] ?? REFUSALS.UNKNOWN}
+            </Notice>
+          ) : null}
 
-          <p className="t-small t-muted measure">
-            Dites ce que vous contestez et ce qui s'est réellement passé. Si
-            vous avez une preuve — une photo, un message d'un client, un reçu —
-            joignez-la&nbsp;: c'est ce qui fait la différence.
-          </p>
+          {contestation ? (
+            <div className="card card--pad stack stack-3">
+              <div className="row row--between row-3 row--wrap">
+                <p className="t-label">Votre message a été transmis</p>
+                {contestation.read ? (
+                  <Badge label="Lu par la plateforme" tone="success" icon="check" />
+                ) : (
+                  <Badge label="Pas encore ouvert" tone="neutral" icon="clock" />
+                )}
+              </div>
+              <p className="t-caption t-dim">
+                Envoyé le {dateTime(contestation.submitted_at, profile.timezone)}
+              </p>
+              <p className="t-body measure">{contestation.message}</p>
+              <p className="t-caption t-dim measure">
+                La plateforme ne répond pas sur cette page&nbsp;: si elle vous
+                donne raison, votre page revient en ligne et cet écran vous le
+                dira.
+              </p>
+            </div>
+          ) : (
+            <form action={contest} className="stack stack-4">
+              <p className="t-small t-muted measure">
+                Dites ce que vous contestez et ce qui s'est réellement passé. Si
+                vous avez une preuve — une photo, un message d'un client, un
+                reçu — décrivez-la&nbsp;: c'est ce qui fait la différence.
+              </p>
 
-          {/* A plain anchor: a mailto is not a route, and next/link would try
-              to treat it as one. */}
-          <a className="btn btn--primary" href={mailto}>
-            <Icon name="mail" size={18} />
-            <span>Contester par e-mail</span>
-          </a>
+              <label className="field">
+                <span className="field__label">
+                  Votre message
+                  <span className="field__req" aria-hidden="true">*</span>
+                </span>
+                <textarea
+                  className="textarea"
+                  name="message"
+                  rows={8}
+                  required
+                  maxLength={2000}
+                  placeholder="Ce que vous contestez, et ce qui s'est passé de votre côté."
+                />
+                <span className="field__hint">
+                  <Icon name="info" size={14} /> Un seul message par
+                  suspension&nbsp;: vous ne pourrez pas en envoyer un second, ni
+                  corriger celui-ci. 2 000 caractères au plus.
+                </span>
+              </label>
 
-          <p className="t-caption t-dim">
-            {CONTACT_EMAIL} — précisez votre identifiant&nbsp;: {profile.slug}
-          </p>
+              <ActionButton
+                label="Envoyer ma contestation"
+                variant="primary"
+                type="submit"
+                icon="send"
+              />
+            </form>
+          )}
         </section>
       </div>
     </>

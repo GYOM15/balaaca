@@ -16,6 +16,7 @@ import type {
   AppointmentView,
   CurrentMember,
   ProviderProfile,
+  ReadinessView,
   ServiceOfferingPage,
   StaffView,
 } from "@/lib/types";
@@ -85,11 +86,17 @@ export default async function Agenda({
 }) {
   const query = await searchParams;
 
-  const [provider, me, team, services] = await Promise.all([
+  const [provider, me, team, services, readiness] = await Promise.all([
     api<ProviderProfile>("/v1/provider-profile"),
     api<CurrentMember>("/v1/me"),
     api<{ data: StaffView[] }>("/v1/staff"),
     api<ServiceOfferingPage>("/v1/service-offerings", { query: { active: true, limit: 200 } }),
+    // Not derived from the three reads above, though two of them are already
+    // here. The server answers this from the predicates the publish gate itself
+    // uses; counting active services in this page would put the definition of
+    // "ready" in a second place, and the two would part the first time a
+    // condition changed.
+    api<ReadinessView>("/v1/provider-profile/readiness"),
   ]);
 
   const zone = provider.timezone;
@@ -147,6 +154,13 @@ export default async function Agenda({
             {REFUSALS[query.error] ?? "Le serveur a refusé cette action."}
           </Notice>
         ) : null}
+
+        {/* Under the refusal, above everything else: a message about the verb
+            somebody just pressed outranks a list that will still be here
+            tomorrow. Owner only - two of these three rooms and the publishing
+            itself are refused to an employee, and a list of jobs somebody
+            cannot do is a dead end. */}
+        {me.role === "OWNER" ? <Readiness readiness={readiness} /> : null}
 
         <div
           className="stat-row"
@@ -319,6 +333,121 @@ export default async function Agenda({
         />
       </div>
     </>
+  );
+}
+
+/* --- The way to being live ------------------------------------------------ */
+
+/**
+ * The three conditions publishing has always had, said before the refusal
+ * instead of as one.
+ *
+ * <p>They existed the whole time; a provider only ever met them by filling in a
+ * form, pressing publish and being told what they should have done first.
+ * Registration then landed them on that same form with no idea any of it
+ * existed.
+ *
+ * <p>Nothing at all once the page is live. A salon already trading does not
+ * need a tutorial, and one that never leaves reads as a fault in the product.
+ */
+function Readiness({ readiness }: { readiness: ReadinessView }) {
+  if (readiness.published) return null;
+
+  // Everything is in place, so the three ticks have nothing left to teach: what
+  // is missing now is one switch on another screen, and saying so in one line
+  // beats a list of three things already done.
+  if (readiness.can_publish) {
+    return (
+      <Notice tone="success" title="Vous pouvez publier votre page" icon="check-circle">
+        Tout ce qu’il fallait est là. Il reste à cocher «&nbsp;Ma page est
+        visible par les clients&nbsp;» et à enregistrer&nbsp;: tant que ce n’est
+        pas fait, personne ne vous trouve.{" "}
+        <Button label="Ma page" variant="secondary" size="sm" href="/dashboard/profile" />
+      </Notice>
+    );
+  }
+
+  const done = [readiness.has_service, readiness.has_hours, readiness.has_bookable_staff].filter(
+    Boolean,
+  ).length;
+
+  return (
+    <section className="stack stack-4" aria-labelledby="readiness-title">
+      <SectionHead label="Pour être visible" aside={`${done} sur 3`} />
+      <div className="card card--pad stack stack-2">
+        <h2 className="t-caption t-dim" id="readiness-title">
+          Trois choses, et votre page part en ligne. C’est la liste que la
+          publication vous opposerait&nbsp;: rien de plus, rien d’autre.
+        </h2>
+
+        <Condition
+          done={readiness.has_service}
+          label="Créer une prestation"
+          hint="Ce qu’une cliente choisit. C’est elle qui porte la durée et le prix."
+          href="/dashboard/services"
+          cta="Mes prestations"
+        />
+        <Condition
+          done={readiness.has_hours}
+          label="Déclarer vos horaires"
+          hint="La semaine que vous travaillez. Sans elle, votre carnet n’a aucun créneau à offrir."
+          href="/dashboard/hours"
+          cta="Mes horaires"
+        />
+        {/* Its own line rather than folded into the hours, though nobody
+            bookable also means no combined week. Told "vous n'avez pas
+            d'horaires" when the real problem is that everyone was stood down, a
+            provider goes and fills in a week that was already there. */}
+        <Condition
+          done={readiness.has_bookable_staff}
+          label="Quelqu’un de réservable"
+          hint="Un rendez-vous occupe une chaise, jamais un salon. Vous seul suffisez."
+          href="/dashboard/team"
+          cta="Mon équipe"
+        />
+      </div>
+    </section>
+  );
+}
+
+/**
+ * One condition, whether it is met, and the room that meets it.
+ *
+ * <p>The link is there whether or not it is ticked. A provider who wants to see
+ * the hours they declared should not have to un-declare them to get a way in.
+ */
+function Condition({
+  done,
+  label,
+  hint,
+  href,
+  cta,
+}: {
+  done: boolean;
+  label: string;
+  hint: string;
+  href: string;
+  cta: string;
+}) {
+  return (
+    <div className="check-item">
+      {/* Hidden from a screen reader: a coloured ring is not a word, so the
+          state is said in the label instead. */}
+      <span
+        className={`check-item__mark check-item__mark--${done ? "done" : "todo"}`}
+        aria-hidden="true"
+      >
+        {done ? <Icon name="check" size={13} /> : null}
+      </span>
+      <span className="grow stack stack-1">
+        <span className="check-item__label">
+          {label}
+          <span className="sr-only">{done ? " : fait" : " : à faire"}</span>
+        </span>
+        <span className="check-item__hint">{hint}</span>
+      </span>
+      <Button label={cta} variant="ghost" size="sm" href={href} iconEnd="arrow-right" />
+    </div>
   );
 }
 

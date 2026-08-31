@@ -274,41 +274,60 @@ export default async function ProviderPage({
                 />
               ) : (
                 <ul className="list">
-                  {provider.services.map((service) => (
-                    <li key={service.service_offering_id}>
-                      <Link
-                        className="svc-row"
-                        href={`${bookHref}?service=${encodeURIComponent(service.service_offering_id)}`}
-                      >
-                        <span className="grow stack stack-2">
-                          <span className="svc-row__name">{service.name}</span>
-                          {service.description ? (
-                            <span className="svc-row__desc">{service.description}</span>
+                  {provider.services.map((service) => {
+                    const photo = mediaUrl(service.photos?.[0]);
+                    return (
+                      <li key={service.service_offering_id}>
+                        <Link
+                          className="svc-row"
+                          href={`${bookHref}?service=${encodeURIComponent(service.service_offering_id)}`}
+                        >
+                          {/* The first photo and only the first. A provider may
+                              publish five per service and this page is read on a
+                              phone over 3G: a catalogue of twenty services would
+                              pull a hundred images to show a price list. */}
+                          {photo ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              className="avatar avatar--photo"
+                              src={photo}
+                              alt={`Photo de la prestation ${service.name}`}
+                              width={48}
+                              height={48}
+                              loading="lazy"
+                              decoding="async"
+                            />
                           ) : null}
-                          <span className="svc-row__facts">
-                            {/* `price` is ABSENT when the provider chose not to
-                                publish it - the projection has no field at all,
-                                so there is no zero to mistake for free. */}
-                            {service.price ? (
-                              <span className="svc-row__price">{money(service.price)}</span>
-                            ) : (
-                              <span className="svc-row__price svc-row__price--ask">
-                                Prix sur demande
+                          <span className="grow stack stack-2">
+                            <span className="svc-row__name">{service.name}</span>
+                            {service.description ? (
+                              <span className="svc-row__desc">{service.description}</span>
+                            ) : null}
+                            <span className="svc-row__facts">
+                              {/* `price` is ABSENT when the provider chose not to
+                                  publish it - the projection has no field at all,
+                                  so there is no zero to mistake for free. */}
+                              {service.price ? (
+                                <span className="svc-row__price">{money(service.price)}</span>
+                              ) : (
+                                <span className="svc-row__price svc-row__price--ask">
+                                  Prix sur demande
+                                </span>
+                              )}
+                              <span className="svc-row__dot" aria-hidden="true" />
+                              <span className="svc-row__dur">
+                                <Icon name="clock" size={13} />
+                                {duration(service.duration_minutes)}
                               </span>
-                            )}
-                            <span className="svc-row__dot" aria-hidden="true" />
-                            <span className="svc-row__dur">
-                              <Icon name="clock" size={13} />
-                              {duration(service.duration_minutes)}
                             </span>
                           </span>
-                        </span>
-                        <span className="svc-row__go" aria-hidden="true">
-                          <Icon name="chevron-right" size={20} />
-                        </span>
-                      </Link>
-                    </li>
-                  ))}
+                          <span className="svc-row__go" aria-hidden="true">
+                            <Icon name="chevron-right" size={20} />
+                          </span>
+                        </Link>
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </section>

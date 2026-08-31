@@ -468,6 +468,38 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
+  /v1/provider-profile/readiness:
+    get:
+      operationId: getReadiness
+      tags: [profile]
+      summary: What is still missing before you can publish
+      description: |
+        The three conditions have existed since publishing had a gate, and until
+        now they were only ever spoken as a REFUSAL: a provider filled in a
+        form, pressed publish, and was told what they should have done first.
+        Registration then dropped them on that form with no idea any of it
+        existed.
+
+        Answered by the same predicates the gate itself uses, in one call.
+        Three separate reads from a client would put the definition of "ready"
+        in two places, and the second would drift the first time a condition
+        changed.
+
+        `has_bookable_staff` is asked separately even though nobody bookable
+        also means no combined hours: told "you have no opening hours" when the
+        real problem is that nobody is bookable, a provider goes and fills in a
+        week that was already there.
+      security: [{ oauth2: [dashboard:read] }]
+      responses:
+        '200':
+          description: Where this business is on the way to being live.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessView'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
   /v1/provider-profile/qr-code:
     get:
       operationId: getProviderQrCode
@@ -1773,6 +1805,103 @@ paths:
               schema:
                 $ref: '#/components/schemas/CategoryList'
 
+  /v1/service-offerings/{id}/photos:
+    get:
+      operationId: listServicePhotos
+      tags: [catalogue]
+      summary: What this service looks like
+      description: |
+        In the provider's own order. The first is the one that represents the
+        service wherever a list shows only one, which is why the order is theirs
+        to set rather than the upload date.
+      security: [{ oauth2: [dashboard:read] }]
+      parameters:
+        - $ref: '#/components/parameters/ServiceOfferingId'
+      responses:
+        '200':
+          description: The photographs, in the provider's own order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServicePhotoList'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: addServicePhoto
+      tags: [catalogue]
+      summary: Add a photograph
+      description: |
+        The bytes themselves, with their type in the header. No multipart and no
+        filename: a filename is a value the server would have to distrust and
+        would gain nothing from trusting.
+
+        Five at most, and the cap is a promise about the PAGE rather than about
+        storage. Five pictures is nothing to store; a catalogue of twelve
+        services with no limit is a page that never finishes loading on a
+        mid-range telephone over 3G, and the provider pays for that in customers
+        who closed it.
+
+        Every image is re-encoded and scaled to 1600 pixels on the long edge.
+        That strips the metadata a telephone writes - including the coordinates
+        of where the photograph was taken - and it is why nothing arrives on a
+        customer's page at five megabytes.
+      security: [{ oauth2: [catalog:write] }]
+      parameters:
+        - $ref: '#/components/parameters/ServiceOfferingId'
+      requestBody:
+        required: true
+        content:
+          image/jpeg:
+            schema: { type: string, format: binary }
+          image/png:
+            schema: { type: string, format: binary }
+      responses:
+        '201':
+          description: The photographs, with the new one in place.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServicePhotoList'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: |
+            VALIDATION_FAILED - not an image this platform publishes, or the
+            fifth slot is already taken.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /v1/service-offerings/{id}/photos/{photo_id}:
+    delete:
+      operationId: removeServicePhoto
+      tags: [catalogue]
+      summary: Remove a photograph
+      description: |
+        The freed slot is not backfilled. Renumbering would move every other
+        photograph's position, and the first is the one that represents the
+        service in a list - a provider who chose it would find it changed
+        because they deleted something else.
+      security: [{ oauth2: [catalog:write] }]
+      parameters:
+        - $ref: '#/components/parameters/ServiceOfferingId'
+        - name: photo_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: What is left.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServicePhotoList'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /v1/service-offerings/{id}/performers:
     get:
       operationId: listServicePerformers
@@ -1875,6 +2004,139 @@ paths:
             platform has taken it, and what happens next is not theirs to poll.
         '400':
           $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/provider-profile/contestation:
+    get:
+      operationId: getContestation
+      tags: [profile]
+      summary: What you answered, if you answered
+      description: |
+        Empty for a business that is not suspended, which is almost every
+        business almost always. A message about a decision nobody took is not
+        worth showing, and an old one from a previous suspension would be worse.
+      security: [{ oauth2: [dashboard:read] }]
+      responses:
+        '200':
+          description: The answer, or nothing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContestationView'
+        '204':
+          description: Nothing to show - not suspended, or suspended and silent.
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: contestSuspension
+      tags: [profile]
+      summary: Answer the platform back
+      description: |
+        The third of the three things moderation needs. The platform has a trace
+        of what it decided and a way to undo it; until now the business had the
+        reason on its dashboard and nothing to do with it, and that asymmetry is
+        what separates a platform from an arbitrary one.
+
+        One message per suspension. A business that presses twice meant it once,
+        and the only situation where a second message is about something new is
+        being suspended again. Read it back with `getContestation`.
+
+        It is not a form that reaches the salon's own inbox: the operator reads
+        it beside the reports, and the platform holds a record that it was told.
+      security: [{ oauth2: [profile:write] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContestationRequest'
+      responses:
+        '201':
+          description: Filed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContestationView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: INVALID_STATE_TRANSITION - this suspension is already answered.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          description: VALIDATION_FAILED - the business is not suspended.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /v1/admin/contestations:
+    get:
+      operationId: listContestations
+      tags: [moderation]
+      summary: What businesses have answered
+      description: |
+        Beside the reports and not merged with them: a customer complaining
+        about a provider and a provider answering the platform are different
+        things, read at different moments and acted on differently.
+
+        Pending first, oldest first - a business waiting on an answer has been
+        waiting since it was suspended. Each row carries the reason the provider
+        carries NOW, which is absent once they have been reinstated: at a glance
+        it says whether this is still about a live decision or one already
+        undone.
+      security: [{ oauth2: [admin:moderation] }]
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [PENDING, READ]
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: The answers.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContestationPage'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/admin/contestations/{id}/reading:
+    post:
+      operationId: readContestation
+      tags: [moderation]
+      summary: Mark one read
+      description: |
+        Records that the operator read it, and nothing else. Whether the
+        business is reinstated is a separate decision with its own audit row - a
+        contestation can be read and refused, and pretending otherwise would
+        make the queue mean two things at once.
+      security: [{ oauth2: [admin:moderation] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The contestation, now read.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContestationView'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -2973,6 +3235,132 @@ components:
           type: string
           nullable: true
 
+    ContestationRequest:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: In the provider's own words.
+
+    ContestationView:
+      type: object
+      required: [message, submitted_at, about_suspension_at, read]
+      properties:
+        message:
+          type: string
+        submitted_at:
+          type: string
+          format: date-time
+        about_suspension_at:
+          type: string
+          format: date-time
+          description: Which suspension this answers. A business can be
+            suspended, contest, be reinstated and be suspended again.
+        read:
+          type: boolean
+          description: Whether the operator has opened it. Not whether they
+            agreed - that is a separate decision.
+
+    ContestationQueueView:
+      type: object
+      required: [contestation_id, provider_slug, provider_name, provider_status,
+                 message, about_suspension_at, status, submitted_at]
+      properties:
+        contestation_id:
+          type: string
+          format: uuid
+        provider_slug:
+          type: string
+        provider_name:
+          type: string
+        provider_status:
+          $ref: '#/components/schemas/ProviderStatus'
+        message:
+          type: string
+        about_suspension_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [PENDING, READ]
+        submitted_at:
+          type: string
+          format: date-time
+        read_at:
+          type: string
+          format: date-time
+        current_reason:
+          type: string
+          description: |
+            The reason the provider carries NOW, absent once reinstated. Beside
+            the message it says at a glance whether this is still about a live
+            decision or one already undone.
+
+    ContestationPage:
+      type: object
+      required: [data, next_cursor]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ContestationQueueView'
+        next_cursor:
+          type: string
+          nullable: true
+
+    ServicePhotoView:
+      type: object
+      required: [photo_id, url, position]
+      properties:
+        photo_id:
+          type: string
+          format: uuid
+        url:
+          type: string
+          description: Where the bytes are. The name discloses neither the
+            provider nor the original file.
+        position:
+          type: integer
+          format: int32
+          description: Zero first. The first photograph represents the service
+            in a list, which is why it is worth being able to choose it.
+
+    ServicePhotoList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          maxItems: 5
+          items:
+            $ref: '#/components/schemas/ServicePhotoView'
+
+    ReadinessView:
+      type: object
+      required: [has_service, has_hours, has_bookable_staff, can_publish, published]
+      properties:
+        has_service:
+          type: boolean
+          description: A service a customer can choose. The empty catalogue is
+            what a salon is most likely to have forgotten.
+        has_hours:
+          type: boolean
+          description: The week, without which the diary can offer nothing.
+        has_bookable_staff:
+          type: boolean
+          description: Somebody a customer can be given. A solo barber has this
+            from the moment they register, so it fails only after everybody was
+            stood down.
+        can_publish:
+          type: boolean
+          description: All three. What the publish gate will answer.
+        published:
+          type: boolean
+          description: Whether the page is already live.
+
     ServiceAddress:
       type: object
       description: |
@@ -3868,6 +4256,18 @@ components:
             customer needs before choosing, which is why it is published.
         fulfilment:
           $ref: '#/components/schemas/Fulfilment'
+        photos:
+          type: array
+          maxItems: 5
+          items:
+            type: string
+          description: |
+            What the service looks like, in the provider's own order and at most
+            five. The first is the one to show wherever there is room for one.
+
+            In braiding, in nails, in decoration, in catering, this is the
+            specification rather than decoration: a customer cannot tell two
+            kinds of braids apart from their names.
         price:
           $ref: '#/components/schemas/Money'
 
