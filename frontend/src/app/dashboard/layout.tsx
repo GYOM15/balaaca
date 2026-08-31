@@ -28,6 +28,7 @@ const SECTIONS: Section[] = [
   { href: "/dashboard/hours", icon: "clock", label: "Horaires" },
   { href: "/dashboard/services", icon: "briefcase", label: "Prestations", ownerOnly: true },
   { href: "/dashboard/profile", icon: "store", label: "Ma page", ownerOnly: true },
+  { href: "/dashboard/customers", icon: "message", label: "Clientèle" },
   { href: "/dashboard/team", icon: "users", label: "Équipe", ownerOnly: true },
 ];
 
