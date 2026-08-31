@@ -162,6 +162,21 @@ in them, forms post to server actions, and the session is one httpOnly cookie
 sealed with AES-256-GCM. There is no proxy route and no client-side call to the
 API, so there is nowhere for an access token to leak to.
 
+**To run the whole thing**, from the repository root:
+
+```bash
+scripts/dev.sh
+```
+
+It starts PostgreSQL, Keycloak and Redis in containers, builds the API the
+first time and runs it, then the front, and prints the URLs. `scripts/dev-stop.sh`
+stops it and keeps the data. Doing it by hand means remembering three overrides
+that only apply to a local run - the database host, the OIDC issuer, and a media
+root a developer can write to - and forgetting one fails in a way that does not
+name itself.
+
+The front on its own:
+
 ```bash
 cd frontend
 npm ci
@@ -170,6 +185,21 @@ npm run test        # the wall-clock-to-instant conversion, where it can fail
 npm run lint
 npm run dev
 ```
+
+### The brand
+
+The logo is two files and no code:
+
+| File | Where it shows |
+|---|---|
+| `frontend/public/brand/logo.svg` | header, footer, anything on ivory |
+| `frontend/public/brand/logo-inverse.svg` | the dashboard sidebar and a provider's cover, both dark green |
+
+Replace them and nothing else moves. What is there today is the mockup's own
+mark, kept so nothing is empty - it is a placeholder, not a decision. It renders
+at 26 px in the header, so a square or a circle works; a wide logo that already
+carries the word "Balaaca" needs `MARK_CARRIES_THE_NAME` set to `true` in
+`src/components/ui.tsx`, which drops the word rendered beside it.
 
 `src/generated/` is written from `backend/app/src/main/resources/META-INF/openapi.yaml`
 on every build and is **not committed**: a checked-in copy would be a second

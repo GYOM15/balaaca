@@ -50,3 +50,7 @@ jacoco.exec
 # --- Maven / Quarkus build output ---
 backend/**/target/
 .jqwik-database
+
+# Ce que scripts/dev.sh ecrit en local. Rien de tout cela ne se commite.
+.dev-logs/
+.dev-media/

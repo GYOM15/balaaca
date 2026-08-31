@@ -39,27 +39,38 @@ export const STATUS: Record<
 
 /* --- Wordmark ------------------------------------------------------------ */
 
+/**
+ * Whether the name is written beside the mark.
+ *
+ * <p>One line, because it is one decision and it depends on the logo file. A
+ * square mark needs the word next to it; a wide logo that already contains
+ * "Balaaca" would say it twice. Set this to false in that case.
+ */
+const MARK_CARRIES_THE_NAME = false;
+
+/**
+ * The logo, as a file.
+ *
+ * <p>An <img> and not inline SVG, deliberately: the mark is a brand decision
+ * and brand decisions should not live in a component. public/brand/logo.svg is
+ * replaced and nothing here changes - no build step, no import, no code review
+ * of a path drawn by hand.
+ *
+ * <p>Two files, because there are two grounds. The dashboard sidebar and a
+ * provider's cover are dark green, and a mark drawn for ivory disappears on
+ * them. If one file works on both, make them the same file.
+ */
 export function Mark({ size = 24, tone }: { size?: number; tone?: "inverse" }) {
-  const bg = tone === "inverse" ? "var(--ink-accent)" : "var(--ink)";
-  const fg = tone === "inverse" ? "var(--ink)" : "var(--ink-accent)";
   return (
-    <svg
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
       className="wordmark__glyph"
+      src={tone === "inverse" ? "/brand/logo-inverse.svg" : "/brand/logo.svg"}
+      alt=""
       width={size}
       height={size}
-      viewBox="0 0 24 24"
       aria-hidden="true"
-      focusable="false"
-    >
-      <rect width="24" height="24" rx="7" fill={bg} />
-      <path
-        d="M7.6 18.6V11.9a4.4 4.4 0 0 1 8.8 0v6.7M4.8 18.6h14.4"
-        fill="none"
-        stroke={fg}
-        strokeWidth="1.9"
-        strokeLinecap="round"
-      />
-    </svg>
+    />
   );
 }
 
@@ -77,7 +88,7 @@ export function Wordmark({
   return (
     <Link className="wordmark" href={href} aria-label="Balaaca, accueil">
       <Mark size={size} tone={tone} />
-      {hideText ? null : <span>Balaaca</span>}
+      {hideText || MARK_CARRIES_THE_NAME ? null : <span>Balaaca</span>}
     </Link>
   );
 }
