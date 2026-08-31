@@ -107,6 +107,29 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                        -- new one apart would leave a window in which a third
                        -- booking fits into the appointment being moved.
                        staff_id = COALESCE(CAST(:staffId AS uuid), staff_id),
+                       -- The promise follows the handover, re-derived from the
+                       -- delay frozen at booking.
+                       --
+                       -- Without this the move broke outright: ck_appointments
+                       -- _ready_after_handover forbids a promise before the
+                       -- handover it belongs to, so a garage moving Monday's
+                       -- drop-off to Thursday hit a CHECK, got 500, and the
+                       -- appointment silently stayed on Monday. And where it
+                       -- did not break it lied - a job moved a day earlier kept
+                       -- yesterday's promise, which is a date the workshop
+                       -- never agreed to.
+                       --
+                       -- A provider who had re-promised by hand re-promises
+                       -- again: a promise is relative to a handover, and one
+                       -- anchored to a moment that no longer exists is not a
+                       -- promise. endsAt is cast for the same reason it is in
+                       -- the insert - beside make_interval, PostgreSQL cannot
+                       -- infer a parameter's type and reads the addition as
+                       -- interval + interval.
+                       ready_by = CASE WHEN turnaround_hours IS NULL THEN NULL
+                                       ELSE CAST(:endsAt AS timestamptz)
+                                            + make_interval(hours => turnaround_hours)
+                                  END,
                        version = version + 1,
                        updated_at = :at
                  WHERE id = :id

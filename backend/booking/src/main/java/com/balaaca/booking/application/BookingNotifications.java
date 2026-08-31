@@ -109,6 +109,36 @@ public class BookingNotifications {
         planOne(cancelled, NotificationKind.CANCELLATION);
     }
 
+    /**
+     * What a change the CUSTOMER made owes the provider.
+     *
+     * <p>Planned by the customer's own path and nowhere else. A provider told
+     * about their own cancellation is a provider learning to ignore the
+     * channel, and the diary is where they see their own edits.
+     *
+     * <p>Silent when the provider published no way to be reached, exactly like
+     * the booking notice: a business with no contact must still be bookable.
+     */
+    public void planCustomerChangeNotice(AgendaEntry changed, NotificationKind kind) {
+        NoticeProfile provider = providers.currentNoticeProfile();
+
+        provider.noticeDestination().ifPresent(to -> outbox.plan(List.of(
+                new PlannedNotification(changed.id(), kind,
+                        NotificationRecipient.PROVIDER,
+                        to.phoneE164(), to.email(), LOCALE,
+                        // The provider's payload: whose appointment it is, not
+                        // whose business. Their own name would tell them
+                        // nothing, and the customer's number stays the row's
+                        // destination rather than a variable - it is already in
+                        // their agenda.
+                        Map.of("customer_name", changed.customer().fullName(),
+                               "service_name", changed.serviceName(),
+                               "starts_at", changed.startsAt().toString(),
+                               "starts_at_local", LOCAL_TIME.format(
+                                       changed.startsAt().atZone(provider.timezone()))),
+                        changed.startsAt(), clock.instant()))));
+    }
+
     private void planOne(AgendaEntry cancelled, NotificationKind kind) {
         NoticeProfile provider = providers.currentNoticeProfile();
         Map<String, String> payload = Map.of(

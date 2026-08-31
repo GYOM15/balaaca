@@ -5,6 +5,7 @@ import com.balaaca.app.api.model.AppointmentCreatedView;
 import com.balaaca.app.api.model.AppointmentStatus;
 import com.balaaca.app.api.model.BookAppointmentRequest;
 import com.balaaca.app.api.model.CancelAppointmentRequest;
+import com.balaaca.app.api.model.RescheduleBookingRequest;
 import com.balaaca.app.api.model.CustomerBookingView;
 import com.balaaca.app.api.model.Money;
 import com.balaaca.booking.domain.BookingSource;
@@ -108,6 +109,16 @@ public class PublicBookingResource implements BookingApi {
         return withBooking(reference, () -> Response.ok(view(bookings.cancel(
                 reference,
                 Optional.ofNullable(request).map(CancelAppointmentRequest::getReason)))).build());
+    }
+
+    @Override
+    public Response rescheduleBooking(String reference, RescheduleBookingRequest request) {
+        return withBooking(reference, () -> Response.ok(view(bookings.reschedule(
+                reference,
+                // The contract says date-time, so the wire type carries an
+                // offset; the domain carries an instant, and this is the one
+                // place the two meet.
+                request.getStartsAt().toInstant()))).build());
     }
 
     private Response withBooking(String reference, java.util.function.Supplier<Response> work) {

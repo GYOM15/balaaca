@@ -27,9 +27,20 @@ import java.util.Optional;
 public enum WhatsAppTemplate {
 
     BOOKING_CONFIRMATION("booking_confirmation", "business_name", "service_name", "starts_at_local"),
+    // The one message a waiting customer actually wants, and until now it was
+    // planned and never sent: a kind with no entry here throws
+    // NO_TEMPLATE_FOR_KIND, retries, and goes DEAD. BOOKING_ACCEPTED was added
+    // because confirming notified nobody; it still notified nobody.
+    BOOKING_ACCEPTED("booking_accepted", "business_name", "service_name", "starts_at_local"),
     REMINDER("booking_reminder", "business_name", "service_name", "starts_at_local"),
     CANCELLATION("booking_cancellation", "business_name", "service_name", "starts_at_local"),
-    BOOKING_NOTICE("booking_notice", "customer_name", "service_name", "starts_at_local");
+    RESCHEDULE("booking_reschedule", "business_name", "service_name", "starts_at_local"),
+    // To the provider. Their own business name would tell them nothing; whose
+    // appointment it is, is the whole message.
+    BOOKING_NOTICE("booking_notice", "customer_name", "service_name", "starts_at_local"),
+    CANCELLATION_NOTICE("cancellation_notice", "customer_name", "service_name",
+                        "starts_at_local"),
+    RESCHEDULE_NOTICE("reschedule_notice", "customer_name", "service_name", "starts_at_local");
 
     private final String templateName;
     private final List<String> parameters;
