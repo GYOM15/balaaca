@@ -14,6 +14,7 @@ import com.balaaca.booking.ports.outbound.AppointmentRepository.NewAppointment;
 import com.balaaca.catalog.ports.inbound.BookableOffering;
 import com.balaaca.catalog.ports.inbound.LookupServiceOfferingUseCase;
 import com.balaaca.booking.domain.BookingExceptions.StaffCannotPerformServiceException;
+import com.balaaca.booking.domain.BookingExceptions.UnknownStaffException;
 import com.balaaca.booking.domain.BookingExceptions.SlotOutsideAvailabilityException;
 import com.balaaca.scheduling.ports.inbound.CalculateSlotsUseCase;
 import com.balaaca.scheduling.ports.inbound.CalculateSlotsUseCase.SlotRequest;
@@ -103,13 +104,22 @@ public class BookAppointmentAttempt {
 
         StaffId staffId = command.staffId().orElseGet(() -> pick(command, excluded));
 
-        // The server's own pick came off a list that already joins competence.
-        // A name the CLIENT chose did not, so it is checked here - once, in the
-        // transaction that books it.
-        if (command.staffId().isPresent()
-                && !appointments.performs(staffId, command.serviceOfferingId())) {
-            throw new StaffCannotPerformServiceException(
-                    staffId.value(), command.serviceOfferingId().value());
+        // The server's own pick came off a list that already joins competence
+        // and standing. A name the CLIENT chose did not, so both are checked
+        // here - once, in the transaction that books it.
+        if (command.staffId().isPresent()) {
+            // Whether the chair still exists comes first: somebody who has left
+            // is not "unable to perform this service", they are not there. A
+            // 404 also says nothing about who works where, which is the same
+            // reason the reschedule route answers 404 for a stranger's staff id.
+            if (!appointments.canBeAssigned(
+                    staffId, command.source().honoursPublishedAvailability())) {
+                throw new UnknownStaffException(staffId.value());
+            }
+            if (!appointments.performs(staffId, command.serviceOfferingId())) {
+                throw new StaffCannotPerformServiceException(
+                        staffId.value(), command.serviceOfferingId().value());
+            }
         }
         CustomerId customerId = appointments.upsertCustomer(command.customer());
 

@@ -223,19 +223,41 @@ class MembershipEnforcementIT {
         }
 
         @Test
-        @DisplayName("A suspended business loses its dashboard and its public page")
+        @DisplayName("A suspended business loses its public page, and keeps its diary")
         @TestSecurity(user = BookingFixtures.SALON_SUBJECT, roles = {
                 "dashboard:read", "profile:write", "catalog:write",
                 "schedule:write", "staff:write", "appointments:write"})
         @OidcSecurity(claims = @Claim(key = "sub", value = BookingFixtures.SALON_SUBJECT))
         void revokesASuspendedProviderEverywhere() {
             fixtures.execute("""
-                    UPDATE providers SET status = 'SUSPENDED' WHERE id = '%s'
+                    UPDATE providers
+                       SET status = 'SUSPENDED', suspended_at = now(),
+                           suspension_reason = 'essai'
+                     WHERE id = '%s'
                     """.formatted(BookingFixtures.SALON));
 
-            given().when().get("/v1/provider-profile").then().statusCode(403);
-            // Still taking bookings would mean still taking customers' money and
-            // phone numbers through a page the platform believes it pulled.
+            // This assertion is the reverse of what it was, and the reversal is
+            // deliberate. It used to be 403: a suspended business lost the
+            // dashboard too.
+            //
+            // What changed is that suspension now has a defined effect on
+            // appointments - it has none. The bookings already made stand,
+            // because cancelling somebody's Thursday to punish their salon
+            // punishes the customer. Those people are still coming, and a
+            // provider locked out of their own diary cannot see who: the
+            // lockout would manufacture the exact missed appointments the
+            // suspension existed to prevent.
+            //
+            // So the standing gates the PUBLIC surface and nothing else. It is
+            // also what makes the suspension reason on the profile worth
+            // storing - a business must be able to read why its page vanished.
+            given().when().get("/v1/provider-profile").then().statusCode(200)
+                    .body("status", equalTo("SUSPENDED"))
+                    .body("suspension_reason", equalTo("essai"));
+
+            // Everything a stranger can reach is gone. Still taking bookings
+            // would mean still taking customers' money and phone numbers
+            // through a page the platform believes it pulled.
             given().when().get("/v1/providers/salon-fatou").then().statusCode(404);
             given().when().get("/v1/providers/salon-fatou/staff").then().statusCode(404);
 

@@ -64,6 +64,23 @@ public interface AppointmentRepository {
     boolean performs(StaffId staffId, ServiceOfferingId serviceOfferingId);
 
     /**
+     * Whether this person may be given work at all.
+     *
+     * <p>Separate from {@link #performs}, because they refuse different things:
+     * that one is about competence, this one is about whether the chair exists
+     * any more. A member who has left keeps their competence rows - they did
+     * know how to braid - and must still never receive a new appointment.
+     *
+     * @param mustBeBookable true for a booking a CUSTOMER made. A provider
+     *                       writing a walk-in into their own diary may name
+     *                       somebody the public list never offers - a
+     *                       receptionist covering a chair - and that is the
+     *                       point of a walk-in. Neither may name somebody who
+     *                       has left.
+     */
+    boolean canBeAssigned(StaffId staffId, boolean mustBeBookable);
+
+    /**
      * How many bookable staff have nothing overlapping this window.
      *
      * <p>Read after the retry budget is spent, to tell a slot that is taken

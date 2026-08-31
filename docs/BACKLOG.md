@@ -21,13 +21,18 @@ Prendre le temps qu'il faut : c'est un abonnement payant et une verification
 d'entreprise, et rien d'autre n'attend apres.
 
 ### Facturation et quotas de plan
-`billing` a un fichier, `subscriptions` n'a aucune ligne de Java, et
-`PLAN_LIMIT_REACHED` est dans le catalogue d'erreurs sans que rien ne le leve.
+`billing` a un fichier et `subscriptions` n'a aucune ligne de Java.
 
 Ce n'est pas du code en attente, ce sont **quatre decisions** : quels paliers ;
 ce que chaque palier limite (membres ? rendez-vous par mois ? services ?) ; le
 prix en GNF ; et s'il y a un palier gratuit. Les inventer serait le pire des
 deux mondes.
+
+`PLAN_LIMIT_REACHED` **est sorti du catalogue d'erreurs**. Il y etait publie
+alors qu'aucun chemin ne pouvait le lever : un client qui branchait dessus
+branchait sur quelque chose qui ne pouvait pas arriver. Il reviendra le jour ou
+les paliers existent. `ErrorCatalogueTest` verifie desormais les deux sens, donc
+un code publie sans producteur casse la construction.
 
 ## Decide, chiffre, pas encore fait
 
@@ -83,7 +88,23 @@ repository is English, not that the product is.
 - **La clientele.** `customers` se remplit a chaque reservation et aucun
   endpoint ne la lit : un salon ne voit ni sa clientele ni l'historique d'une
   personne.
-- **Recherche geographique.** `latitude` et `longitude` existent, rien ne les
-  ecrit, et l'annuaire filtre la ville en texte.
+- **`latitude` et `longitude`.** Les colonnes existent, rien ne les ecrit, et
+  `PublicProviderView` les publie - donc deux champs toujours nuls sur chaque
+  page. La recherche geographique est faite autrement depuis V028-V030 : la
+  carte fermee des localites plus le quartier en texte libre. V031 a refuse les
+  coordonnees explicitement, pour une raison ecrite dans la migration. **Ces
+  deux colonnes devraient donc partir**, avec leur champ dans le contrat.
 - **QR code et lien court** `platform/<salon>`.
 - **`chatbot-service`** : le repertoire est vide.
+
+## Nettoyage du schema : `PENDING` en texte mort
+
+V035 a ramene `providers.status` a deux valeurs, `ACTIVE` et `SUSPENDED`, et a
+corrige les deux politiques que la suspension traverse. Huit autres objets
+citent encore `status IN ('PENDING', 'ACTIVE')` : les fonctions de V015, V018,
+V019 et V021, les politiques de V017 et V022, et la vue de V026.
+
+**Le comportement est deja correct** - `PENDING` est inatteignable et
+`SUSPENDED` est exclu partout - donc il s'agit uniquement de texte qui ment a
+qui le lit. A faire d'un seul coup, avec la suite complete pour preuve, plutot
+qu'a la piece.

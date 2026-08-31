@@ -314,6 +314,18 @@ public class AppointmentSqlRepository implements AppointmentRepository {
     }
 
     @Override
+    public boolean canBeAssigned(StaffId staffId, boolean mustBeBookable) {
+        return !em.createNativeQuery("""
+                SELECT 1 FROM provider_staff
+                 WHERE id = :staff AND status = 'ACTIVE'
+                   AND (NOT CAST(:mustBeBookable AS boolean) OR bookable)
+                """)
+                .setParameter("staff", staffId.value())
+                .setParameter("mustBeBookable", mustBeBookable)
+                .getResultList().isEmpty();
+    }
+
+    @Override
     public CustomerId upsertCustomer(CustomerContact contact) {
         UUID providerId = tenantContext.require().value();
         // DO UPDATE on a column nobody reads, rather than DO NOTHING, so that

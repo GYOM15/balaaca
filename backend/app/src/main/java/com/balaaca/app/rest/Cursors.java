@@ -109,6 +109,18 @@ final class Cursors {
         return encodeRaw(id.toString());
     }
 
+    /** The same bare identifier, read back. */
+    static Optional<UUID> rawId(String cursor) {
+        if (cursor == null || cursor.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(UUID.fromString(decodeRaw(cursor)));
+        } catch (IllegalArgumentException e) {
+            throw new InvalidCursorException();
+        }
+    }
+
     static Optional<ServiceOfferingId> serviceOfferingPosition(String cursor) {
         if (cursor == null || cursor.isBlank()) {
             return Optional.empty();

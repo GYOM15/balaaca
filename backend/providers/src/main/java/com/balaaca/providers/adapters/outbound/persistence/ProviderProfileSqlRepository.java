@@ -43,7 +43,8 @@ public class ProviderProfileSqlRepository implements ProviderProfileRepository {
                        l.slug, l.label_fr, p.area, p.city,
                        p.address_line, p.public_phone_e164, p.public_email,
                        p.whatsapp_phone_e164, p.logo_url, p.cover_url,
-                       p.timezone, p.published, p.status
+                       p.timezone, p.published, p.status,
+                       p.suspended_at, p.suspension_reason
                   FROM providers p
                   LEFT JOIN provider_categories c ON c.id = p.category_id
                   LEFT JOIN localities l ON l.id = p.locality_id
@@ -58,7 +59,9 @@ public class ProviderProfileSqlRepository implements ProviderProfileRepository {
                 text(r[12]), text(r[13]),
                 ZoneId.of((String) r[14]),
                 (Boolean) r[15],
-                ProviderStatus.valueOf((String) r[16]));
+                ProviderStatus.valueOf((String) r[16]),
+                Optional.ofNullable(r[17]).map(ProviderProfileSqlRepository::instant),
+                text(r[18]));
     }
 
     @Override
@@ -102,6 +105,16 @@ public class ProviderProfileSqlRepository implements ProviderProfileRepository {
         // caller's to set, and returning what was sent would state them wrong
         // the first time either changes anywhere else.
         return current();
+    }
+
+    private static java.time.Instant instant(Object value) {
+        if (value instanceof java.time.OffsetDateTime o) {
+            return o.toInstant();
+        }
+        if (value instanceof java.time.Instant i) {
+            return i;
+        }
+        return ((java.sql.Timestamp) value).toInstant();
     }
 
     private static Optional<String> text(Object column) {

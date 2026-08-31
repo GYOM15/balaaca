@@ -83,7 +83,11 @@ class OnboardingIT {
                 .body("slug", equalTo("salon-awa"))
                 .body("business_name", equalTo("Salon Awa"))
                 .body("category_slug", equalTo("coiffure"))
-                .body("status", equalTo("PENDING"))
+                // ACTIVE on arrival, and unpublished. Nobody vets a business
+                // here, so the standing is good from the first second; what
+                // keeps the page off the public path is `published`, which is
+                // the provider's own switch and always was.
+                .body("status", equalTo("ACTIVE"))
                 .body("published", is(false))
                 // Defaulted, not assumed, and not sent by the client.
                 .body("timezone", equalTo("Africa/Conakry"));

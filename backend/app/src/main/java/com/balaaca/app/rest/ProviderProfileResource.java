@@ -138,6 +138,12 @@ public class ProviderProfileResource implements ProfileApi {
         // The stored name becomes a URL here and only here. The database holds a
         // name, so moving the images behind a CDN is a change to this line and
         // to one adapter, not to every row.
+        // The salon reads here why its own page vanished. Absent on every
+        // business the platform has not acted against, which is all of them.
+        profile.suspendedAt().ifPresent(at -> view.setSuspendedAt(
+                java.time.OffsetDateTime.ofInstant(at, java.time.ZoneOffset.UTC)));
+        profile.suspensionReason().ifPresent(view::setSuspensionReason);
+
         profile.logoUrl().ifPresent(name -> view.setLogoUrl(MEDIA + name));
         profile.coverUrl().ifPresent(name -> view.setCoverUrl(MEDIA + name));
         return view;
