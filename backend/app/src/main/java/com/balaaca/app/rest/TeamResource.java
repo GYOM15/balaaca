@@ -1,6 +1,7 @@
 package com.balaaca.app.rest;
 
 import com.balaaca.app.api.TeamApi;
+import com.balaaca.app.api.model.CurrentMemberView;
 import com.balaaca.app.api.model.StaffInvitationView;
 import com.balaaca.app.api.model.StaffList;
 import com.balaaca.app.api.model.StaffRequest;
@@ -34,6 +35,23 @@ public class TeamResource implements TeamApi {
 
     public TeamResource(ListStaffUseCase staff) {
         this.staff = staff;
+    }
+
+    /**
+     * The one operation on this resource that is about the caller rather than
+     * about the team, and the only place an employee can learn their own
+     * staff identifier - which every schedule operation asks for.
+     */
+    @Override
+    @RolesAllowed("dashboard:read")
+    public Response describeCurrentMember() {
+        StaffMember me = staff.currentMember();
+        return Response.ok(new CurrentMemberView()
+                .staffId(me.id().value())
+                .displayName(me.displayName())
+                .role(CurrentMemberView.RoleEnum.fromValue(me.role()))
+                .bookable(me.bookable()))
+                .build();
     }
 
     @Override

@@ -18,6 +18,21 @@ public interface ListStaffUseCase {
 
     List<StaffMember> currentStaff();
 
+    /**
+     * The caller themselves.
+     *
+     * <p>Separate from {@link #currentStaff()} rather than a filter over it,
+     * because the question is different and so is the answer's failure mode: a
+     * caller who is not staff here has no row in that list to be missing from,
+     * and the client would read an empty result as "a salon with no people".
+     *
+     * <p>It exists because a staff identifier was published only by the team
+     * listing. That serves an owner and fails an employee, who could read every
+     * colleague's identifier and had no way to tell which one was theirs - while
+     * every schedule operation asks for exactly that.
+     */
+    StaffMember currentMember();
+
     StaffMember add(StaffDefinition definition);
 
     /**

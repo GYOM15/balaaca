@@ -11,6 +11,9 @@ public interface StaffRepository {
 
     List<StaffMember> currentStaff();
 
+    /** One row by id, under the same RLS confinement as the list. */
+    Optional<StaffMember> byId(StaffId id);
+
     StaffMember insert(StaffDefinition definition);
 
     /** Empty when no row matched, which is a miss and someone else's alike. */

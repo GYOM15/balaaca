@@ -50,6 +50,22 @@ public class StaffSqlRepository implements StaffRepository {
 
     @Override
     @SuppressWarnings("unchecked")
+    public Optional<StaffMember> byId(StaffId id) {
+        List<Object[]> rows = em.createNativeQuery("""
+                SELECT id, display_name, role, bookable, status
+                  FROM provider_staff
+                 WHERE id = :id
+                """)
+                .setParameter("id", id.value())
+                .getResultList();
+
+        // A row at another provider is invisible to this read, so it answers as
+        // one that never existed.
+        return rows.stream().findFirst().map(StaffSqlRepository::toMember);
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
     public StaffMember insert(StaffDefinition definition) {
         UUID id = UUID.randomUUID();
         // user_id stays null: a member is a bookable resource, and the unique
