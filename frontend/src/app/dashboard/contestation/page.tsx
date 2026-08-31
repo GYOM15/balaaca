@@ -38,12 +38,17 @@ export const dynamic = "force-dynamic";
  * being typed have nothing to say to each other.
  */
 const REFUSALS: Record<string, string> = {
-  VALIDATION_FAILED: "Votre message est vide, ou dépasse 2 000 caractères.",
-  INVALID_STATE_TRANSITION:
-    "Vous avez déjà répondu à cette suspension. C'est votre premier message que la plateforme lit.",
+  // One sentence, because the API sends one code for both refusals: a message
+  // that is empty or too long, and a page that is not suspended at all. There
+  // is no NOT_SUSPENDED in the published catalogue - branching on one is how
+  // this refusal used to read as the generic sentence.
+  //
   // No entity in here, unlike the copy below: these are strings rendered as
   // text, and an `&nbsp;` would arrive on screen spelled out.
-  NOT_SUSPENDED: "Votre page n'est plus suspendue. Il n'y a plus rien à contester.",
+  VALIDATION_FAILED:
+    "Votre message est vide ou dépasse 2 000 caractères - ou votre page n'est pas suspendue, auquel cas il n'y a rien à contester.",
+  INVALID_STATE_TRANSITION:
+    "Vous avez déjà répondu à cette suspension. C'est votre premier message que la plateforme lit.",
   FORBIDDEN: "Seul le propriétaire peut répondre à la plateforme.",
   UNKNOWN: "L'envoi n'a pas abouti.",
 };

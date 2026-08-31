@@ -9,9 +9,13 @@ export const dynamic = "force-dynamic";
 
 const REFUSALS: Record<string, string> = {
   FORBIDDEN: "Seul le propriétaire compose l'équipe.",
-  NOTHING_TO_PUBLISH:
-    "Il ne resterait personne de réservable sur une page publiée. Dépubliez d'abord, ou gardez quelqu'un de réservable.",
-  NOT_INVITABLE: "Cette personne a déjà un compte, ou c'est vous.",
+  // One sentence for both, because the API sends one code for both: a member
+  // who cannot be invited and a team that would be left with nobody bookable
+  // are the same INVALID_STATE_TRANSITION. Branching on codes the catalogue
+  // does not publish is how these refusals used to read "la demande n'a pas
+  // abouti" while the server knew exactly what was wrong.
+  INVALID_STATE_TRANSITION:
+    "Cette personne ne peut pas être invitée, ou votre page resterait sans personne de réservable.",
   RESOURCE_NOT_FOUND: "Cette personne n'existe plus.",
   VALIDATION_FAILED: "Il faut un nom.",
 };
