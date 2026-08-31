@@ -196,4 +196,45 @@ class DropOffIT {
                 .when().put("/v1/appointments/" + id + "/promise").then()
                 .statusCode(422).body("code", equalTo("VALIDATION_FAILED"));
     }
+
+    @Test
+    @DisplayName("Moving the handover moves the promise with it")
+    void thePromiseFollowsTheHandover() {
+        String offering = anAlteration();
+        bookAt(offering, "2026-09-07T10:00:00Z", "622000001");
+        String id = given().queryParam("from", "2026-09-01T00:00:00Z")
+                .when().get("/v1/appointments").then().extract().path("data[0].appointment_id");
+
+        // Monday's drop-off moves to Thursday. Before this, the promise stayed
+        // on Wednesday - a date BEFORE the handover, which the table forbids -
+        // so the move answered 500 and the garment silently stayed on Monday.
+        given().contentType("application/json")
+                .body("{\"starts_at\":\"2026-09-10T10:00:00Z\"}")
+                .when().post("/v1/appointments/" + id + "/reschedule").then().statusCode(200)
+                // Forty-eight hours from the new handover, re-derived from the
+                // delay frozen at booking.
+                .body("ready_by", equalTo("2026-09-12T10:10:00Z"));
+    }
+
+    @Test
+    @DisplayName("Moving an on-site appointment still promises nothing")
+    void anOnSiteMoveInventsNoPromise() {
+        given().contentType("application/json")
+                .header("Idempotency-Key", "k-" + UUID.randomUUID())
+                .body("""
+                      {"staff_id":"%s","service_offering_id":"%s",
+                       "starts_at":"2026-09-07T10:00:00Z",
+                       "customer":{"full_name":"Cliente","phone":"622000007"}}
+                      """.formatted(BookingFixtures.SALON_OWNER_STAFF,
+                                    BookingFixtures.SALON_OFFERING))
+                .when().post(BOOK).then().statusCode(201);
+
+        String id = given().queryParam("from", "2026-09-01T00:00:00Z")
+                .when().get("/v1/appointments").then().extract().path("data[0].appointment_id");
+
+        given().contentType("application/json")
+                .body("{\"starts_at\":\"2026-09-10T10:00:00Z\"}")
+                .when().post("/v1/appointments/" + id + "/reschedule").then().statusCode(200)
+                .body("ready_by", nullValue());
+    }
 }

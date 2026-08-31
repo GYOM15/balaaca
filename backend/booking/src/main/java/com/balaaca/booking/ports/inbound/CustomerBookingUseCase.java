@@ -35,6 +35,26 @@ public interface CustomerBookingUseCase {
     CustomerBooking cancel(String reference, Optional<String> reason);
 
     /**
+     * Moves it, if the same deadline has not passed.
+     *
+     * <p>Bound by the CANCELLATION deadline, because it is the same disruption:
+     * a chair emptied an hour before it was due is emptied whether or not
+     * something is put in its place. This capability only ever had one half -
+     * a customer who needed Thursday instead of Wednesday had to call the
+     * appointment off, releasing the slot to whoever refreshed first, and book
+     * again.
+     *
+     * <p>The service and the colleague do not change. A customer wanting either
+     * is making a new booking, and letting this operation do it would be a way
+     * to acquire one slot while still holding another.
+     *
+     * @throws com.balaaca.booking.domain.BookingExceptions.CancellationDeadlinePassedException too late
+     * @throws com.balaaca.booking.domain.BookingExceptions.SlotUnavailableException
+     *         the same person is busy at the new time
+     */
+    CustomerBooking reschedule(String reference, Instant newStartsAt);
+
+    /**
      * What the customer is shown. No staff identifier, no appointment id, no
      * customer id: the reference is the only handle, and publishing a second one
      * would be publishing a second way in.

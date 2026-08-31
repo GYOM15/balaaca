@@ -1446,6 +1446,66 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /v1/bookings/{reference}/reschedule:
+    post:
+      operationId: rescheduleBooking
+      tags: [booking]
+      summary: Move it
+      description: |
+        The other half of a capability that only had one. A customer could call
+        an appointment off and could not move it, so somebody who needed Thursday
+        instead of Wednesday had to cancel - releasing the slot to whoever
+        refreshed the page first - and book again. That is a worse outcome for
+        everybody, and it is the reason a salon's phone rings.
+
+        Bound by the SAME notice period as a cancellation, because it is the
+        same disruption: a chair emptied an hour before it was due is emptied
+        whether or not something is put in its place. `cancellable_until` on the
+        booking says in advance whether this will work.
+
+        The service and the person do not change. A customer who wants a
+        different service, or a different braider, is making a new booking, and
+        this operation would be a way to acquire one slot while holding another.
+        So the same colleague is kept, and if they are busy at the new time the
+        answer is `409` - not a silent move to somebody else the customer never
+        chose.
+
+        On a drop-off, the promise moves with the handover: it is re-derived
+        from the delay frozen at booking, because a promise anchored to a
+        handover that no longer exists is not a promise.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/BookingReference'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RescheduleBookingRequest'
+      responses:
+        '200':
+          description: The booking, moved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerBookingView'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`SLOT_UNAVAILABLE` - somebody else has the new time, or
+            `INVALID_STATE_TRANSITION` - it is already over or cancelled.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          description: '`CANCELLATION_DEADLINE_PASSED` - too late to do this
+            online - or `SLOT_OUTSIDE_AVAILABILITY`.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
   /v1/bookings/{reference}/cancellation:
     post:
       operationId: cancelBooking
@@ -2891,6 +2951,20 @@ components:
           format: date-time
           description: A UTC instant. It may not precede the end of the
             handover.
+
+    RescheduleBookingRequest:
+      type: object
+      description: |
+        A start, and nothing else about time. The end and the block window are
+        recomputed from the service the appointment already carries - accepting
+        an end or a duration would let a client shrink its own footprint and
+        move inside somebody else's appointment.
+      required: [starts_at]
+      properties:
+        starts_at:
+          type: string
+          format: date-time
+          description: The new start, as a UTC instant.
 
     CancelAppointmentRequest:
       type: object

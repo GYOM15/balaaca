@@ -195,6 +195,130 @@ class CustomerBookingIT {
     }
 
     @Test
+    @DisplayName("A customer can move their own appointment")
+    void movesItsOwnBooking() {
+        // The half this capability was missing. Without it, somebody who needed
+        // Thursday instead of Friday had to cancel - releasing the slot to
+        // whoever refreshed the page first - and book again.
+        String reference = book("2026-09-04T10:00:00Z");
+
+        given().contentType("application/json")
+                .body("{\"starts_at\":\"2026-09-05T14:00:00Z\"}")
+                .when().post("/v1/bookings/" + reference + "/reschedule")
+                .then().statusCode(200)
+                .body("starts_at", equalTo("2026-09-05T14:00:00Z"))
+                // One hour of Tresses, and the reference is unchanged: it is
+                // the same appointment, and every message already sent names it.
+                .body("ends_at", equalTo("2026-09-05T15:00:00Z"))
+                .body("reference", equalTo(reference));
+    }
+
+    @Test
+    @DisplayName("Moving onto a taken slot is refused, not silently reassigned")
+    void aTakenSlotIsRefused() {
+        String mine = book("2026-09-04T10:00:00Z");
+        book("2026-09-04T14:00:00Z");
+
+        // Somebody who asked for Fatou and was quietly moved to Mariama would
+        // find out in the chair.
+        given().contentType("application/json")
+                .body("{\"starts_at\":\"2026-09-04T14:00:00Z\"}")
+                .when().post("/v1/bookings/" + mine + "/reschedule")
+                .then().statusCode(409);
+    }
+
+    @Test
+    @DisplayName("Moving outside the shop's hours is refused")
+    void aClosedHourIsRefused() {
+        String reference = book("2026-09-04T10:00:00Z");
+
+        // Three in the morning. The salon opens at eight.
+        given().contentType("application/json")
+                .body("{\"starts_at\":\"2026-09-05T03:00:00Z\"}")
+                .when().post("/v1/bookings/" + reference + "/reschedule")
+                .then().statusCode(422)
+                .body("code", equalTo("SLOT_OUTSIDE_AVAILABILITY"));
+    }
+
+    @Test
+    @DisplayName("Past the notice period a move is as refused as a cancellation")
+    void theDeadlineBindsBothHalves() {
+        String reference = book("2026-09-04T10:00:00Z");
+        fixtures.execute("""
+                UPDATE appointments
+                   SET starts_at = now() + interval '1 hour',
+                       ends_at = now() + interval '2 hours',
+                       blocked_from = now() + interval '45 minutes',
+                       blocked_until = now() + interval '2 hours 10 minutes'
+                 WHERE public_reference = '%s'
+                """.formatted(reference));
+
+        // The same disruption: a chair emptied an hour before it was due is
+        // emptied whether or not something is put in its place. Otherwise the
+        // deadline would be one cancel-and-rebook away from meaningless.
+        given().contentType("application/json")
+                .body("{\"starts_at\":\"2026-09-05T14:00:00Z\"}")
+                .when().post("/v1/bookings/" + reference + "/reschedule")
+                .then().statusCode(422)
+                .body("code", equalTo("CANCELLATION_DEADLINE_PASSED"));
+    }
+
+    @Test
+    @DisplayName("A reference naming nothing moves nothing")
+    void anUnknownReferenceIs404() {
+        // Well formed and simply not minted, so the refusal comes from the
+        // lookup rather than from the path's own pattern - which is the case
+        // worth pinning: a reference that never binds a tenant must answer 404
+        // and not reach anything.
+        given().contentType("application/json")
+                .body("{\"starts_at\":\"2026-09-05T14:00:00Z\"}")
+                .when().post("/v1/bookings/"
+                             + "ThisReferenceWasNeverMintedByAnybodyAtAll_00/reschedule")
+                .then().statusCode(404);
+    }
+
+    @Test
+    @DisplayName("The salon is told when its customer calls off or moves")
+    void theProviderHearsAboutIt() {
+        String reference = book("2026-09-04T10:00:00Z");
+        given().contentType("application/json").body("{}")
+                .when().post("/v1/bookings/" + reference + "/cancellation")
+                .then().statusCode(200);
+
+        // Before this the salon learned by opening the diary, so a chair freed
+        // an hour ahead stayed blocked in the owner's head and a walk-in was
+        // turned away.
+        assertThat(fixtures.notifications(BookingFixtures.SALON))
+                .extracting(BookingFixtures.NotificationRow::kind,
+                            BookingFixtures.NotificationRow::recipientKind)
+                .contains(org.assertj.core.groups.Tuple.tuple("CANCELLATION_NOTICE", "PROVIDER"));
+
+        String moved = book("2026-09-04T11:00:00Z");
+        given().contentType("application/json")
+                .body("{\"starts_at\":\"2026-09-05T14:00:00Z\"}")
+                .when().post("/v1/bookings/" + moved + "/reschedule")
+                .then().statusCode(200);
+
+        assertThat(fixtures.notifications(BookingFixtures.SALON))
+                .extracting(BookingFixtures.NotificationRow::kind,
+                            BookingFixtures.NotificationRow::recipientKind)
+                .contains(org.assertj.core.groups.Tuple.tuple("RESCHEDULE_NOTICE", "PROVIDER"));
+    }
+
+    @Test
+    @DisplayName("A provider moving its own diary is not texted about it")
+    void theProviderIsNotToldAboutItsOwnEdits() {
+        // A provider told about their own action is a provider learning to
+        // ignore the channel. AppointmentLifecycleIT drives the provider path;
+        // here it is enough that the customer path is the only producer.
+        book("2026-09-04T10:00:00Z");
+
+        assertThat(fixtures.notifications(BookingFixtures.SALON))
+                .extracting(BookingFixtures.NotificationRow::kind)
+                .doesNotContain("CANCELLATION_NOTICE", "RESCHEDULE_NOTICE");
+    }
+
+    @Test
     @DisplayName("One reference reaches one booking and no other")
     void reachesOnlyItsOwnBooking() {
         String mine = book("2026-09-04T10:00:00Z");

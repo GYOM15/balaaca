@@ -32,5 +32,24 @@ public enum NotificationKind {
     CANCELLATION,
 
     /** To the customer, when their appointment moves. */
-    RESCHEDULE
+    RESCHEDULE,
+
+    /**
+     * To the provider, when the CUSTOMER calls their appointment off.
+     *
+     * <p>Its own kind rather than a second recipient on CANCELLATION, for two
+     * reasons and both matter. The dedupe key is intent plus the instant it is
+     * owed for and carries no recipient, so two rows of one kind at one instant
+     * would collide on the UNIQUE index and one of them would be silently
+     * dropped. And the two messages say different things to different people -
+     * one names the business, the other names the customer - which is the same
+     * reason BOOKING_NOTICE is not BOOKING_CONFIRMATION.
+     *
+     * <p>Planned only when the customer initiated it. A provider told about
+     * their own cancellation is a provider learning to ignore the channel.
+     */
+    CANCELLATION_NOTICE,
+
+    /** To the provider, when the CUSTOMER moves their appointment. */
+    RESCHEDULE_NOTICE
 }
