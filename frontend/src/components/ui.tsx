@@ -284,15 +284,23 @@ export function EmptyState({
 /**
  * The rule-and-label that opens every section.
  *
- * <p>A `<p>`, deliberately, not a heading. The mockup made each of these an
- * `<h2>` at 12 px next to the real title, which gave the hub fifteen headings
- * and no hierarchy at all.
+ * <p>Two elements, and it has to be two: `.rule-accent` is a standalone bar of
+ * 28 by 2 pixels, not a text modifier. Both classes on one element crush the
+ * label into a two-pixel box it then overflows - which is what this component
+ * did until someone reading it in a rendered page said so.
+ *
+ * <p>The label is a `<p>`, deliberately, not a heading. The mockup made each of
+ * these an `<h2>` at 12 px beside the real title, which gave the hub fifteen
+ * headings and no hierarchy at all.
  */
 export function SectionHead({ label, aside }: { label: string; aside?: ReactNode }) {
   return (
-    <div className="row row--between">
-      <p className="t-label rule-accent">{label}</p>
-      {aside ? <span className="t-caption t-dim">{aside}</span> : null}
+    <div className="row row--between row-4 row--wrap">
+      <div className="row row-3">
+        <span className="rule-accent" aria-hidden="true" />
+        <p className="t-label">{label}</p>
+      </div>
+      {aside ? <span className="t-caption t-dim tnum">{aside}</span> : null}
     </div>
   );
 }

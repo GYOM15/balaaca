@@ -1,0 +1,39 @@
+/* ---------------------------------------------------------------------------
+   Ce que la page publique ajoute au système, et rien de plus.
+
+   globals.css porte déjà .pub, .pub-cover, .pub-id, .pub-meta, .pub-aside,
+   .svc-row et .hours-row. Ce fichier ne redéfinit aucune d'elles : il couvre
+   les trois cas que la maquette ne pouvait pas connaître, parce qu'elle
+   dessinait un monogramme faute de savoir qu'on stockait des images, et parce
+   que ses services avaient tous un prix.
+   ------------------------------------------------------------------------ */
+
+/* Une photo de couverture est claire ou sombre selon la photo, et le texte
+   posé dessus est blanc dans les deux cas. Le voile rend l'en-tête lisible
+   quel que soit le cliché, sans l'assombrir au point d'en faire un aplat. */
+.pub-cover__scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--ink) 55%, transparent) 0%,
+    color-mix(in srgb, var(--ink) 82%, transparent) 100%
+  );
+  pointer-events: none;
+}
+
+/* La ligne de service est un lien ici, pas un bouton : elle mène à la page de
+   réservation, donc elle s'ouvre dans un onglet sur appui long et le clavier
+   l'annonce comme un lien. globals.css ne teinte au survol que le bouton. */
+a.svc-row:hover {
+  background: var(--brand-tint-04);
+}
+
+/* Un prix que le prestataire n'a pas publié n'est pas un prix : il se lit
+   comme une note, pas comme un montant. Même emplacement dans la ligne pour
+   que la colonne reste droite, mais ni gras ni chiffres tabulaires. */
+.svc-row__price--ask {
+  font-weight: var(--weight-medium);
+  color: var(--text-tertiary);
+  font-variant-numeric: normal;
+}

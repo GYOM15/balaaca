@@ -53,5 +53,12 @@ export async function invite(formData: FormData): Promise<void> {
     }
     throw error;
   }
-  redirect(`/dashboard/team?invited=${encodeURIComponent(invitation.code)}`);
+  // The name travels with the code so the notice can say who to give it to.
+  // It is the provider's own staff list either way - nothing is disclosed by
+  // putting it in their own URL.
+  const name = String(formData.get("name") ?? "");
+  redirect(
+    `/dashboard/team?invited=${encodeURIComponent(invitation.code)}` +
+      (name ? `&name=${encodeURIComponent(name)}` : ""),
+  );
 }
