@@ -98,16 +98,9 @@ repository is English, not that the product is.
 Transfert de propriete, la clientele (trois routes plus les ecrans),
 `latitude`/`longitude` retires et remplaces par la commune et le quartier sur la
 page publique, QR code et lien public, limite de debit sur les inscriptions, et
-le texte mort `PENDING` dans les quatre objets qui le citaient encore.
+le texte mort `PENDING` dans les quatre objets qui le citaient encore. Verifie
+en base : plus aucune fonction, vue ou politique ne nomme un statut de
+prestataire inatteignable. Les deux occurrences restantes parlent du statut d'un
+rendez-vous et du statut d'un signalement, tous deux bien reels.
 
-## Nettoyage du schema : `PENDING` en texte mort
-
-V035 a ramene `providers.status` a deux valeurs, `ACTIVE` et `SUSPENDED`, et a
-corrige les deux politiques que la suspension traverse. Huit autres objets
-citent encore `status IN ('PENDING', 'ACTIVE')` : les fonctions de V015, V018,
-V019 et V021, les politiques de V017 et V022, et la vue de V026.
-
-**Le comportement est deja correct** - `PENDING` est inatteignable et
-`SUSPENDED` est exclu partout - donc il s'agit uniquement de texte qui ment a
-qui le lit. A faire d'un seul coup, avec la suite complete pour preuve, plutot
-qu'a la piece.
+Cote front, les cinquante-cinq operations publiees sont toutes appelees.
