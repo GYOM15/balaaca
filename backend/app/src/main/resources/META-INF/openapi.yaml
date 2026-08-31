@@ -60,6 +60,8 @@ tags:
       The platform's own hand: taking a business off the hub, putting it back,
       and reading what customers reported. The only surface that crosses
       providers, held by the operator alone.
+  - name: clientele
+    description: The people a provider has served, and what they know about them.
   - name: agenda
     description: What a provider sees of their own bookings.
   - name: availability
@@ -466,6 +468,34 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
+  /v1/provider-profile/qr-code:
+    get:
+      operationId: getProviderQrCode
+      tags: [profile]
+      summary: The square a customer scans
+      description: |
+        An SVG, not a raster, because a provider prints this - on a card, on a
+        window, on the back of a receipt. A bitmap has one size and it is the
+        wrong one at the printer's; a vector has none.
+
+        It encodes `public_url` from the profile, which is the page a customer
+        lands on. Error correction is at level Q: a code on a shopfront gets
+        rained on, scuffed and photographed at an angle, and twenty-five per
+        cent recoverable is what printed codes are made at.
+
+        Cached for a day. It changes only if the slug changes, and the slug
+        cannot change - it is on every card already handed out.
+      security: [{ oauth2: [dashboard:read] }]
+      responses:
+        '200':
+          description: The code.
+          content:
+            image/svg+xml:
+              schema:
+                type: string
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
   /v1/provider-profile/logo:
     post:
       operationId: replaceProviderLogo
@@ -639,6 +669,61 @@ paths:
         '409':
           description: '`INVALID_STATE_TRANSITION` - the last bookable person at
             a published business cannot be stood down.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /v1/staff/{id}/ownership:
+    post:
+      operationId: transferOwnership
+      tags: [team]
+      summary: Hand the business over
+      description: |
+        The owner gives the business to a colleague, and stops being the owner
+        in the same statement. There is no way back from the caller's side -
+        only the new owner can hand it back - which is the correct shape for
+        this operation and the reason the refusals below are strict.
+
+        Until this existed there was an `OWNER` and nothing moved it, so a
+        founder who sold the salon or took a partner had one workaround: give
+        somebody their password. That is how one account ends up shared by three
+        people and an audit trail stops meaning anything.
+
+        The recipient must already have an account. Handing a business to a
+        chair with no login would leave it owned by somebody nobody can be: the
+        role would resolve for no subject, and the way out would be a migration.
+
+        Everything else about both people is untouched - whether they take
+        bookings, their hours, their appointments. Ownership is who may publish
+        the page, hire, and hand it on; it is not a chair.
+      security: [{ oauth2: [staff:write] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The colleague taking it over.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The team as it now stands, owner first.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffList'
+        '403':
+          description: FORBIDDEN - the caller does not own this business.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          description: |
+            VALIDATION_FAILED - not an active colleague with an account, or the
+            caller naming themselves. One answer for all of them: the owner does
+            the same thing with each, which is pick somebody else.
           content:
             application/problem+json:
               schema:
@@ -1942,6 +2027,103 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /v1/customers:
+    get:
+      operationId: listCustomers
+      tags: [clientele]
+      summary: The people this provider has served
+      description: |
+        `customers` has filled up on every booking since the table existed and
+        nothing ever read it back: a salon could not see who its customers were,
+        could not find the person who telephoned yesterday, and could not tell a
+        regular from a first visit. The rows were there the whole time.
+
+        Ordered by name, because that is how somebody reads an address book.
+        `q` matches a name or a phone number, since a salon looking somebody up
+        has one of the two and rarely the spelling; it needs two characters,
+        below which it matches most of the book.
+
+        `visits` counts appointments in every state, cancellations included - a
+        count that hid them would make a serial canceller look like a new
+        customer. `last_visit` is the most recent appointment START, past or
+        future, which is what a salon means by "when did I last see them".
+      security: [{ oauth2: [dashboard:read] }]
+      parameters:
+        - name: q
+          in: query
+          required: false
+          description: Part of a name or a phone number.
+          schema:
+            type: string
+            maxLength: 120
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: The address book.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerPage'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/customers/{id}:
+    get:
+      operationId: getCustomer
+      tags: [clientele]
+      summary: One person, and what they booked
+      description: |
+        The history is most recent first and capped at fifty. A salon opening a
+        regular's card wants the last few visits, not four years of them.
+      security: [{ oauth2: [dashboard:read] }]
+      parameters:
+        - $ref: '#/components/parameters/CustomerId'
+      responses:
+        '200':
+          description: The customer.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerDetailView'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/customers/{id}/notes:
+    put:
+      operationId: replaceCustomerNotes
+      tags: [clientele]
+      summary: What the provider remembers about them
+      description: |
+        The provider's own note, never shown to the customer and never sent
+        anywhere: it is the line a salon writes to remember that somebody is
+        allergic to a product, or always ten minutes late.
+
+        An empty body clears it. A note of nothing but spaces is no note - it
+        would render as a card that looks annotated and says nothing.
+      security: [{ oauth2: [dashboard:read] }]
+      parameters:
+        - $ref: '#/components/parameters/CustomerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerNotesRequest'
+      responses:
+        '200':
+          description: The customer, as they now stand.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerDetailView'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /v1/localities:
     get:
       operationId: listLocalities
@@ -2381,6 +2563,13 @@ components:
       schema:
         type: string
         format: uuid
+    CustomerId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     ServiceOfferingId:
       name: id
       in: path
@@ -2706,6 +2895,80 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ProviderReportView'
+        next_cursor:
+          type: string
+          nullable: true
+
+    CustomerSummaryView:
+      type: object
+      required: [customer_id, full_name, phone, visits]
+      properties:
+        customer_id:
+          type: string
+          format: uuid
+        full_name:
+          type: string
+        phone:
+          type: string
+          description: E.164, as it was normalised when they first booked.
+        email:
+          type: string
+        visits:
+          type: integer
+          format: int32
+          description: Every appointment, in every state. Cancellations count.
+        last_visit:
+          type: string
+          format: date-time
+          description: The most recent appointment start, past or future. Absent
+            for somebody who has never booked.
+
+    CustomerDetailView:
+      allOf:
+        - $ref: '#/components/schemas/CustomerSummaryView'
+        - type: object
+          required: [history]
+          properties:
+            notes:
+              type: string
+              description: The provider's own. Never shown to the customer.
+            history:
+              type: array
+              items:
+                $ref: '#/components/schemas/CustomerVisitView'
+
+    CustomerVisitView:
+      type: object
+      required: [starts_at, service_name, status, staff_name]
+      properties:
+        starts_at:
+          type: string
+          format: date-time
+        service_name:
+          type: string
+          description: What was frozen at booking, not what the service is called
+            today.
+        status:
+          $ref: '#/components/schemas/AppointmentStatus'
+        staff_name:
+          type: string
+
+    CustomerNotesRequest:
+      type: object
+      properties:
+        notes:
+          type: string
+          maxLength: 2000
+          description: Omit or send empty to clear it.
+
+    CustomerPage:
+      type: object
+      required: [data, next_cursor]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerSummaryView'
         next_cursor:
           type: string
           nullable: true
@@ -3477,6 +3740,15 @@ components:
           type: boolean
         status:
           $ref: '#/components/schemas/ProviderStatus'
+        public_url:
+          type: string
+          description: |
+            Where a customer reaches this business. The link to put in a
+            WhatsApp status, and what the QR code encodes.
+
+            Built from the slug, which is why the slug is read-only: it is
+            printed on every card already handed out.
+          example: https://balaaca.com/p/salon-fatou
         suspended_at:
           type: string
           format: date-time
@@ -3616,14 +3888,17 @@ components:
           type: string
         city:
           type: string
+          deprecated: true
+          description: Superseded by `locality` and `area`.
+        locality:
+          allOf:
+            - $ref: '#/components/schemas/LocalityRef'
+          description: The commune or prefecture, from the published map.
+        area:
+          type: string
+          description: The quartier, in the provider's own words.
         address_line:
           type: string
-        latitude:
-          type: number
-          format: double
-        longitude:
-          type: number
-          format: double
         logo_url:
           type: string
         cover_url:

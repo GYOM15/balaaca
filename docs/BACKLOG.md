@@ -36,7 +36,7 @@ un code publie sans producteur casse la construction.
 
 ## Decide, chiffre, pas encore fait
 
-### Limiter le rythme des inscriptions
+### ~~Limiter le rythme des inscriptions~~ (fait)
 `V020` a ferme l'oracle pour tout compte qui a deja un salon. Il reste qu'un
 compte **sans** salon peut sonder les poignees, exactement comme n'importe quel
 formulaire d'inscription qui repond « ce nom est pris ».
@@ -84,18 +84,21 @@ repository is English, not that the product is.
 
 ## Trous fonctionnels connus
 
-- **Transfert de propriete.** Il y a un `OWNER` et rien ne le deplace.
-- **La clientele.** `customers` se remplit a chaque reservation et aucun
-  endpoint ne la lit : un salon ne voit ni sa clientele ni l'historique d'une
-  personne.
-- **`latitude` et `longitude`.** Les colonnes existent, rien ne les ecrit, et
-  `PublicProviderView` les publie - donc deux champs toujours nuls sur chaque
-  page. La recherche geographique est faite autrement depuis V028-V030 : la
-  carte fermee des localites plus le quartier en texte libre. V031 a refuse les
-  coordonnees explicitement, pour une raison ecrite dans la migration. **Ces
-  deux colonnes devraient donc partir**, avec leur champ dans le contrat.
-- **QR code et lien court** `platform/<salon>`.
-- **`chatbot-service`** : le repertoire est vide.
+- **`customers.blocked`.** La colonne existe, rien ne l'ecrit, et
+  `SchemaCoverageTest` ne s'en apercoit pas : sa recherche est une sous-chaine,
+  et `blockedFrom` contient `blocked`. **Deux choses a faire** : resserrer la
+  barriere sur des limites de mot, puis decider ce que bloquer un client veut
+  dire au moment de reserver. La premiere revelera probablement d'autres
+  colonnes, chacune demandant une decision.
+- **`chatbot-service`** : hors perimetre. Ce sera un service Python
+  completement detache, et pas maintenant.
+
+## Fait
+
+Transfert de propriete, la clientele (trois routes plus les ecrans),
+`latitude`/`longitude` retires et remplaces par la commune et le quartier sur la
+page publique, QR code et lien public, limite de debit sur les inscriptions, et
+le texte mort `PENDING` dans les quatre objets qui le citaient encore.
 
 ## Nettoyage du schema : `PENDING` en texte mort
 

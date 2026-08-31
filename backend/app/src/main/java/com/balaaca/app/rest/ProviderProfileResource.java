@@ -33,8 +33,11 @@ public class ProviderProfileResource implements ProfileApi {
     static final String MEDIA = "/v1/media/";
 
     private final ManageProviderProfileUseCase profiles;
+    private final PublicLink links;
 
-    public ProviderProfileResource(ManageProviderProfileUseCase profiles) {
+    public ProviderProfileResource(ManageProviderProfileUseCase profiles,
+                                   PublicLink links) {
+        this.links = links;
         this.profiles = profiles;
     }
 
@@ -89,6 +92,18 @@ public class ProviderProfileResource implements ProfileApi {
     }
 
     @Override
+    @RolesAllowed("dashboard:read")
+    public Response getProviderQrCode() {
+        String slug = profiles.current().slug();
+        return Response.ok(links.qrCodeFor(slug))
+                .type("image/svg+xml")
+                // A day. It changes only if the slug changes, and the slug
+                // cannot: it is printed on every card already handed out.
+                .header("Cache-Control", "private, max-age=86400")
+                .build();
+    }
+
+    @Override
     @RolesAllowed("profile:write")
     public Response replaceProviderLogo(java.io.File body) {
         return Response.ok(view(profiles.replaceLogo(read(body)))).build();
@@ -117,7 +132,7 @@ public class ProviderProfileResource implements ProfileApi {
         }
     }
 
-    private static ProviderProfileView view(ProviderProfile profile) {
+    private ProviderProfileView view(ProviderProfile profile) {
         ProviderProfileView view = new ProviderProfileView()
                 .slug(profile.slug())
                 .businessName(profile.businessName())
@@ -143,6 +158,10 @@ public class ProviderProfileResource implements ProfileApi {
         profile.suspendedAt().ifPresent(at -> view.setSuspendedAt(
                 java.time.OffsetDateTime.ofInstant(at, java.time.ZoneOffset.UTC)));
         profile.suspensionReason().ifPresent(view::setSuspensionReason);
+
+        // Built here and only here, from the slug. The database stores a
+        // handle; where that handle lives is a deployment fact.
+        view.setPublicUrl(links.urlFor(profile.slug()));
 
         profile.logoUrl().ifPresent(name -> view.setLogoUrl(MEDIA + name));
         profile.coverUrl().ifPresent(name -> view.setCoverUrl(MEDIA + name));

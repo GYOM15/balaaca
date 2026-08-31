@@ -3,6 +3,7 @@ package com.balaaca.providers.application;
 import com.balaaca.catalog.ports.inbound.ManageServiceCompetenceUseCase;
 import com.balaaca.providers.domain.NotInvitableException;
 import com.balaaca.providers.domain.NothingToPublishException;
+import com.balaaca.providers.domain.NotTheOwnerException;
 import com.balaaca.providers.domain.StaffNotFoundException;
 import com.balaaca.providers.ports.inbound.ListStaffUseCase;
 import com.balaaca.providers.ports.outbound.ProviderProfileRepository;
@@ -176,4 +177,27 @@ public class ManageStaffService implements ListStaffUseCase {
     private boolean wouldLeaveNobody(StaffId id) {
         return profiles.current().published() && staff.otherBookableStaff(id) == 0;
     }
+    @Override
+    @Transactional(Transactional.TxType.REQUIRED)
+    public List<StaffMember> transferOwnership(StaffId to) {
+        // Checked here as well as in the function, so the refusal is a sentence
+        // rather than a SQLSTATE: the caller is a member of this business and
+        // knows it, and what they lack is the standing to give it away.
+        tenant.requireOwner("transfer_ownership");
+
+        StaffId from = tenant.requireStaffId();
+        List<StaffMember> team = staff.transferOwnership(from, to);
+        if (team.isEmpty()) {
+            throw new NotTheOwnerException();
+        }
+
+        // The one entry on this trail nobody will reconstruct from memory: who
+        // owned the business before, and who owns it now.
+        audit.record(new AuditEvent("OWNERSHIP_TRANSFERRED", "provider_staff",
+                java.util.Optional.of(to.toString()), AuditOutcome.SUCCESS,
+                java.util.Map.of("from", from.toString(), "to", to.toString())));
+
+        return team;
+    }
+
 }

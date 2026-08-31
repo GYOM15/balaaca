@@ -1,8 +1,8 @@
 package com.balaaca.providers.ports.inbound;
 
 import java.time.ZoneId;
+import com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase.LocalityRef;
 import java.util.Optional;
-import java.util.OptionalDouble;
 
 /**
  * The provider's own half of its public page.
@@ -25,9 +25,15 @@ public interface LookupPublicProviderUseCase {
                           Optional<String> description,
                           Optional<String> categorySlug,
                           Optional<String> city,
+                          /**
+                           * Where the business is, at the finest level the
+                           * published map has. It replaces the latitude and
+                           * longitude V039 dropped: those were never written,
+                           * and V031 refused coordinates on purpose.
+                           */
+                          Optional<LocalityRef> locality,
+                          Optional<String> area,
                           Optional<String> addressLine,
-                          OptionalDouble latitude,
-                          OptionalDouble longitude,
                           Optional<String> logoUrl,
                           Optional<String> coverUrl,
                           Optional<String> publicPhoneE164,

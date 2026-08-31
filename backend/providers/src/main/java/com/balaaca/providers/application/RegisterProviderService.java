@@ -3,6 +3,9 @@ package com.balaaca.providers.application;
 import com.balaaca.platformkernel.audit.AuditEvent;
 import com.balaaca.platformkernel.audit.AuditOutcome;
 import com.balaaca.platformkernel.audit.AuditTrail;
+import com.balaaca.platformkernel.ratelimit.AttemptLimiter;
+import com.balaaca.platformkernel.ratelimit.TooManyAttemptsException;
+import java.time.Duration;
 import com.balaaca.providers.domain.UnknownCategoryException;
 import com.balaaca.providers.ports.inbound.RegisterProviderUseCase;
 import com.balaaca.providers.ports.outbound.ProviderRegistrationRepository;
@@ -27,18 +30,45 @@ import java.util.UUID;
 @ApplicationScoped
 public class RegisterProviderService implements RegisterProviderUseCase {
 
+    /**
+     * Ten tries an hour, per account.
+     *
+     * <p>Generous for a person - registering is something you do once, and a
+     * slug refused twice is normal - and useless for a script. V020 closed the
+     * handle oracle for an account that already has a salon; this closes it for
+     * one that does not, which is the half that was left. There is no cheaper
+     * way to enumerate handles than to ask, so the answer is to make asking
+     * expensive rather than to make it lie.
+     */
+    private static final int ATTEMPTS_PER_HOUR = 10;
+
     private final ProviderRegistrationRepository registrations;
+    private final AttemptLimiter attempts;
     private final AuditTrail audit;
 
     public RegisterProviderService(ProviderRegistrationRepository registrations,
+                                   AttemptLimiter attempts,
                                    AuditTrail audit) {
         this.registrations = registrations;
+        this.attempts = attempts;
         this.audit = audit;
     }
 
     @Override
     @Transactional(Transactional.TxType.REQUIRED)
     public RegisteredProvider register(Registration registration) {
+        // Keyed on the verified subject, not on an address: a header a client
+        // controls is not an identity, and the route is authenticated anyway,
+        // so an attacker needs an account before they need a budget.
+        //
+        // Counted before the work, so a refused slug costs a try. That is the
+        // point - a probe and a genuine mistake look identical from here, and
+        // charging only for successes would leave the enumeration free.
+        if (!attempts.withinBudget("ratelimit:register:" + registration.account().subject(),
+                                   ATTEMPTS_PER_HOUR, Duration.ofHours(1))) {
+            throw new TooManyAttemptsException("register_provider");
+        }
+
         Optional<UUID> categoryId = registration.categorySlug().map(this::requireCategory);
         var providerId = registrations.register(registration, categoryId);
 
