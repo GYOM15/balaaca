@@ -5,6 +5,7 @@ import com.balaaca.booking.domain.BookedSlot;
 import com.balaaca.booking.domain.BookingExceptions.SlotUnavailableException;
 import com.balaaca.booking.domain.BookingExceptions.TransientBookingConflictException;
 import com.balaaca.booking.domain.CustomerContact;
+import com.balaaca.booking.domain.ServiceAddress;
 import com.balaaca.booking.ports.inbound.ListAppointmentsUseCase.AgendaEntry;
 import com.balaaca.booking.ports.outbound.AppointmentStateRepository;
 import com.balaaca.sharedkernel.ids.AppointmentId;
@@ -67,7 +68,8 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                    AND status IN ('PENDING','CONFIRMED')
                 RETURNING id, starts_at, ends_at, status, service_name,
                           customer_price_amount_minor, customer_price_currency,
-                          customer_id, customer_note, staff_id, ready_by, ready_at
+                          customer_id, customer_note, staff_id, ready_by, ready_at,
+                          service_locality_id, service_area, service_directions
                 """)
                 .setParameter("id", id.value())
                 .setParameter("reason", reason.orElse(null))
@@ -111,7 +113,8 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                    AND status IN ('PENDING','CONFIRMED')
                 RETURNING id, starts_at, ends_at, status, service_name,
                           customer_price_amount_minor, customer_price_currency,
-                          customer_id, customer_note, staff_id, ready_by, ready_at
+                          customer_id, customer_note, staff_id, ready_by, ready_at,
+                          service_locality_id, service_area, service_directions
                 """)
                 .setParameter("id", id.value())
                 .setParameter("startsAt", Timestamp.from(slot.startsAt()))
@@ -165,7 +168,8 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                    AND status <> 'CANCELLED'
                 RETURNING id, starts_at, ends_at, status, service_name,
                           customer_price_amount_minor, customer_price_currency,
-                          customer_id, customer_note, staff_id, ready_by, ready_at
+                          customer_id, customer_note, staff_id, ready_by, ready_at,
+                          service_locality_id, service_area, service_directions
                 """)
                 .setParameter("id", id.value())
                 .setParameter("at", Timestamp.from(at))
@@ -192,7 +196,8 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                    AND :readyBy >= ends_at
                 RETURNING id, starts_at, ends_at, status, service_name,
                           customer_price_amount_minor, customer_price_currency,
-                          customer_id, customer_note, staff_id, ready_by, ready_at
+                          customer_id, customer_note, staff_id, ready_by, ready_at,
+                          service_locality_id, service_area, service_directions
                 """)
                 .setParameter("id", id.value())
                 .setParameter("readyBy", Timestamp.from(readyBy))
@@ -241,7 +246,8 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                    AND status = ANY(CAST(:accepted AS varchar[]))
                 RETURNING id, starts_at, ends_at, status, service_name,
                           customer_price_amount_minor, customer_price_currency,
-                          customer_id, customer_note, staff_id, ready_by, ready_at
+                          customer_id, customer_note, staff_id, ready_by, ready_at,
+                          service_locality_id, service_area, service_directions
                 """)
                 .setParameter("id", id.value())
                 .setParameter("to", to.name())
@@ -300,7 +306,32 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                                     Optional.ofNullable((String) c[2])),
                 Optional.ofNullable((String) r[8]).filter(n -> !n.isBlank()),
                 Optional.ofNullable(r[10]).map(AppointmentStateSqlRepository::instant),
-                Optional.ofNullable(r[11]).map(AppointmentStateSqlRepository::instant));
+                Optional.ofNullable(r[11]).map(AppointmentStateSqlRepository::instant),
+                address(r[12], (String) r[13], (String) r[14]));
+    }
+
+    /**
+     * The address, or nothing at all.
+     *
+     * <p>Keyed on the directions, which the schema makes present exactly when
+     * the provider travels. The commune is read back as a slug rather than the
+     * stored id: an id means nothing to a client, and the slug is what the rest
+     * of the API already speaks.
+     */
+    private Optional<ServiceAddress> address(Object localityId, String area, String directions) {
+        if (directions == null) {
+            return Optional.empty();
+        }
+        return Optional.of(new ServiceAddress(
+                Optional.ofNullable(localityId).map(this::slugOf),
+                Optional.ofNullable(area),
+                directions));
+    }
+
+    private String slugOf(Object localityId) {
+        return (String) em.createNativeQuery("SELECT slug FROM localities WHERE id = :id")
+                .setParameter("id", localityId)
+                .getSingleResult();
     }
 
     private static Instant instant(Object value) {

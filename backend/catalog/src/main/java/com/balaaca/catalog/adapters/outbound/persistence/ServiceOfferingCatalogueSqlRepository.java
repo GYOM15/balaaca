@@ -1,5 +1,6 @@
 package com.balaaca.catalog.adapters.outbound.persistence;
 
+import com.balaaca.catalog.ports.inbound.ServiceLocation;
 import com.balaaca.catalog.domain.DuplicateServiceNameException;
 import com.balaaca.catalog.ports.inbound.ManageServiceOfferingsUseCase.OfferingDefinition;
 import com.balaaca.catalog.ports.inbound.ManageServiceOfferingsUseCase.ServiceOffering;
@@ -35,7 +36,7 @@ public class ServiceOfferingCatalogueSqlRepository implements ServiceOfferingRep
     private static final String COLUMNS = """
             id, name, description, duration_minutes, buffer_before_minutes,
             buffer_after_minutes, price_amount_minor, price_currency,
-            price_visible, sort_order, active, turnaround_hours
+            price_visible, sort_order, active, turnaround_hours, location_kind
             """;
 
     private final EntityManager em;
@@ -81,11 +82,11 @@ public class ServiceOfferingCatalogueSqlRepository implements ServiceOfferingRep
                         id, provider_id, name, description, duration_minutes,
                         buffer_before_minutes, buffer_after_minutes,
                         price_amount_minor, price_currency, price_visible,
-                        sort_order, active, turnaround_hours)
+                        sort_order, active, turnaround_hours, location_kind)
                     VALUES (:id, :providerId, :name, :description, :duration,
                             :bufferBefore, :bufferAfter, :priceMinor, :currency,
                             :priceVisible, :sortOrder, :active,
-                            CAST(:turnaround AS int))
+                            CAST(:turnaround AS int), :location)
                     RETURNING %s
                     """.formatted(COLUMNS))
                     .setParameter("id", id.value())
@@ -101,6 +102,7 @@ public class ServiceOfferingCatalogueSqlRepository implements ServiceOfferingRep
                     .setParameter("sortOrder", d.sortOrder())
                     .setParameter("active", d.active())
                     .setParameter("turnaround", turnaroundOf(d))
+                    .setParameter("location", d.location().name())
                     .getSingleResult();
             return toOffering(row);
         } catch (PersistenceException e) {
@@ -125,6 +127,7 @@ public class ServiceOfferingCatalogueSqlRepository implements ServiceOfferingRep
                            sort_order = :sortOrder,
                            active = :active,
                            turnaround_hours = CAST(:turnaround AS int),
+                           location_kind = :location,
                            updated_at = now()
                      WHERE id = :id
                     RETURNING %s
@@ -141,6 +144,7 @@ public class ServiceOfferingCatalogueSqlRepository implements ServiceOfferingRep
                     .setParameter("sortOrder", d.sortOrder())
                     .setParameter("active", d.active())
                     .setParameter("turnaround", turnaroundOf(d))
+                    .setParameter("location", d.location().name())
                     .getResultList();
 
             return rows.isEmpty() ? Optional.empty() : Optional.of(toOffering(rows.get(0)));
@@ -185,6 +189,7 @@ public class ServiceOfferingCatalogueSqlRepository implements ServiceOfferingRep
                         Duration.ofMinutes(((Number) r[4]).longValue()),
                         Duration.ofMinutes(((Number) r[5]).longValue()),
                         Optional.ofNullable((Number) r[11]).map(h -> Duration.ofHours(h.longValue())),
+                        ServiceLocation.valueOf((String) r[12]),
                         Money.ofMinor(((Number) r[6]).longValue(), Currency.of((String) r[7])),
                         (Boolean) r[8],
                         ((Number) r[9]).intValue(),

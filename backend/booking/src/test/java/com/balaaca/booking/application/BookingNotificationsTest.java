@@ -70,6 +70,7 @@ class BookingNotificationsTest {
                 ServiceOfferingId.of(UUID.fromString("5e111111-0000-0000-0000-000000000001")),
                 "Tresses", Duration.ofMinutes(60), Duration.ofMinutes(15), Duration.ofMinutes(10),
                 Optional.empty(),
+                com.balaaca.catalog.ports.inbound.ServiceLocation.AT_PROVIDER,
                 Money.ofMinor(150000, Currency.of("GNF")));
     }
 

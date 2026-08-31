@@ -7,6 +7,7 @@ import com.balaaca.app.api.model.AppointmentPage;
 import com.balaaca.app.api.model.AppointmentStatus;
 import com.balaaca.app.api.model.AppointmentView;
 import com.balaaca.app.api.model.Money;
+import com.balaaca.app.api.model.ServiceAddress;
 import com.balaaca.app.api.model.ReadyByRequest;
 import com.balaaca.app.api.model.CancelAppointmentRequest;
 import com.balaaca.app.api.model.RescheduleAppointmentRequest;
@@ -226,6 +227,16 @@ public class AppointmentsResource implements AgendaApi {
         // promise was cleared.
         e.readyBy().ifPresent(at -> view.setReadyBy(OffsetDateTime.ofInstant(at, ZoneOffset.UTC)));
         e.readyAt().ifPresent(at -> view.setReadyAt(OffsetDateTime.ofInstant(at, ZoneOffset.UTC)));
+
+        // Absent on everything that happens at the shop, which is not the same
+        // as an empty object: the diary shows a "go there" row only when there
+        // is somewhere to go.
+        e.serviceAddress().ifPresent(a -> {
+            ServiceAddress address = new ServiceAddress().directions(a.directions());
+            a.localitySlug().ifPresent(address::setLocalitySlug);
+            a.area().ifPresent(address::setArea);
+            view.setServiceAddress(address);
+        });
         return view;
     }
 }

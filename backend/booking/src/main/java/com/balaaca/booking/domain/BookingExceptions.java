@@ -110,6 +110,54 @@ public final class BookingExceptions {
     }
 
     /**
+     * A call-out with nowhere to go, or a shop appointment carrying an address.
+     *
+     * <p>Both directions are refused, and the second matters as much as the
+     * first: an appointment that happens at the salon must not carry somebody's
+     * home address, because storing one for no reason is how a directory turns
+     * into a list of where its customers live.
+     *
+     * <p>422 rather than 400: the body is well formed, and whether an address
+     * is owed depends on the offering, which only the server knows.
+     */
+    public static final class ServiceAddressMismatchException extends DomainException {
+        public ServiceAddressMismatchException(boolean callOut) {
+            super("VALIDATION_FAILED", 422,
+                  callOut ? "This service is performed at the customer's address"
+                          : "This service is performed at the provider's address",
+                  Map.of("service_address", callOut ? "required" : "not accepted"));
+        }
+    }
+
+    /** A commune the published map does not hold. */
+    public static final class UnknownServiceLocalityException extends DomainException {
+        public UnknownServiceLocalityException(String slug) {
+            super("VALIDATION_FAILED", 400, "No such locality",
+                  Map.of("locality_slug", slug));
+        }
+    }
+
+    /**
+     * The named person does not perform this service.
+     *
+     * <p>422 and not 404: the staff member exists and is the provider's - they
+     * are on the public page - so a 404 would be a lie the client could
+     * disprove by reading the very list it picked the name from. What is
+     * invalid is the pairing.
+     *
+     * <p>Answered rather than silently reassigned. Somebody who asked for Fatou
+     * and got Mariame would find out in the chair.
+     */
+    public static final class StaffCannotPerformServiceException extends DomainException {
+        public StaffCannotPerformServiceException(UUID staffId, UUID serviceOfferingId) {
+            super("VALIDATION_FAILED", 422,
+                  "This team member does not perform this service",
+                  Map.of("staff_id", String.valueOf(staffId),
+                         "service_offering_id", String.valueOf(serviceOfferingId)));
+        }
+    }
+
+    /**
      * Nothing to be ready.
      *
      * <p>The customer sat in the chair and left with the result. Writing a

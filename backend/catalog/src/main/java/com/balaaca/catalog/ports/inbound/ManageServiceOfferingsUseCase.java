@@ -1,5 +1,6 @@
 package com.balaaca.catalog.ports.inbound;
 
+import com.balaaca.catalog.domain.IncompatibleServiceShapeException;
 import com.balaaca.sharedkernel.ids.ServiceOfferingId;
 import com.balaaca.sharedkernel.money.Money;
 import java.time.Duration;
@@ -34,6 +35,10 @@ public interface ManageServiceOfferingsUseCase {
      *                   fields, a flag and a delay, could disagree, and one of
      *                   the two disagreements - a drop-off with no delay
      *                   announced - is a promise nobody made
+     * @param location whether the provider travels. Exclusive with a
+     *                 turnaround: a drop-off asks the customer to bring the
+     *                 thing in, and asking them to bring it to their own house
+     *                 is not a service anybody sells
      */
     record OfferingDefinition(String name,
                               Optional<String> description,
@@ -41,12 +46,16 @@ public interface ManageServiceOfferingsUseCase {
                               Duration bufferBefore,
                               Duration bufferAfter,
                               Optional<Duration> turnaround,
+                              ServiceLocation location,
                               Money price,
                               boolean priceVisible,
                               int sortOrder,
                               boolean active) {
 
         public OfferingDefinition {
+            if (location == ServiceLocation.AT_CUSTOMER && turnaround.isPresent()) {
+                throw new IncompatibleServiceShapeException();
+            }
             turnaround.ifPresent(t -> {
                 // Mirrors the column's CHECK. Stated here too because the
                 // message matters: a constraint name tells a provider nothing.
@@ -60,6 +69,11 @@ public interface ManageServiceOfferingsUseCase {
         /** What the customer does: sit down, or hand it over. */
         public boolean isDropOff() {
             return turnaround.isPresent();
+        }
+
+        /** What the provider does: stay, or travel. */
+        public boolean isCallOut() {
+            return location == ServiceLocation.AT_CUSTOMER;
         }
     }
 

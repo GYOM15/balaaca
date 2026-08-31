@@ -2,6 +2,7 @@ package com.balaaca.providers.adapters.outbound.persistence;
 
 import com.balaaca.providers.domain.ProviderStatus;
 import com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase.BookingPolicy;
+import com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase.LocalityRef;
 import com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase.ProfileEdit;
 import com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase.ProviderProfile;
 import com.balaaca.providers.ports.outbound.ProviderProfileRepository;
@@ -38,27 +39,31 @@ public class ProviderProfileSqlRepository implements ProviderProfileRepository {
     @Override
     public ProviderProfile current() {
         Object[] r = (Object[]) em.createNativeQuery("""
-                SELECT p.slug, p.business_name, p.description, c.slug, p.city,
+                SELECT p.slug, p.business_name, p.description, c.slug,
+                       l.slug, l.label_fr, p.area, p.city,
                        p.address_line, p.public_phone_e164, p.public_email,
                        p.whatsapp_phone_e164, p.logo_url, p.cover_url,
                        p.timezone, p.published, p.status
                   FROM providers p
                   LEFT JOIN provider_categories c ON c.id = p.category_id
+                  LEFT JOIN localities l ON l.id = p.locality_id
                  WHERE p.id = app_current_provider()
                 """).getSingleResult();
 
         return new ProviderProfile(
                 (String) r[0], (String) r[1],
-                text(r[2]), text(r[3]), text(r[4]), text(r[5]),
-                text(r[6]), text(r[7]), text(r[8]),
-                text(r[9]), text(r[10]),
-                ZoneId.of((String) r[11]),
-                (Boolean) r[12],
-                ProviderStatus.valueOf((String) r[13]));
+                text(r[2]), text(r[3]),
+                locality(r[4], r[5]), text(r[6]), text(r[7]), text(r[8]),
+                text(r[9]), text(r[10]), text(r[11]),
+                text(r[12]), text(r[13]),
+                ZoneId.of((String) r[14]),
+                (Boolean) r[15],
+                ProviderStatus.valueOf((String) r[16]));
     }
 
     @Override
-    public ProviderProfile update(ProfileEdit edit, Optional<UUID> categoryId) {
+    public ProviderProfile update(ProfileEdit edit, Optional<UUID> categoryId,
+                                  Optional<String> localitySlug) {
         // public_email is citext, so it is cast rather than left for the driver
         // to send as varchar and PostgreSQL to refuse.
         em.createNativeQuery("""
@@ -66,6 +71,9 @@ public class ProviderProfileSqlRepository implements ProviderProfileRepository {
                    SET business_name       = CAST(:businessName AS varchar),
                        description         = CAST(:description AS text),
                        category_id         = CAST(:categoryId AS uuid),
+                       locality_id         = (SELECT id FROM localities
+                                               WHERE slug = CAST(:locality AS varchar)),
+                       area                = CAST(:area AS varchar),
                        city                = CAST(:city AS varchar),
                        address_line        = CAST(:addressLine AS varchar),
                        public_phone_e164   = CAST(:publicPhone AS varchar),
@@ -79,6 +87,8 @@ public class ProviderProfileSqlRepository implements ProviderProfileRepository {
                 .setParameter("businessName", edit.businessName())
                 .setParameter("description", edit.description().orElse(null))
                 .setParameter("categoryId", categoryId.orElse(null))
+                .setParameter("locality", localitySlug.orElse(null))
+                .setParameter("area", edit.area().orElse(null))
                 .setParameter("city", edit.city().orElse(null))
                 .setParameter("addressLine", edit.addressLine().orElse(null))
                 .setParameter("publicPhone", edit.publicPhoneE164().orElse(null))
@@ -96,6 +106,15 @@ public class ProviderProfileSqlRepository implements ProviderProfileRepository {
 
     private static Optional<String> text(Object column) {
         return Optional.ofNullable((String) column).filter(v -> !v.isBlank());
+    }
+
+    /**
+     * Both halves or neither. The join is outer, so a provider filed nowhere
+     * yields two nulls - and a slug with no label would draw an empty chip on
+     * every page that shows one.
+     */
+    private static Optional<LocalityRef> locality(Object slug, Object label) {
+        return text(slug).flatMap(s -> text(label).map(l -> new LocalityRef(s, l)));
     }
     @Override
     public Optional<String> replaceLogo(String name) {

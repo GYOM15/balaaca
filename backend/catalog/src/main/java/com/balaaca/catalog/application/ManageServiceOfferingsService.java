@@ -2,6 +2,7 @@ package com.balaaca.catalog.application;
 
 import com.balaaca.catalog.domain.ServiceOfferingNotFoundException;
 import com.balaaca.catalog.ports.inbound.ManageServiceOfferingsUseCase;
+import com.balaaca.catalog.ports.inbound.ManageServiceCompetenceUseCase;
 import com.balaaca.catalog.ports.outbound.ServiceOfferingRepository;
 import com.balaaca.sharedkernel.ids.ServiceOfferingId;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -22,9 +23,12 @@ import java.util.UUID;
 public class ManageServiceOfferingsService implements ManageServiceOfferingsUseCase {
 
     private final ServiceOfferingRepository offerings;
+    private final ManageServiceCompetenceUseCase competences;
 
-    public ManageServiceOfferingsService(ServiceOfferingRepository offerings) {
+    public ManageServiceOfferingsService(ServiceOfferingRepository offerings,
+                                         ManageServiceCompetenceUseCase competences) {
         this.offerings = offerings;
+        this.competences = competences;
     }
 
     @Override
@@ -42,7 +46,15 @@ public class ManageServiceOfferingsService implements ManageServiceOfferingsUseC
     @Override
     @Transactional(Transactional.TxType.REQUIRED)
     public ServiceOffering create(OfferingDefinition definition) {
-        return offerings.insert(ServiceOfferingId.of(UUID.randomUUID()), definition);
+        ServiceOffering created = offerings.insert(ServiceOfferingId.of(UUID.randomUUID()),
+                                                   definition);
+
+        // The whole team, in the same transaction. Competence is strict - no
+        // row means nobody performs it - so a service created without this
+        // would be unbookable from the moment it was published, and the
+        // provider would have no idea why.
+        competences.grantWholeTeam(created.id());
+        return created;
     }
 
     @Override

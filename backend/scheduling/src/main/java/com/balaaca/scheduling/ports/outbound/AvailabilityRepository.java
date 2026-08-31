@@ -4,6 +4,7 @@ import com.balaaca.scheduling.domain.AvailabilityOverride;
 import com.balaaca.scheduling.domain.AvailabilityRule;
 import com.balaaca.scheduling.domain.BookingPolicy;
 import com.balaaca.scheduling.domain.InstantRange;
+import com.balaaca.sharedkernel.ids.ServiceOfferingId;
 import com.balaaca.sharedkernel.ids.StaffId;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -26,7 +27,17 @@ public interface AvailabilityRepository {
      * different question - it treats the salon as one calendar, so one busy
      * chair closes the shop.
      */
-    List<StaffId> bookableStaff();
+    /**
+     * Who a customer could be offered for THIS service.
+     *
+     * <p>The offering is the parameter that stops the public slot list and the
+     * booking path disagreeing. Booking joins competence; if this did not, the
+     * list would advertise a ten o'clock the salon's only braider cannot take
+     * and the booking would then be refused - the exact class of defect the
+     * union-across-chairs fix removed, produced again from one table further
+     * out.
+     */
+    List<StaffId> bookableStaff(ServiceOfferingId serviceOfferingId);
 
     List<AvailabilityRule> rulesFor(Optional<StaffId> staffId);
 

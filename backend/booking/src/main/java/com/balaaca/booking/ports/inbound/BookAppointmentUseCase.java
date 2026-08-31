@@ -4,6 +4,7 @@ import com.balaaca.booking.domain.AppointmentStatus;
 import com.balaaca.booking.domain.BookingSource;
 import com.balaaca.booking.domain.CustomerContact;
 import com.balaaca.sharedkernel.ids.AppointmentId;
+import com.balaaca.booking.domain.ServiceAddress;
 import com.balaaca.sharedkernel.ids.ServiceOfferingId;
 import com.balaaca.sharedkernel.ids.StaffId;
 import java.time.Instant;
@@ -30,6 +31,12 @@ public interface BookAppointmentUseCase {
             Optional<StaffId> staffId,
             Instant startsAt,
             CustomerContact customer,
+            /**
+             * Where to go. Present exactly when the offering is a call-out -
+             * checked against the offering rather than trusted, because the
+             * client cannot be the one to decide whether an address is owed.
+             */
+            Optional<ServiceAddress> serviceAddress,
             Optional<String> customerNote,
             Optional<Idempotency> idempotency,
             BookingSource source) {

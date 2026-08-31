@@ -2,6 +2,7 @@ package com.balaaca.booking.ports.inbound;
 
 import com.balaaca.booking.domain.AppointmentStatus;
 import com.balaaca.booking.domain.CustomerContact;
+import com.balaaca.booking.domain.ServiceAddress;
 import com.balaaca.sharedkernel.ids.AppointmentId;
 import com.balaaca.sharedkernel.ids.StaffId;
 import com.balaaca.sharedkernel.money.Money;
@@ -66,7 +67,13 @@ public interface ListAppointmentsUseCase {
                         * promise and nothing to declare ready.
                         */
                        java.util.Optional<Instant> readyBy,
-                       java.util.Optional<Instant> readyAt) {
+                       java.util.Optional<Instant> readyAt,
+                       /**
+                        * Where to go, on a call-out. Empty on every appointment
+                        * that happens at the shop - and empty rather than blank,
+                        * because a shop appointment carries no address at all.
+                        */
+                       java.util.Optional<ServiceAddress> serviceAddress) {
     }
 
     /** @param next empty on the last page */

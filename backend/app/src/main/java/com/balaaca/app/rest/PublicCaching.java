@@ -33,6 +33,16 @@ final class PublicCaching {
     static final String DIRECTORY = "public, max-age=60";
 
     /**
+     * The map of the country. An hour, and it could honestly be a day.
+     *
+     * <p>Fifty-one rows that change by migration - the last time was January
+     * 2024, when Conakry went from five communes to ten. Nothing a provider
+     * does moves this answer, which is what separates it from the taxonomy
+     * beside it: that one carries a live count, this one carries a country.
+     */
+    static final String MAP = "public, max-age=3600";
+
+    /**
      * Hours and the team. They change when a provider edits them, which is
      * rarely, and being five minutes behind on a shop's opening hours has never
      * hurt anyone.

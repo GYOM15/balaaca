@@ -1,5 +1,6 @@
 package com.balaaca.providers.application;
 
+import com.balaaca.catalog.ports.inbound.ManageServiceCompetenceUseCase;
 import com.balaaca.providers.domain.NotInvitableException;
 import com.balaaca.providers.domain.NothingToPublishException;
 import com.balaaca.providers.domain.StaffNotFoundException;
@@ -47,14 +48,18 @@ public class ManageStaffService implements ListStaffUseCase {
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final StaffRepository staff;
+    private final ManageServiceCompetenceUseCase competences;
     private final ProviderProfileRepository profiles;
     private final TenantContext tenant;
     private final AuditTrail audit;
     private final Clock clock;
 
-    public ManageStaffService(StaffRepository staff, ProviderProfileRepository profiles,
+    public ManageStaffService(StaffRepository staff,
+                              ManageServiceCompetenceUseCase competences,
+                              ProviderProfileRepository profiles,
                               TenantContext tenant, AuditTrail audit, Clock clock) {
         this.staff = staff;
+        this.competences = competences;
         this.profiles = profiles;
         this.tenant = tenant;
         this.audit = audit;
@@ -88,6 +93,12 @@ public class ManageStaffService implements ListStaffUseCase {
         // add a bookable person and hand out that person's slots.
         tenant.requireOwner("add_staff_member");
         StaffMember added = staff.insert(definition);
+
+        // A new colleague can do everything the shop offers, until the provider
+        // says otherwise. Competence is strict, so without this grant a hire
+        // would be bookable for nothing and the owner would have to open a
+        // second screen before their first appointment.
+        competences.grantWholeCatalogue(added.id());
         audit.record(AuditEvent.success("STAFF_MEMBER_ADDED", "provider_staff",
                                         added.id().toString()));
         return added;

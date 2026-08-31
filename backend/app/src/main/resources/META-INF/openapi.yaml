@@ -1623,6 +1623,134 @@ paths:
               schema:
                 $ref: '#/components/schemas/CategoryList'
 
+  /v1/service-offerings/{id}/performers:
+    get:
+      operationId: listServicePerformers
+      tags: [catalogue]
+      summary: Who performs this service
+      description: |
+        Strict: the people listed here are the ones who can take a booking for
+        this service, and anybody absent cannot. That is the loud failure rather
+        than the quiet one - a service nobody performs is visible on the first
+        booking attempt, while an exclusion somebody forgot to write sends a
+        customer to the wrong chair and tells nobody.
+
+        A provider who never opens this screen never notices it. A new service
+        is granted to the whole team and a new colleague is granted the whole
+        catalogue, so this is the way to REMOVE somebody - which is how a
+        provider thinks about it anyway: "Fatou doesn't do nails".
+      security: [{ oauth2: [dashboard:read] }]
+      parameters:
+        - $ref: '#/components/parameters/ServiceOfferingId'
+      responses:
+        '200':
+          description: The team members who perform it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PerformerList'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      operationId: replaceServicePerformers
+      tags: [catalogue]
+      summary: Say who performs this service
+      description: |
+        The whole set, for the same reason opening hours are replaced a week at
+        a time: a partial edit leaves the question of what happened to the names
+        nobody mentioned.
+
+        An empty list is accepted and means exactly what it says - nobody
+        performs this service, and it can no longer be booked. That is a real
+        thing a provider does when a specialist leaves, and refusing it would
+        force them to retire the service instead.
+      security: [{ oauth2: [catalog:write] }]
+      parameters:
+        - $ref: '#/components/parameters/ServiceOfferingId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PerformerRequest'
+      responses:
+        '200':
+          description: The team members who now perform it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PerformerList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/localities:
+    get:
+      operationId: listLocalities
+      tags: [discovery]
+      summary: The places a business can be filed under
+      description: |
+        The closed part of the map: eight regions, thirty-three prefectures, and
+        the ten communes of Conakry. Complete for the whole country, and it
+        changes only by migration - the last time was January 2024, when the
+        capital went from five communes to ten.
+
+        Flat, with each row naming its parent. A tree of fifty-one nodes is one
+        page and always will be, and a client that wants it nested builds it
+        from the parents in one pass.
+
+        What is deliberately NOT here is the quartier. There are thousands of
+        them, the platform does not author them, and a partial list fails
+        exactly the provider whose own is missing. That level is free text on
+        the provider, and `listAreas` is where its values come from.
+      security: []
+      responses:
+        '200':
+          description: The whole map.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocalityList'
+
+  /v1/areas:
+    get:
+      operationId: listAreas
+      tags: [discovery]
+      summary: The quartiers providers have already written
+      description: |
+        Type-ahead, and the thing that keeps free text from fragmenting: the
+        tenth hairdresser in Nongo is offered the "Nongo" the first nine
+        created, instead of inventing "nongo centre" beside it.
+
+        The values come from registrations, never from a list this repository
+        carries. Only published providers contribute, so an unpublished one
+        cannot put a word in front of a customer.
+      security: []
+      parameters:
+        - name: q
+          in: query
+          required: false
+          description: Part of a quartier name, folded before matching.
+          schema:
+            type: string
+            maxLength: 80
+        - name: locality
+          in: query
+          required: false
+          description: Narrow to one region, prefecture or commune - the
+            quartiers of Ratoma rather than of the whole country.
+          schema:
+            type: string
+            maxLength: 80
+      responses:
+        '200':
+          description: What has been written, most used first.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AreaList'
+
   /v1/providers:
     get:
       operationId: listProviders
@@ -1685,10 +1813,43 @@ paths:
             items:
               type: string
               maxLength: 60
+        - name: locality
+          in: query
+          required: false
+          description: |
+            A region, a prefecture, or one of Conakry's ten communes, by slug -
+            `listLocalities` publishes them. Matched DOWN the tree: asking for
+            `conakry` returns a business filed under `ratoma`, and asking for
+            `ratoma` returns only Ratoma.
+
+            This is the filter to use. `city` is what came before it and is
+            kept only for the rows that predate it.
+          schema:
+            type: string
+            maxLength: 80
+        - name: area
+          in: query
+          required: false
+          description: |
+            The quartier, as providers write it - "Nongo", "Kipe", "Taouyah".
+            Folded before comparing, so "Ratoma", "ratoma" and "RATOMA" are one
+            value.
+
+            Free text and not a list, because Guinea's quartiers are thousands
+            of rows this platform does not author: a curated one would be
+            missing exactly the neighbourhood the next provider lives in.
+            `listAreas` offers what has already been written, which is what
+            keeps the values from fragmenting.
+          schema:
+            type: string
+            maxLength: 80
         - name: city
           in: query
           required: false
-          description: Matched whole and case-insensitively, not as a prefix.
+          deprecated: true
+          description: |
+            Superseded by `locality`. Matched whole and case-insensitively.
+            Kept because it is the only geography the earliest rows carry.
           schema:
             type: string
             maxLength: 80
@@ -2121,6 +2282,92 @@ components:
           type: string
           maxLength: 255
 
+    PerformerRequest:
+      type: object
+      required: [staff_ids]
+      properties:
+        staff_ids:
+          type: array
+          maxItems: 200
+          items:
+            type: string
+            format: uuid
+          description: |
+            The whole set. A name sent twice is counted once; a name that is not
+            on this provider's team is refused rather than skipped, because a
+            request that silently dropped it would report success and leave the
+            service performed by fewer people than the provider just said.
+
+    PerformerList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Performer'
+
+    Performer:
+      type: object
+      required: [staff_id, display_name, bookable]
+      properties:
+        staff_id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+        bookable:
+          type: boolean
+          description: |
+            Whether customers may pick them. Independent of competence: a
+            receptionist who stops taking bookings has not forgotten how to
+            braid, so they keep the competence and the booking path filters on
+            this separately.
+
+    ServiceAddress:
+      type: object
+      description: |
+        Where the provider is going.
+
+        Three fields and no coordinates, on purpose. A latitude and longitude -
+        or a Plus Code, which is the same thing with the decimal point moved -
+        is a surveillance-grade fact about a private home, and nothing in this
+        product reads one: there is no map, no routing and no dispatch. It would
+        be a liability stored for a feature that does not exist.
+
+        What is here is what a tradesman actually asks on the phone: which
+        commune, which quartier, and how to find the door. A customer who wants
+        to paste a Plus Code into `directions` should - it is exactly the useful
+        thing to paste in a city with few street addresses - and it is kept as
+        the words they wrote, never parsed into a geometry.
+
+        Accepted on a booking and returned on the PROVIDER's agenda only. It is
+        deliberately absent from `CustomerBookingView`, which is reached by a
+        reference rather than by a login: the customer already knows where they
+        live, and a leaked reference should not also hand out a home address.
+      required: [directions]
+      properties:
+        locality_slug:
+          type: string
+          maxLength: 80
+          description: |
+            One of the slugs `listLocalities` publishes. Optional even here: a
+            customer who says "Nongo, behind the mosque" has told the plumber
+            everything he needs, and refusing the booking because they did not
+            also pick a commune from a list would lose the booking.
+        area:
+          type: string
+          maxLength: 80
+          description: The quartier, in the customer's own words.
+        directions:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: |
+            How to find the door. The one required field, because it is the one
+            that actually gets the tradesman there - "derriere la mosquee de
+            Nongo, portail bleu".
+
     BookAppointmentRequest:
       type: object
       description: |
@@ -2144,6 +2391,14 @@ components:
           description: The requested start, as a UTC instant.
         customer:
           $ref: '#/components/schemas/CustomerContact'
+        service_address:
+          allOf:
+            - $ref: '#/components/schemas/ServiceAddress'
+          description: |
+            Where to come. Required when the offering is `AT_CUSTOMER`, refused
+            otherwise - an appointment that happens at the shop must not carry
+            somebody's home address, and a call-out with no directions is a job
+            nobody can do.
         customer_note:
           type: string
           maxLength: 500
@@ -2368,6 +2623,17 @@ components:
             The workshop delay, for a service the customer HANDS OVER rather
             than waits for: a garage, a phone repairer, an alteration.
 
+            Exclusive with `location: AT_CUSTOMER`, and refused with it: a
+            drop-off asks the customer to bring the thing in, and asking them to
+            bring it to their own house is not a service anybody sells.
+        location:
+          allOf:
+            - $ref: '#/components/schemas/ServiceLocation'
+          description: |
+            Omit it for the ordinary case - the customer comes to the shop.
+            `AT_CUSTOMER` is the plumber, the electrician, the cleaner and the
+            mover, and it makes the booking form ask where to go.
+
             Its presence is what makes the offering a drop-off. There is no
             second flag to set, because two fields can disagree and one of the
             two disagreements - a drop-off with no delay announced - is a
@@ -2433,18 +2699,39 @@ components:
     Fulfilment:
       type: string
       description: |
-        What the customer does with their time.
+        The shape of the transaction. Three, and they are mutually exclusive -
+        the database refuses any pairing of them.
 
-        `ON_SITE`: they sit down and wait, and `duration_minutes` is how long.
+        `ON_SITE`: the customer sits down and waits, and `duration_minutes` is
+        how long.
         `DROP_OFF`: they hand the work over and come back, `duration_minutes`
         is the handover at the counter, and `turnaround_hours` is what was
         promised.
+        `AT_CUSTOMER`: the provider travels, and the appointment carries the
+        address. `duration_minutes` is the visit.
 
         Required on every view and never accepted on a request: the server
-        derives it from whether a turnaround was announced. A client must not
+        derives it from `turnaround_hours` and `location`. A client must not
         have to branch on the absence of a field, and a request that carried
-        both would carry two sources of truth for one fact.
-      enum: [ON_SITE, DROP_OFF]
+        both the inputs and the derived value would carry two sources of truth
+        for one fact.
+
+        A client that does not know a value should treat it as `ON_SITE`, which
+        is what every service created before this enum grew actually is.
+      enum: [ON_SITE, DROP_OFF, AT_CUSTOMER]
+
+    ServiceLocation:
+      type: string
+      description: |
+        Where the work happens, as a provider declares it.
+
+        Deliberately not a third "either" value. "Either" is unanswerable at
+        booking time - the form would not know whether to ask for an address,
+        and the customer would not know whether to give one. A provider who
+        genuinely does both publishes two services, which is also what they
+        charge differently for.
+      enum: [AT_PROVIDER, AT_CUSTOMER]
+      default: AT_PROVIDER
 
     ServiceOfferingPage:
       type: object
@@ -2548,6 +2835,13 @@ components:
           format: date-time
           description: When the work was actually declared ready. Absent until
             it is.
+        service_address:
+          allOf:
+            - $ref: '#/components/schemas/ServiceAddress'
+          description: |
+            Where to go, on a call-out. Absent on every appointment that happens
+            at the shop - which is not the same as an empty object, and is why
+            it is absent rather than blank.
 
     AppointmentPage:
       type: object
@@ -2756,8 +3050,13 @@ components:
           type: string
         category_slug:
           type: string
+        locality:
+          $ref: '#/components/schemas/LocalityRef'
+        area:
+          type: string
         city:
           type: string
+          deprecated: true
         address_line:
           type: string
         public_phone_e164:
@@ -2802,9 +3101,31 @@ components:
         category_slug:
           type: string
           maxLength: 60
+        locality_slug:
+          type: string
+          maxLength: 80
+          description: |
+            One of the slugs `listLocalities` publishes - a commune of Conakry,
+            or a prefecture elsewhere. A slug that map does not hold is
+            refused rather than stored, because a filter nobody can select is
+            worse than an empty field.
+
+            Omit it to clear the field. Supersedes `city`.
+        area:
+          type: string
+          maxLength: 80
+          description: |
+            The quartier, in the provider's own words - "Nongo", "Kipe", "Dixinn
+            Port". Free text, deliberately: Guinea's quartiers are thousands of
+            rows this platform does not author, and a curated list would be
+            missing exactly the one this provider lives in. `listAreas` offers
+            what has already been written, which is what keeps the values from
+            fragmenting.
         city:
           type: string
           maxLength: 80
+          deprecated: true
+          description: Superseded by `locality_slug` and `area`.
         address_line:
           type: string
           maxLength: 200
@@ -2846,7 +3167,8 @@ components:
             On an `ON_SITE` offering, how long the customer is there. On a
             `DROP_OFF` one, how long the handover takes - a page that showed it
             as the length of the work would tell somebody a repair takes ten
-            minutes.
+            minutes. On an `AT_CUSTOMER` one, how long the visit is expected to
+            take.
         turnaround_hours:
           type: integer
           format: int32
@@ -2933,6 +3255,69 @@ components:
           items:
             $ref: '#/components/schemas/PublicOpeningHoursSegment'
 
+    LocalityList:
+      type: object
+      description: |
+        No cursor. Fifty-one rows is one page and always will be - the map of a
+        country does not paginate, and inventing one would make every client
+        walk a loop that runs once.
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/LocalityView'
+
+    LocalityView:
+      type: object
+      required: [slug, label_fr, kind]
+      properties:
+        slug:
+          type: string
+          description: What `listProviders` accepts. Stable, never renamed.
+        label_fr:
+          type: string
+        kind:
+          type: string
+          enum: [REGION, PREFECTURE, COMMUNE]
+        parent_slug:
+          type: string
+          description: Absent on a region, which is a root.
+        iso_3166_2:
+          type: string
+          description: |
+            The ISO 3166-2 subdivision code, on the eight regions.
+
+            Absent on a prefecture and on a commune, and for two different
+            reasons. The standard publishes nothing below a prefecture at all -
+            which is exactly why the code is an attribute here and not the
+            search key. It DOES publish one for each prefecture, and this
+            repository has not written them: guessing thirty-three two-letter
+            codes to fill a column nothing reads yet would be inventing data
+            that looks authoritative. They can be added by an update the day
+            something needs them.
+
+    AreaList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AreaView'
+
+    AreaView:
+      type: object
+      required: [label, provider_count]
+      properties:
+        label:
+          type: string
+          description: As the providers wrote it. The most common spelling wins
+            when several exist, which is what makes the suggestion converge.
+        provider_count:
+          type: integer
+          format: int32
+
     ProviderSummary:
       type: object
       description: |
@@ -2954,7 +3339,25 @@ components:
           type: string
         city:
           type: string
+          deprecated: true
+          description: Superseded by `locality` and `area`.
+        locality:
+          $ref: '#/components/schemas/LocalityRef'
+        area:
+          type: string
+          description: The quartier, as the provider wrote it.
         logo_url:
+          type: string
+
+    LocalityRef:
+      type: object
+      description: Where a business is, at the finest level the published map
+        has - a commune in Conakry, a prefecture elsewhere.
+      required: [slug, label_fr]
+      properties:
+        slug:
+          type: string
+        label_fr:
           type: string
 
     ProviderSummaryPage:

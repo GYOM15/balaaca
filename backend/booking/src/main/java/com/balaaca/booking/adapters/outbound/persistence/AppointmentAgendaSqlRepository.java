@@ -2,6 +2,7 @@ package com.balaaca.booking.adapters.outbound.persistence;
 
 import com.balaaca.booking.domain.AppointmentStatus;
 import com.balaaca.booking.domain.CustomerContact;
+import com.balaaca.booking.domain.ServiceAddress;
 import com.balaaca.booking.ports.inbound.ListAppointmentsUseCase.AgendaEntry;
 import com.balaaca.booking.ports.inbound.ListAppointmentsUseCase.AgendaPosition;
 import com.balaaca.booking.ports.inbound.ListAppointmentsUseCase.AgendaQuery;
@@ -50,11 +51,16 @@ public class AppointmentAgendaSqlRepository implements AppointmentAgendaReposito
                 SELECT a.id, a.starts_at, a.ends_at, a.status, a.service_name,
                        a.customer_price_amount_minor, a.customer_price_currency,
                        c.full_name, c.phone_e164, c.email, a.customer_note,
-                       a.staff_id, s.display_name, a.ready_by, a.ready_at
+                       a.staff_id, s.display_name, a.ready_by, a.ready_at,
+                       l.slug, a.service_area, a.service_directions
                   FROM appointments a
                   JOIN customers c ON c.id = a.customer_id
                   JOIN provider_staff s
                     ON s.provider_id = a.provider_id AND s.id = a.staff_id
+                  -- Outer: a call-out whose customer named no commune is
+                  -- ordinary, and an inner join would drop the appointment
+                  -- rather than the field.
+                  LEFT JOIN localities l ON l.id = a.service_locality_id
                  WHERE a.starts_at >= :from
                    AND (CAST(:to AS timestamptz) IS NULL
                         OR a.starts_at <= CAST(:to AS timestamptz))
@@ -101,7 +107,19 @@ public class AppointmentAgendaSqlRepository implements AppointmentAgendaReposito
                                     Optional.ofNullable((String) r[9])),
                 Optional.ofNullable((String) r[10]).filter(n -> !n.isBlank()),
                 Optional.ofNullable(r[13]).map(AppointmentAgendaSqlRepository::instant),
-                Optional.ofNullable(r[14]).map(AppointmentAgendaSqlRepository::instant));
+                Optional.ofNullable(r[14]).map(AppointmentAgendaSqlRepository::instant),
+                address((String) r[15], (String) r[16], (String) r[17]));
+    }
+
+    /**
+     * The address, or nothing at all. Keyed on the directions, which the schema
+     * makes present exactly when the provider travels.
+     */
+    private static Optional<ServiceAddress> address(String locality, String area,
+                                                    String directions) {
+        return directions == null ? Optional.empty()
+                : Optional.of(new ServiceAddress(Optional.ofNullable(locality),
+                                                 Optional.ofNullable(area), directions));
     }
 
     /**

@@ -1,5 +1,6 @@
 package com.balaaca.catalog.adapters.outbound.persistence;
 
+import com.balaaca.catalog.ports.inbound.ServiceLocation;
 import com.balaaca.catalog.ports.inbound.PublishedCatalogueUseCase;
 import com.balaaca.sharedkernel.ids.ServiceOfferingId;
 import com.balaaca.sharedkernel.money.Currency;
@@ -40,7 +41,7 @@ public class PublishedCatalogueSqlRepository implements PublishedCatalogueUseCas
                 SELECT id, name, description, duration_minutes,
                        CASE WHEN price_visible THEN price_amount_minor END,
                        CASE WHEN price_visible THEN price_currency END,
-                       turnaround_hours
+                       turnaround_hours, location_kind
                   FROM service_offerings
                  WHERE active
                  ORDER BY sort_order, name
@@ -52,6 +53,7 @@ public class PublishedCatalogueSqlRepository implements PublishedCatalogueUseCas
                 Optional.ofNullable((String) r[2]),
                 Duration.ofMinutes(((Number) r[3]).longValue()),
                 Optional.ofNullable((Number) r[6]).map(h -> Duration.ofHours(h.longValue())),
+                ServiceLocation.valueOf((String) r[7]),
                 Optional.ofNullable(r[4]).map(amount -> Money.ofMinor(
                         ((Number) amount).longValue(),
                         Currency.of((String) r[5]))))).toList();

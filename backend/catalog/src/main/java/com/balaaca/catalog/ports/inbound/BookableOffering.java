@@ -26,5 +26,12 @@ public record BookableOffering(
          * was promised yesterday.
          */
         Optional<Duration> turnaround,
+        /**
+         * Whether the provider travels. Frozen onto the appointment for the
+         * same reason as the turnaround: a plumber who stops making house calls
+         * must not turn Thursday's call-out into a shop appointment the
+         * customer never agreed to.
+         */
+        ServiceLocation location,
         Money price) {
 }

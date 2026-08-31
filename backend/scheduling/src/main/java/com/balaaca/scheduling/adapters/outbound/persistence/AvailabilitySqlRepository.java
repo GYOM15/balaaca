@@ -6,6 +6,7 @@ import com.balaaca.scheduling.domain.BookingPolicy;
 import com.balaaca.scheduling.domain.InstantRange;
 import com.balaaca.scheduling.domain.LocalWindow;
 import com.balaaca.scheduling.ports.outbound.AvailabilityRepository;
+import com.balaaca.sharedkernel.ids.ServiceOfferingId;
 import com.balaaca.sharedkernel.ids.StaffId;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.persistence.EntityManager;
@@ -165,15 +166,18 @@ public class AvailabilitySqlRepository implements AvailabilityRepository {
     }
     @Override
     @SuppressWarnings("unchecked")
-    public List<StaffId> bookableStaff() {
-        // The same predicate the public staff list uses. If the two disagreed,
-        // a customer would be offered a name whose calendar is never consulted,
-        // or denied one whose is.
+    public List<StaffId> bookableStaff(ServiceOfferingId serviceOfferingId) {
+        // The same predicate the public staff list uses, and the same
+        // competence join the booking path uses. If either disagreed, a
+        // customer would be offered a name whose calendar is never consulted,
+        // or a slot the booking would then refuse.
         List<UUID> rows = em.createNativeQuery("""
-                SELECT id FROM provider_staff
-                 WHERE status = 'ACTIVE' AND bookable
-                 ORDER BY id
-                """).getResultList();
+                SELECT s.id FROM provider_staff s
+                  JOIN staff_service_offerings j
+                    ON j.staff_id = s.id AND j.service_offering_id = :offering
+                 WHERE s.status = 'ACTIVE' AND s.bookable
+                 ORDER BY s.id
+                """).setParameter("offering", serviceOfferingId.value()).getResultList();
 
         return rows.stream().map(StaffId::of).toList();
     }

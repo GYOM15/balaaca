@@ -10,7 +10,9 @@ public interface ProviderProfileRepository {
 
     ProviderProfile current();
 
-    ProviderProfile update(ProfileEdit edit, Optional<UUID> categoryId);
+    /** @param localitySlug already canonical, or empty to clear the field */
+    ProviderProfile update(ProfileEdit edit, Optional<UUID> categoryId,
+                           Optional<String> localitySlug);
 
     /**
      * @return the name the row held before, so the caller can drop the file it

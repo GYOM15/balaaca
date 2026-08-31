@@ -5,6 +5,7 @@ import com.balaaca.booking.domain.BookingExceptions.IdempotencyKeyReusedExceptio
 import com.balaaca.booking.domain.BookingExceptions.SlotUnavailableException;
 import com.balaaca.booking.domain.BookingExceptions.TransientBookingConflictException;
 import com.balaaca.booking.domain.CustomerContact;
+import com.balaaca.booking.domain.ServiceAddress;
 import com.balaaca.booking.ports.outbound.AppointmentRepository;
 import com.balaaca.platformkernel.tenancy.TenantContext;
 import com.balaaca.sharedkernel.ids.AppointmentId;
@@ -67,7 +68,9 @@ public class AppointmentSqlRepository implements AppointmentRepository {
                         blocked_from, blocked_until, service_name,
                         customer_price_amount_minor, customer_price_currency,
                         duration_minutes, source, idempotency_key, idempotency_request_hash,
-                        public_reference, customer_note, turnaround_hours, ready_by, status)
+                        public_reference, customer_note, turnaround_hours, ready_by,
+                        service_location_kind, service_locality_id, service_area,
+                        service_directions, status)
                     VALUES (
                         :id, :providerId, :staffId, :offeringId, :customerId,
                         :startsAt, :endsAt, :bufferBefore, :bufferAfter,
@@ -107,6 +110,18 @@ public class AppointmentSqlRepository implements AppointmentRepository {
                         -- request first?", and the request it is about is a
                         -- stranger's. A walk-in left PENDING would put the
                         -- salon's own entry in the salon's own queue.
+                        -- Frozen too. A plumber who stops making house calls
+                        -- must not turn Thursday's call-out into a shop
+                        -- appointment the customer never agreed to.
+                        :locationKind,
+                        -- Resolved here rather than carried in as an id: the
+                        -- slug was already checked against the published map,
+                        -- and an application layer with no use for a foreign
+                        -- key should not be holding one.
+                        (SELECT id FROM localities
+                          WHERE slug = CAST(:serviceLocality AS varchar)),
+                        CAST(:serviceArea AS varchar),
+                        CAST(:serviceDirections AS varchar),
                         (SELECT CASE WHEN auto_confirm OR CAST(:accepted AS boolean)
                                      THEN 'CONFIRMED' ELSE 'PENDING' END
                            FROM providers WHERE id = :providerId))
@@ -124,6 +139,13 @@ public class AppointmentSqlRepository implements AppointmentRepository {
                     .setParameter("endsAt", a.slot().endsAt())
                     .setParameter("bufferBefore", a.slot().bufferBeforeMinutes())
                     .setParameter("bufferAfter", a.slot().bufferAfterMinutes())
+                    .setParameter("locationKind", a.offering().location().name())
+                    .setParameter("serviceLocality", a.serviceAddress()
+                            .flatMap(ServiceAddress::localitySlug).orElse(null))
+                    .setParameter("serviceArea", a.serviceAddress()
+                            .flatMap(ServiceAddress::area).orElse(null))
+                    .setParameter("serviceDirections", a.serviceAddress()
+                            .map(ServiceAddress::directions).orElse(null))
                     .setParameter("blockedFrom", a.slot().blockedFrom())
                     .setParameter("blockedUntil", a.slot().blockedUntil())
                     .setParameter("serviceName", a.offering().name())
@@ -224,24 +246,37 @@ public class AppointmentSqlRepository implements AppointmentRepository {
     public List<StaffId> eligibleStaff(ServiceOfferingId serviceOfferingId) {
         // Least loaded first, ties broken by id so the order is stable. RLS
         // supplies the tenant predicate.
+        //
+        // The join is what the parameter is for, and until V032 there was none:
+        // this method took a service and ignored it, so a customer booking
+        // braids could be handed to the nail technician because she was the
+        // least busy. INNER, because competence is strict - no row means the
+        // person does not perform it.
         List<UUID> ids = em.createNativeQuery("""
                 SELECT s.id FROM provider_staff s
+                  JOIN staff_service_offerings j
+                    ON j.staff_id = s.id AND j.service_offering_id = :offering
                  WHERE s.bookable AND s.status = 'ACTIVE'
                  ORDER BY (SELECT count(*) FROM appointments a
                             WHERE a.staff_id = s.id
                               AND a.status IN ('PENDING','CONFIRMED')), s.id
-                """).getResultList();
+                """).setParameter("offering", serviceOfferingId.value()).getResultList();
         return ids.stream().map(StaffId::of).toList();
     }
 
     @Override
-    public long freeStaffCount(Optional<StaffId> staffId, Instant blockedFrom, Instant blockedUntil) {
-        // The same bookable predicate eligibleStaff uses, so the two agree on
-        // who counts. The optional filter casts its parameter: PostgreSQL
-        // refuses a statement whose only unambiguous use of a parameter is
-        // beside IS NULL, with 42P18, rather than guessing its type.
+    public long freeStaffCount(ServiceOfferingId serviceOfferingId, Optional<StaffId> staffId,
+                               Instant blockedFrom, Instant blockedUntil) {
+        // The same bookable predicate AND the same competence join eligibleStaff
+        // uses, so the two agree on who counts. If only one of them joined, a
+        // salon whose one braider is busy would be told the system was merely
+        // congested and to try again, forever. The optional filter casts its
+        // parameter: PostgreSQL refuses a statement whose only unambiguous use
+        // of a parameter is beside IS NULL, with 42P18, rather than guessing.
         Number free = (Number) em.createNativeQuery("""
                 SELECT count(*) FROM provider_staff s
+                  JOIN staff_service_offerings j
+                    ON j.staff_id = s.id AND j.service_offering_id = :offering
                  WHERE s.bookable AND s.status = 'ACTIVE'
                    AND (CAST(:staffId AS uuid) IS NULL OR s.id = CAST(:staffId AS uuid))
                    AND NOT EXISTS (
@@ -250,11 +285,32 @@ public class AppointmentSqlRepository implements AppointmentRepository {
                           AND a.status IN ('PENDING','CONFIRMED')
                           AND a.blocked_range && tstzrange(:from, :until, '[)'))
                 """)
+                .setParameter("offering", serviceOfferingId.value())
                 .setParameter("staffId", staffId.map(StaffId::value).orElse(null))
                 .setParameter("from", java.sql.Timestamp.from(blockedFrom))
                 .setParameter("until", java.sql.Timestamp.from(blockedUntil))
                 .getSingleResult();
         return free.longValue();
+    }
+
+    /**
+     * Whether this person performs this service at all.
+     *
+     * <p>Deliberately silent about bookable and about status, which the
+     * eligibility query asks separately. A provider writing a walk-in into
+     * their own diary may name somebody the customer's list never offers - that
+     * is the point of a walk-in - but nobody may be assigned work they do not
+     * do.
+     */
+    @Override
+    public boolean performs(StaffId staffId, ServiceOfferingId serviceOfferingId) {
+        return !em.createNativeQuery("""
+                SELECT 1 FROM staff_service_offerings
+                 WHERE staff_id = :staff AND service_offering_id = :offering
+                """)
+                .setParameter("staff", staffId.value())
+                .setParameter("offering", serviceOfferingId.value())
+                .getResultList().isEmpty();
     }
 
     @Override
