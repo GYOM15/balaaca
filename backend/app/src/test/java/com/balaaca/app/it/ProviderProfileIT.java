@@ -156,4 +156,60 @@ class ProviderProfileIT {
                 .body("business_name", equalTo("Salon Awa"))
                 .body("services[0].name", equalTo("Tresses"));
     }
+    @Test
+    @DisplayName("A quartier is stored the shape it will be offered back in")
+    @TestSecurity(user = BookingFixtures.SALON_SUBJECT,
+                  roles = {"dashboard:read", "profile:write"})
+    @OidcSecurity(claims = @Claim(key = "sub", value = BookingFixtures.SALON_SUBJECT))
+    void aQuartierIsStoredTrimmed() {
+        // listAreas exists to make spellings converge, so whatever it hands
+        // back is what the next provider stores. A row holding "  RATOMA  "
+        // was offered verbatim: the fold that groups the values ignores
+        // padding, so two providers agreed and the value they agreed on had
+        // two spaces on each side.
+        given().contentType("application/json")
+                .body("""
+                      {"business_name":"Salon Fatou","timezone":"Africa/Conakry",
+                       "published":false,"locality_slug":"ratoma","area":"   Nongo   "}
+                      """)
+                .when().put(PROFILE).then().statusCode(200)
+                .body("area", equalTo("Nongo"))
+                .body("locality.slug", equalTo("ratoma"))
+                .body("locality.label_fr", equalTo("Ratoma"));
+    }
+
+    @Test
+    @DisplayName("A quartier of nothing but spaces clears the field")
+    @TestSecurity(user = BookingFixtures.SALON_SUBJECT,
+                  roles = {"dashboard:read", "profile:write"})
+    @OidcSecurity(claims = @Claim(key = "sub", value = BookingFixtures.SALON_SUBJECT))
+    void aBlankQuartierIsNotAValue() {
+        // Absent, not empty. An empty string would be a group of its own in the
+        // suggestion list - a quartier called "" that one provider is in.
+        given().contentType("application/json")
+                .body("""
+                      {"business_name":"Salon Fatou","timezone":"Africa/Conakry",
+                       "published":false,"area":"    "}
+                      """)
+                .when().put(PROFILE).then().statusCode(200)
+                .body("area", org.hamcrest.Matchers.nullValue());
+    }
+
+    @Test
+    @DisplayName("A commune the published map does not hold is refused")
+    @TestSecurity(user = BookingFixtures.SALON_SUBJECT,
+                  roles = {"dashboard:read", "profile:write"})
+    @OidcSecurity(claims = @Claim(key = "sub", value = BookingFixtures.SALON_SUBJECT))
+    void anUnknownCommuneIsRefused() {
+        // Refused rather than quietly filed nowhere: a business stored with no
+        // locality appears under no filter and is never told why.
+        given().contentType("application/json")
+                .body("""
+                      {"business_name":"Salon Fatou","timezone":"Africa/Conakry",
+                       "published":false,"locality_slug":"atlantide"}
+                      """)
+                .when().put(PROFILE).then().statusCode(400)
+                .body("code", equalTo("VALIDATION_FAILED"));
+    }
+
 }
