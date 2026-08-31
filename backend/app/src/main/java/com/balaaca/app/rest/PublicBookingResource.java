@@ -95,7 +95,9 @@ public class PublicBookingResource implements BookingApi {
      */
     @Override
     public Response getBooking(String reference) {
-        return withBooking(reference, () -> Response.ok(view(bookings.byReference(reference))).build());
+        return withBooking(reference, () -> Response.ok(view(bookings.byReference(reference)))
+                .header("Cache-Control", PublicCaching.NEVER)
+                .build());
     }
 
     @Override

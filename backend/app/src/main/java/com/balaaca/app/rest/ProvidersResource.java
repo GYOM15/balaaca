@@ -69,6 +69,7 @@ public class ProvidersResource implements ProvidersApi {
         return Response.ok(new ProviderSummaryPage()
                 .data(found.cards().stream().map(ProvidersResource::card).toList())
                 .nextCursor(found.next().map(Cursors::encodeDirectory).orElse(null)))
+                .header("Cache-Control", PublicCaching.DIRECTORY)
                 .build();
     }
 

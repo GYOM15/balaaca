@@ -1305,8 +1305,17 @@ paths:
         and repeat businesses. Alphabetical is stable, predictable, and lets the
         cursor be exactly the position the caller already read.
 
-        `q` matches the business name. It needs two characters: below that it
-        matches most of the directory and answers nothing.
+        `q` matches three things, because a customer types what they want rather
+        than what a business is called: the business name, the trade's own
+        label, and the name of any active service the provider offers. Somebody
+        looking for braids types "tresses" - no business is named Tresses, and
+        matching the name alone answered nothing.
+
+        A service is MATCHED, never returned: a card carries a handle and a
+        name, and the catalogue belongs to the provider's own page.
+
+        It needs two characters: below that it matches most of the directory and
+        answers nothing.
       security: []
       parameters:
         - name: q

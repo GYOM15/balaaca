@@ -77,7 +77,9 @@ public class PublicProviderResource implements DiscoveryApi {
                     CategoryView view = new CategoryView().slug(c.slug()).labelFr(c.labelFr());
                     c.icon().ifPresent(view::setIcon);
                     return view;
-                }).toList())).build();
+                }).toList()))
+                .header("Cache-Control", PublicCaching.TAXONOMY)
+                .build();
     }
 
     /**
@@ -101,7 +103,9 @@ public class PublicProviderResource implements DiscoveryApi {
     public Response getPublicProvider(String slug) {
         tenants.bindPublished(slug);
         try {
-            return Response.ok(view(providers.publicPage(), catalogue.published())).build();
+            return Response.ok(view(providers.publicPage(), catalogue.published()))
+                    .header("Cache-Control", PublicCaching.DIRECTORY)
+                    .build();
         } finally {
             tenants.clear();
         }
@@ -122,7 +126,9 @@ public class PublicProviderResource implements DiscoveryApi {
                             .map(m -> new PublicStaffMember()
                                     .staffId(m.id().value())
                                     .displayName(m.displayName()))
-                            .toList())).build();
+                            .toList()))
+                    .header("Cache-Control", PublicCaching.SLOW_MOVING)
+                    .build();
         } finally {
             tenants.clear();
         }
@@ -136,7 +142,9 @@ public class PublicProviderResource implements DiscoveryApi {
                     .timezone(providers.publicPage().timezone().getId())
                     .data(availability.combinedOpeningHours().stream()
                             .map(PublicProviderResource::segment)
-                            .toList())).build();
+                            .toList()))
+                    .header("Cache-Control", PublicCaching.SLOW_MOVING)
+                    .build();
         } finally {
             tenants.clear();
         }

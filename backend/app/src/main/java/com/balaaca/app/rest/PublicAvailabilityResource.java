@@ -63,7 +63,11 @@ public class PublicAvailabilityResource implements AvailabilityApi {
                     from, toDate,
                     offering.duration(), offering.bufferBefore(), offering.bufferAfter()));
 
-            return Response.ok(page(bookable, cursor, limit)).build();
+            // Never cached. Every booking changes this answer, and a stale slot
+            // list sends a customer to a slot that is gone.
+            return Response.ok(page(bookable, cursor, limit))
+                    .header("Cache-Control", PublicCaching.NEVER)
+                    .build();
         } finally {
             tenants.clear();
         }
