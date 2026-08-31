@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { api, publicApi } from "@/lib/api";
 import { dateTime, mediaUrl } from "@/lib/format";
 import { Icon } from "@/components/icon";
@@ -9,6 +10,7 @@ import type {
   LocalityList,
   LocalityView,
   ProviderProfile,
+  ReadinessView,
 } from "@/lib/types";
 import { groupLocalities, localityLabel } from "@/lib/localities";
 import { saveProfile, savePolicy, uploadCover, uploadLogo } from "./actions";
@@ -20,7 +22,11 @@ const QR_CODE = "/dashboard/profile/qr-code";
 
 const REFUSALS: Record<string, string> = {
   FORBIDDEN: "Seul le propriétaire modifie la page et les réglages.",
-  NOTHING_TO_PUBLISH:
+  // The API sends INVALID_STATE_TRANSITION here, not a code of its own. This
+  // key used to be NOTHING_TO_PUBLISH, which the catalogue does not publish -
+  // so every refusal to publish fell through to the generic sentence while a
+  // useful one sat unreachable on this line.
+  INVALID_STATE_TRANSITION:
     "Il faut au moins une prestation, des horaires et quelqu'un de réservable avant de publier.",
   VALIDATION_FAILED:
     "Vérifiez la commune, le numéro de téléphone (format +224…) et le fuseau horaire.",
@@ -36,8 +42,9 @@ export default async function Profile({
   searchParams: Promise<{ error?: string }>;
 }) {
   const query = await searchParams;
-  const [profile, policy, categories, localities, areas] = await Promise.all([
+  const [profile, readiness, policy, categories, localities, areas] = await Promise.all([
     api<ProviderProfile>("/v1/provider-profile"),
+    api<ReadinessView>("/v1/provider-profile/readiness"),
     api<BookingPolicy>("/v1/booking-policy"),
     publicApi<CategoryList>("/v1/categories"),
     api<LocalityList>("/v1/localities"),
@@ -311,18 +318,41 @@ export default async function Profile({
             </label>
           </div>
 
-          <label className="switch">
-            <input type="checkbox" name="published" defaultChecked={profile.published} />
-            <span className="switch__track"><span className="switch__thumb" /></span>
-            <span className="grow">
-              <span className="t-small">Ma page est visible par les clients</span>
-              <span className="field__hint" style={{ display: "block" }}>
-                Publiée, elle s'ouvre à toute personne qui reçoit le lien et
-                apparaît dans l'annuaire. Dépubliée, elle n'est visible que de
-                vous, et vos rendez-vous déjà pris restent.
+          {/* Offered only when pressing it would work. It used to be offered
+              always, so a provider with an empty catalogue ticked it, saved,
+              and was told the save had failed - naming nothing, while the
+              server knew exactly what was missing. Readiness answers with the
+              same predicates the gate uses, so this and publishing cannot
+              disagree. Still offered to a published page, because unpublishing
+              is always allowed. */}
+          {readiness.can_publish || profile.published ? (
+            <label className="switch">
+              <input type="checkbox" name="published" defaultChecked={profile.published} />
+              <span className="switch__track"><span className="switch__thumb" /></span>
+              <span className="grow">
+                <span className="t-small">Ma page est visible par les clients</span>
+                <span className="field__hint" style={{ display: "block" }}>
+                  Publiée, elle s'ouvre à toute personne qui reçoit le lien et
+                  apparaît dans l'annuaire. Dépubliée, elle n'est visible que de
+                  vous, et vos rendez-vous déjà pris restent.
+                </span>
               </span>
-            </span>
-          </label>
+            </label>
+          ) : (
+            <Notice tone="info" icon="info" title="Il manque encore quelque chose pour publier">
+              <div className="stack stack-2">
+                {!readiness.has_service && (
+                  <Link href="/dashboard/services">Créer une prestation</Link>
+                )}
+                {!readiness.has_hours && (
+                  <Link href="/dashboard/hours">Déclarer vos horaires</Link>
+                )}
+                {!readiness.has_bookable_staff && (
+                  <Link href="/dashboard/team">Rendre quelqu'un réservable</Link>
+                )}
+              </div>
+            </Notice>
+          )}
 
           <ActionButton label="Enregistrer ma page" variant="primary" type="submit" icon="check" />
         </form>
