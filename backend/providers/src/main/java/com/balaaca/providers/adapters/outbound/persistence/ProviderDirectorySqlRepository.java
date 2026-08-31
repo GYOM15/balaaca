@@ -53,16 +53,32 @@ public class ProviderDirectorySqlRepository implements SearchProvidersUseCase {
         // scan everything on every page.
         int window = query.limit() + 1;
 
-        // ILIKE '%x%' rather than a similarity operator: the trigram GIN index
-        // on business_name serves it, and unlike a ranked match it does not
-        // reorder results, which is what lets the cursor stay meaningful.
+        // Three places a customer's word can live, and only the first was
+        // searched: the business name, the trade's own label, and what the
+        // provider calls its work. Somebody looking for braids types "tresses";
+        // no business is named Tresses, and the answer used to be nothing - on
+        // a home page whose whole purpose is that box.
+        //
+        // The EXISTS reads service_offerings with no tenant bound, which
+        // V022's public-read policy admits for published providers only. It
+        // matches rows without fetching them, and getPublicProvider already
+        // publishes exactly those rows one provider at a time.
+        //
+        // ILIKE '%x%' rather than a similarity operator: the trigram GIN
+        // indexes serve it, and unlike a ranked match it does not reorder
+        // results, which is what lets the cursor stay meaningful.
         var statement = em.createNativeQuery("""
                 SELECT p.slug, p.business_name, p.description, c.slug, p.city,
                        p.logo_url
                   FROM providers p
                   LEFT JOIN provider_categories c ON c.id = p.category_id
                  WHERE (CAST(:name AS varchar) IS NULL
-                        OR p.business_name ILIKE '%' || CAST(:name AS varchar) || '%')
+                        OR p.business_name ILIKE '%' || CAST(:name AS varchar) || '%'
+                        OR c.label_fr ILIKE '%' || CAST(:name AS varchar) || '%'
+                        OR EXISTS (SELECT 1 FROM service_offerings so
+                                    WHERE so.provider_id = p.id
+                                      AND so.active
+                                      AND so.name ILIKE '%' || CAST(:name AS varchar) || '%'))
                    AND (cardinality(CAST(:categories AS varchar[])) = 0
                         OR c.slug = ANY(CAST(:categories AS varchar[])))
                    AND (CAST(:city AS varchar) IS NULL
