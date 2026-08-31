@@ -13,7 +13,9 @@ import com.balaaca.catalog.ports.inbound.BookableOffering;
 import com.balaaca.catalog.ports.inbound.LookupServiceOfferingUseCase;
 import com.balaaca.scheduling.ports.inbound.CalculateSlotsUseCase;
 import com.balaaca.scheduling.ports.inbound.CalculateSlotsUseCase.SlotRequest;
+import com.balaaca.booking.domain.BookingExceptions.UnknownStaffException;
 import com.balaaca.sharedkernel.ids.AppointmentId;
+import com.balaaca.sharedkernel.ids.StaffId;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.transaction.Transactional;
 import java.time.Clock;
@@ -21,6 +23,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.EnumSet;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -65,11 +68,22 @@ public class RescheduleAttempt {
     }
 
     @Transactional(Transactional.TxType.REQUIRES_NEW)
-    public AgendaEntry once(AppointmentId id, Instant newStartsAt) {
+    public AgendaEntry once(AppointmentId id, Instant newStartsAt,
+                            Optional<StaffId> newStaffId) {
         AppointmentSnapshot current = appointments.snapshotOf(id)
                 .orElseThrow(() -> new AppointmentNotFoundException(id.value()));
         if (!MOVABLE.contains(current.status())) {
             throw new InvalidStateTransitionException(current.status(), current.status());
+        }
+
+        // Asked before the UPDATE rather than left to the composite foreign
+        // key: a chair that belongs to nobody would otherwise surface as a 500
+        // naming a constraint, and a chair that belongs to another salon is
+        // already invisible to this read, so both answer as one that does not
+        // exist.
+        StaffId target = newStaffId.orElse(current.staffId());
+        if (newStaffId.isPresent() && !appointments.activeStaffExists(target)) {
+            throw new UnknownStaffException(target.value());
         }
 
         // Recomputed from the service the appointment already carries. The
@@ -80,7 +94,13 @@ public class RescheduleAttempt {
         BookedSlot moved = BookedSlot.from(newStartsAt, offering.duration(),
                                            offering.bufferBefore(), offering.bufferAfter());
 
-        if (!slots.isWithinAvailability(newStartsAt, slotRequest(current, offering, newStartsAt))) {
+        // Judged against the chair the appointment is moving TO, which is the
+        // person who will have to be there. Judged at all, unlike a walk-in:
+        // that one records something that is already happening, while this one
+        // is planning, and a provider dragging an appointment onto a closed
+        // Sunday is far more likely to have slipped than to have decided.
+        if (!slots.isWithinAvailability(newStartsAt,
+                                        slotRequest(target, offering, newStartsAt))) {
             throw new SlotOutsideAvailabilityException(newStartsAt,
                     "outside the provider's declared availability");
         }
@@ -88,7 +108,7 @@ public class RescheduleAttempt {
         // The UPDATE is still what decides. Everything above is the friendly
         // answer; the exclusion constraint is the guarantee, and a 23P01 here
         // surfaces as the same 409 a first booking would get.
-        AgendaEntry entry = appointments.reschedule(id, moved, clock.instant())
+        AgendaEntry entry = appointments.reschedule(id, moved, newStaffId, clock.instant())
                 .orElseThrow(() -> new InvalidStateTransitionException(
                         current.status(), AppointmentStatus.PENDING));
 
@@ -102,10 +122,9 @@ public class RescheduleAttempt {
         return entry;
     }
 
-    private SlotRequest slotRequest(AppointmentSnapshot current, BookableOffering offering,
-                                    Instant at) {
+    private SlotRequest slotRequest(StaffId staff, BookableOffering offering, Instant at) {
         LocalDate day = at.atZone(ZoneId.of("UTC")).toLocalDate();
-        return new SlotRequest(offering.id(), java.util.Optional.of(current.staffId()),
+        return new SlotRequest(offering.id(), Optional.of(staff),
                                day, day, offering.duration(),
                                offering.bufferBefore(), offering.bufferAfter());
     }

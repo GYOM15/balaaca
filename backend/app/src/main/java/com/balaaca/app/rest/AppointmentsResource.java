@@ -1,6 +1,7 @@
 package com.balaaca.app.rest;
 
 import com.balaaca.app.api.AgendaApi;
+import com.balaaca.app.api.model.AppointmentCreatedView;
 import com.balaaca.app.api.model.AppointmentCustomerView;
 import com.balaaca.app.api.model.AppointmentPage;
 import com.balaaca.app.api.model.AppointmentStatus;
@@ -8,7 +9,11 @@ import com.balaaca.app.api.model.AppointmentView;
 import com.balaaca.app.api.model.Money;
 import com.balaaca.app.api.model.CancelAppointmentRequest;
 import com.balaaca.app.api.model.RescheduleAppointmentRequest;
+import com.balaaca.app.api.model.BookAppointmentRequest;
+import com.balaaca.booking.domain.BookingSource;
+import com.balaaca.booking.ports.inbound.BookAppointmentUseCase;
 import com.balaaca.booking.ports.inbound.CancelAppointmentUseCase;
+import com.balaaca.providers.ports.inbound.LookupNoticeProfileUseCase;
 import com.balaaca.booking.ports.inbound.ListAppointmentsUseCase;
 import com.balaaca.booking.ports.inbound.MoveAppointmentUseCase;
 import com.balaaca.booking.ports.inbound.ListAppointmentsUseCase.AgendaEntry;
@@ -50,23 +55,63 @@ public class AppointmentsResource implements AgendaApi {
     private final ListAppointmentsUseCase appointments;
     private final CancelAppointmentUseCase cancellation;
     private final MoveAppointmentUseCase moves;
+    private final BookAppointmentRequestMapper mapper;
+    private final BookAppointmentUseCase booking;
+    private final LookupNoticeProfileUseCase providers;
     private final Clock clock;
 
     public AppointmentsResource(ListAppointmentsUseCase appointments,
                                 CancelAppointmentUseCase cancellation,
                                 MoveAppointmentUseCase moves,
+                                BookAppointmentRequestMapper mapper,
+                                BookAppointmentUseCase booking,
+                                LookupNoticeProfileUseCase providers,
                                 Clock clock) {
         this.appointments = appointments;
         this.cancellation = cancellation;
         this.moves = moves;
+        this.mapper = mapper;
+        this.booking = booking;
+        this.providers = providers;
         this.clock = clock;
+    }
+
+    /**
+     * The counter, not the public page.
+     *
+     * <p>The same request body and the same idempotency guarantee as a
+     * customer's booking - a retry must not burn a second chair either way -
+     * and one difference that is the whole point of the route: the source is
+     * DASHBOARD, so the booking policy and the published hours do not apply.
+     * They protect a customer and keep a stranger out; a provider writing in
+     * their own diary is neither. {@code BookingSource} carries that decision,
+     * so it is stated once and both routes read it rather than each deciding.
+     */
+    @Override
+    @RolesAllowed("appointments:write")
+    public Response bookWalkIn(String idempotencyKey, BookAppointmentRequest request) {
+        var result = booking.book(mapper.toCommand(
+                request, idempotencyKey,
+                providers.currentNoticeProfile().countryCode(), BookingSource.DASHBOARD));
+
+        return Response.status(result.replayed() ? 200 : 201)
+                .entity(new AppointmentCreatedView()
+                        .appointmentId(result.appointmentId().value())
+                        .reference(result.reference())
+                        .status(AppointmentStatus.fromValue(result.status().name())))
+                .build();
     }
 
     @Override
     @RolesAllowed("appointments:write")
     public Response rescheduleAppointment(UUID id, RescheduleAppointmentRequest request) {
         return Response.ok(toView(moves.reschedule(
-                AppointmentId.of(id), request.getStartsAt().toInstant()))).build();
+                AppointmentId.of(id),
+                request.getStartsAt().toInstant(),
+                // Absent leaves the appointment on its chair. Present is a real
+                // move even at the same instant: the constraint keys on the
+                // staff member, so this releases one resource and takes another.
+                Optional.ofNullable(request.getStaffId()).map(StaffId::of)))).build();
     }
 
     @Override

@@ -79,7 +79,8 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
 
     @Override
     @SuppressWarnings("unchecked")
-    public Optional<AgendaEntry> reschedule(AppointmentId id, BookedSlot slot, Instant at) {
+    public Optional<AgendaEntry> reschedule(AppointmentId id, BookedSlot slot,
+                                           Optional<StaffId> staffId, Instant at) {
         // The four time columns move together, and ck_appointments_block_derived
         // checks that they still agree: the database re-derives the block window
         // from the buffers rather than trusting this statement to have done it.
@@ -97,6 +98,13 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                        ends_at = :endsAt,
                        blocked_from = :blockedFrom,
                        blocked_until = :blockedUntil,
+                       -- COALESCE, so a move naming no chair leaves the row on
+                       -- the one it has. The chair changes in THIS statement
+                       -- and not a second one: the exclusion constraint keys on
+                       -- staff_id, so releasing the old resource and taking the
+                       -- new one apart would leave a window in which a third
+                       -- booking fits into the appointment being moved.
+                       staff_id = COALESCE(CAST(:staffId AS uuid), staff_id),
                        version = version + 1,
                        updated_at = :at
                  WHERE id = :id
@@ -110,6 +118,7 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                 .setParameter("endsAt", Timestamp.from(slot.endsAt()))
                 .setParameter("blockedFrom", Timestamp.from(slot.blockedFrom()))
                 .setParameter("blockedUntil", Timestamp.from(slot.blockedUntil()))
+                .setParameter("staffId", staffId.map(StaffId::value).orElse(null))
                 .setParameter("at", Timestamp.from(at))
                 .getResultList();
         } catch (PersistenceException e) {
@@ -133,6 +142,17 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
         }
 
         return rows.isEmpty() ? Optional.empty() : Optional.of(toEntry(rows.get(0)));
+    }
+
+    @Override
+    public boolean activeStaffExists(StaffId staffId) {
+        // RLS scopes this to the caller's own provider, so a colleague at
+        // another salon is invisible here and answers as one who never existed.
+        return !em.createNativeQuery(
+                "SELECT 1 FROM provider_staff WHERE id = :id AND status = 'ACTIVE'")
+                .setParameter("id", staffId.value())
+                .getResultList()
+                .isEmpty();
     }
 
     /** The cause chain, because the driver's exception is wrapped by the time it arrives. */

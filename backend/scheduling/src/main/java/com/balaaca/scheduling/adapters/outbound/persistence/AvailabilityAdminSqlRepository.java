@@ -1,6 +1,7 @@
 package com.balaaca.scheduling.adapters.outbound.persistence;
 
 import com.balaaca.platformkernel.tenancy.TenantContext;
+import com.balaaca.scheduling.domain.AvailabilityOverride;
 import com.balaaca.scheduling.ports.inbound.ManageAvailabilityUseCase.Closure;
 import com.balaaca.scheduling.ports.inbound.ManageAvailabilityUseCase.LocalTimeRange;
 import com.balaaca.scheduling.ports.inbound.ManageAvailabilityUseCase.WeeklySegment;
@@ -136,14 +137,18 @@ public class AvailabilityAdminSqlRepository implements AvailabilityAdminReposito
                 .setParameter("to", Date.valueOf(to))
                 .getResultList();
 
-        return rows.stream().map(r -> new Closure(
-                Optional.of((UUID) r[0]),
-                staffId,
-                localDate(r[1]),
-                "CLOSED".equals(r[2])
-                        ? Optional.<LocalTimeRange>empty()
-                        : Optional.of(new LocalTimeRange(localTime(r[3]), localTime(r[4]))),
-                Optional.ofNullable((String) r[5]))).toList();
+        return rows.stream().map(r -> {
+            AvailabilityOverride.Kind kind = AvailabilityOverride.Kind.valueOf((String) r[2]);
+            return new Closure(
+                    Optional.of((UUID) r[0]),
+                    staffId,
+                    localDate(r[1]),
+                    kind,
+                    kind == AvailabilityOverride.Kind.CLOSED
+                            ? Optional.<LocalTimeRange>empty()
+                            : Optional.of(new LocalTimeRange(localTime(r[3]), localTime(r[4]))),
+                    Optional.ofNullable((String) r[5]));
+        }).toList();
     }
 
     @Override
@@ -158,14 +163,14 @@ public class AvailabilityAdminSqlRepository implements AvailabilityAdminReposito
                 .setParameter("providerId", tenantContext.require().value())
                 .setParameter("staffId", closure.staffId().value())
                 .setParameter("date", closure.date().toString())
-                .setParameter("kind", closure.window().isPresent() ? "CUSTOM_HOURS" : "CLOSED")
+                .setParameter("kind", closure.kind().name())
                 .setParameter("start", closure.window().map(w -> w.start().toString()).orElse(null))
                 .setParameter("end", closure.window().map(w -> w.end().toString()).orElse(null))
                 .setParameter("reason", closure.reason().orElse(null))
                 .executeUpdate();
 
         return new Closure(Optional.of(id), closure.staffId(), closure.date(),
-                           closure.window(), closure.reason());
+                           closure.kind(), closure.window(), closure.reason());
     }
 
     @Override

@@ -141,6 +141,89 @@ class SlotCalculatorTest {
                     .allMatch(s -> !s.isBefore(Instant.parse("2026-09-07T14:00:00Z")))
                     .doesNotContain(Instant.parse("2026-09-07T09:00:00Z"));
         }
+
+        @Test
+        @DisplayName("Every exceptional window on a date is open, not just the first found")
+        void severalCustomWindowsOnOneDate() {
+            List<AvailableSlot> slots = SlotCalculator.bookable(aQuery()
+                    .on(MONDAY)
+                    .rule(DayOfWeek.MONDAY, window("09:00", "18:00"))
+                    .override(AvailabilityOverride.customHours(MONDAY, window("08:00", "09:00")))
+                    .override(AvailabilityOverride.customHours(MONDAY, window("17:00", "18:00")))
+                    .service(Duration.ofMinutes(60))
+                    .build());
+
+            // Both, and only both: the weekly nine-to-six is replaced, and the
+            // second row is not silently dropped the way findFirst dropped it.
+            assertThat(slots).extracting(AvailableSlot::startsAt).containsExactly(
+                    Instant.parse("2026-09-07T08:00:00Z"),
+                    Instant.parse("2026-09-07T17:00:00Z"));
+        }
+
+        @Test
+        @DisplayName("A closure on the same date beats exceptional hours on it")
+        void closureBeatsCustomHoursOnTheSameDate() {
+            List<AvailableSlot> slots = SlotCalculator.bookable(aQuery()
+                    .on(MONDAY)
+                    .rule(DayOfWeek.MONDAY, window("09:00", "18:00"))
+                    .override(AvailabilityOverride.customHours(MONDAY, window("14:00", "16:00")))
+                    .override(AvailabilityOverride.closed(MONDAY))
+                    .build());
+
+            assertThat(slots).isEmpty();
+        }
+
+        @Test
+        @DisplayName("An absence keeps the day's hours and takes only its own window out")
+        void timeOffSubtractsFromTheDay() {
+            List<AvailableSlot> slots = SlotCalculator.bookable(aQuery()
+                    .on(MONDAY)
+                    .rule(DayOfWeek.MONDAY, window("09:00", "18:00"))
+                    .override(AvailabilityOverride.timeOff(MONDAY, window("14:00", "15:00")))
+                    .service(Duration.ofMinutes(60))
+                    .build());
+
+            List<Instant> starts = slots.stream().map(AvailableSlot::startsAt).toList();
+            // The morning is untouched - an absence is not a closure.
+            assertThat(starts).contains(Instant.parse("2026-09-07T09:00:00Z"));
+            // Nothing may run into the hour away, including the hour before it.
+            assertThat(starts).doesNotContain(
+                    Instant.parse("2026-09-07T13:15:00Z"),
+                    Instant.parse("2026-09-07T14:00:00Z"),
+                    Instant.parse("2026-09-07T14:30:00Z"));
+            // And the day resumes on the far side of it.
+            assertThat(starts).contains(Instant.parse("2026-09-07T15:00:00Z"));
+        }
+
+        @Test
+        @DisplayName("An absence alone does not close the day")
+        void timeOffDoesNotReplaceTheWeeklyRules() {
+            List<AvailableSlot> slots = SlotCalculator.bookable(aQuery()
+                    .on(MONDAY)
+                    .rule(DayOfWeek.MONDAY, window("09:00", "12:00"))
+                    .override(AvailabilityOverride.timeOff(MONDAY, window("20:00", "21:00")))
+                    .service(Duration.ofMinutes(60))
+                    .build());
+
+            // The absence falls outside the working day, so the day is intact.
+            assertThat(slots).hasSize(9);
+        }
+
+        @Test
+        @DisplayName("Overlapping windows offer each start once, not once per window")
+        void overlappingWindowsDoNotDuplicateSlots() {
+            List<AvailableSlot> slots = SlotCalculator.bookable(aQuery()
+                    .on(MONDAY)
+                    .rule(DayOfWeek.MONDAY, window("09:00", "12:00"))
+                    .rule(DayOfWeek.MONDAY, window("11:00", "14:00"))
+                    .service(Duration.ofMinutes(60))
+                    .build());
+
+            // Eleven o'clock is inside both rules. Emitted twice it would read
+            // as two chairs in a paginated list rather than one time.
+            assertThat(slots).extracting(AvailableSlot::startsAt).doesNotHaveDuplicates();
+            assertThat(slots).extracting(AvailableSlot::startsAt).isSorted();
+        }
     }
 
     @Nested
