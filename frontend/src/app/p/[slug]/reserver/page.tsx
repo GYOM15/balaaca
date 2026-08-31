@@ -5,10 +5,16 @@ import { ActionButton, Avatar, Button, EmptyState, Notice } from "@/components/u
 import { ApiError, publicApi } from "@/lib/api";
 import { money, time } from "@/lib/format";
 import type {
+  AreaList,
   AvailableSlotPage,
+  Fulfilment,
+  LocalityList,
+  LocalityView,
   PublicProvider,
+  PublicServiceOffering,
   PublicStaffList,
 } from "@/lib/types";
+import { groupLocalities, localityLabel } from "@/lib/localities";
 import { book } from "./actions";
 import "./booking.css";
 
@@ -50,6 +56,24 @@ const REFUSALS: Record<string, string> = {
   RESOURCE_NOT_FOUND:
     "Cette prestation n'est plus proposée. Revenez à la première étape pour en choisir une autre.",
 };
+
+/**
+ * The refusal, in one sentence.
+ *
+ * <p>An address that is owed and missing answers `VALIDATION_FAILED`, which is
+ * the same code a missing telephone answers: the catalogue is closed and has no
+ * entry that separates them. The offering is what tells them apart here,
+ * because only a call-out was ever asked for an address in the first place.
+ */
+function refusalText(code: string, service: PublicServiceOffering | undefined): string {
+  if (code === "VALIDATION_FAILED" && service?.fulfilment === "AT_CUSTOMER") {
+    return "Vérifiez le nom, le numéro de téléphone et les indications pour vous trouver : le professionnel a besoin des trois pour se déplacer.";
+  }
+  return (
+    REFUSALS[code] ??
+    "Le professionnel n'a pas pu enregistrer ce rendez-vous. Réessayez, ou appelez-le directement."
+  );
+}
 
 /**
  * How many days of slots are read at once.
@@ -108,12 +132,12 @@ export default async function BookingFlow({
   const from = query.date && DATE.test(query.date) && query.date >= today ? query.date : today;
   const to = addDays(from, WINDOW_DAYS - 1);
 
-  // Only once a service is chosen, and only on the step that shows them: a
-  // slot's length comes from that offering's own duration and buffers, so
-  // there is no such thing as the slot list of a provider in general.
-  const slots =
+  const [slots, places] = await Promise.all([
+    // Only once a service is chosen, and only on the step that shows them: a
+    // slot's length comes from that offering's own duration and buffers, so
+    // there is no such thing as the slot list of a provider in general.
     step === 3 && service
-      ? await publicApi<AvailableSlotPage>(
+      ? publicApi<AvailableSlotPage>(
           `/v1/providers/${encodeURIComponent(slug)}/available-slots`,
           {
             query: {
@@ -127,7 +151,13 @@ export default async function BookingFlow({
             },
           },
         )
-      : null;
+      : null,
+    // The map and the quartiers, read only when the form is going to ask for
+    // an address. Every other booking happens where the business already is.
+    step === 3 && service?.fulfilment === "AT_CUSTOMER"
+      ? loadPlaces(provider.locality?.slug)
+      : null,
+  ]);
 
   // The response is a flat list of instants across the whole range. A customer
   // reads a day at a time, so they are bucketed by the provider's own calendar
@@ -137,8 +167,7 @@ export default async function BookingFlow({
   const back = backStep(slug, step, query, staff.data.length > 0);
   const refusal = query.error ? (
     <Notice tone="danger" title="La réservation n'a pas abouti">
-      {REFUSALS[query.error] ??
-        "Le professionnel n'a pas pu enregistrer ce rendez-vous. Réessayez, ou appelez-le directement."}
+      {refusalText(query.error, service)}
     </Notice>
   ) : null;
 
@@ -193,19 +222,39 @@ export default async function BookingFlow({
           <Stepper step={3} />
           {refusal}
 
+          {/* A drop-off books the counter, not the work. Without this sentence
+              the customer reads the ten-minute slot as the length of a repair
+              and comes back to an empty workshop. */}
+          {service.fulfilment === "DROP_OFF" ? (
+            <Notice tone="info" icon="hourglass" title="Vous déposez, puis vous revenez">
+              Le créneau ci-dessous est celui du dépôt :{" "}
+              {duration(service.duration_minutes)} au comptoir.
+              {service.turnaround_hours
+                ? ` Le travail est ensuite prêt sous ${turnaround(service.turnaround_hours)}, et le professionnel vous prévient.`
+                : " Le professionnel vous dira quand revenir le chercher."}
+            </Notice>
+          ) : null}
+
           <section className="stack stack-6">
             <div className="stack stack-2">
               <h1 className="t-h3">Quand vous convient-il ?</h1>
               <p className="t-small t-muted" style={{ fontWeight: 400 }}>
-                {service.name} · {duration(service.duration_minutes)} — les créneaux
-                tiennent compte de cette durée
+                {service.name} · {duration(service.duration_minutes)} — {slotMeaning(service)}
                 {person ? `, avec ${person.display_name}` : ""}.
               </p>
             </div>
 
             <div className="recap">
               <RecapRow label="Prestation" value={service.name} />
-              <RecapRow label="Durée" value={duration(service.duration_minutes)} />
+              <RecapRow
+                label={durationLabel(service.fulfilment)}
+                value={duration(service.duration_minutes)}
+              />
+              {/* Only a drop-off carries one, which is what makes it a drop-off:
+                  the server derives the fulfilment from this very field. */}
+              {service.turnaround_hours ? (
+                <RecapRow label="Prêt sous" value={turnaround(service.turnaround_hours)} />
+              ) : null}
               <RecapRow label="Avec" value={person ? person.display_name : "Peu importe"} />
               {service.price ? (
                 <RecapRow label="À régler sur place" value={money(service.price)} total />
@@ -308,6 +357,13 @@ export default async function BookingFlow({
               ) : null}
             </fieldset>
           </section>
+
+          {/* Only on a call-out, and only when there is a slot to take: the
+              contract refuses an address on anything else, so a block shown
+              always would turn every salon booking into a 422. */}
+          {bookable && places ? (
+            <AddressFields businessName={provider.business_name} places={places} />
+          ) : null}
 
           {bookable ? (
             <section className="stack stack-5">
@@ -477,6 +533,31 @@ function ServiceStep({
                     <Icon name="clock" size={13} />
                     {duration(one.duration_minutes)}
                   </span>
+                  {/* What the customer is choosing between, and the reason this
+                      line exists: two services of forty minutes are not the same
+                      offer when one of them is a tradesman driving to your
+                      house and the other is a counter you come back to.
+
+                      The two are named rather than "not ON_SITE" because the
+                      contract says an unknown fulfilment is to be read as
+                      ON_SITE - a fourth value would otherwise be announced here
+                      as a drop-off. */}
+                  {one.fulfilment === "AT_CUSTOMER" || one.fulfilment === "DROP_OFF" ? (
+                    <>
+                      <span className="svc-row__dot" aria-hidden="true" />
+                      <span className="svc-row__dur">
+                        <Icon
+                          name={one.fulfilment === "AT_CUSTOMER" ? "map-pin" : "hourglass"}
+                          size={13}
+                        />
+                        {one.fulfilment === "AT_CUSTOMER"
+                          ? "Chez vous"
+                          : one.turnaround_hours
+                            ? `Prêt sous ${turnaround(one.turnaround_hours)}`
+                            : "Dépôt puis retrait"}
+                      </span>
+                    </>
+                  ) : null}
                 </span>
               </span>
               <span className="nowrap" style={{ color: "var(--text-tertiary)" }}>
@@ -565,6 +646,106 @@ function StaffStep({
   );
 }
 
+/**
+ * Where the provider is going.
+ *
+ * <p>Part of the third step rather than a fourth one. The address is not a
+ * decision the customer makes - it is where they already are - and a screen
+ * that asks for it on its own would put a wall between choosing a time and
+ * confirming, for a question that is three fields long.
+ *
+ * <p>Nothing here asks for a house number or a street, because most of Conakry
+ * has neither. The one required field is the sentence a tradesman would ask
+ * for on the telephone, and the contract makes it the only required one for
+ * the same reason.
+ */
+function AddressFields({
+  businessName,
+  places,
+}: {
+  businessName: string;
+  places: Places;
+}) {
+  return (
+    <section className="stack stack-5">
+      <div className="stack stack-2">
+        <h2 className="t-h4">Où doit-on venir ?</h2>
+        <p className="t-small t-muted" style={{ fontWeight: 400 }}>
+          {businessName} se déplace jusqu'à vous. Ces indications ne servent
+          qu'à ce rendez-vous.
+        </p>
+      </div>
+
+      <div className="field">
+        <label className="field__label" htmlFor="bk-locality">
+          Commune
+        </label>
+        {/* No commune pre-selected, not even the one the business sits in. A
+            default nobody chose reads on the provider's agenda exactly like an
+            answer the customer gave, and it is wrong the first time a plumber
+            in Ratoma is called out to Matoto. */}
+        <select className="select" id="bk-locality" name="locality_slug" defaultValue="">
+          <option value="">Je préfère ne pas préciser</option>
+          {groupLocalities(places.localities.data).map(({ region, children }) => (
+            <optgroup key={region.slug} label={region.label_fr}>
+              {children.map((l) => (
+                <option key={l.slug} value={l.slug}>
+                  {localityLabel(l)}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+      </div>
+
+      <div className="field">
+        <label className="field__label" htmlFor="bk-area">
+          Quartier
+        </label>
+        {/* Free text with suggestions, like the hub's own: the quartiers of
+            Guinea run into the thousands and this platform does not write
+            them, so the list proposes what exists without refusing the rest -
+            which is exactly what the server accepts. */}
+        <input
+          className="input"
+          id="bk-area"
+          name="area"
+          type="text"
+          list="bk-quartiers"
+          maxLength={80}
+          autoComplete="off"
+        />
+        <datalist id="bk-quartiers">
+          {places.areas.data.map((a) => (
+            <option key={a.label} value={a.label} />
+          ))}
+        </datalist>
+      </div>
+
+      <div className="field">
+        <label className="field__label" htmlFor="bk-directions">
+          Comment vous trouver
+          <span className="field__req" aria-hidden="true">*</span>
+        </label>
+        <textarea
+          className="textarea"
+          id="bk-directions"
+          name="directions"
+          rows={3}
+          required
+          maxLength={500}
+          placeholder="Derrière la mosquée de Nongo, portail bleu"
+          aria-describedby="bk-directions-hint"
+        />
+        <p className="field__hint" id="bk-directions-hint">
+          Le repère qui amène le professionnel à votre porte : un commerce, un
+          carrefour, la couleur du portail.
+        </p>
+      </div>
+    </section>
+  );
+}
+
 /* --- Small pieces -------------------------------------------------------- */
 
 function Stepper({ step }: { step: number }) {
@@ -630,6 +811,26 @@ async function loadProvider(
     throw error;
   }
 }
+
+type Places = { localities: LocalityList; areas: AreaList };
+
+/**
+ * The map, and the quartiers people have already written.
+ *
+ * <p>The quartiers are narrowed to the PROVIDER's own commune, not to the one
+ * the customer picks: the select has no JavaScript behind it, so the list has
+ * to be chosen before the page is sent. A tradesman's call-outs are mostly
+ * around him, and the field is free text either way - a suggestion that does
+ * not fit is one the customer types over.
+ */
+async function loadPlaces(locality: string | undefined): Promise<Places> {
+  const [localities, areas] = await Promise.all([
+    publicApi<LocalityList>("/v1/localities"),
+    publicApi<AreaList>("/v1/areas", { query: { locality } }),
+  ]);
+  return { localities, areas };
+}
+
 
 /* --- URL ----------------------------------------------------------------- */
 
@@ -770,4 +971,43 @@ function duration(minutes: number): string {
   return rest === 0
     ? `${hours}${gap}h`
     : `${hours}${gap}h${gap}${String(rest).padStart(2, "0")}`;
+}
+
+/**
+ * A promise a customer can plan around.
+ *
+ * <p>Whole days are written as days: "prêt sous 72 h" is arithmetic the
+ * customer has to do before knowing whether they can wait, and "sous 3 jours"
+ * is not. Anything that is not a round day stays in hours, because rounding a
+ * promise the provider made is not this page's decision.
+ */
+function turnaround(hours: number): string {
+  const gap = " ";
+  return hours >= 24 && hours % 24 === 0
+    ? `${hours / 24}${gap}jour${hours === 24 ? "" : "s"}`
+    : `${hours}${gap}h`;
+}
+
+/** What the offering's duration is a duration OF - the fulfilment decides. */
+function durationLabel(fulfilment: Fulfilment): string {
+  if (fulfilment === "DROP_OFF") return "Dépôt";
+  if (fulfilment === "AT_CUSTOMER") return "Durée de la visite";
+  return "Durée";
+}
+
+/**
+ * What the slot being chosen actually books.
+ *
+ * <p>The same forty minutes mean three different things, and the drop-off is
+ * the one that goes wrong silently: a customer who reads the handover as the
+ * length of the repair comes back to a workshop that has not started.
+ */
+function slotMeaning(service: PublicServiceOffering): string {
+  if (service.fulfilment === "DROP_OFF") {
+    return "le temps qu'il faut pour vous recevoir au comptoir";
+  }
+  if (service.fulfilment === "AT_CUSTOMER") {
+    return "le temps que le professionnel passe chez vous";
+  }
+  return "les créneaux tiennent compte de cette durée";
 }

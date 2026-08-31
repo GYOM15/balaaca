@@ -33,6 +33,34 @@ export async function replaceMember(formData: FormData): Promise<void> {
 }
 
 /**
+ * The business, handed to a colleague.
+ *
+ * <p>One way from here. The caller stops being the owner in the same statement
+ * and only the new owner can hand it back, so the page says that before the
+ * button rather than after it.
+ *
+ * <p>The refusal lands on its own parameter: `VALIDATION_FAILED` means "not an
+ * active colleague with an account, or yourself" here, and "il faut un nom" on
+ * the same page's other forms.
+ */
+export async function transferOwnership(formData: FormData): Promise<void> {
+  const id = String(formData.get("id"));
+  try {
+    await api(`/v1/staff/${encodeURIComponent(id)}/ownership`, { method: "POST" });
+  } catch (error) {
+    if (error instanceof ApiError) {
+      redirect(`/dashboard/team?transfer=${error.code ?? "UNKNOWN"}`);
+    }
+    throw error;
+  }
+  // The layout and not only this page: the sidebar decides which rooms exist
+  // from the caller's role, and the caller's role is what just changed.
+  revalidatePath("/dashboard", "layout");
+  const name = String(formData.get("name") ?? "");
+  redirect(`/dashboard/team?given=${encodeURIComponent(name)}`);
+}
+
+/**
  * A code that lets a member sign in.
  *
  * <p>Returned once and stored nowhere, so it is put straight in the URL the

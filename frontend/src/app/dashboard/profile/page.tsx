@@ -1,22 +1,34 @@
 import { api, publicApi } from "@/lib/api";
-import { mediaUrl } from "@/lib/format";
+import { dateTime, mediaUrl } from "@/lib/format";
 import { Icon } from "@/components/icon";
 import { ActionButton, Badge, Button, Notice, SectionHead } from "@/components/ui";
-import type { BookingPolicy, CategoryList, ProviderProfile } from "@/lib/types";
+import type {
+  AreaList,
+  BookingPolicy,
+  CategoryList,
+  LocalityList,
+  LocalityView,
+  ProviderProfile,
+} from "@/lib/types";
+import { groupLocalities, localityLabel } from "@/lib/localities";
 import { saveProfile, savePolicy, uploadCover, uploadLogo } from "./actions";
 
 export const dynamic = "force-dynamic";
+
+/** Proxied through this server, because the browser cannot reach the API. */
+const QR_CODE = "/dashboard/profile/qr-code";
 
 const REFUSALS: Record<string, string> = {
   FORBIDDEN: "Seul le propriétaire modifie la page et les réglages.",
   NOTHING_TO_PUBLISH:
     "Il faut au moins une prestation, des horaires et quelqu'un de réservable avant de publier.",
   VALIDATION_FAILED:
-    "Vérifiez le numéro de téléphone (format +224…) et le fuseau horaire.",
+    "Vérifiez la commune, le numéro de téléphone (format +224…) et le fuseau horaire.",
   NO_FILE: "Choisissez un fichier avant d'envoyer.",
   NOT_AN_IMAGE: "Seuls le JPEG et le PNG sont acceptés.",
   UNKNOWN: "L'enregistrement n'a pas abouti.",
 };
+
 
 export default async function Profile({
   searchParams,
@@ -24,10 +36,16 @@ export default async function Profile({
   searchParams: Promise<{ error?: string }>;
 }) {
   const query = await searchParams;
-  const [profile, policy, categories] = await Promise.all([
+  const [profile, policy, categories, localities, areas] = await Promise.all([
     api<ProviderProfile>("/v1/provider-profile"),
     api<BookingPolicy>("/v1/booking-policy"),
     publicApi<CategoryList>("/v1/categories"),
+    api<LocalityList>("/v1/localities"),
+    // Every quartier already written, not only those of this provider's own
+    // commune: the form has no JavaScript, so the list cannot follow a change
+    // of commune, and suggesting nothing after a move would be worse than
+    // suggesting a few too many.
+    api<AreaList>("/v1/areas"),
   ]);
 
   const logo = mediaUrl(profile.logo_url);
@@ -38,8 +56,7 @@ export default async function Profile({
       <header className="pro-head">
         <h1 className="pro-head__title">Ma page</h1>
         <p className="t-small t-muted">
-          Adresse publique&nbsp;: <strong>/p/{profile.slug}</strong> — choisie
-          une fois, elle ne change plus. C'est elle qui est sur le QR code.
+          Ce que vos clients lisent, et l'adresse à laquelle ils vous trouvent.
         </p>
         <div className="row row-2 row--wrap" style={{ marginTop: "var(--space-2)" }}>
           {profile.published ? (
@@ -57,11 +74,73 @@ export default async function Profile({
         </div>
       </header>
 
+      {/* Before anything else, and before the save box: a provider whose page
+          has vanished is looking for this and nothing else. */}
+      {profile.suspended_at ? (
+        <Notice tone="danger" title="Votre page est retirée de l'annuaire" icon="ban">
+          Depuis le {dateTime(profile.suspended_at, profile.timezone)}, elle
+          n'apparaît plus dans l'annuaire et vos clients ne peuvent plus
+          l'ouvrir, même avec le lien.{" "}
+          {profile.suspension_reason
+            ? `Motif : ${profile.suspension_reason}`
+            : "Aucun motif n'a été communiqué."}{" "}
+          Vos rendez-vous déjà pris restent dans votre agenda. C'est la
+          plateforme qui remet la page en ligne&nbsp;: la republier vous-même n'y
+          change rien.
+        </Notice>
+      ) : null}
+
       {query.error ? (
         <Notice tone="danger" title="La modification n'a pas abouti">
           {REFUSALS[query.error] ?? REFUSALS.UNKNOWN}
         </Notice>
       ) : null}
+
+      <section className="stack stack-4">
+        <SectionHead label="Comment on vous trouve" />
+        <p className="t-small t-muted measure">
+          Les deux sont construits sur votre identifiant, qui ne change
+          jamais&nbsp;— ce qui est imprimé aujourd'hui marchera encore dans deux
+          ans.
+        </p>
+
+        <div className="row row-4 row--wrap row--top">
+          <div className="card card--pad stack stack-3 grow">
+            <p className="t-label">Votre lien</p>
+            {profile.public_url ? (
+              <label className="field">
+                <span className="field__label">À copier</span>
+                <input className="input" type="text" readOnly value={profile.public_url} />
+                <span className="field__hint">
+                  Dans votre statut WhatsApp, dans votre bio, dans un message.
+                </span>
+              </label>
+            ) : (
+              <p className="t-caption t-dim">
+                Le lien n'est pas encore disponible. Votre page reste joignable
+                à /p/{profile.slug}.
+              </p>
+            )}
+          </div>
+
+          <div className="card card--pad stack stack-3">
+            <p className="t-label">Votre QR code</p>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={QR_CODE} alt="QR code vers votre page" width={168} height={168} />
+            {/* A plain anchor and not <Button>: the target answers with an
+                image rather than a page, and next/link would try to prefetch
+                and navigate to it as one. */}
+            <a className="btn btn--secondary btn--sm" href={QR_CODE} target="_blank" rel="noreferrer">
+              <Icon name="download" size={16} />
+              <span>Ouvrir en grand</span>
+            </a>
+            <span className="field__hint">
+              À imprimer sur une carte, une vitrine, un reçu. C'est un dessin,
+              pas une photo&nbsp;: il reste net à toutes les tailles.
+            </span>
+          </div>
+        </div>
+      </section>
 
       {/* --- Les images --- */}
       <section className="stack stack-4">
@@ -122,6 +201,12 @@ export default async function Profile({
       <section className="stack stack-4">
         <SectionHead label="Ce que lisent vos clients" />
         <form action={saveProfile} className="card card--pad-lg stack stack-4">
+          {/* Superseded by the commune and the quartier, and carried through
+              rather than dropped: the API replaces the profile whole, and the
+              directory card still prints this field. Saving would blank the
+              place of every provider who has not yet chosen a commune. */}
+          <input type="hidden" name="city" value={profile.city ?? ""} />
+
           <label className="field">
             <span className="field__label">
               Nom<span className="field__req" aria-hidden="true">*</span>
@@ -148,19 +233,54 @@ export default async function Profile({
               </select>
             </label>
             <label className="field grow">
-              <span className="field__label">Ville</span>
-              <input className="input" type="text" name="city" maxLength={80}
-                     defaultValue={profile.city ?? ""} placeholder="Conakry" />
+              <span className="field__label">Commune</span>
+              <select className="select" name="locality_slug"
+                      defaultValue={profile.locality?.slug ?? ""}>
+                <option value="">Non précisée</option>
+                {groupLocalities(localities.data).map(({ region, children }) => (
+                  <optgroup key={region.slug} label={region.label_fr}>
+                    {children.map((l) => (
+                      <option key={l.slug} value={l.slug}>
+                        {localityLabel(l)}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+              <span className="field__hint">
+                C'est là-dessus qu'un client filtre l'annuaire.
+              </span>
             </label>
           </div>
 
-          <label className="field">
-            <span className="field__label">Adresse</span>
-            <input className="input" type="text" name="address_line" maxLength={200}
-                   defaultValue={profile.address_line ?? ""}
-                   placeholder="Quartier, repère, rue" />
-            <span className="field__hint">Un repère vaut mieux qu'un numéro de rue.</span>
-          </label>
+          <div className="row row-3 row--wrap row--top">
+            <label className="field grow">
+              <span className="field__label">Quartier</span>
+              {/* Free text with suggestions, because the server takes it that
+                  way: Guinea's quartiers are thousands of names this platform
+                  does not write, and a closed list would be missing exactly the
+                  one this provider works in. */}
+              <input className="input" type="text" name="area" list="quartiers"
+                     maxLength={80} autoComplete="off"
+                     defaultValue={profile.area ?? ""} placeholder="Nongo, Kipé, Dixinn Port…" />
+              <datalist id="quartiers">
+                {areas.data.map((a) => (
+                  <option key={a.label} value={a.label} />
+                ))}
+              </datalist>
+              <span className="field__hint">
+                Comme vous le dites. Reprenez l'orthographe proposée si elle
+                existe&nbsp;: c'est ce qui regroupe les pages d'un même quartier.
+              </span>
+            </label>
+            <label className="field grow">
+              <span className="field__label">Adresse</span>
+              <input className="input" type="text" name="address_line" maxLength={200}
+                     defaultValue={profile.address_line ?? ""}
+                     placeholder="Repère, rue, étage" />
+              <span className="field__hint">Un repère vaut mieux qu'un numéro de rue.</span>
+            </label>
+          </div>
 
           <div className="row row-3 row--wrap row--top">
             <label className="field grow">

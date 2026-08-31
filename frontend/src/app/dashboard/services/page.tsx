@@ -1,17 +1,74 @@
 import { api } from "@/lib/api";
 import { money } from "@/lib/format";
 import { Icon } from "@/components/icon";
-import { ActionButton, Badge, EmptyState, Notice, SectionHead } from "@/components/ui";
-import type { ServiceOffering, ServiceOfferingPage } from "@/lib/types";
-import { createService, replaceService } from "./actions";
+import {
+  ActionButton,
+  Badge,
+  Button,
+  EmptyState,
+  Notice,
+  SectionHead,
+} from "@/components/ui";
+import type {
+  Fulfilment,
+  PerformerList,
+  ServiceOffering,
+  ServiceOfferingPage,
+  StaffList,
+} from "@/lib/types";
+import { createService, replacePerformers, replaceService } from "./actions";
 
 export const dynamic = "force-dynamic";
 
 const REFUSALS: Record<string, string> = {
   FORBIDDEN: "Seul le propriétaire modifie le catalogue.",
-  VALIDATION_FAILED: "Vérifiez la durée (au moins 1 minute) et le prix.",
+  VALIDATION_FAILED:
+    "Vérifiez la durée (au moins 1 minute), le prix, et le délai s'il s'agit d'une prestation à déposer (1 h à 90 jours).",
   RESOURCE_NOT_FOUND: "Cette prestation n'existe plus.",
 };
+
+/**
+ * The performer list's refusals, kept apart from the catalogue's.
+ *
+ * <p>Both forms post to this page and the codes overlap, but one code does not
+ * mean one thing: VALIDATION_FAILED on an offering is a duration or a price,
+ * and here it is a name that is no longer on the team. A single map would have
+ * to be vague enough to cover both, which helps nobody.
+ */
+const PERFORMER_REFUSALS: Record<string, string> = {
+  FORBIDDEN: "Seul le propriétaire choisit qui réalise quoi.",
+  VALIDATION_FAILED:
+    "Un des noms cochés n'est plus dans votre équipe. Décochez-le, ou réactivez la personne depuis Équipe.",
+  RESOURCE_NOT_FOUND: "Cette prestation n'existe plus.",
+};
+
+/**
+ * The three shapes a service can take.
+ *
+ * <p>One control, not two. The API derives the shape from `turnaround_hours`
+ * and `location`, refuses them together, and the only way a form can be sure
+ * never to send that pair is never to offer them as two questions.
+ */
+const SHAPES: { value: Fulfilment; label: string; icon: string; hint: string }[] = [
+  {
+    value: "ON_SITE",
+    label: "Sur place",
+    icon: "store",
+    hint: "Le client s'installe chez vous et repart avec. La durée est celle du travail.",
+  },
+  {
+    value: "DROP_OFF",
+    label: "À déposer",
+    icon: "hourglass",
+    hint: "Le client dépose et revient : garage, réparation, retouche. La durée est celle du passage au comptoir, pas celle de l'atelier.",
+  },
+  {
+    value: "AT_CUSTOMER",
+    label: "À domicile",
+    icon: "map-pin",
+    hint: "Vous vous déplacez : plomberie, électricité, ménage. Le rendez-vous portera l'adresse du client.",
+  },
+];
 
 /**
  * The catalogue.
@@ -24,7 +81,7 @@ const REFUSALS: Record<string, string> = {
 export default async function Services({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; performers?: string; performer_error?: string }>;
 }) {
   const query = await searchParams;
   const services = await api<ServiceOfferingPage>("/v1/service-offerings", {
@@ -37,13 +94,22 @@ export default async function Services({
   const currency = services.data[0]?.price.currency ?? "GNF";
   const live = services.data.filter((s) => s.active);
 
+  // Resolved against the catalogue rather than taken from the URL: an id naming
+  // nothing then opens no panel, where reading it straight would answer 404 for
+  // the whole page.
+  const opened = services.data.some((s) => s.service_offering_id === query.performers)
+    ? query.performers
+    : undefined;
+
+  const roster = opened ? await rosterFor(opened) : null;
+
   return (
     <div className="stack stack-8">
       <header className="pro-head">
         <h1 className="pro-head__title">Prestations</h1>
         <p className="t-small t-muted">
-          Ce que vos clients peuvent réserver, avec la durée et le prix que vous
-          affichez.
+          Ce que vos clients peuvent réserver — sur place, à déposer ou à
+          domicile — avec la durée, le prix, et qui la réalise.
         </p>
       </header>
 
@@ -71,41 +137,91 @@ export default async function Services({
           />
         ) : (
           <div className="stack stack-3">
-            {services.data.map((service) => (
-              <details className="card card--pad svc-card" key={service.service_offering_id}>
-                <summary className="row row--between row-3 row--wrap">
-                  <span className="grow stack stack-1">
-                    <span className="t-body" style={{ fontWeight: 600 }}>
-                      {service.name}
+            {services.data.map((service) => {
+              const id = service.service_offering_id;
+              const shape = SHAPES.find((s) => s.value === service.fulfilment);
+              return (
+                // Open when it is the one whose performers are being read: the
+                // link that loads them is a navigation, and a closed card would
+                // hide what the visitor just asked for.
+                <details
+                  className="card card--pad svc-card"
+                  key={id}
+                  id={`svc-${id}`}
+                  open={id === opened}
+                >
+                  <summary className="row row--between row-3 row--wrap">
+                    <span className="grow stack stack-1">
+                      <span className="t-body" style={{ fontWeight: 600 }}>
+                        {service.name}
+                      </span>
+                      <span className="t-caption t-dim">
+                        <span className="tnum">{money(service.price)}</span>
+                        {" · "}
+                        <span className="tnum">{service.duration_minutes} min</span>
+                        {service.buffer_before_minutes + service.buffer_after_minutes > 0 ? (
+                          <>
+                            {" · +"}
+                            <span className="tnum">
+                              {service.buffer_before_minutes + service.buffer_after_minutes} min
+                            </span>
+                            {" de battement"}
+                          </>
+                        ) : null}
+                        {service.turnaround_hours ? (
+                          <>
+                            {" · Prêt sous "}
+                            <span className="tnum">{service.turnaround_hours}</span>
+                            {" h"}
+                          </>
+                        ) : null}
+                      </span>
                     </span>
-                    <span className="t-caption t-dim">
-                      <span className="tnum">{money(service.price)}</span>
-                      {" · "}
-                      <span className="tnum">{service.duration_minutes} min</span>
-                      {service.buffer_before_minutes + service.buffer_after_minutes > 0 ? (
-                        <>
-                          {" · +"}
-                          <span className="tnum">
-                            {service.buffer_before_minutes + service.buffer_after_minutes} min
-                          </span>
-                          {" de battement"}
-                        </>
-                      ) : null}
-                    </span>
-                  </span>
-                  {service.active ? null : <Badge label="Retirée" tone="outline" />}
-                  {service.active && !service.price_visible ? (
-                    <Badge label="Prix masqué" tone="neutral" icon="eye-off" />
-                  ) : null}
-                </summary>
+                    {/* Only the two that change what a customer has to do. On
+                        site is the ordinary case and needs no announcement. */}
+                    {shape && shape.value !== "ON_SITE" ? (
+                      <Badge label={shape.label} tone="info" icon={shape.icon} />
+                    ) : null}
+                    {service.active ? null : <Badge label="Retirée" tone="outline" />}
+                    {service.active && !service.price_visible ? (
+                      <Badge label="Prix masqué" tone="neutral" icon="eye-off" />
+                    ) : null}
+                  </summary>
 
-                <form action={replaceService} className="stack stack-4" style={{ marginTop: "var(--space-4)" }}>
-                  <input type="hidden" name="id" value={service.service_offering_id} />
-                  <Fields service={service} currency={currency} />
-                  <ActionButton label="Enregistrer" variant="primary" type="submit" icon="check" />
-                </form>
-              </details>
-            ))}
+                  <div className="stack stack-5" style={{ marginTop: "var(--space-4)" }}>
+                    <form action={replaceService} className="stack stack-4">
+                      <input type="hidden" name="id" value={id} />
+                      <Fields service={service} currency={currency} />
+                      <ActionButton label="Enregistrer" variant="primary" type="submit" icon="check" />
+                    </form>
+
+                    <hr />
+
+                    {id === opened && roster ? (
+                      <Performers
+                        serviceId={id}
+                        roster={roster}
+                        refusal={query.performer_error}
+                      />
+                    ) : (
+                      <div className="stack stack-2">
+                        <p className="t-label">Qui réalise cette prestation</p>
+                        <p className="field__hint">
+                          Toute votre équipe la réalise. Ouvrez la liste pour en
+                          retirer quelqu'un.
+                        </p>
+                        <Button
+                          label="Voir la liste"
+                          variant="secondary"
+                          icon="users"
+                          href={`/dashboard/services?performers=${encodeURIComponent(id)}#svc-${id}`}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </details>
+              );
+            })}
           </div>
         )}
       </section>
@@ -118,6 +234,115 @@ export default async function Services({
         </form>
       </section>
     </div>
+  );
+}
+
+/**
+ * The team, and which of them perform one service.
+ *
+ * <p>One service at a time, and only when asked. The contract has one performer
+ * list per offering, so reading them all would be a request per row on a page
+ * that loads a hundred of them.
+ */
+async function rosterFor(serviceId: string) {
+  const [team, performers] = await Promise.all([
+    api<StaffList>("/v1/staff"),
+    api<PerformerList>(
+      `/v1/service-offerings/${encodeURIComponent(serviceId)}/performers`,
+    ),
+  ]);
+  return { team, performs: new Set(performers.data.map((p) => p.staff_id)) };
+}
+
+/**
+ * Who may take a booking for this service.
+ *
+ * <p>Presented as a removal, because that is what it is. A new service is
+ * granted to the whole team, and competence is strict on the server - somebody
+ * unticked here cannot be booked for it at all. So the list arrives full and
+ * the only move it offers is taking a name out.
+ */
+function Performers({
+  serviceId,
+  roster,
+  refusal,
+}: {
+  serviceId: string;
+  roster: { team: StaffList; performs: Set<string> };
+  refusal?: string;
+}) {
+  const { team, performs } = roster;
+
+  return (
+    <section className="stack stack-3">
+      <p className="t-label">Qui réalise cette prestation</p>
+
+      {refusal ? (
+        <Notice tone="danger" title="La liste n'a pas été enregistrée">
+          {PERFORMER_REFUSALS[refusal] ?? "Réessayez, ou rechargez la page."}
+        </Notice>
+      ) : null}
+
+      {team.data.length === 0 ? (
+        <EmptyState
+          compact
+          sketch="chair"
+          title="Personne dans l'équipe"
+          body="Qui réalise quoi se décide entre des personnes. Ajoutez-en d'abord une."
+          action={
+            <Button
+              label="Composer l'équipe"
+              variant="secondary"
+              href="/dashboard/team"
+              iconEnd="arrow-right"
+            />
+          }
+        />
+      ) : (
+        <form action={replacePerformers} className="stack stack-3">
+          <input type="hidden" name="id" value={serviceId} />
+          <p className="field__hint">
+            <Icon name="info" size={14} /> Toute l'équipe réalise une nouvelle
+            prestation. Décochez qui ne la fait pas&nbsp;: cette personne ne
+            pourra plus recevoir de réservation pour celle-ci. Tout décocher la
+            rend irréservable.
+          </p>
+
+          {/* Everyone the team list returns, including someone who has left:
+              the save sends the whole set, so a name this list did not draw is
+              a name the save would quietly take away. */}
+          <div className="stack stack-1">
+            {team.data.map((person) => (
+              <label className="checkbox" key={person.staff_id}>
+                <input
+                  type="checkbox"
+                  name="staff_ids"
+                  value={person.staff_id}
+                  defaultChecked={performs.has(person.staff_id)}
+                />
+                <span className="checkbox__box">
+                  <Icon name="check" size={14} />
+                </span>
+                <span className="grow row row-2 row--wrap">
+                  <span className="t-small">{person.display_name}</span>
+                  {person.active ? null : <Badge label="A quitté" tone="outline" />}
+                  {person.active && !person.bookable ? (
+                    <Badge label="Non réservable" tone="neutral" />
+                  ) : null}
+                </span>
+              </label>
+            ))}
+          </div>
+
+          <ActionButton
+            label="Enregistrer la liste"
+            variant="primary"
+            type="submit"
+            icon="check"
+          />
+        </form>
+      )}
+    </section>
   );
 }
 
@@ -135,6 +360,12 @@ function Fields({
   service: ServiceOffering | null;
   currency: string;
 }) {
+  // A fulfilment this client does not know is an on-site service - the contract
+  // says so, and it is what every service created before the enum grew is.
+  // Falling back also means no radio group ever renders with nothing checked.
+  const shape: Fulfilment =
+    SHAPES.find((s) => s.value === service?.fulfilment)?.value ?? "ON_SITE";
+
   return (
     <>
       <label className="field">
@@ -148,7 +379,7 @@ function Fields({
           required
           maxLength={120}
           defaultValue={service?.name ?? ""}
-          placeholder="Tresses collées, coupe & brushing…"
+          placeholder="Tresses collées, vidange, réparation d'écran…"
         />
       </label>
 
@@ -159,8 +390,52 @@ function Fields({
           name="description"
           rows={2}
           defaultValue={service?.description ?? ""}
-          placeholder="Ce que la cliente doit savoir avant de réserver."
+          placeholder="Ce que le client doit savoir avant de réserver."
         />
+      </label>
+
+      <fieldset className="stack stack-2" style={{ border: 0, padding: 0, margin: 0 }}>
+        <legend className="field__label">Comment ça se passe</legend>
+        {SHAPES.map((s) => (
+          <label className="choice" key={s.value}>
+            <input
+              type="radio"
+              name="fulfilment"
+              value={s.value}
+              defaultChecked={s.value === shape}
+            />
+            <span className="grow">
+              <span className="t-small">{s.label}</span>
+              <span className="field__hint" style={{ display: "block" }}>
+                {s.hint}
+              </span>
+            </span>
+          </label>
+        ))}
+      </fieldset>
+
+      <label className="field">
+        <span className="field__label">
+          Prêt sous (heures)<span className="field__req" aria-hidden="true">*</span>
+        </span>
+        {/* Required and pre-filled even though two of the three shapes ignore
+            it: an empty box on a drop-off would arrive as no delay announced,
+            which the server reads as an ordinary on-site service - the shape
+            changing under a provider who picked the other one. */}
+        <input
+          className="input"
+          type="number"
+          name="turnaround_hours"
+          required
+          min={1}
+          max={2160}
+          defaultValue={service?.turnaround_hours ?? 48}
+        />
+        <span className="field__hint">
+          <Icon name="info" size={14} /> Ce que vous annoncez au client qui
+          dépose&nbsp;: «&nbsp;Prêt sous 48&nbsp;h&nbsp;». Sans effet sur une
+          prestation sur place ou à domicile.
+        </span>
       </label>
 
       <div className="row row-3 row--wrap row--top">
@@ -241,8 +516,8 @@ function Fields({
         </label>
       </div>
       <p className="field__hint">
-        <Icon name="info" size={14} /> Le temps de préparer et de balayer entre
-        deux clientes. L'agenda le réserve sans le facturer.
+        <Icon name="info" size={14} /> Le temps de préparer et de ranger entre
+        deux clients. L'agenda le réserve sans le facturer.
       </p>
 
       <label className="switch">
@@ -251,7 +526,7 @@ function Fields({
         <span className="grow">
           <span className="t-small">Afficher le prix sur ma page</span>
           <span className="field__hint" style={{ display: "block" }}>
-            Masqué, la prestation reste réservable et la cliente vous demande le prix.
+            Masqué, la prestation reste réservable et le client vous demande le prix.
           </span>
         </span>
       </label>
