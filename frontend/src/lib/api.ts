@@ -25,6 +25,14 @@ export class ApiError extends Error {
 type Options = {
   method?: string;
   body?: unknown;
+  /**
+   * Raw bytes with their own type, for the two image operations.
+   *
+   * <p>They take the bytes themselves and read the type from the header -
+   * there is no multipart and no filename, because a filename is a value the
+   * server would have to distrust and would gain nothing from trusting.
+   */
+  bytes?: { data: ArrayBuffer; contentType: string };
   /** Sent only where the contract requires it, which is booking. */
   idempotencyKey?: string;
   query?: Record<string, string | number | boolean | undefined | string[]>;
@@ -64,12 +72,17 @@ async function call<T>(path: string, options: Options, accessToken: string | nul
   const headers: Record<string, string> = { Accept: "application/json" };
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
   if (options.body !== undefined) headers["Content-Type"] = "application/json";
+  if (options.bytes) headers["Content-Type"] = options.bytes.contentType;
   if (options.idempotencyKey) headers["Idempotency-Key"] = options.idempotencyKey;
 
   const response = await fetch(url, {
     method: options.method ?? "GET",
     headers,
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    body: options.bytes
+      ? options.bytes.data
+      : options.body === undefined
+        ? undefined
+        : JSON.stringify(options.body),
     // Never cached. Every page here reads a diary or a live slot list, and a
     // cached one is either stale or somebody else's.
     cache: "no-store",

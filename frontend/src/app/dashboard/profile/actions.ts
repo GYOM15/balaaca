@@ -67,3 +67,46 @@ export async function savePolicy(formData: FormData): Promise<void> {
   }
   revalidatePath("/dashboard/profile");
 }
+
+/**
+ * The logo and the cover.
+ *
+ * <p>The contract takes the BYTES, with their type in Content-Type - no
+ * multipart, no filename. The form is multipart because that is how a browser
+ * sends a file at all; this unwraps it and forwards the bytes alone.
+ *
+ * <p>The type is checked here as well as by the server, and for a different
+ * reason: the server checks the first two bytes because a declared type is a
+ * claim, while this one only spares a provider a round trip to be told their
+ * PDF is not a photograph.
+ */
+async function upload(formData: FormData, path: string): Promise<void> {
+  const file = formData.get("image");
+  if (!(file instanceof File) || file.size === 0) {
+    redirect("/dashboard/profile?error=NO_FILE");
+  }
+  if (file.type !== "image/jpeg" && file.type !== "image/png") {
+    redirect("/dashboard/profile?error=NOT_AN_IMAGE");
+  }
+
+  try {
+    await api(path, {
+      method: "POST",
+      bytes: { data: await file.arrayBuffer(), contentType: file.type },
+    });
+  } catch (error) {
+    if (error instanceof ApiError) {
+      redirect(`/dashboard/profile?error=${error.code ?? "UNKNOWN"}`);
+    }
+    throw error;
+  }
+  revalidatePath("/dashboard/profile");
+}
+
+export async function uploadLogo(formData: FormData): Promise<void> {
+  await upload(formData, "/v1/provider-profile/logo");
+}
+
+export async function uploadCover(formData: FormData): Promise<void> {
+  await upload(formData, "/v1/provider-profile/cover");
+}

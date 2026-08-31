@@ -102,3 +102,16 @@ function offsetAt(instant: number, timeZone: string): number {
   );
   return asUtc - Math.floor(instant / 1000) * 1000;
 }
+
+/**
+ * The API's media path, as this server serves it.
+ *
+ * <p>`logo_url` and `cover_url` come back as `/v1/media/<name>.jpg`, which is
+ * the API's own origin - unreachable from a browser, which only ever talks to
+ * this server. Rewritten here, in one place, so no page has to know.
+ */
+export function mediaUrl(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  const name = url.split("/").pop();
+  return name ? `/media/${name}` : undefined;
+}
