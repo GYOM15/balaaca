@@ -242,8 +242,10 @@ public class PublicProviderResource implements DiscoveryApi {
         provider.categorySlug().ifPresent(view::setCategorySlug);
         provider.city().ifPresent(view::setCity);
         provider.addressLine().ifPresent(view::setAddressLine);
-        provider.latitude().ifPresent(view::setLatitude);
-        provider.longitude().ifPresent(view::setLongitude);
+        provider.locality().ifPresent(l -> view.setLocality(
+                new com.balaaca.app.api.model.LocalityRef()
+                        .slug(l.slug()).labelFr(l.labelFr())));
+        provider.area().ifPresent(view::setArea);
         provider.logoUrl().ifPresent(name -> view.setLogoUrl(ProviderProfileResource.MEDIA + name));
         provider.coverUrl().ifPresent(name -> view.setCoverUrl(ProviderProfileResource.MEDIA + name));
         provider.publicPhoneE164().ifPresent(view::setPublicPhoneE164);

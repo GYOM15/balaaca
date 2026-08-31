@@ -45,6 +45,23 @@ public interface ListStaffUseCase {
     StaffMember replace(StaffId id, StaffDefinition definition);
 
     /**
+     * Hands the business to a colleague. The caller stops being the owner in
+     * the same statement, which is the point and is why it is not reversible
+     * from their side: only the new owner can hand it back.
+     *
+     * <p>The recipient must already have an account. Handing a business to a
+     * chair with no login would leave it owned by somebody nobody can be - the
+     * role would resolve for no subject, and the way out would be a migration.
+     *
+     * @return the team as it now stands, owner first
+     * @throws com.balaaca.providers.domain.NotTheOwnerException the caller does
+     *         not own this business
+     * @throws com.balaaca.providers.domain.CannotOwnException the recipient is
+     *         not an active colleague with an account, or is the caller
+     */
+    List<StaffMember> transferOwnership(StaffId to);
+
+    /**
      * Mints a code that lets this member sign in.
      *
      * <p>A member is a bookable chair and most never sign in. This is for the

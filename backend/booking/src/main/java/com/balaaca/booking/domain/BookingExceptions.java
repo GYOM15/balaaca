@@ -129,6 +129,20 @@ public final class BookingExceptions {
         }
     }
 
+    /**
+     * No such customer, or not this provider's.
+     *
+     * <p>One answer for both, like every other lookup here: RLS removed the row
+     * from the statement's reach before it ran, so the two are not even
+     * distinguishable from inside.
+     */
+    public static final class CustomerNotFoundException extends DomainException {
+        public CustomerNotFoundException(UUID id) {
+            super("RESOURCE_NOT_FOUND", 404, "No such customer",
+                  Map.of("customer_id", String.valueOf(id)));
+        }
+    }
+
     /** A commune the published map does not hold. */
     public static final class UnknownServiceLocalityException extends DomainException {
         public UnknownServiceLocalityException(String slug) {

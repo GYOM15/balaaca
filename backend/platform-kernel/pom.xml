@@ -19,6 +19,7 @@
          business owner: it records the tenancy boundary, which is what this
          module is. -->
     <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-hibernate-orm</artifactId></dependency>
+    <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-redis-client</artifactId></dependency>
   </dependencies>
   <build>
     <plugins>

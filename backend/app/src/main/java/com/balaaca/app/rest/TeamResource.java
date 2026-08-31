@@ -75,6 +75,14 @@ public class TeamResource implements TeamApi {
 
     @Override
     @RolesAllowed("staff:write")
+    public Response transferOwnership(UUID id) {
+        return Response.ok(new StaffList().data(
+                staff.transferOwnership(StaffId.of(id)).stream()
+                        .map(TeamResource::view).toList())).build();
+    }
+
+    @Override
+    @RolesAllowed("staff:write")
     public Response inviteStaffMember(UUID id) {
         var invitation = staff.invite(StaffId.of(id));
         return Response.status(201).entity(new StaffInvitationView()

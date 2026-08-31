@@ -40,4 +40,14 @@ public interface StaffRepository {
 
     /** Whether the member exists at all, to tell a 404 from a 409. */
     boolean exists(StaffId id);
+
+    /**
+     * Moves the OWNER role from one row to another in a single statement.
+     *
+     * @return the team as it now stands, owner first. Empty when the caller
+     *         does not own the business
+     * @throws com.balaaca.providers.domain.CannotOwnException when the
+     *         recipient cannot hold it
+     */
+    List<StaffMember> transferOwnership(StaffId from, StaffId to);
 }

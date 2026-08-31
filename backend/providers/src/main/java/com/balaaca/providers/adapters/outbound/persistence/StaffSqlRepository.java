@@ -1,5 +1,6 @@
 package com.balaaca.providers.adapters.outbound.persistence;
 
+import com.balaaca.providers.domain.CannotOwnException;
 import com.balaaca.platformkernel.tenancy.TenantContext;
 import com.balaaca.providers.domain.StaffStillBookedException;
 import com.balaaca.providers.ports.inbound.ListStaffUseCase.StaffDefinition;
@@ -31,6 +32,8 @@ import java.util.UUID;
 public class StaffSqlRepository implements StaffRepository {
 
     private static final String STILL_BOOKED = "Z0006";
+    private static final String NOT_THE_OWNER = "Z0008";
+    private static final String CANNOT_OWN = "Z0009";
 
     private final EntityManager em;
     private final TenantContext tenantContext;
@@ -121,6 +124,35 @@ public class StaffSqlRepository implements StaffRepository {
         // Zero rows is a miss and another provider's member alike, because RLS
         // removed the row from the statement's reach before it ran.
         return changed == 0 ? Optional.empty() : read(id);
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public List<StaffMember> transferOwnership(StaffId from, StaffId to) {
+        // Ordinary SQL under RLS, unlike moderation: this acts entirely inside
+        // the caller's own provider, so the tenant policy is exactly the right
+        // confinement and another salon's staff id is simply invisible.
+        try {
+            List<Object[]> rows = em.createNativeQuery(
+                    "SELECT * FROM app_transfer_ownership(CAST(:from AS uuid),"
+                    + " CAST(:to AS uuid))")
+                    .setParameter("from", from.value())
+                    .setParameter("to", to.value())
+                    .getResultList();
+
+            return rows.stream().map(r -> new StaffMember(
+                    StaffId.of((UUID) r[0]), (String) r[1], (String) r[2],
+                    (Boolean) r[3], "ACTIVE".equals(r[4]))).toList();
+        } catch (PersistenceException e) {
+            String state = sqlState(e);
+            if (NOT_THE_OWNER.equals(state)) {
+                return List.of();
+            }
+            if (CANNOT_OWN.equals(state)) {
+                throw new CannotOwnException(to.value());
+            }
+            throw e;
+        }
     }
 
     /** Raised by trg_provider_staff_no_orphaned_appointments. */

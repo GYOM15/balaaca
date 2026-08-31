@@ -48,12 +48,21 @@ public class BookingFixtures {
     public static final UUID SOLO_OFFERING = UUID.fromString("50103333-0000-0000-0000-000000000001");
 
     private final String jdbcUrl;
+    private final io.quarkus.redis.datasource.RedisDataSource redis;
 
-    public BookingFixtures(@ConfigProperty(name = "quarkus.datasource.jdbc.url") String jdbcUrl) {
+    public BookingFixtures(@ConfigProperty(name = "quarkus.datasource.jdbc.url") String jdbcUrl,
+                           io.quarkus.redis.datasource.RedisDataSource redis) {
         this.jdbcUrl = jdbcUrl;
+        this.redis = redis;
     }
 
     public void reset() {
+        // Redis is part of the world now, so resetting the world includes it.
+        // The registration limiter keeps a counter per subject for an hour, and
+        // Quarkus reuses one instance across every test class: without this,
+        // the tenth registration anywhere in the suite starts answering 429 and
+        // the failure lands in whichever class happens to run last.
+        redis.flushall();
         run("""
             TRUNCATE notifications, appointments, customers, availability_overrides,
                      availability_rules, service_offerings, provider_staff, providers,
