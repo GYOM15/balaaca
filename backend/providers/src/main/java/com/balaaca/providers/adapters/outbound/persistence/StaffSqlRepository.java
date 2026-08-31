@@ -1,12 +1,14 @@
 package com.balaaca.providers.adapters.outbound.persistence;
 
 import com.balaaca.platformkernel.tenancy.TenantContext;
+import com.balaaca.providers.domain.StaffStillBookedException;
 import com.balaaca.providers.ports.inbound.ListStaffUseCase.StaffDefinition;
 import com.balaaca.providers.ports.inbound.ListStaffUseCase.StaffMember;
 import com.balaaca.providers.ports.outbound.StaffRepository;
 import com.balaaca.sharedkernel.ids.StaffId;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
@@ -27,6 +29,8 @@ import java.util.UUID;
  */
 @ApplicationScoped
 public class StaffSqlRepository implements StaffRepository {
+
+    private static final String STILL_BOOKED = "Z0006";
 
     private final EntityManager em;
     private final TenantContext tenantContext;
@@ -88,23 +92,45 @@ public class StaffSqlRepository implements StaffRepository {
 
     @Override
     public Optional<StaffMember> update(StaffId id, StaffDefinition definition) {
-        int changed = em.createNativeQuery("""
-                UPDATE provider_staff
-                   SET display_name = :displayName,
-                       bookable     = :bookable,
-                       status       = :status,
-                       updated_at   = now()
-                 WHERE id = :id
-                """)
-                .setParameter("id", id.value())
-                .setParameter("displayName", definition.displayName())
-                .setParameter("bookable", definition.bookable())
-                .setParameter("status", definition.active() ? "ACTIVE" : "DISABLED")
-                .executeUpdate();
+        int changed;
+        try {
+            changed = em.createNativeQuery("""
+                    UPDATE provider_staff
+                       SET display_name = :displayName,
+                           bookable     = :bookable,
+                           status       = :status,
+                           updated_at   = now()
+                     WHERE id = :id
+                    """)
+                    .setParameter("id", id.value())
+                    .setParameter("displayName", definition.displayName())
+                    .setParameter("bookable", definition.bookable())
+                    .setParameter("status", definition.active() ? "ACTIVE" : "DISABLED")
+                    .executeUpdate();
+        } catch (PersistenceException e) {
+            // V038's trigger, which refuses to retire somebody customers are
+            // still booked with. Read as a SQLSTATE rather than pre-counted
+            // here: two requests could both pass a count and only one pass the
+            // trigger, and the count would be a second place to forget the rule.
+            if (STILL_BOOKED.equals(sqlState(e))) {
+                throw new StaffStillBookedException();
+            }
+            throw e;
+        }
 
         // Zero rows is a miss and another provider's member alike, because RLS
         // removed the row from the statement's reach before it ran.
         return changed == 0 ? Optional.empty() : read(id);
+    }
+
+    /** Raised by trg_provider_staff_no_orphaned_appointments. */
+    private static String sqlState(Throwable e) {
+        for (Throwable t = e; t != null && t.getCause() != t; t = t.getCause()) {
+            if (t instanceof java.sql.SQLException sql && sql.getSQLState() != null) {
+                return sql.getSQLState();
+            }
+        }
+        return null;
     }
 
     @Override

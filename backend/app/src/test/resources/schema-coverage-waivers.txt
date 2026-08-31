@@ -31,3 +31,5 @@ customers.notes:               A provider's own notes on a client. Waits for the
 # --- Tables the application role may write, and what writes them ------------
 # Waived as <table>.* when the write is legitimate but not an INSERT in Java.
 subscriptions.*: Billing. Nothing creates a subscription because no plan exists to subscribe to; the tiers and prices are an open product decision, recorded in docs/BACKLOG.md.
+provider_reports.reported_at:  Named only inside app_list_provider_reports and app_review_provider_report. Java never names the column because it cannot read the table at all - balaaca_app has no policy on it, which is the point: a provider must not learn who reported them.
+provider_reports.reviewed_at:  As above. Written by app_review_provider_report and returned by it; the Java side receives a position in a row and never a column name.

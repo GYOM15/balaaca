@@ -66,7 +66,17 @@ public interface ManageProviderProfileUseCase {
                            Optional<String> coverUrl,
                            ZoneId timezone,
                            boolean published,
-                           ProviderStatus status) {
+                           ProviderStatus status,
+                           /**
+                            * Why the platform took this page off the hub, in
+                            * the operator's own words. Published to the
+                            * PROVIDER on purpose: a business whose page has
+                            * vanished must be able to read the reason on its
+                            * own dashboard, rather than discovering it because
+                            * customers stopped arriving.
+                            */
+                           Optional<java.time.Instant> suspendedAt,
+                           Optional<String> suspensionReason) {
     }
 
     /**

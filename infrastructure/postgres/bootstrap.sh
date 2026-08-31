@@ -71,6 +71,16 @@ SELECT 'CREATE ROLE balaaca_registrar NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROL
  WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'balaaca_registrar')
 \gexec
 
+-- Owns the two SECURITY DEFINER functions that suspend and reinstate a
+-- business. Its own role, not the registrar's, because "who can take a salon
+-- off the hub" must have exactly one answer and it must not be the same answer
+-- as "who can put one on it". NOLOGIN: its UPDATE grant is reachable through
+-- those two functions and nowhere else, so there is no session anywhere that
+-- can quietly change a provider's standing.
+SELECT 'CREATE ROLE balaaca_moderator NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS'
+ WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'balaaca_moderator')
+\gexec
+
 -- The notification worker, restricted to the notifications table by its
 -- policies and grants.
 SELECT 'CREATE ROLE ' || 'balaaca_notification_worker'
@@ -83,13 +93,14 @@ SELECT 'CREATE ROLE ' || 'balaaca_notification_worker'
 ALTER SCHEMA public OWNER TO balaaca_migrator;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 GRANT  USAGE  ON SCHEMA public TO balaaca_app, balaaca_notification_worker,
-                                  balaaca_resolver, balaaca_registrar;
+                                  balaaca_resolver, balaaca_registrar,
+                                  balaaca_moderator;
 
 -- The migrations transfer ownership of the SECURITY DEFINER resolution
 -- functions to balaaca_resolver, and ALTER FUNCTION ... OWNER TO requires
 -- membership of the target role. The migrator is the schema owner already and
 -- is never used at runtime, so this grants it nothing it did not have.
-GRANT balaaca_resolver, balaaca_registrar TO balaaca_migrator;
+GRANT balaaca_resolver, balaaca_registrar, balaaca_moderator TO balaaca_migrator;
 
 -- CREATE on the database so the migrations can install their own extensions.
 -- btree_gist, citext and pg_trgm are trusted extensions since PostgreSQL 13, so

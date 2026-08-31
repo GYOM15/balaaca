@@ -175,7 +175,15 @@ class CustomerBookingIT {
     void hidesABookingOfASuspendedProvider() {
         String reference = book("2026-09-04T10:00:00Z");
 
-        fixtures.execute("UPDATE providers SET status = 'SUSPENDED' WHERE slug = 'salon-fatou'");
+        // Three facts that move together, and a CHECK says so: a page that
+        // vanished with no reason to show its owner is the failure the columns
+        // exist to prevent.
+        fixtures.execute("""
+                UPDATE providers
+                   SET status = 'SUSPENDED', suspended_at = now(),
+                       suspension_reason = 'essai'
+                 WHERE slug = 'salon-fatou'
+                """);
 
         given().when().get("/v1/bookings/" + reference).then().statusCode(404);
     }

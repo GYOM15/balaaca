@@ -40,6 +40,15 @@ class ErrorCatalogueTest {
     private static final Pattern DOMAIN_EXCEPTION_CODE =
             Pattern.compile("super\\(\\s*\"([A-Z][A-Z_]+)\"\\s*,");
 
+    /**
+     * The other producer: a mapper that builds the body itself and names the
+     * generated enum rather than a string. IDEMPOTENCY_KEY_REQUIRED has only
+     * ever been raised this way, so a check that looked only at DomainException
+     * constructors would call it dead and be wrong.
+     */
+    private static final Pattern ENUM_REFERENCE =
+            Pattern.compile("ErrorCode\\.([A-Z][A-Z_]+)");
+
     @Test
     @DisplayName("Every code a context can throw is one the contract publishes")
     void noContextInventsACode() {
@@ -57,6 +66,28 @@ class ErrorCatalogueTest {
                 .containsAll(thrown);
     }
 
+    @Test
+    @DisplayName("Every code the contract publishes is one some path can produce")
+    void noCodeIsPublishedThatCannotArrive() {
+        Set<String> published = Stream.of(ErrorCode.values()).map(ErrorCode::toString)
+                .collect(java.util.stream.Collectors.toCollection(TreeSet::new));
+
+        Set<String> producible = thrownCodes();
+
+        // This is the direction that was missing, and PLAN_LIMIT_REACHED is why
+        // it is here. It sat in the published catalogue against a billing
+        // module with one file and a subscriptions table with no Java at all,
+        // so no request could ever have returned it - and a client branching on
+        // it was branching on something that could not arrive. A contract that
+        // publishes a code nothing can produce is worse than one that does not
+        // publish it, because it looks like a promise.
+        assertThat(producible)
+                .as("a published code no path can produce is a promise the "
+                    + "server cannot keep; either raise it somewhere or remove "
+                    + "it from the catalogue in META-INF/openapi.yaml")
+                .containsAll(published);
+    }
+
     private static Set<String> thrownCodes() {
         Set<String> codes = new TreeSet<>();
         try (Stream<Path> sources = Files.walk(BACKEND)) {
@@ -65,10 +96,12 @@ class ErrorCatalogueTest {
                     .filter(p -> p.toString().contains("/src/main/java/"))
                     .toList();
             for (Path file : java) {
-                Matcher m = DOMAIN_EXCEPTION_CODE.matcher(
-                        Files.readString(file, StandardCharsets.UTF_8));
-                while (m.find()) {
-                    codes.add(m.group(1));
+                String source = Files.readString(file, StandardCharsets.UTF_8);
+                for (Pattern shape : List.of(DOMAIN_EXCEPTION_CODE, ENUM_REFERENCE)) {
+                    Matcher m = shape.matcher(source);
+                    while (m.find()) {
+                        codes.add(m.group(1));
+                    }
                 }
             }
         } catch (IOException e) {

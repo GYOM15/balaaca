@@ -1,6 +1,7 @@
 package com.balaaca.app.rest;
 
 import com.balaaca.app.api.BookingApi;
+import com.balaaca.app.api.model.ReportRequest;
 import com.balaaca.app.api.model.AppointmentCreatedView;
 import com.balaaca.app.api.model.AppointmentStatus;
 import com.balaaca.app.api.model.BookAppointmentRequest;
@@ -11,6 +12,7 @@ import com.balaaca.app.api.model.Money;
 import com.balaaca.booking.domain.BookingSource;
 import com.balaaca.booking.ports.inbound.BookAppointmentUseCase;
 import com.balaaca.providers.ports.inbound.LookupNoticeProfileUseCase;
+import com.balaaca.providers.ports.inbound.ReportProviderUseCase;
 import com.balaaca.booking.ports.inbound.CustomerBookingUseCase;
 import com.balaaca.booking.ports.inbound.CustomerBookingUseCase.CustomerBooking;
 import com.balaaca.platformkernel.tenancy.PublicTenantBinder;
@@ -48,17 +50,20 @@ public class PublicBookingResource implements BookingApi {
     private final BookAppointmentUseCase booking;
     private final CustomerBookingUseCase bookings;
     private final LookupNoticeProfileUseCase providers;
+    private final ReportProviderUseCase reports;
 
     public PublicBookingResource(PublicTenantBinder tenants,
                                  BookAppointmentRequestMapper mapper,
                                  BookAppointmentUseCase booking,
                                  CustomerBookingUseCase bookings,
-                                 LookupNoticeProfileUseCase providers) {
+                                 LookupNoticeProfileUseCase providers,
+                                 ReportProviderUseCase reports) {
         this.tenants = tenants;
         this.mapper = mapper;
         this.booking = booking;
         this.bookings = bookings;
         this.providers = providers;
+        this.reports = reports;
     }
 
     @Override
@@ -152,6 +157,24 @@ public class PublicBookingResource implements BookingApi {
         booking.cancellableUntil().ifPresent(until -> view.setCancellableUntil(
                 OffsetDateTime.ofInstant(until, ZoneOffset.UTC)));
         return view;
+    }
+
+    /**
+     * 202 and not 201, deliberately: nothing is created that the customer can
+     * then go and read. A report is not theirs to poll, and returning an
+     * identifier would invite a client to try.
+     *
+     * <p>No tenant is bound and none is wanted. The reference resolves the
+     * provider inside the database function, so a caller never learns whether a
+     * reference exists by any route other than using it.
+     */
+    @Override
+    public Response reportProvider(String reference, ReportRequest request) {
+        reports.report(reference, request.getReason().name(),
+                       Optional.ofNullable(request.getDetails())
+                               .map(String::trim).filter(d -> !d.isEmpty()));
+
+        return Response.status(202).header("Cache-Control", PublicCaching.NEVER).build();
     }
 
 }

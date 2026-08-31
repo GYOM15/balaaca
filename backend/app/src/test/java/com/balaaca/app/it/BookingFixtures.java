@@ -90,7 +90,7 @@ public class BookingFixtures {
             INSERT INTO providers (id, slug, business_name, country_code, published, status,
                                    whatsapp_phone_e164, auto_confirm) VALUES
               ('%s','salon-fatou','Salon Fatou','GN',true,'ACTIVE','+224622999001',false),
-              ('%s','barbier-cache','Barbier Cache','GN',false,'PENDING',NULL,false),
+              ('%s','barbier-cache','Barbier Cache','GN',false,'ACTIVE',NULL,false),
               ('%s','coiffeur-solo','Coiffeur Solo','GN',true,'ACTIVE',NULL,true)
             """.formatted(SALON, HIDDEN, SOLO));
         run("""

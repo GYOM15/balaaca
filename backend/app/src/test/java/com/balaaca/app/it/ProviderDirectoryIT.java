@@ -48,7 +48,7 @@ class ProviderDirectoryIT {
                 UPDATE providers SET city = 'Kindia' WHERE slug = 'coiffeur-solo';
                 INSERT INTO providers (id, slug, business_name, city, published, status) VALUES
                   ('0be11e00-0000-0000-0000-000000000001','beaute-nzerekore','Beaute Nzerekore','Nzerekore',true,'ACTIVE'),
-                  ('0be11e00-0000-0000-0000-000000000002','chez-a-b','Chez A | B','Conakry',true,'PENDING'),
+                  ('0be11e00-0000-0000-0000-000000000002','chez-a-b','Chez A | B','Conakry',true,'ACTIVE'),
                   ('0be11e00-0000-0000-0000-000000000003','dakar-style','Dakar Style','Conakry',true,'ACTIVE')
                 """);
     }

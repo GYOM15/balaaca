@@ -55,6 +55,11 @@ tags:
     description: When a provider is open, and when they are not.
   - name: catalogue
     description: The services a provider offers.
+  - name: moderation
+    description: |
+      The platform's own hand: taking a business off the hub, putting it back,
+      and reading what customers reported. The only surface that crosses
+      providers, held by the operator alone.
   - name: agenda
     description: What a provider sees of their own bookings.
   - name: availability
@@ -1745,6 +1750,198 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /v1/bookings/{reference}/report:
+    post:
+      operationId: reportProvider
+      tags: [booking]
+      summary: Report a business
+      description: |
+        Tied to a booking reference, not to a public slug, and that is the whole
+        design. This is a hub in a market where a salon's competitor is three
+        streets away and knows its handle: an anonymous report button on a
+        public page is something that competitor can press from a script, all
+        night.
+
+        The reference is the capability the customer already holds - the same
+        one they use to reschedule or cancel - so a report comes from somebody
+        who actually booked, and it arrives with the appointment attached.
+
+        What this deliberately does not cover, said plainly rather than
+        pretended: a customer who found a business here but booked over WhatsApp
+        has no reference and cannot report. The answer to that is a contact
+        address on the site, not a second endpoint that reopens the door this
+        one closes.
+
+        Pressing it twice is the same report. The provider can never read it.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/BookingReference'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReportRequest'
+      responses:
+        '202':
+          description: |
+            Filed. Deliberately 202 and not 201: nothing is created that the
+            customer can then go and read, and no resource is returned. The
+            platform has taken it, and what happens next is not theirs to poll.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/admin/providers/{slug}/suspension:
+    post:
+      operationId: suspendProvider
+      tags: [moderation]
+      summary: Take a business off the hub
+      description: |
+        The platform's only lever, and it is blunt on purpose. A suspended
+        business disappears from the directory, its page answers 404, its
+        booking route answers 404, and its slug stops resolving anywhere public
+        - all from one predicate in one row-level security policy, so there is
+        no corner of the public surface that keeps serving it.
+
+        What it does NOT touch: appointments already booked. The salon still has
+        its diary, its customers still hold their references, and the work
+        already promised can still be done. Suspension stops NEW harm;
+        cancelling somebody's Thursday appointment because the platform is
+        investigating their salon would harm the customer, not the salon.
+
+        The reason is mandatory and it is written twice: to `audit_logs`, which
+        is the permanent record of who decided what and when, and onto the
+        provider's own row, so the salon can open its dashboard and read why its
+        page vanished instead of discovering it because customers stopped
+        arriving.
+
+        Suspending an already-suspended business, or a slug that does not exist,
+        is the same 404. The two are not distinguished, for the reason the whole
+        catalogue does not distinguish them.
+      security: [{ oauth2: [admin:moderation] }]
+      parameters:
+        - $ref: '#/components/parameters/ProviderSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SuspensionRequest'
+      responses:
+        '200':
+          description: The business is off the hub.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModerationView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      operationId: reinstateProvider
+      tags: [moderation]
+      summary: Put a business back
+      description: |
+        Because the first suspension made in a hurry will sometimes be wrong,
+        and a platform that cannot undo its own decision does not really have a
+        moderation policy - it has a delete button.
+
+        The reason is cleared from the provider's row. It stays in `audit_logs`
+        with its date and its author: a reinstated business must not keep
+        carrying the accusation, and the platform must not be able to pretend it
+        never made it.
+      security: [{ oauth2: [admin:moderation] }]
+      parameters:
+        - $ref: '#/components/parameters/ProviderSlug'
+      responses:
+        '200':
+          description: The business is back on the hub.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModerationView'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: RESOURCE_NOT_FOUND - no such slug, or it is not suspended.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /v1/admin/reports:
+    get:
+      operationId: listProviderReports
+      tags: [moderation]
+      summary: What customers have reported
+      description: |
+        The inbox the lever needs. Without it, moderation is the operator
+        refreshing pages hoping to notice fraud.
+
+        Pending first, oldest first, because the oldest unanswered complaint is
+        the one that has been ignored longest. Each row carries the business,
+        the appointment it is about and its date, so a report reads as "this
+        booking, this service, this day" rather than "someone says something".
+      security: [{ oauth2: [admin:moderation] }]
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: Omit for everything. `PENDING` is the working queue.
+          schema:
+            type: string
+            enum: [PENDING, REVIEWED]
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: The reports.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderReportPage'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/admin/reports/{id}/review:
+    post:
+      operationId: reviewProviderReport
+      tags: [moderation]
+      summary: Mark a report seen
+      description: |
+        Two states and no workflow. A queue with five statuses that nobody moves
+        is the mistake `providers.status` made - four values and no writer - and
+        it is not worth making twice in the same schema.
+
+        Reviewing records that the operator looked. It says nothing about
+        whether the business was suspended; that is a separate decision with its
+        own audit row, and a report can be perfectly real and still not warrant
+        taking a salon off the hub.
+      security: [{ oauth2: [admin:moderation] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The report, now reviewed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderReportView'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /v1/localities:
     get:
       operationId: listLocalities
@@ -2124,9 +2321,18 @@ components:
       type: oauth2
       description: |
         Scopes are coarse capability grants, checked at the service layer as
-        well as here. None of them crosses a provider: the tenant comes from the
-        database via the subject, so a scope says what the caller may do inside
-        their own provider and nothing about whose data they reach.
+        well as here. None of the provider scopes crosses a provider: the tenant
+        comes from the database via the subject, so a scope says what the caller
+        may do inside their own provider and nothing about whose data they
+        reach.
+
+        `admin:moderation` is the single exception, and it is deliberately
+        shaped so the exception is obvious. It grants no ordinary provider
+        operation at all - it cannot read an agenda, a customer or a catalogue.
+        It grants exactly four things: take a business off the hub, put it back,
+        read what customers have reported, and mark a report seen. It is held by
+        the platform operator and by nobody else, and every use of it writes an
+        audit row.
       flows:
         authorizationCode:
           authorizationUrl: /realms/balaaca/protocol/openid-connect/auth
@@ -2138,6 +2344,10 @@ components:
             appointments:write: Create and move the caller's own appointments.
             profile:write: Change the caller's own public page, and publish it.
             staff:write: Add and change the caller's own people.
+            admin:moderation: >
+              Suspend and reinstate any business, and read the reports customers
+              have filed. The platform operator's scope, and the only one that
+              crosses providers.
 
   parameters:
     AppointmentId:
@@ -2279,12 +2489,21 @@ components:
         published, because clients branch on them. There is no code that
         distinguishes "not yours" from "does not exist", and none that names an
         internal concept.
+
+        `PLAN_LIMIT_REACHED` was here and has been removed. It was published
+        against a billing module that has one file and a `subscriptions` table
+        with no Java at all, so no code path could ever return it: a client
+        branching on it was branching on something that could not arrive. That
+        is a worse contract than not publishing it, and removing it breaks no
+        client, because no client can have seen it. It returns the day plan
+        tiers exist - the four decisions that gate them are in docs/BACKLOG.md -
+        and `ErrorCatalogueTest` now fails the build if a published code has no
+        producer, so this cannot recur.
       enum:
         - VALIDATION_FAILED
         - IDEMPOTENCY_KEY_REQUIRED
         - UNAUTHENTICATED
         - FORBIDDEN
-        - PLAN_LIMIT_REACHED
         - RESOURCE_NOT_FOUND
         - SLOT_UNAVAILABLE
         - INVALID_STATE_TRANSITION
@@ -2383,6 +2602,113 @@ components:
             receptionist who stops taking bookings has not forgotten how to
             braid, so they keep the competence and the booking path filters on
             this separately.
+
+    SuspensionRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 3
+          maxLength: 500
+          description: |
+            Mandatory, and it is the point of the whole operation. The day a
+            provider contests the decision, "who, when, why" has to exist - and
+            a reason written at the moment of the decision is worth more than
+            one reconstructed afterwards.
+
+            The salon reads this on its own dashboard, so it is addressed to
+            them, not to a file.
+          example: Trois clients signalent des rendez-vous non honores.
+
+    ModerationView:
+      type: object
+      required: [slug, status]
+      properties:
+        slug:
+          type: string
+        status:
+          $ref: '#/components/schemas/ProviderStatus'
+        suspended_at:
+          type: string
+          format: date-time
+          description: Absent once reinstated.
+        suspension_reason:
+          type: string
+          description: Absent once reinstated. The audit trail keeps it.
+
+    ReportRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          $ref: '#/components/schemas/ReportReason'
+        details:
+          type: string
+          maxLength: 1000
+          description: In the customer's own words. Optional, because a person
+            who was let down should not have to write an essay to say so.
+
+    ReportReason:
+      type: string
+      description: |
+        A closed set, because a queue of free text is unreadable at the only
+        moment it matters. These five are what a customer in this market
+        actually complains about.
+
+        `NO_SHOW`: the business was closed, or nobody came.
+        `NOT_AS_DESCRIBED`: the service was not what the page said.
+        `OVERCHARGED`: a price other than the one quoted.
+        `RUDE_OR_UNSAFE`: behaviour. The one that matters most.
+        `OTHER`: with `details`.
+      enum: [NO_SHOW, NOT_AS_DESCRIBED, OVERCHARGED, RUDE_OR_UNSAFE, OTHER]
+
+    ProviderReportView:
+      type: object
+      required: [report_id, provider_slug, provider_name, reason, status,
+                 reported_at, appointment_starts_at, service_name]
+      properties:
+        report_id:
+          type: string
+          format: uuid
+        provider_slug:
+          type: string
+        provider_name:
+          type: string
+        reason:
+          $ref: '#/components/schemas/ReportReason'
+        details:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, REVIEWED]
+        reported_at:
+          type: string
+          format: date-time
+        reviewed_at:
+          type: string
+          format: date-time
+        appointment_starts_at:
+          type: string
+          format: date-time
+          description: What the report is about, so it reads as an event rather
+            than an accusation.
+        service_name:
+          type: string
+        provider_status:
+          $ref: '#/components/schemas/ProviderStatus'
+
+    ProviderReportPage:
+      type: object
+      required: [data, next_cursor]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProviderReportView'
+        next_cursor:
+          type: string
+          nullable: true
 
     ServiceAddress:
       type: object
@@ -3151,6 +3477,17 @@ components:
           type: boolean
         status:
           $ref: '#/components/schemas/ProviderStatus'
+        suspended_at:
+          type: string
+          format: date-time
+          description: Absent unless the platform has suspended this business.
+        suspension_reason:
+          type: string
+          description: |
+            Why, in the operator's own words. Published to the provider on
+            purpose: a business whose page has vanished must be able to read the
+            reason here, rather than discovering it because customers stopped
+            arriving.
 
     ProviderStatus:
       type: string
@@ -3158,7 +3495,16 @@ components:
         Where the business stands with the platform, which is not the same
         question as whether its page is live. A `SUSPENDED` provider keeps
         `published: true` and still disappears from the public path.
-      enum: [PENDING, ACTIVE, SUSPENDED, CLOSED]
+
+        Two values, and both are reachable - which is new. It carried four:
+        `PENDING`, `ACTIVE`, `SUSPENDED`, `CLOSED`, with a default of `PENDING`
+        and no code anywhere that wrote the column, so every business was
+        pending for ever and the other three were unreachable. `PENDING` meant
+        "waiting to be let in" and nobody vets a business here; `CLOSED` meant
+        "shut down", which `published: false` already says, is already writable
+        by the provider, and already hides the page. Both are gone rather than
+        left as states nothing can produce.
+      enum: [ACTIVE, SUSPENDED]
 
     ProviderProfileRequest:
       type: object
