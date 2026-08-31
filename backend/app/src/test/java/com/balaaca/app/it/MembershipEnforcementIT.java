@@ -52,6 +52,27 @@ class MembershipEnforcementIT {
     class Employee {
 
         @Test
+        @DisplayName("They can find out which chair is theirs, and then read its week")
+        @TestSecurity(user = BookingFixtures.EMPLOYEE_SUBJECT, roles = {
+                "dashboard:read", "schedule:write"})
+        @OidcSecurity(claims = @Claim(key = "sub", value = BookingFixtures.EMPLOYEE_SUBJECT))
+        void knowsWhichChairIsTheirs() {
+            String me = given().when().get("/v1/me").then().statusCode(200)
+                    .body("display_name", equalTo("Mariama"))
+                    .body("role", equalTo("STAFF"))
+                    .extract().path("staff_id");
+
+            // The whole point of the route. Every schedule operation asks for a
+            // staff_id, and the only place one was published was the team
+            // listing - where an employee saw every colleague's identifier and
+            // had no way to tell which was theirs.
+            assertThat(me).isEqualTo(BookingFixtures.SALON_EMPLOYEE_STAFF.toString());
+
+            given().queryParam("staff_id", me)
+                    .when().get("/v1/opening-hours").then().statusCode(200);
+        }
+
+        @Test
         @DisplayName("They read the agenda and the team like anyone who works here")
         @TestSecurity(user = BookingFixtures.EMPLOYEE_SUBJECT, roles = {
                 "dashboard:read", "profile:write", "catalog:write",
@@ -147,6 +168,33 @@ class MembershipEnforcementIT {
                             {"day_of_week":3,"start_time":"10:00","end_time":"16:00"}]}
                           """.formatted(BookingFixtures.SALON_EMPLOYEE_STAFF))
                     .when().put("/v1/opening-hours").then().statusCode(200);
+        }
+
+        @Test
+        @DisplayName("Is told so by the same route an employee uses")
+        @TestSecurity(user = BookingFixtures.SALON_SUBJECT, roles = "dashboard:read")
+        @OidcSecurity(claims = @Claim(key = "sub", value = BookingFixtures.SALON_SUBJECT))
+        void knowsTheyOwnThePlace() {
+            given().when().get("/v1/me").then().statusCode(200)
+                    .body("staff_id", equalTo(BookingFixtures.SALON_OWNER_STAFF.toString()))
+                    .body("role", equalTo("OWNER"));
+        }
+    }
+
+    @Nested
+    @DisplayName("A token that belongs to nobody here")
+    class Stranger {
+
+        @Test
+        @DisplayName("Is told it has an account and not a business")
+        @TestSecurity(user = BookingFixtures.STRANGER_SUBJECT, roles = "dashboard:read")
+        @OidcSecurity(claims = @Claim(key = "sub", value = BookingFixtures.STRANGER_SUBJECT))
+        void isRefusedRatherThanEmptied() {
+            // Not an empty body: a signed-in person with no membership has an
+            // account, not a salon, and the difference between "finish signing
+            // up" and "something broke" is the whole answer.
+            given().when().get("/v1/me").then().statusCode(403)
+                    .body("code", equalTo("FORBIDDEN"));
         }
     }
 

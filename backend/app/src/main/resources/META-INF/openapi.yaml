@@ -304,6 +304,45 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
 
+  /v1/me:
+    get:
+      operationId: describeCurrentMember
+      tags: [team]
+      summary: Who the caller is at their own business
+      description: |
+        The identifier a signed-in person needs to ask about themselves, and
+        could not get. `listOpeningHours` and `listClosures` both require a
+        `staff_id`, and the only place a `staff_id` was published is
+        `listStaff` - which is fine for an owner reading the team and useless
+        for an employee, who could see every colleague's identifier and had no
+        way to know which one was theirs.
+
+        Strictly about the person. Which business this is, and what it
+        published, is `getProviderProfile`: one resource per question, and the
+        client that boots needs both regardless.
+      security:
+        - oauth2: [dashboard:read]
+      responses:
+        '200':
+          description: The caller, as their own business knows them.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentMemberView'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          description: |
+            `FORBIDDEN` - a verified token whose subject belongs to no active
+            provider. Deliberately not an empty body: a signed-in person with
+            no membership has an account, not a business, and telling them so
+            is the difference between "finish signing up" and "something
+            broke".
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
   /v1/staff:
     post:
       operationId: addStaffMember
@@ -2008,6 +2047,34 @@ components:
         customer_note:
           type: string
           maxLength: 500
+
+    CurrentMemberView:
+      type: object
+      description: |
+        The signed-in person, as their own business knows them. No provider
+        identifier: the tenant is ambient, and publishing the row key of the
+        business would put in a response what no request is allowed to carry.
+      required: [staff_id, display_name, role, bookable]
+      properties:
+        staff_id:
+          type: string
+          format: uuid
+          description: |
+            The caller's own chair. What every schedule operation asks for.
+        display_name:
+          type: string
+        role:
+          type: string
+          description: |
+            `OWNER` may change the team, the profile, the catalogue and the
+            booking policy; `STAFF` may read them and run their own diary. The
+            client uses it to hide what the server would refuse anyway - the
+            check is on the server, this is only so the refusal is not the
+            first the person hears of it.
+          enum: [OWNER, STAFF]
+        bookable:
+          type: boolean
+          description: Whether customers may pick this person on the public page.
 
     StaffView:
       type: object

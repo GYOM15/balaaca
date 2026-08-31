@@ -67,6 +67,20 @@ public class ManageStaffService implements ListStaffUseCase {
         return staff.currentStaff();
     }
 
+    /**
+     * The caller's own row, found through the membership the request already
+     * resolved rather than through anything the caller sent.
+     *
+     * <p>A miss here would mean the membership resolver and this table disagree
+     * within one request, which is not a caller's mistake to be told about.
+     */
+    @Override
+    @Transactional(Transactional.TxType.REQUIRED)
+    public StaffMember currentMember() {
+        StaffId me = tenant.requireStaffId();
+        return staff.byId(me).orElseThrow(() -> new StaffNotFoundException(me.value()));
+    }
+
     @Override
     @Transactional(Transactional.TxType.REQUIRED)
     public StaffMember add(StaffDefinition definition) {
