@@ -4,7 +4,14 @@ import { Icon, TradeIcon } from "@/components/icon";
 import { ProviderCard } from "@/components/provider-card";
 import { SiteFooter, SiteHeader } from "@/components/site";
 import { ActionButton, Button, EmptyState, SectionHead } from "@/components/ui";
-import type { CategoryList, ProviderSummaryPage } from "@/lib/types";
+import type {
+  AreaList,
+  CategoryList,
+  LocalityList,
+  LocalityView,
+  ProviderSummaryPage,
+} from "@/lib/types";
+import { groupLocalities, localityLabel } from "@/lib/localities";
 
 /** The directory changes when a provider publishes. A stale hub hides a new business. */
 export const dynamic = "force-dynamic";
@@ -21,43 +28,45 @@ const EXAMPLES = [
   "Location de salle Kindia",
 ];
 
-/**
- * Villes que l'API sait réellement filtrer.
- *
- * <p>`city` est comparé EN ENTIER côté serveur, et tout prestataire de la
- * capitale écrit « Conakry ». Proposer Kaloum et Ratoma comme la maquette le
- * faisait donnerait donc zéro résultat sur une presqu'île de quarante
- * kilomètres. Les communes reviendront quand le serveur portera un quartier.
- */
-const CITIES = [
-  "Conakry", "Kindia", "Boké", "Mamou", "Labé",
-  "Kankan", "Faranah", "Siguiri", "N'Zérékoré",
-];
 
-type Search = { q?: string; category_slug?: string | string[]; city?: string };
+type Search = {
+  q?: string;
+  category_slug?: string | string[];
+  locality?: string;
+  area?: string;
+};
 
 export default async function Home({ searchParams }: { searchParams: Promise<Search> }) {
   const params = await searchParams;
   const q = params.q?.trim() ?? "";
   const selected = toList(params.category_slug);
-  const city = params.city?.trim() ?? "";
+  const locality = params.locality?.trim() ?? "";
+  const area = params.area?.trim() ?? "";
 
-  const [categories, results] = await Promise.all([
+  const [categories, localities, areas, results] = await Promise.all([
     publicApi<CategoryList>("/v1/categories"),
+    publicApi<LocalityList>("/v1/localities"),
+    // Les quartiers déjà écrits, restreints à la localité choisie : proposer
+    // ceux de tout le pays quand on cherche à Ratoma serait illisible.
+    publicApi<AreaList>("/v1/areas", {
+      query: { locality: locality || undefined },
+    }),
     publicApi<ProviderSummaryPage>("/v1/providers", {
       query: {
         // Below two characters the API refuses, and rightly: one letter matches
         // most of the directory and answers nothing.
         q: q.length >= 2 ? q : undefined,
         category_slug: selected.length > 0 ? selected : undefined,
-        city: city || undefined,
+        locality: locality || undefined,
+        area: area || undefined,
         limit: 24,
       },
     }),
   ]);
 
   const labels = new Map(categories.data.map((c) => [c.slug, c.label_fr]));
-  const asked = q.length >= 2 || selected.length > 0 || city.length > 0;
+  const asked =
+    q.length >= 2 || selected.length > 0 || locality.length > 0 || area.length > 0;
   const shown = results.data.slice(0, 9);
 
   return (
@@ -94,12 +103,45 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
                   />
                 </div>
                 <div className="searchbox__row">
-                  <select className="select" name="city" defaultValue={city} aria-label="Ville">
-                    <option value="">Toutes les villes</option>
-                    {CITIES.map((c) => (
-                      <option key={c} value={c}>{c}</option>
+                  <select
+                    className="select"
+                    name="locality"
+                    defaultValue={locality}
+                    aria-label="Région, préfecture ou commune"
+                  >
+                    <option value="">Partout en Guinée</option>
+                    {groupLocalities(localities.data).map(({ region, children }) => (
+                      <optgroup key={region.slug} label={region.label_fr}>
+                        {children.map((l) => (
+                          <option key={l.slug} value={l.slug}>
+                            {localityLabel(l)}
+                          </option>
+                        ))}
+                      </optgroup>
                     ))}
                   </select>
+
+                  {/* Un datalist et pas un select : le quartier est du texte
+                      libre côté serveur, parce que les quartiers de Guinée se
+                      comptent par milliers et que la plateforme ne les écrit
+                      pas. On propose ce qui existe déjà sans interdire le
+                      reste - ce qui est exactement ce que fait le serveur. */}
+                  <input
+                    className="input"
+                    type="text"
+                    name="area"
+                    list="quartiers"
+                    defaultValue={area}
+                    autoComplete="off"
+                    aria-label="Quartier"
+                    placeholder="Quartier"
+                  />
+                  <datalist id="quartiers">
+                    {areas.data.map((a) => (
+                      <option key={a.label} value={a.label} />
+                    ))}
+                  </datalist>
+
                   <ActionButton label="Rechercher" variant="accent" type="submit" icon="search" />
                 </div>
               </div>
@@ -225,7 +267,8 @@ function toList(value: string | string[] | undefined): string[] {
 function nextPage(params: Search, cursor: string): string {
   const next = new URLSearchParams();
   if (params.q) next.set("q", params.q);
-  if (params.city) next.set("city", params.city);
+  if (params.locality) next.set("locality", params.locality);
+  if (params.area) next.set("area", params.area);
   for (const slug of toList(params.category_slug)) next.append("category_slug", slug);
   next.set("cursor", cursor);
   return `/?${next.toString()}`;

@@ -10,6 +10,14 @@ import { ApiError, api } from "@/lib/api";
  * <p>Whole, because the API replaces it whole: a field this form omitted would
  * be a field the save cleared. The slug is absent on purpose - it is the string
  * on the QR code and there is no path through this resource that changes it.
+ *
+ * <p>The place is two fields and not one. `locality_slug` is checked against
+ * the published map and refused when it is not on it, which is what makes the
+ * directory's filter find this business; `area` is free text, because Guinea's
+ * quartiers are not a list this platform owns. `city` is deprecated and carried
+ * by a hidden field: it is still what the directory card prints, so dropping it
+ * from the body would blank the place of every provider who has not yet chosen
+ * a commune.
  */
 export async function saveProfile(formData: FormData): Promise<void> {
   const optional = (name: string) =>
@@ -22,6 +30,8 @@ export async function saveProfile(formData: FormData): Promise<void> {
         business_name: String(formData.get("business_name")),
         description: optional("description"),
         category_slug: optional("category_slug"),
+        locality_slug: optional("locality_slug"),
+        area: optional("area"),
         city: optional("city"),
         address_line: optional("address_line"),
         public_phone_e164: optional("public_phone_e164"),

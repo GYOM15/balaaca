@@ -3,7 +3,7 @@
 import { randomUUID } from "node:crypto";
 import { redirect } from "next/navigation";
 import { ApiError, publicApi } from "@/lib/api";
-import type { AppointmentCreated } from "@/lib/types";
+import type { AppointmentCreated, ServiceAddress } from "@/lib/types";
 
 /**
  * A customer taking a slot.
@@ -20,6 +20,7 @@ export async function book(formData: FormData): Promise<void> {
   const staffId = text(formData, "staff_id");
   const date = text(formData, "date");
   const note = text(formData, "customer_note");
+  const address = addressFrom(formData);
 
   let created: AppointmentCreated;
   try {
@@ -49,6 +50,11 @@ export async function book(formData: FormData): Promise<void> {
             full_name: text(formData, "full_name"),
             phone: text(formData, "phone"),
           },
+          // Present only on a call-out. The contract refuses an address on a
+          // service performed at the shop, and it is right to: an appointment
+          // at the salon that carried somebody's home address would be storing
+          // it for nothing.
+          ...(address ? { service_address: address } : {}),
           ...(note ? { customer_note: note } : {}),
         },
       },
@@ -60,10 +66,10 @@ export async function book(formData: FormData): Promise<void> {
     // second ago, is the likeliest thing to happen on a busy Saturday.
     //
     // The selections go back into the URL so the customer lands on the same
-    // step with the same service and the same week. The name and the telephone
-    // do not: they are the customer's own details and a query string is
-    // written into history, into the address bar and into every log along the
-    // way. Retyping a name is cheaper than leaking one.
+    // step with the same service and the same week. The name, the telephone
+    // and the address do not: they are the customer's own details and a query
+    // string is written into history, into the address bar and into every log
+    // along the way. Retyping where you live is cheaper than publishing it.
     if (error instanceof ApiError) {
       redirect(refusalUrl(slug, serviceId, staffId, date, error.code));
     }
@@ -74,6 +80,26 @@ export async function book(formData: FormData): Promise<void> {
   // goes in the URL they land on - in their history and their address bar
   // before any confirmation message arrives.
   redirect(`/bookings/${encodeURIComponent(created.reference)}`);
+}
+
+/**
+ * Where to come, or nothing at all.
+ *
+ * <p>The block is rendered only for a call-out, so an empty `directions` means
+ * the form never asked - and the address is then omitted whole rather than
+ * sent hollow. A commune and a quartier with no way to find the door would be
+ * refused anyway, and would be useless to the tradesman if they were not.
+ */
+function addressFrom(formData: FormData): ServiceAddress | null {
+  const directions = text(formData, "directions");
+  if (!directions) return null;
+  const localitySlug = text(formData, "locality_slug");
+  const area = text(formData, "area");
+  return {
+    ...(localitySlug ? { locality_slug: localitySlug } : {}),
+    ...(area ? { area } : {}),
+    directions,
+  };
 }
 
 /** Back to the third step, as the customer left it, with the reason attached. */
