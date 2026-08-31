@@ -117,7 +117,14 @@ class WhatsAppNotificationChannelTest {
     @Test
     @DisplayName("A kind no approved template covers is refused before the call")
     void refusesAnUncoveredKind() {
-        assertThatThrownBy(() -> channel.send(notification("RESCHEDULE"), "key"))
+        // Deliberately a string the core does not plan and never will, rather
+        // than a real kind that happens to have no template yet. This test used
+        // RESCHEDULE, which was true on the day it was written and stopped
+        // being true the day that message was finally given a template - so a
+        // fix turned a green test red for no reason of its own. The same shape
+        // as the onboarding test that used "plomberie" as an example of a trade
+        // that does not exist, until the trade was added.
+        assertThatThrownBy(() -> channel.send(notification("A_KIND_NOBODY_PLANS"), "key"))
                 .satisfies(e -> assertThat(((ChannelException) e).failureCode())
                         .isEqualTo("NO_TEMPLATE_FOR_KIND"));
 
