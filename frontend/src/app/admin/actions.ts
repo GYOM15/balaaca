@@ -5,13 +5,14 @@ import { redirect } from "next/navigation";
 import { ApiError, api } from "@/lib/api";
 
 /**
- * The three things the operator can do, each one an operation the API
- * publishes rather than a field this form sets.
+ * The four things the operator can do, each one an operation the API publishes
+ * rather than a field this form sets.
  *
- * <p>Reviewing and suspending are separate on purpose and stay separate here:
- * a report can be entirely real and still not warrant taking a salon off the
- * hub, so nothing in this file marks a report seen as a side effect of the
- * lever, or pulls the lever as a side effect of looking.
+ * <p>Looking and acting are separate on purpose and stay separate here. A
+ * report can be entirely real and still not warrant taking a salon off the hub,
+ * and a contestation can be read and refused - so nothing in this file marks
+ * something seen as a side effect of the lever, or pulls the lever as a side
+ * effect of looking.
  */
 
 /**
@@ -21,7 +22,7 @@ import { ApiError, api } from "@/lib/api";
  * it is whatever the browser sent, and rebuilding from a known list means a
  * crafted value can add nothing to the URL a person lands on.
  */
-const CARRIED = ["status", "cursor"] as const;
+const CARRIED = ["queue", "status", "cursor"] as const;
 
 function queueUrl(back: string, error?: string): string {
   const carried = new URLSearchParams(back);
@@ -70,6 +71,21 @@ export async function reviewReport(formData: FormData): Promise<void> {
   const id = String(formData.get("report_id"));
   await attempt(formData, () =>
     api(`/v1/admin/reports/${encodeURIComponent(id)}/review`, { method: "POST" }),
+  );
+}
+
+/**
+ * Records that somebody read what a business wrote back.
+ *
+ * <p>Nothing else, again. It does not lift the suspension, it does not answer
+ * the business, and the business is told nothing by it - the platform simply
+ * has a trace that somebody read it. Reinstating is the button beside it, and
+ * it is a different decision with its own audit row.
+ */
+export async function markContestationRead(formData: FormData): Promise<void> {
+  const id = String(formData.get("contestation_id"));
+  await attempt(formData, () =>
+    api(`/v1/admin/contestations/${encodeURIComponent(id)}/reading`, { method: "POST" }),
   );
 }
 
