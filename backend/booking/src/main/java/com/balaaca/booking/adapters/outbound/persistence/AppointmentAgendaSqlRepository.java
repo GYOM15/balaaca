@@ -7,6 +7,7 @@ import com.balaaca.booking.ports.inbound.ListAppointmentsUseCase.AgendaPosition;
 import com.balaaca.booking.ports.inbound.ListAppointmentsUseCase.AgendaQuery;
 import com.balaaca.booking.ports.outbound.AppointmentAgendaRepository;
 import com.balaaca.sharedkernel.ids.AppointmentId;
+import com.balaaca.sharedkernel.ids.StaffId;
 import com.balaaca.sharedkernel.money.Currency;
 import com.balaaca.sharedkernel.money.Money;
 import com.balaaca.sharedkernel.phone.PhoneNumber;
@@ -48,10 +49,17 @@ public class AppointmentAgendaSqlRepository implements AppointmentAgendaReposito
         List<Object[]> rows = em.createNativeQuery("""
                 SELECT a.id, a.starts_at, a.ends_at, a.status, a.service_name,
                        a.customer_price_amount_minor, a.customer_price_currency,
-                       c.full_name, c.phone_e164, c.email, a.customer_note
+                       c.full_name, c.phone_e164, c.email, a.customer_note,
+                       a.staff_id, s.display_name
                   FROM appointments a
                   JOIN customers c ON c.id = a.customer_id
+                  JOIN provider_staff s
+                    ON s.provider_id = a.provider_id AND s.id = a.staff_id
                  WHERE a.starts_at >= :from
+                   AND (CAST(:to AS timestamptz) IS NULL
+                        OR a.starts_at <= CAST(:to AS timestamptz))
+                   AND (CAST(:staffId AS uuid) IS NULL
+                        OR a.staff_id = CAST(:staffId AS uuid))
                    AND (CAST(:status AS varchar) IS NULL OR a.status = CAST(:status AS varchar))
                    AND (CAST(:status AS varchar) IS NOT NULL
                         OR a.status IN ('PENDING','CONFIRMED'))
@@ -66,6 +74,8 @@ public class AppointmentAgendaSqlRepository implements AppointmentAgendaReposito
                  LIMIT :limit
                 """)
                 .setParameter("from", Timestamp.from(query.from()))
+                .setParameter("to", query.to().map(Timestamp::from).orElse(null))
+                .setParameter("staffId", query.staffId().map(id -> id.value()).orElse(null))
                 .setParameter("status", query.status().map(Enum::name).orElse(null))
                 .setParameter("afterAt", after.map(p -> Timestamp.from(p.startsAt())).orElse(null))
                 .setParameter("afterId", after.map(p -> p.id().value()).orElse(null))
@@ -85,6 +95,8 @@ public class AppointmentAgendaSqlRepository implements AppointmentAgendaReposito
                 AppointmentStatus.valueOf((String) r[3]),
                 (String) r[4],
                 Money.ofMinor(((Number) r[5]).longValue(), Currency.of((String) r[6])),
+                StaffId.of((UUID) r[11]),
+                (String) r[12],
                 new CustomerContact((String) r[7], new PhoneNumber((String) r[8]),
                                     Optional.ofNullable((String) r[9])),
                 Optional.ofNullable((String) r[10]).filter(n -> !n.isBlank()));

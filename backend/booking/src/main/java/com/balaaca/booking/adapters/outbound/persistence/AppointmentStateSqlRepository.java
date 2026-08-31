@@ -67,7 +67,7 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                    AND status IN ('PENDING','CONFIRMED')
                 RETURNING id, starts_at, ends_at, status, service_name,
                           customer_price_amount_minor, customer_price_currency,
-                          customer_id, customer_note
+                          customer_id, customer_note, staff_id
                 """)
                 .setParameter("id", id.value())
                 .setParameter("reason", reason.orElse(null))
@@ -103,7 +103,7 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                    AND status IN ('PENDING','CONFIRMED')
                 RETURNING id, starts_at, ends_at, status, service_name,
                           customer_price_amount_minor, customer_price_currency,
-                          customer_id, customer_note
+                          customer_id, customer_note, staff_id
                 """)
                 .setParameter("id", id.value())
                 .setParameter("startsAt", Timestamp.from(slot.startsAt()))
@@ -163,7 +163,7 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                    AND status = ANY(CAST(:accepted AS varchar[]))
                 RETURNING id, starts_at, ends_at, status, service_name,
                           customer_price_amount_minor, customer_price_currency,
-                          customer_id, customer_note
+                          customer_id, customer_note, staff_id
                 """)
                 .setParameter("id", id.value())
                 .setParameter("to", to.name())
@@ -204,6 +204,11 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                 .setParameter("id", r[7])
                 .getSingleResult();
 
+        String staffName = (String) em.createNativeQuery(
+                "SELECT display_name FROM provider_staff WHERE id = :id")
+                .setParameter("id", r[9])
+                .getSingleResult();
+
         return new AgendaEntry(
                 AppointmentId.of((UUID) r[0]),
                 instant(r[1]),
@@ -211,6 +216,8 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                 AppointmentStatus.valueOf((String) r[3]),
                 (String) r[4],
                 Money.ofMinor(((Number) r[5]).longValue(), Currency.of((String) r[6])),
+                StaffId.of((UUID) r[9]),
+                staffName,
                 new CustomerContact((String) c[0], new PhoneNumber((String) c[1]),
                                     Optional.ofNullable((String) c[2])),
                 Optional.ofNullable((String) r[8]).filter(n -> !n.isBlank()));

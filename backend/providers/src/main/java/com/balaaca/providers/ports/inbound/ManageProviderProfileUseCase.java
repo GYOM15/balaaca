@@ -29,6 +29,19 @@ public interface ManageProviderProfileUseCase {
      * the edge to say which image this is. The bytes are validated and stripped
      * of their metadata before anything is stored.
      */
+    /**
+     * The rules the diary runs by, as opposed to the page a customer reads.
+     *
+     * <p>Its own pair of methods for the same reason it is its own resource:
+     * five values that decide when a business can be booked have no business
+     * riding on an edit to an address, where losing one is invisible until a
+     * customer books too late.
+     */
+    BookingPolicy currentPolicy();
+
+    /** @throws com.balaaca.platformkernel.tenancy.NotProviderOwnerException not the owner */
+    BookingPolicy replacePolicy(BookingPolicy policy);
+
     ProviderProfile replaceLogo(byte[] image);
 
     ProviderProfile replaceCover(byte[] image);
@@ -52,6 +65,19 @@ public interface ManageProviderProfileUseCase {
                            ZoneId timezone,
                            boolean published,
                            ProviderStatus status) {
+    }
+
+    /**
+     * @param minLeadTime how much notice the provider needs. Zero means a
+     *                    customer at the counter can take the next slot
+     * @param cancellationDeadline how late a CUSTOMER may call off online. It
+     *                             never binds the provider
+     */
+    record BookingPolicy(int slotGranularityMinutes,
+                         int minLeadTimeMinutes,
+                         int maxAdvanceDays,
+                         int cancellationDeadlineMinutes,
+                         boolean autoConfirm) {
     }
 
     /** Everything a provider may change about its own page, and nothing else. */

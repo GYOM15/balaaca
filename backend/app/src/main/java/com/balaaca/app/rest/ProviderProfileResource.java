@@ -1,11 +1,14 @@
 package com.balaaca.app.rest;
 
 import com.balaaca.app.api.ProfileApi;
+import com.balaaca.app.api.model.BookingPolicyRequest;
+import com.balaaca.app.api.model.BookingPolicyView;
 import com.balaaca.app.api.model.ProviderProfileRequest;
 import com.balaaca.app.api.model.ProviderProfileView;
 import com.balaaca.app.api.model.ProviderStatus;
 import com.balaaca.platformkernel.tenancy.TenantBound;
 import com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase;
+import com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase.BookingPolicy;
 import com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase.ProfileEdit;
 import com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase.ProviderProfile;
 import io.quarkus.security.Authenticated;
@@ -54,6 +57,32 @@ public class ProviderProfileResource implements ProfileApi {
                 Optional.ofNullable(request.getWhatsappPhoneE164()),
                 zone(request.getTimezone()),
                 Boolean.TRUE.equals(request.getPublished()))))).build();
+    }
+
+    @Override
+    @RolesAllowed("dashboard:read")
+    public Response getBookingPolicy() {
+        return Response.ok(policyView(profiles.currentPolicy())).build();
+    }
+
+    @Override
+    @RolesAllowed("profile:write")
+    public Response replaceBookingPolicy(BookingPolicyRequest request) {
+        return Response.ok(policyView(profiles.replacePolicy(new BookingPolicy(
+                request.getSlotGranularityMinutes(),
+                request.getMinLeadTimeMinutes(),
+                request.getMaxAdvanceDays(),
+                request.getCancellationDeadlineMinutes(),
+                Boolean.TRUE.equals(request.getAutoConfirm()))))).build();
+    }
+
+    private static BookingPolicyView policyView(BookingPolicy policy) {
+        return new BookingPolicyView()
+                .slotGranularityMinutes(policy.slotGranularityMinutes())
+                .minLeadTimeMinutes(policy.minLeadTimeMinutes())
+                .maxAdvanceDays(policy.maxAdvanceDays())
+                .cancellationDeadlineMinutes(policy.cancellationDeadlineMinutes())
+                .autoConfirm(policy.autoConfirm());
     }
 
     @Override

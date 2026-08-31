@@ -3,6 +3,7 @@ package com.balaaca.booking.ports.inbound;
 import com.balaaca.booking.domain.AppointmentStatus;
 import com.balaaca.booking.domain.CustomerContact;
 import com.balaaca.sharedkernel.ids.AppointmentId;
+import com.balaaca.sharedkernel.ids.StaffId;
 import com.balaaca.sharedkernel.money.Money;
 import java.time.Instant;
 import java.util.List;
@@ -23,11 +24,17 @@ public interface ListAppointmentsUseCase {
 
     /**
      * @param from   earliest start to return
+     * @param to     latest, or empty for everything after {@code from}. Without
+     *               it the agenda is a ray, and a day view reads pages it throws
+     *               away
+     * @param staffId one person's chair, or empty for the whole business
      * @param status one status, or empty for the active ones
      * @param after  keyset position from the previous page, or empty for the first
      * @param limit  how many entries at most
      */
     record AgendaQuery(Instant from,
+                       Optional<Instant> to,
+                       Optional<StaffId> staffId,
                        Optional<AppointmentStatus> status,
                        Optional<AgendaPosition> after,
                        int limit) {
@@ -49,6 +56,8 @@ public interface ListAppointmentsUseCase {
                        AppointmentStatus status,
                        String serviceName,
                        Money price,
+                       StaffId staffId,
+                       String staffName,
                        CustomerContact customer,
                        java.util.Optional<String> customerNote) {
     }
