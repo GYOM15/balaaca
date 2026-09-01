@@ -97,6 +97,20 @@ repository is English, not that the product is.
   barriere sur des limites de mot, puis decider ce que bloquer un client veut
   dire au moment de reserver. La premiere revelera probablement d'autres
   colonnes, chacune demandant une decision.
+- **Tout le vocabulaire francais du produit est sans accents.** Les 35 metiers
+  (`Esthetique`, `Video`, `Patisserie`, `Electricite`, `Demenagement`), les 8
+  familles (`Beaute`, `Evenementiel`) et les 51 localites (`Boke`, `Labe`,
+  `Nzerekore`, `Gueckedou`, `Telimele`) sont semes sans accents par V016, V025
+  et la carte des localites. C'est du texte client, affiche sur la page
+  d'accueil, dans chaque carte et dans la recherche.
+  **Le piege** : `ProviderDirectorySqlRepository` fait
+  `c.label_fr ILIKE '%' || :name || '%'` sans `unaccent`. Accentuer les
+  libelles seuls **casse la recherche** pour qui tape « esthetique » au clavier,
+  ce que fera tout le monde. Les deux vont ensemble : une migration qui
+  accentue, et une colonne generee `translate(lower(label_fr), 'aeiou accentues',
+  'aeiou')` indexee en trigramme sur laquelle le `ILIKE` porte - `translate` et
+  `lower` sont IMMUTABLE, `unaccent()` ne l'est pas et ne s'indexe donc pas
+  directement. Compter une demi-journee. Trouve en faisant tourner la pile.
 - **`chatbot-service`** : hors perimetre. Ce sera un service Python
   completement detache, et pas maintenant.
 
