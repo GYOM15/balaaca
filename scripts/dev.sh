@@ -114,4 +114,5 @@ cat <<EOF
 
      Les journaux   $LOGS/api.log  et  $LOGS/front.log
      Pour arreter   scripts/dev-stop.sh
+     Des donnees    scripts/seed.sh
 EOF
