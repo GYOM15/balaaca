@@ -77,9 +77,23 @@ export function TradeIcon({
  * grid, and the stylesheet gives it a stroke that does not scale so the line
  * stays the same weight at 148 px and at 460.
  */
-export function Scene({ name, className = "" }: { name: string; className?: string }) {
+export function Scene({
+  name,
+  className = "",
+  style,
+}: {
+  name: string;
+  className?: string;
+  style?: React.CSSProperties;
+}) {
   return (
-    <svg className={className} viewBox="0 0 200 150" aria-hidden="true" focusable="false">
+    <svg
+      className={className}
+      style={style}
+      viewBox="0 0 200 150"
+      aria-hidden="true"
+      focusable="false"
+    >
       <use href={`#s-${name}`} />
     </svg>
   );

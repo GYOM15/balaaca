@@ -34,7 +34,7 @@ export const STATUS: Record<
   CONFIRMED: { label: "Confirmé", icon: "check", tone: "success" },
   COMPLETED: { label: "Terminé", icon: "check-double", tone: "neutral" },
   NO_SHOW: { label: "Absent", icon: "user-x", tone: "danger" },
-  CANCELLED: { label: "Annulé", icon: "x", tone: "outline" },
+  CANCELLED: { label: "Annulé", icon: "x", tone: "neutral" },
 };
 
 /* --- Wordmark ------------------------------------------------------------ */
@@ -60,11 +60,19 @@ const MARK_CARRIES_THE_NAME = false;
  * provider's cover are dark green, and a mark drawn for ivory disappears on
  * them. If one file works on both, make them the same file.
  */
-export function Mark({ size = 24, tone }: { size?: number; tone?: "inverse" }) {
+export function Mark({
+  size = 24,
+  tone,
+  className = "wordmark__glyph",
+}: {
+  size?: number;
+  tone?: "inverse";
+  className?: string;
+}) {
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      className="wordmark__glyph"
+      className={className}
       src={tone === "inverse" ? "/brand/logo-inverse.png" : "/brand/logo.png"}
       alt=""
       width={size}
@@ -86,16 +94,26 @@ export function Wordmark({
   hideText?: boolean;
 }) {
   return (
-    <Link className="wordmark" href={href} aria-label="Balaaca, accueil">
+    <Link
+      className="logo"
+      href={href}
+      aria-label="Balaaca, accueil"
+      style={tone === "inverse" ? { color: "#fff" } : undefined}
+    >
       <Mark size={size} tone={tone} />
-      {hideText || MARK_CARRIES_THE_NAME ? null : <span>Balaaca</span>}
+      {hideText || MARK_CARRIES_THE_NAME ? null : (
+        <span className="logo__word">
+          Bala<em>a</em>ca
+        </span>
+      )}
     </Link>
   );
 }
 
 /* --- Button -------------------------------------------------------------- */
 
-type ButtonVariant = "primary" | "secondary" | "ghost" | "accent" | "danger" | "quiet-danger";
+type ButtonVariant =
+  | "primary" | "secondary" | "ghost" | "accent" | "inverse" | "danger" | "danger-quiet";
 
 type ButtonBase = {
   label: string;
@@ -157,9 +175,9 @@ function ButtonInner({ label, icon, iconEnd, size }: ButtonBase) {
   const s = size === "sm" ? 16 : 18;
   return (
     <>
-      {icon ? <Icon name={icon} size={s} /> : null}
-      <span>{label}</span>
-      {iconEnd ? <Icon name={iconEnd} size={s} /> : null}
+      {icon ? <Icon name={icon} size={s} className="btn__icon--idle" /> : null}
+      <span className="btn__label--idle">{label}</span>
+      {iconEnd ? <Icon name={iconEnd} size={s} className="btn__icon--idle" /> : null}
     </>
   );
 }
@@ -167,7 +185,7 @@ function ButtonInner({ label, icon, iconEnd, size }: ButtonBase) {
 /* --- Badge, avatar, notice ----------------------------------------------- */
 
 export type BadgeTone =
-  | "neutral" | "brand" | "accent" | "success" | "warning" | "danger" | "info" | "outline";
+  | "neutral" | "brand" | "accent" | "success" | "warning" | "danger" | "info";
 
 export function Badge({
   label,
@@ -180,8 +198,8 @@ export function Badge({
 }) {
   return (
     <span className={`badge badge--${tone}`}>
-      {icon ? <Icon name={icon} size={13} /> : null}
-      <span className="badge__text">{label}</span>
+      {icon ? <Icon name={icon} /> : null}
+      <span>{label}</span>
     </span>
   );
 }
@@ -201,17 +219,19 @@ export function StatusBadge({ status }: { status: string }) {
 export function Avatar({
   name,
   size,
-  tone,
 }: {
   name: string;
-  size?: "sm" | "xl";
+  size?: "sm" | "lg" | "xl";
+  /**
+   * Accepted and ignored. The dashboard used to tint a customer's initials
+   * differently from a colleague's; the design system draws one avatar, and a
+   * second colour that means nothing to anyone who has not been told is not
+   * worth the class.
+   */
   tone?: "client";
 }) {
-  const cls = ["avatar"];
-  if (size) cls.push(`avatar--${size}`);
-  if (tone) cls.push(`avatar--${tone}`);
   return (
-    <span className={cls.join(" ")} aria-hidden="true">
+    <span className={size ? `avatar avatar--${size}` : "avatar"} aria-hidden="true">
       {initials(name)}
     </span>
   );
@@ -226,16 +246,25 @@ export function initials(name: string): string {
   return (words[0] ?? "?").slice(0, 2).toUpperCase();
 }
 
+/**
+ * A sentence the page needs the reader to take in before they act.
+ *
+ * <p>`danger` is the only tone that interrupts. A screen reader stops what it
+ * is saying for `role="alert"`, and a note that interrupts is a note nobody
+ * wants twice.
+ */
 export function Notice({
   tone = "info",
   title,
   children,
   icon,
+  actions,
 }: {
   tone?: "info" | "success" | "warning" | "danger" | "neutral";
   title?: string;
-  children: ReactNode;
+  children?: ReactNode;
   icon?: string;
+  actions?: ReactNode;
 }) {
   const fallback =
     tone === "danger" ? "alert-circle"
@@ -243,13 +272,14 @@ export function Notice({
         : tone === "success" ? "check-circle"
           : "info";
   return (
-    // role=alert only for danger: a screen reader interrupts on alert, and a
-    // note that interrupts is a note nobody wants twice.
-    <div className={`notice notice--${tone}`} role={tone === "danger" ? "alert" : "note"}>
-      <Icon name={icon ?? fallback} size={18} />
+    <div className={`alert alert--${tone}`} role={tone === "danger" ? "alert" : "status"}>
+      <span className="alert__icon">
+        <Icon name={icon ?? fallback} />
+      </span>
       <div className="grow">
-        {title ? <strong className="notice__title">{title}</strong> : null}
-        <span>{children}</span>
+        {title ? <div className="alert__title">{title}</div> : null}
+        {children ? <div className="alert__body">{children}</div> : null}
+        {actions ? <div className="alert__actions">{actions}</div> : null}
       </div>
     </div>
   );
@@ -277,15 +307,14 @@ export function EmptyState({
   compact?: boolean;
 }) {
   return (
-    <div className={compact ? "state state--compact" : "state"}>
-      {sketch ? (
-        <span className="state__art">
-          <Sketch name={sketch} level={1} width={132} />
-        </span>
-      ) : null}
-      <h3 className="state__title">{title}</h3>
-      {body ? <p className="state__body">{body}</p> : null}
-      {action ? <div style={{ marginTop: "var(--space-2)" }}>{action}</div> : null}
+    <div className={compact ? "empty empty--tight" : "empty"}>
+      {sketch ? <Sketch name={sketch} level={1} width={200} /> : null}
+      {/* A div and not a heading: an empty state can appear inside a section
+          that already has one, and two headings for one thing is worse than
+          none. */}
+      <div className="empty__title">{title}</div>
+      {body ? <p className="empty__body">{body}</p> : null}
+      {action ? <div className="empty__actions">{action}</div> : null}
     </div>
   );
 }
@@ -293,25 +322,20 @@ export function EmptyState({
 /* --- Section head -------------------------------------------------------- */
 
 /**
- * The rule-and-label that opens every section.
+ * The overline that opens every section.
  *
- * <p>Two elements, and it has to be two: `.rule-accent` is a standalone bar of
- * 28 by 2 pixels, not a text modifier. Both classes on one element crush the
- * label into a two-pixel box it then overflows - which is what this component
- * did until someone reading it in a rendered page said so.
- *
- * <p>The label is a `<p>`, deliberately, not a heading. The mockup made each of
- * these an `<h2>` at 12 px beside the real title, which gave the hub fifteen
- * headings and no hierarchy at all.
+ * <p>One element now. It used to be two, because the old system drew the rule
+ * as a standalone bar of 28 by 2 pixels; the design system draws it as the
+ * overline's own left edge, so a second element is an empty box.
  */
 export function SectionHead({ label, aside }: { label: string; aside?: ReactNode }) {
   return (
-    <div className="row row--between row-4 row--wrap">
-      <div className="row row-3">
-        <span className="rule-accent" aria-hidden="true" />
-        <p className="t-label">{label}</p>
-      </div>
-      {aside ? <span className="t-caption t-dim tnum">{aside}</span> : null}
+    <div className="row row--between row--wrap">
+      {/* A <p> and not a heading, deliberately: the mockup made each of these
+          an <h2> at 12 px beside the real title, which gave the hub fifteen
+          headings and no hierarchy at all. */}
+      <p className="t-overline t-overline--accent">{label}</p>
+      {aside}
     </div>
   );
 }

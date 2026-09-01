@@ -1,62 +1,46 @@
-import { SKETCHES } from "./sketch-paths";
+import { Scene } from "./icon";
 
 /**
- * A sketch, at one of three weights.
+ * A scene, at one of three ranks.
  *
- * <p>The level is not a size, it is a rank: 3 is the one hero drawing a screen
- * is allowed, 2 is a section, 1 is an empty state. The stroke thickens with the
- * rank so a drawing keeps its presence when it grows, which is the mockup's
- * rule and the reason the set looks drawn rather than scaled.
+ * <p>The level is not a size, it is a rank: 3 is the one large drawing a screen
+ * is allowed, 2 is a section, 1 is an empty state. It survives as a prop
+ * because a call site says what a drawing IS for, and that outlives whichever
+ * set of drawings is installed.
+ *
+ * <p>The drawings themselves now live in the sprite, where the stroke is
+ * declared once and told not to scale - so the line holds its weight at 96 px
+ * and at 340, and the set stays a set. Before that they were eight
+ * hand-carried path lists whose stroke was chosen here, per call, and they came
+ * out 2.6 times heavier than drawn.
  */
 export function Sketch({
   name,
   level = 2,
   width,
-  label,
   className,
 }: {
   name: string;
   level?: 1 | 2 | 3;
   width?: number;
-  /** Give one only when the drawing carries meaning no nearby text does. */
-  label?: string;
   className?: string;
 }) {
-  const def = SKETCHES[name];
-  if (!def) return null;
-
   const w = width ?? (level === 3 ? 240 : level === 2 ? 160 : 96);
-  const box = def.viewBox.split(" ").map(Number);
-  const height = Math.round((w * (box[3] ?? 200)) / (box[2] ?? 200));
-
   return (
-    <svg
-      className={className ? `sketch ${className}` : "sketch"}
-      width={w}
-      height={height}
-      viewBox={def.viewBox}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={level === 3 ? 1.9 : level === 2 ? 1.7 : 1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      role={label ? "img" : "presentation"}
-      aria-hidden={label ? undefined : true}
-      focusable="false"
-      dangerouslySetInnerHTML={{
-        __html: (label ? `<title>${escapeXml(label)}</title>` : "") + def.body,
-      }}
+    <Scene
+      name={name}
+      className={className ? `scene-ill ${className}` : "scene-ill"}
+      style={{ width: w, maxWidth: "100%" }}
     />
   );
 }
 
 /**
- * The drawing that belongs to a trade.
+ * The drawing that stands for a trade.
  *
- * <p>Four of the eight sketches depict a trade; the rest are situations. A
- * trade with no drawing of its own falls back to the storefront, which says
- * "a business" and says it for any of the eighteen - unlike `braiding`, which
- * the mockup used for all of them and which says "hairdresser" to a caterer.
+ * <p>Eight drawings for thirty-five trades, so most of them land on the
+ * storefront - which is the honest answer. A mechanic drawn for a tailor is
+ * worse than a shop drawn for both.
  */
 export function sketchForTrade(slug: string | undefined): string {
   switch (slug) {
@@ -72,14 +56,11 @@ export function sketchForTrade(slug: string | undefined): string {
     case "photographie":
     case "video":
       return "photographer";
+    case "mecanique":
+    case "plomberie":
+    case "electricite":
+      return "tools";
     default:
       return "storefront";
   }
-}
-
-function escapeXml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
 }
