@@ -137,7 +137,14 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
               localities={localities}
             />
             <Fulfilments />
-            <Trades busiest={busiest} families={families} total={categories.data.length} />
+            {/* Same reasoning as the band below, and the empty database is what
+                showed it: the heading says "where there are already people" and
+                the sentence under it promises a list. With nobody registered
+                there is no such place, and the section rendered a title, a
+                promise and a family rail over nothing at all. */}
+            {busiest.length > 0 ? (
+              <Trades busiest={busiest} families={families} total={categories.data.length} />
+            ) : null}
             {/* Nothing published yet is the state on the first day, and a band
                 headed "newly registered" with an empty grid under it says less
                 than no band at all. */}
