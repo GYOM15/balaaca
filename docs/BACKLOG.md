@@ -89,6 +89,60 @@ What a **customer** reads is untouched by this. User-facing copy stays French
 first for the launch market, from an i18n catalogue. The rule is that the
 repository is English, not that the product is.
 
+## Ce que le design montre et que le contrat ne sert pas
+
+Releve en reproduisant le prototype ecran par ecran, le 2026-09-01. Chaque
+ligne est un element du design rendu sans cette donnee, ou retire. **Rien n'a
+ete invente et rien n'a ete ajoute au backend.** A decider une par une.
+
+### L'annuaire, la ou ca se voit le plus
+
+- **`ProviderSummary` n'a ni les modes ni un prix a partir de.** Les pastilles
+  `Sur place / Depot / A domicile` et le `des 90 000 GNF` sont sur chaque carte
+  du design - accueil, recherche, collections. Les deux absents, tout le pied
+  de carte disparait. `fulfilments: Fulfilment[]` et `price_from: Money`
+  finiraient la carte. C'est la plus visible des lacunes.
+- **`GET /v1/providers` n'accepte pas de parametre de mode.** Le groupe de
+  cases `Mode` des filtres est retire plutot que d'expedier trois cases qui ne
+  filtrent rien. Un parametre `fulfilment` repetable le rendrait.
+- **`LocalityView` n'a pas de `provider_count`.** La bande Lieux de l'accueil
+  compte huit tuiles chiffrees ; seule `/v1/areas` publie un lieu avec un
+  compte, donc la bande montre les quartiers les plus fournis au lieu des
+  communes du design.
+- **Pas de total.** `ProviderSummaryPage` publie la page et `next_cursor`, donc
+  la barre dit "N sur cette page" et non "23 professionnels".
+
+### Le reste, par ecran
+
+- `CategoryFamily` n'a pas de description : le sous-titre sous chaque famille
+  sur /metiers. `CategoryView` n'a pas d'alias de recherche : taper
+  "barbiers" ne trouve plus rien.
+- `PublicProviderView` n'a pas d'annee de creation (`depuis 2016`).
+  `PublicStaffMember` n'a pas de `bookable` : la pastille `Non reservable`.
+- `CustomerBookingView` n'a ni `fulfilment` ni `turnaround_hours` : la ligne
+  Deroulement et la note de mode sont deduites de la prestation nommee.
+  `available-slots` ne distingue pas un jour ferme d'un jour complet.
+- `GET /v1/appointments` n'a pas de filtre de mode : la file des depots est
+  filtree cote client sur +/-90 jours, limite 200. Elle tronque pour un salon
+  charge, et le compteur Agenda de la barre laterale est un plancher.
+- `ServiceOfferingView` n'a pas de photo : une vignette par ligne coute une
+  requete par prestation.
+- `CustomerSummaryView` n'a ni `has_notes` ni `no_show_count` ;
+  `CustomerVisitView` ne porte aucun montant : le prix de chaque visite de
+  l'historique.
+- **Moderation : aucune operation ne liste les etablissements.** L'ecran
+  `moderation/businesses` du design n'a aucune source. `ProviderProfileView`
+  n'a pas de `report_count`, `ProviderReportView` n'a pas la reference de
+  reservation, et rien ne renvoie l'identite de l'operateur.
+- **Compte et Reglages** : ni verification d'e-mail ni changement de mot de
+  passe cote contrat - c'est Keycloak. Les commandes sont dessinees et
+  desactivees, avec la phrase qui le dit.
+- `409 SLUG_UNAVAILABLE` ne porte aucune suggestion d'adresse : l'ecran du
+  design en propose une.
+- **`design.html` montre SIX statuts de rendez-vous, l'API en a cinq.** Le
+  sixieme est `Pret`, qui existe deja comme `ready_at` sur un depot sans etre
+  un statut.
+
 ## Trous fonctionnels connus
 
 - **`customers.blocked`.** La colonne existe, rien ne l'ecrit, et

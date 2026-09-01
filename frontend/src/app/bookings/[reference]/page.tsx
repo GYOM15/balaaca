@@ -6,7 +6,7 @@ import { Icon, Scene } from "@/components/icon";
 import { SiteFooter, SiteHeader, TabBar } from "@/components/site";
 import { Avatar, Wordmark } from "@/components/ui";
 import { ApiError, publicApi } from "@/lib/api";
-import { day, mediaUrl, money, time } from "@/lib/format";
+import { dateTime, day, mediaUrl, money, time } from "@/lib/format";
 import type {
   AvailableSlotPage,
   CustomerBooking,
@@ -514,6 +514,17 @@ function DetailView({
                       ? `Prêt sous ${turnaround(service.turnaround_hours)}, soit le ${day(booking.ready_by, zone)}`
                       : day(booking.ready_by, zone)}
                   </span>
+                </div>
+              ) : null}
+              {/* Restored: the port dropped it because the prototype's drop-off
+                  screen has no such row. But ready_at is the moment the shop
+                  says the work is done, and this page is the only place the
+                  customer reads it - without it a garment can be waiting on a
+                  counter for a week with nothing saying so. */}
+              {booking.ready_at ? (
+                <div className="dl__row">
+                  <span className="dl__key">Prêt depuis</span>
+                  <span className="dl__val">{dateTime(booking.ready_at, zone)}</span>
                 </div>
               ) : null}
               {provider?.address_line ? (
