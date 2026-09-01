@@ -743,6 +743,14 @@ hr { border: 0; border-top: 1px solid var(--border); margin: var(--s-8) 0; }
 .choice:has(input:checked) .choice__icon { background: var(--surface); }
 .choice__title { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text); }
 .choice__desc { margin-top: var(--s-2); font-size: var(--fs-xs); color: var(--text-tertiary); line-height: 1.45; }
+/* Both are spans in the markup they came with, so the description ran on from
+   the title on one line and the margin-top above did nothing - which is why
+   every call site carried an inline margin-top:0 to hide the symptom. And
+   .choice was drawn as a label around a radio; the booking flow uses it as a
+   link, because each of its steps is a real URL, so it also needs what a label
+   never did. */
+.choice__title, .choice__desc { display: block; }
+a.choice { text-decoration: none; color: inherit; }
 .choice__mark { position: absolute; top: var(--s-3); right: var(--s-3); color: var(--brand); opacity: 0; transform: scale(.7); transition: all var(--dur-base) var(--ease-out); }
 .choice:has(input:checked) .choice__mark { opacity: 1; transform: none; }
 

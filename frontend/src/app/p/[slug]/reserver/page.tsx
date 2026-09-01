@@ -729,7 +729,7 @@ function StaffStep({
             </span>
             <span>
               <span className="choice__title">Peu importe</span>
-              <span className="choice__desc" style={{ marginTop: 0 }}>
+              <span className="choice__desc">
                 Vous voyez tous les créneaux libres de l'équipe, et le
                 professionnel vous confie à qui est disponible.
               </span>
@@ -748,7 +748,7 @@ function StaffStep({
               <Avatar name={one.display_name} />
               <span>
                 <span className="choice__title">{one.display_name}</span>
-                <span className="choice__desc" style={{ marginTop: 0 }}>
+                <span className="choice__desc">
                   Seuls ses créneaux à elle ou à lui vous seront proposés.
                 </span>
               </span>
