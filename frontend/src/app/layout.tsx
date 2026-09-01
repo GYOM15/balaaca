@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Manrope } from "next/font/google";
+import { Presentation } from "@/components/presentation";
+import { Sprite } from "@/components/sprite";
 import "./globals.css";
 
 /**
@@ -51,10 +53,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="fr" className={manrope.variable}>
       <body>
+        {/* Once, at the root: every `use` after this is a reference rather
+            than another parse, which is what makes an icon free on the
+            telephones this is built for. */}
+        <Sprite />
         <a className="skip-link" href="#contenu">
           Aller au contenu
         </a>
         {children}
+        {/* Animation, copying, previews and toasts - nothing that reads a
+            value. The session never leaves the server. */}
+        <Presentation />
       </body>
     </html>
   );
