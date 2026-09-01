@@ -2,7 +2,7 @@
  * Balaaca - le systeme de design.
  *
  * Ported verbatim from the mockup that was designed against docs/FRONTEND-BRIEF.md,
- * with three corrections measured on the published version:
+ * with four corrections measured on the published version:
  *   - the scenes no longer inherit the icons' stroke. They live on a 200x150
  *     grid and were rendering at 3.7 CSS px in a 460 px watermark, against the
  *     1.4 px the original sketches drew at. non-scaling-stroke makes the line
@@ -13,6 +13,12 @@
  *   - the phone mockups sat straight, all on the same side, on no ground. They
  *     lean slightly - alternating, so two neighbouring sections do not lean the
  *     same way - over a warm halo, and straighten on hover.
+ *   - .hero__deco was in normal flow. `.atmo > *` lifts a section's real
+ *     content above its atmosphere layer and is declared after it, so it won
+ *     on equal specificity and the storefront drawing took 285 px of height
+ *     under the hero. That was most of the gap the third correction was aimed
+ *     at, and padding could never have removed it. `.wm` escaped only by being
+ *     declared later still.
  *
  * Everything else is as designed. Do not add values here: the token layer at
  * the top is the only place a raw colour or size belongs.
@@ -1646,6 +1652,12 @@ hr { border: 0; border-top: 1px solid var(--border); margin: var(--s-8) 0; }
    les colonnes collantes fonctionner. */
 .atmo { position: relative; isolation: isolate; overflow: clip; }
 .atmo > * { position: relative; z-index: 1; }
+/* A decoration is not content. `.atmo > *` above is written to lift a
+   section's real children above its atmosphere layer, and it also caught the
+   hero's storefront - which is declared before it and lost on equal
+   specificity. Absolute again, and out of the flow it was never meant to be
+   in. */
+.atmo > .hero__deco { position: absolute; }
 
 .grain::before {
   content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
