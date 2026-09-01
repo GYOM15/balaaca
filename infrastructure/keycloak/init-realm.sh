@@ -205,7 +205,11 @@ if [ -z "$FRONTEND_CID" ]; then
     echo "[init-realm] FATAL: client balaaca-frontend not found; secret not applied" >&2
     exit 1
 fi
+# baseUrl is what the sign-in screens read to link back to the product: its
+# mark, its conditions and its privacy page. Keycloak serves those screens from
+# its own origin, so without it every one of those links 404s on Keycloak.
 if ! $KCADM update "clients/$FRONTEND_CID" -r "$REALM" \
+        -s "baseUrl=$FRONTEND_ORIGIN" \
         -s publicClient=false \
         -s clientAuthenticatorType=client-secret \
         -s "secret=$KEYCLOAK_FRONTEND_CLIENT_SECRET" >/dev/null 2>&1; then
@@ -214,6 +218,55 @@ if ! $KCADM update "clients/$FRONTEND_CID" -r "$REALM" \
     exit 1
 fi
 echo "[init-realm]   balaaca-frontend secret applied"
+
+# --- The look, the language, and the confirmation ----------------------------
+#
+# Four settings the realm template cannot carry usefully, because --import-realm
+# leaves an EXISTING realm alone: the first boot would take them and no later
+# boot would. Applied here, on every boot, like the rest of this file.
+#
+# verifyEmail is the one with teeth. With it on, a provider who registers cannot
+# sign in until they open the message - and if no SMTP is reachable, no message
+# is ever sent and registration becomes a dead end that reports success. So the
+# SMTP settings go in FIRST, and the flag is only turned on once they applied.
+if ! $KCADM update "realms/$REALM" \
+        -s loginTheme=balaaca \
+        -s emailTheme=balaaca \
+        -s internationalizationEnabled=true \
+        -s defaultLocale=fr \
+        -s 'supportedLocales=["fr"]' \
+        -s 'displayNameHtml=<strong>Balaaca</strong>' >/dev/null 2>&1; then
+    echo "[init-realm] WARNING: theme and locale not applied" >&2
+else
+    echo "[init-realm]   theme balaaca, locale fr"
+fi
+
+# An empty user is not the same as no user: Keycloak reads "auth: true" from the
+# presence of the key, so a blank one makes it offer credentials the relay never
+# asked for. Built as a JSON document rather than as -s pairs for that reason.
+SMTP_JSON=$(cat <<JSON
+{"host":"${KEYCLOAK_SMTP_HOST}","port":"${KEYCLOAK_SMTP_PORT}",
+ "from":"${KEYCLOAK_SMTP_FROM}","fromDisplayName":"${KEYCLOAK_SMTP_FROM_DISPLAY}",
+ "replyTo":"${KEYCLOAK_SMTP_FROM}","starttls":"${KEYCLOAK_SMTP_STARTTLS}","ssl":"false"
+$([ -n "${KEYCLOAK_SMTP_USER:-}" ] && printf ',"auth":"true","user":"%s","password":"%s"' \
+    "$KEYCLOAK_SMTP_USER" "$KEYCLOAK_SMTP_PASSWORD")
+}
+JSON
+)
+if $KCADM update "realms/$REALM" -s "smtpServer=$(echo "$SMTP_JSON" | tr -d '\n')" >/dev/null 2>&1; then
+    echo "[init-realm]   smtp ${KEYCLOAK_SMTP_HOST}:${KEYCLOAK_SMTP_PORT} as ${KEYCLOAK_SMTP_FROM}"
+    if $KCADM update "realms/$REALM" -s verifyEmail=true >/dev/null 2>&1; then
+        echo "[init-realm]   e-mail confirmation ON"
+    else
+        echo "[init-realm] WARNING: could not enable verifyEmail" >&2
+    fi
+else
+    # Deliberately NOT fatal, and deliberately not silent. A realm with no mail
+    # still signs people in; a realm that demands a confirmation it cannot send
+    # does not, and that is the state this branch refuses to leave behind.
+    echo "[init-realm] WARNING: SMTP not applied - e-mail confirmation stays OFF" >&2
+    $KCADM update "realms/$REALM" -s verifyEmail=false >/dev/null 2>&1 || true
+fi
 
 # Only now. The sentinel is what the compose healthcheck waits on, so touching
 # it after a failed step is the same as reporting a realm that works.
