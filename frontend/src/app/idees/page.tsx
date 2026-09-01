@@ -6,6 +6,7 @@ import { initials } from "@/components/ui";
 import { publicApi } from "@/lib/api";
 import { mediaUrl } from "@/lib/format";
 import type { CategoryList, ProviderSummary, ProviderSummaryPage } from "@/lib/types";
+import { SiteFooter, SiteHeader } from "@/components/site";
 
 /** A selection shows who is registered under it, and that changes daily. */
 export const dynamic = "force-dynamic";
@@ -104,44 +105,7 @@ export default async function Ideas() {
 
   return (
     <>
-      <header className="hdr">
-        <div className="page hdr__in">
-          <Link className="logo" href="/">
-            <span className="logo__mark" aria-hidden="true">
-              B
-            </span>
-            <span className="logo__word">
-              Bala<em>a</em>ca
-            </span>
-          </Link>
-          <nav className="hdr__nav" aria-label="Navigation principale">
-            <Link className="hdr__link" href="/metiers">
-              Métiers
-            </Link>
-            <Link className="hdr__link" href="/idees" aria-current="page">
-              Idées
-            </Link>
-            <Link className="hdr__link" href="/professionnels/comment-ca-marche">
-              Comment ça marche
-            </Link>
-          </nav>
-          <div className="hdr__actions">
-            <Link className="hdr__link" href="/bookings" style={{ display: "none" }} data-show-md="">
-              Ma réservation
-            </Link>
-            <Link className="btn btn--secondary btn--sm hide-sm" href="/professionnels">
-              <span className="btn__label--idle">Espace professionnel</span>
-            </Link>
-            <Link
-              className="hdr__link show-sm-only"
-              href="/professionnels"
-              style={{ fontSize: "var(--fs-xs)" }}
-            >
-              Espace pro
-            </Link>
-          </div>
-        </div>
-      </header>
+      <SiteHeader active="idees" />
 
       <main id="contenu" className="has-tabbar">
         <section
@@ -406,73 +370,6 @@ function ProviderRow({
   );
 }
 
-/**
- * The mockup's chrome, written here rather than imported.
- *
- * <p>`components/site.tsx` still emits the previous system's class names, and
- * none of them survives in `globals.css`. Once it carries `.hdr` and `.foot`,
- * this and the header above are one import.
- */
-function SiteFooter() {
-  return (
-    <footer className="foot">
-      <div className="page">
-        <div className="foot__grid">
-          <div>
-            <div className="logo" style={{ color: "#fff" }}>
-              <span className="logo__mark" aria-hidden="true">
-                B
-              </span>
-              <span className="logo__word">
-                Bala<em>a</em>ca
-              </span>
-            </div>
-            <p
-              className="t-sm"
-              style={{
-                color: "var(--text-on-dark-muted)",
-                marginTop: "1rem",
-                maxWidth: "34ch",
-              }}
-            >
-              Trouver un professionnel près de chez soi, voir ce qu’il fait, et réserver. Sans
-              compte, sans appel, sans négociation d’horaire.
-            </p>
-          </div>
-          <div>
-            <div className="foot__title">Découvrir</div>
-            <div className="foot__list">
-              <Link href="/metiers">Tous les métiers</Link>
-              <Link href="/idees">Idées et occasions</Link>
-              <Link href="/">Recherche</Link>
-              <Link href="/lieux">Par ville</Link>
-            </div>
-          </div>
-          <div>
-            <div className="foot__title">Professionnels</div>
-            <div className="foot__list">
-              <Link href="/professionnels">Pourquoi Balaaca</Link>
-              <Link href="/professionnels/tarifs">Tarifs</Link>
-              <Link href="/inscription">Créer ma page</Link>
-              <Link href="/rejoindre">Rejoindre une équipe</Link>
-            </div>
-          </div>
-          <div>
-            <div className="foot__title">Aide</div>
-            <div className="foot__list">
-              <Link href="/professionnels/comment-ca-marche">Comment ça marche</Link>
-              <Link href="/bookings">Retrouver ma réservation</Link>
-            </div>
-          </div>
-        </div>
-        <div className="foot__bottom">
-          <span>© 2026 Balaaca</span>
-          <span>Conakry, Guinée, et bientôt ailleurs</span>
-        </div>
-      </div>
-    </footer>
-  );
-}
 
 function TabBar() {
   return (

@@ -3,7 +3,7 @@ import type { CSSProperties, ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Icon, Scene } from "@/components/icon";
-import { Avatar } from "@/components/ui";
+import { Avatar, Wordmark } from "@/components/ui";
 import { ApiError, publicApi } from "@/lib/api";
 import { mediaUrl, money, time } from "@/lib/format";
 import type {
@@ -516,14 +516,7 @@ export default async function BookingFlow({
     <>
       <header className="hdr">
         <div className="page hdr__in">
-          <Link className="logo" href="/">
-            <span className="logo__mark" aria-hidden="true">
-              B
-            </span>
-            <span className="logo__word">
-              Bala<em>a</em>ca
-            </span>
-          </Link>
+          <Wordmark size={34} />
           <div className="hdr__actions">
             <Link className="hdr__link" href={`/p/${encodeURIComponent(slug)}`}>
               Quitter
