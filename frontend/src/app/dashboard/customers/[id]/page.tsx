@@ -1,13 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Icon } from "@/components/icon";
-import {
-  ActionButton,
-  EmptyState,
-  Notice,
-  SectionHead,
-  StatusBadge,
-} from "@/components/ui";
+import { ActionButton, EmptyState, Notice, STATUS, StatusBadge } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 import { dateTime, day } from "@/lib/format";
 import type { CustomerDetail, CustomerVisit, ProviderProfile } from "@/lib/types";
@@ -55,116 +49,152 @@ export default async function CustomerCard({
   ]);
 
   const zone = provider.timezone;
+  const appointments = customer.history.length;
 
   return (
     <>
-      <div className="pro-head stack stack-2">
-        <div className="row row-3">
-          <Link className="icon-btn" href={listHref(q)} aria-label="Retour à la clientèle">
-            <Icon name="arrow-left" size={18} />
+      <div className="appbar">
+        <div className="appbar__in">
+          <Link
+            className="btn btn--ghost btn--icon btn--sm"
+            href={listHref(q)}
+            aria-label="Retour à la clientèle"
+          >
+            <Icon name="arrow-left" />
           </Link>
-          <h1 className="pro-head__title grow">{customer.full_name}</h1>
-        </div>
-        <p className="t-small t-muted">
-          {customer.visits > 1
-            ? `${customer.visits} visites`
-            : `${customer.visits} visite`}
-          {customer.last_visit ? ` · Dernière visite ${day(customer.last_visit, zone)}` : ""}
-        </p>
-      </div>
-
-      <div className="pro-body stack stack-8" id="contenu">
-        {query.error ? (
-          <Notice tone="danger" title="La note n’a pas été enregistrée">
-            {REFUSALS[query.error] ?? "Réessayez, ou rechargez la page."}
-          </Notice>
-        ) : null}
-
-        <section className="stack stack-4">
-          <SectionHead label="Coordonnées" />
-          <div className="recap">
-            <div className="recap__row">
-              <span className="recap__key">Téléphone</span>
-              <span className="recap__val">
-                <a href={`tel:${customer.phone}`}>{customer.phone}</a>
-              </span>
-            </div>
-            {customer.email ? (
-              <div className="recap__row">
-                <span className="recap__key">E-mail</span>
-                <span className="recap__val">
-                  <a href={`mailto:${customer.email}`}>{customer.email}</a>
-                </span>
-              </div>
-            ) : null}
-            <div className="recap__row">
-              <span className="recap__key">Rendez-vous pris</span>
-              <span className="recap__val tnum">{customer.visits}</span>
-            </div>
-            <div className="recap__row">
-              <span className="recap__key">Dernière visite</span>
-              <span className="recap__val">
-                {customer.last_visit ? day(customer.last_visit, zone) : "Aucune"}
-              </span>
+          <div>
+            <h1 className="appbar__title">{customer.full_name}</h1>
+            <div className="appbar__sub">
+              {customer.visits} rendez-vous
+              {customer.last_visit ? ` · dernier le ${day(customer.last_visit, zone)}` : ""}
             </div>
           </div>
-        </section>
-
-        <section className="stack stack-4">
-          <SectionHead label="Notes" />
-          <form action={saveNotes} className="card card--pad-lg stack stack-4">
-            <input type="hidden" name="id" value={customer.customer_id} />
-            <input type="hidden" name="q" value={q} />
-            <label className="field">
-              <span className="field__label">Notes</span>
-              <textarea
-                className="textarea"
-                name="notes"
-                rows={4}
-                maxLength={MAX_NOTES}
-                defaultValue={customer.notes ?? ""}
-                placeholder="Allergique à ce produit, arrive toujours en avance, préfère Mariam…"
-              />
-            </label>
-            <p className="field__hint">
-              <Icon name="lock" size={14} /> Pour vous et votre équipe seulement&nbsp;:
-              cette personne ne la verra jamais. Videz le champ pour l’effacer.
-            </p>
-            <ActionButton label="Enregistrer" variant="primary" type="submit" icon="check" />
-          </form>
-        </section>
-
-        <section className="stack stack-4">
-          <SectionHead
-            label="Historique"
-            aside={
-              customer.history.length > 0
-                ? `${customer.history.length} rendez-vous`
-                : undefined
-            }
-          />
-
-          {customer.history.length === 0 ? (
-            <EmptyState
-              compact
-              sketch="chair"
-              title="Aucun rendez-vous"
-              body="Cette personne est dans votre fichier sans avoir encore de rendez-vous à son nom."
-            />
-          ) : (
-            <ul className="list list--boxed">
-              {/* Most recent first, as the API sends it, and capped at fifty on
-                  its side. Nothing is re-sorted here: a second opinion on the
-                  order would be one that can disagree with the server's. */}
-              {customer.history.map((visit, index) => (
-                <li key={`${visit.starts_at}-${index}`}>
-                  <Visit visit={visit} zone={zone} />
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+          <div className="appbar__actions">
+            <a className="btn btn--secondary btn--sm" href={`tel:${customer.phone}`}>
+              <Icon name="phone" size={16} className="btn__icon--idle" />
+              <span className="btn__label--idle">Appeler</span>
+            </a>
+            <a className="btn btn--secondary btn--sm" href={whatsapp(customer.phone)}>
+              <Icon name="whatsapp" size={16} className="btn__icon--idle" />
+              <span className="btn__label--idle">WhatsApp</span>
+            </a>
+          </div>
+        </div>
       </div>
+
+      <main className="app__main has-tabbar" id="contenu">
+        <div className="app__inner">
+          {query.error ? (
+            <div style={{ marginBottom: "var(--s-5)" }}>
+              <Notice tone="danger" title="La note n’a pas été enregistrée">
+                {REFUSALS[query.error] ?? "Réessayez, ou rechargez la page."}
+              </Notice>
+            </div>
+          ) : null}
+
+          <div className="cols cols--main-aside">
+            <div className="panel">
+              <div className="panel__head">
+                <div className="panel__title">Historique</div>
+                <span className="t-xs">{appointments} rendez-vous</span>
+              </div>
+
+              {appointments === 0 ? (
+                <EmptyState
+                  compact
+                  sketch="chair"
+                  title="Aucun rendez-vous"
+                  body="Cette personne est dans votre fichier sans avoir encore de rendez-vous à son nom."
+                />
+              ) : (
+                <div className="list" style={{ borderTop: 0 }}>
+                  {/* Most recent first, as the API sends it, and capped at fifty on
+                      its side. Nothing is re-sorted here: a second opinion on the
+                      order would be one that can disagree with the server's. */}
+                  {customer.history.map((visit, index) => (
+                    <Visit key={`${visit.starts_at}-${index}`} visit={visit} zone={zone} />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <aside className="sticky-aside" style={{ display: "grid", gap: "var(--s-5)" }}>
+              <div className="panel">
+                <div className="panel__head">
+                  <div>
+                    <div className="panel__title">Coordonnées</div>
+                  </div>
+                </div>
+                <div className="card__body">
+                  <div className="dl">
+                    <div className="dl__row">
+                      <span className="dl__key">Téléphone</span>
+                      <span className="dl__val">
+                        <a href={`tel:${customer.phone}`}>{customer.phone}</a>
+                      </span>
+                    </div>
+                    {customer.email ? (
+                      <div className="dl__row">
+                        <span className="dl__key">E-mail</span>
+                        <span className="dl__val">
+                          <a href={`mailto:${customer.email}`}>{customer.email}</a>
+                        </span>
+                      </div>
+                    ) : null}
+                    <div className="dl__row">
+                      <span className="dl__key">Rendez-vous</span>
+                      <span className="dl__val">{customer.visits}</span>
+                    </div>
+                    <div className="dl__row">
+                      <span className="dl__key">Dernière visite</span>
+                      <span className="dl__val">
+                        {customer.last_visit ? day(customer.last_visit, zone) : "Aucune"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="panel">
+                <div className="panel__head">
+                  <div>
+                    <div className="panel__title">Note privée</div>
+                    <div className="panel__sub">Visible par vous seul</div>
+                  </div>
+                </div>
+                <div className="card__body">
+                  <form action={saveNotes}>
+                    <input type="hidden" name="id" value={customer.customer_id} />
+                    <input type="hidden" name="q" value={q} />
+                    <textarea
+                      className="textarea"
+                      style={{ minHeight: "130px" }}
+                      name="notes"
+                      maxLength={MAX_NOTES}
+                      defaultValue={customer.notes ?? ""}
+                      aria-label="Note privée"
+                      placeholder="Allergique à ce produit, arrive toujours en avance, préfère Mariam…"
+                    />
+                    <div className="t-xs" style={{ marginTop: "var(--s-3)" }}>
+                      <Icon name="lock" size={16} /> Pour vous et votre équipe
+                      seulement&nbsp;: cette personne ne la verra jamais. Videz le champ
+                      pour l’effacer.
+                    </div>
+                    <div style={{ marginTop: "var(--s-4)" }}>
+                      <ActionButton
+                        label="Enregistrer la note"
+                        variant="primary"
+                        block
+                        type="submit"
+                      />
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </main>
     </>
   );
 }
@@ -178,13 +208,18 @@ export default async function CustomerCard({
  */
 function Visit({ visit, zone }: { visit: CustomerVisit; zone: string }) {
   return (
-    <div className="list-row">
-      <span className="grow stack stack-1">
-        <span className="t-small">{visit.service_name}</span>
-        <span className="t-caption t-dim">
-          {dateTime(visit.starts_at, zone)} · {visit.staff_name}
-        </span>
+    <div className="list__item">
+      <span className="choice__icon">
+        <Icon name={STATUS[visit.status]?.icon ?? "clock"} size={18} />
       </span>
+      <div className="grow">
+        <div className="t-strong" style={{ fontSize: "var(--fs-sm)" }}>
+          {visit.service_name}
+        </div>
+        <div className="t-xs" style={{ marginTop: "2px" }}>
+          {dateTime(visit.starts_at, zone)} · {visit.staff_name}
+        </div>
+      </div>
       <StatusBadge status={visit.status} />
     </div>
   );
@@ -193,6 +228,17 @@ function Visit({ visit, zone }: { visit: CustomerVisit; zone: string }) {
 /** Back to the list, and back to the search that found this person. */
 function listHref(q: string): string {
   return q ? `/dashboard/customers?q=${encodeURIComponent(q)}` : "/dashboard/customers";
+}
+
+/**
+ * The number, as WhatsApp addresses it.
+ *
+ * <p>Digits only, no plus. Whether this person is reachable there is not
+ * something the API knows - it is the number they left, offered on the
+ * application most of them answer on.
+ */
+function whatsapp(phone: string): string {
+  return `https://wa.me/${phone.replace(/\D/g, "")}`;
 }
 
 async function fetchCustomer(id: string): Promise<CustomerDetail> {

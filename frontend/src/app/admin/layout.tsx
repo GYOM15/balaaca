@@ -20,6 +20,12 @@ export const dynamic = "force-dynamic";
  * Asking the cheapest admin operation is the only way to know, so the queue is
  * asked for a single row and the answer thrown away - once, at the door,
  * instead of once per screen added behind it.
+ *
+ * <p>The operator's chrome is NOT here. The dark bar carries the switch between
+ * the two queues, and which of them is open is a search parameter - which a
+ * layout is never given. Drawing the bar here would mean a navigation that
+ * cannot say where you are, so the queue page draws its own and this file draws
+ * one only for the refusal below, where there is nothing to navigate to.
  */
 export default async function AdminLayout({ children }: { children: ReactNode }) {
   if (!(await isSignedIn())) redirect("/api/auth/login?next=/admin");
@@ -38,8 +44,17 @@ export default async function AdminLayout({ children }: { children: ReactNode })
     // that reads as "the product is broken" when the answer was simply no.
     if (error.status === 403) {
       return (
-        <Shell>
-          <div className="container container--booking section">
+        <div className="op">
+          <div className="op__bar">
+            <div className="op__bar-in">
+              <Wordmark href="/admin" size={34} tone="inverse" hideText />
+              <span className="op__tag">Modération</span>
+            </div>
+          </div>
+          <main id="contenu" className="op__main">
+            <div style={{ marginBottom: "1.5rem" }}>
+              <h1 className="t-h2">Modération</h1>
+            </div>
             <EmptyState
               sketch="storefront"
               title="Cette console est réservée à l’équipe Balaaca"
@@ -53,43 +68,25 @@ export default async function AdminLayout({ children }: { children: ReactNode })
                 />
               }
             />
-          </div>
-        </Shell>
+            <div className="row" style={{ marginTop: "var(--s-8)" }}>
+              <span className="grow"></span>
+              {/* POST, because a sign-out on GET is triggered by any image tag. */}
+              <form method="post" action="/api/auth/logout">
+                <ActionButton
+                  label="Se déconnecter"
+                  variant="ghost"
+                  size="sm"
+                  type="submit"
+                  icon="lock"
+                />
+              </form>
+            </div>
+          </main>
+        </div>
       );
     }
     throw error;
   }
 
-  return <Shell>{children}</Shell>;
-}
-
-/**
- * Deliberately not the dashboard's sidebar.
- *
- * <p>That navigation exists to move between a salon's rooms. This console has
- * one screen, and a sidebar holding a single entry would promise rooms that do
- * not exist.
- */
-function Shell({ children }: { children: ReactNode }) {
-  return (
-    <div className="site">
-      <header className="site-head">
-        <Wordmark href="/admin" size={26} />
-        <span className="grow t-caption t-dim">Modération</span>
-        {/* POST, because a sign-out on GET is triggered by any image tag. */}
-        <form method="post" action="/api/auth/logout">
-          <ActionButton
-            label="Se déconnecter"
-            variant="ghost"
-            size="sm"
-            type="submit"
-            icon="lock"
-          />
-        </form>
-      </header>
-      <main className="site__main" id="contenu">
-        {children}
-      </main>
-    </div>
-  );
+  return <>{children}</>;
 }

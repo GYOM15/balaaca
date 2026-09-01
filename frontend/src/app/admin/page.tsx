@@ -1,7 +1,9 @@
+import Link from "next/link";
+import type { CSSProperties, ReactNode } from "react";
 import { Icon } from "@/components/icon";
-import { ActionButton, Badge, Button, EmptyState, Notice, SectionHead } from "@/components/ui";
+import { ActionButton, Badge, Button, EmptyState, Notice, Wordmark } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
-import { dateTime } from "@/lib/format";
+import { dateTime, day } from "@/lib/format";
 import type {
   ContestationPage,
   ContestationQueueView,
@@ -19,15 +21,6 @@ import {
 export const dynamic = "force-dynamic";
 
 /**
- * The two shapes the second queue reads, taken from the generated document.
- *
- * <p>`@/lib/types` is where the contract's types are named once, and it belongs
- * to another change in flight. These are the same generated types under the
- * same names rather than a second declaration of the shape, and they move to
- * that file the day it is free to edit.
- */
-
-/**
  * What a refusal means, in words the operator can act on.
  *
  * <p>Keyed by the contract's own closed catalogue. The two 404s are one
@@ -39,7 +32,7 @@ const REFUSALS: Record<string, string> = {
   FORBIDDEN: "Ce compte n’a plus le droit de modération. Reconnectez-vous.",
   VALIDATION_FAILED: "Le motif doit faire entre 3 et 500 caractères.",
   RESOURCE_NOT_FOUND:
-    "Ce salon est déjà dans l’état demandé, ou son adresse n’existe plus. Rechargez la page pour voir où il en est.",
+    "Cet établissement est déjà dans l’état demandé, ou son adresse n’existe plus. Rechargez la page pour voir où il en est.",
   RATE_LIMITED: "Trop de demandes en même temps. Réessayez dans un instant.",
 };
 
@@ -47,13 +40,13 @@ const REFUSALS: Record<string, string> = {
  * The one code whose meaning changes with the queue.
  *
  * <p>Both suspension levers can be pressed from the contestations list too, so
- * a 404 there is either a message that moved or a salon that did. Naming only
- * the salon, as the reports queue does, would send the operator looking for the
- * wrong thing.
+ * a 404 there is either a message that moved or an establishment that did.
+ * Naming only the establishment, as the reports queue does, would send the
+ * operator looking for the wrong thing.
  */
 const CONTESTATION_REFUSALS: Record<string, string> = {
   RESOURCE_NOT_FOUND:
-    "Cette contestation, ou ce salon, n’est plus dans l’état affiché. Rechargez la page.",
+    "Cette contestation, ou cet établissement, n’est plus dans l’état affiché. Rechargez la page.",
 };
 
 /**
@@ -63,11 +56,11 @@ const CONTESTATION_REFUSALS: Record<string, string> = {
  * as itself rather than as a guess.
  */
 const REASONS: Record<string, string> = {
-  NO_SHOW: "Rendez-vous non honoré",
+  NO_SHOW: "Le professionnel ne s’est pas présenté",
   NOT_AS_DESCRIBED: "Prestation non conforme",
-  OVERCHARGED: "Prix supérieur à celui annoncé",
+  OVERCHARGED: "Prix différent de celui annoncé",
   RUDE_OR_UNSAFE: "Comportement déplacé ou dangereux",
-  OTHER: "Autre motif",
+  OTHER: "Autre",
 };
 
 /** The one that is about somebody's safety rather than about money. */
@@ -76,28 +69,43 @@ const SEVERE = "RUDE_OR_UNSAFE";
 /**
  * The two queues, side by side and never merged.
  *
- * <p>A customer complaining about a salon and a salon answering the platform
- * are different things: they arrive at different moments, they are read at
- * different moments, and one is answered with a suspension while the other is
- * answered by lifting one. Interleaving them would make a single list that is
- * urgent for two incompatible reasons.
+ * <p>A customer complaining about an establishment and an establishment
+ * answering the platform are different things: they arrive at different
+ * moments, they are read at different moments, and one is answered with a
+ * suspension while the other is answered by lifting one. Interleaving them
+ * would make a single list that is urgent for two incompatible reasons.
  */
-const QUEUES: [string, string, string][] = [
-  ["REPORTS", "Signalements", "alert-triangle"],
-  ["CONTESTATIONS", "Contestations", "message"],
+const QUEUES: [string, string][] = [
+  ["REPORTS", "Signalements"],
+  ["CONTESTATIONS", "Contestations"],
 ];
 
 /** What each queue offers. Both open on the unanswered ones. */
 const REPORT_VIEWS: [string, string][] = [
-  ["PENDING", "En attente"],
-  ["REVIEWED", "Déjà vus"],
+  ["PENDING", "À examiner"],
+  ["REVIEWED", "Vus"],
   ["ALL", "Tous"],
 ];
 
 const CONTESTATION_VIEWS: [string, string][] = [
-  ["PENDING", "En attente"],
-  ["READ", "Lu"],
+  ["PENDING", "Non lues"],
+  ["READ", "Lues"],
   ["ALL", "Toutes"],
+];
+
+/**
+ * What the lever does, written where the operator is about to pull it.
+ *
+ * <p>The third line is the one that is always misread. A suspension takes the
+ * page off the hub; it does not call off a single appointment already booked,
+ * and an operator who believes otherwise suspends thinking they are protecting
+ * customers who are in fact still expected at the door.
+ */
+const SUSPENSION_EFFECTS: string[] = [
+  "La page disparaît immédiatement de toutes les recherches et de l’annuaire.",
+  "Aucune nouvelle réservation n’est acceptée.",
+  "Les rendez-vous déjà pris restent valables : ils ne sont pas annulés.",
+  "Le prestataire voit le motif et peut envoyer une réponse.",
 ];
 
 /**
@@ -105,9 +113,9 @@ const CONTESTATION_VIEWS: [string, string][] = [
  *
  * <p>Every other screen renders an instant in the provider's own zone, read
  * from their profile. A report carries no zone, and this queue crosses every
- * provider at once - so there is no one salon's clock to use, and an operator
- * comparing two rows needs them on the same one. It is theirs, named on the
- * page so that a date is never ambiguous.
+ * provider at once - so there is no one establishment's clock to use, and an
+ * operator comparing two rows needs them on the same one. It is theirs, named
+ * on the page so that a date is never ambiguous.
  */
 const OPERATOR_ZONE = "Africa/Conakry";
 
@@ -162,12 +170,14 @@ export default async function Moderation({
   } catch (error) {
     if (error instanceof ApiError && error.status === 403) {
       return (
-        <div className="stack stack-6">
-          <SectionHead label="Modération" />
-          <Notice tone="warning">
-            Cet espace est réservé à l’exploitant de la plateforme.
+        <Shell>
+          <div style={{ marginBottom: "1.5rem" }}>
+            <h1 className="t-h2">Modération</h1>
+          </div>
+          <Notice tone="warning" title="Cet espace est réservé à l’exploitant de la plateforme">
+            Votre compte n’a pas le droit de modération.
           </Notice>
-        </div>
+        </Shell>
       );
     }
     throw error;
@@ -180,163 +190,190 @@ export default async function Moderation({
   const noun = answers ? "contestation" : "signalement";
 
   return (
-    <div className="container container--dashboard section stack stack-8">
-      <header className="stack stack-2">
+    <Shell queue={queue}>
+      <div style={{ marginBottom: "1.5rem" }}>
         <h1 className="t-h2">{answers ? "Contestations" : "Signalements"}</h1>
-        <p className="t-small t-muted measure">
+        <p className="t-body" style={{ marginTop: ".35rem" }}>
           {answers
-            ? "Ce que des salons suspendus répondent à la plateforme, les plus anciennes d’abord."
-            : "Ce que des clients reprochent à un salon, les plus anciens d’abord."}{" "}
+            ? "Réponses envoyées par des établissements suspendus, les plus anciennes en premier."
+            : "Ce que des clients reprochent à un établissement, les plus anciens en premier."}{" "}
           Les heures sont celles de Conakry.
         </p>
-      </header>
+      </div>
 
       {query.error ? (
-        <Notice tone="danger" title="La demande n’a pas abouti">
-          {(answers ? CONTESTATION_REFUSALS[query.error] : undefined) ??
-            REFUSALS[query.error] ??
-            "Le serveur a refusé cette action."}
-        </Notice>
+        <div style={{ marginBottom: "var(--s-5)" }}>
+          <Notice tone="danger" title="La demande n’a pas abouti">
+            {(answers ? CONTESTATION_REFUSALS[query.error] : undefined) ??
+              REFUSALS[query.error] ??
+              "Le serveur a refusé cette action."}
+          </Notice>
+        </div>
       ) : null}
 
       {/* Above the list, not inside the confirmation: an operator has to know
           what the lever does before they are looking at the button. */}
-      {answers ? (
-        <Notice tone="warning" title="Lire n’est pas donner raison" icon="eye">
-          «&nbsp;Marquer comme lu&nbsp;» enregistre seulement que quelqu’un a
-          ouvert le message. Le salon reste suspendu, sa page reste hors de
-          l’annuaire, et rien ne lui est répondu.{" "}
-          <strong>
-            «&nbsp;Rétablir&nbsp;» est l’autre bouton, et c’est le seul qui remet
-            la page en ligne.
-          </strong>{" "}
-          Une contestation peut donc être lue et refusée&nbsp;: les deux gestes
-          sont séparés parce que les deux décisions le sont.
-        </Notice>
-      ) : (
-        <Notice tone="warning" title="Ce qu’une suspension fait, et ne fait pas" icon="ban">
-          Le salon disparaît de l’annuaire&nbsp;: sa page et son lien de
-          réservation répondent «&nbsp;introuvable&nbsp;», et plus personne ne
-          peut prendre de nouveau rendez-vous.{" "}
-          <strong>
-            Les rendez-vous déjà pris ne sont pas annulés&nbsp;: le salon garde
-            son agenda et ses clients gardent leurs références.
-          </strong>{" "}
-          Le motif est obligatoire, il part au journal d’audit et le salon le lit
-          sur son propre tableau de bord — il apprend donc pourquoi sa page a
-          disparu, au lieu de le découvrir parce que les clients cessent
-          d’arriver. «&nbsp;Rétablir&nbsp;» remet la page en ligne et efface le
-          motif de sa fiche&nbsp;; le journal, lui, le garde. Plusieurs
-          signalements peuvent viser le même salon&nbsp;: le suspendre une fois
-          suffit.
-        </Notice>
-      )}
+      <div style={{ marginBottom: "var(--s-5)" }}>
+        {answers ? (
+          <Notice tone="warning" title="Lire n’est pas donner raison" icon="eye">
+            «&nbsp;Marquer comme lue&nbsp;» enregistre seulement que quelqu’un a
+            ouvert le message. L’établissement reste suspendu, sa page reste hors
+            de l’annuaire, et rien ne lui est répondu.{" "}
+            <strong>
+              «&nbsp;Rétablir&nbsp;» est l’autre bouton, et c’est le seul qui
+              remet la page en ligne.
+            </strong>{" "}
+            Une contestation peut donc être lue et refusée&nbsp;: les deux gestes
+            sont séparés parce que les deux décisions le sont.
+          </Notice>
+        ) : (
+          <Notice tone="warning" title="Ce qu’une suspension fait, et ne fait pas" icon="ban">
+            La page disparaît de l’annuaire et plus personne ne peut prendre de
+            nouveau rendez-vous.{" "}
+            <strong>
+              Les rendez-vous déjà pris ne sont pas annulés&nbsp;: l’agenda reste
+              entier et les clients gardent leurs références.
+            </strong>{" "}
+            Le motif est obligatoire, il part au journal d’audit et
+            l’établissement le lit sur son propre tableau de bord. Plusieurs
+            signalements peuvent viser le même établissement&nbsp;: le suspendre
+            une fois suffit.
+          </Notice>
+        )}
+      </div>
 
-      {/* Links and not a second select: the queue is the page one is on, and a
-          reader should be able to send a colleague the address of the list they
-          are looking at. Same shape as `?status=`, one parameter further out. */}
-      <nav className="row row-3 row--wrap" aria-label="Files de modération">
-        {QUEUES.map(([value, label, icon]) => (
-          <Button
-            key={value}
-            label={label}
-            variant={value === queue ? "primary" : "secondary"}
-            size="sm"
-            icon={icon}
-            href={root(value)}
-          />
-        ))}
-      </nav>
+      {/* Links and not a select: a view is then a URL, so it can be sent to a
+          colleague and the back button returns to the list being read. The
+          cursor is deliberately absent - it belongs to the view being left, and
+          carrying it would open the next one halfway through a result set it
+          does not describe. */}
+      <div className="toolbar" style={{ marginBottom: "var(--s-5)" }}>
+        <span className="segmented">
+          {views.map(([value, label]) => (
+            <Link
+              key={value}
+              className={value === view ? "segmented__item is-active" : "segmented__item"}
+              href={viewHref(queue, value)}
+              aria-current={value === view ? "page" : undefined}
+            >
+              {label}
+            </Link>
+          ))}
+        </span>
+        <span className="toolbar__spacer"></span>
+        {shown > 0 ? (
+          <span className="t-xs">
+            {shown}
+            {loaded.page.next_cursor ? "+" : ""} {noun}
+            {shown > 1 ? "s" : ""}
+          </span>
+        ) : null}
+      </div>
 
-      <section className="stack stack-4" aria-labelledby="filter-title">
-        <SectionHead label="Filtrer" />
-        {/* GET, so a view is a URL: it can be sent to a colleague, and the back
-            button returns to the queue rather than to the default one. The
-            cursor is deliberately absent from this form - it belongs to the
-            view being left, and carrying it would open the next one halfway
-            through a result set it does not describe. */}
-        <form className="card card--pad stack stack-3" method="get" action="/admin">
-          <h2 className="t-caption t-dim" id="filter-title">
-            «&nbsp;En attente&nbsp;» est la file de travail&nbsp;: ce que
-            personne n’a encore regardé.
-          </h2>
-          <input type="hidden" name="queue" value={queue} />
-          <div className="row row-3 row--wrap">
-            <div className="field grow">
-              <label className="field__label" htmlFor="filter-status">
-                État
-              </label>
-              <select className="select" id="filter-status" name="status" defaultValue={view}>
-                {views.map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <ActionButton label="Afficher" type="submit" variant="secondary" icon="filter" />
-          </div>
-        </form>
-      </section>
-
-      <section className="stack stack-4">
-        <SectionHead
-          label={views.find(([value]) => value === view)?.[1] ?? "Modération"}
-          aside={
-            shown > 0
-              ? `${shown}${loaded.page.next_cursor ? "+" : ""} ${noun}${shown > 1 ? "s" : ""}`
-              : undefined
+      {shown === 0 ? (
+        <EmptyState
+          sketch="notebook"
+          title={
+            view === "PENDING"
+              ? answers
+                ? "Aucune contestation en attente"
+                : "Aucun signalement à examiner"
+              : answers
+                ? "Aucune contestation dans cette vue"
+                : "Aucun signalement dans cette vue"
+          }
+          body={
+            view === "PENDING"
+              ? answers
+                ? "Quand un établissement suspendu envoie une réponse, elle apparaît ici avec le motif de la suspension."
+                : "Rien n’attend d’être regardé. C’est le bon état de cet écran."
+              : "Les autres vues en contiennent peut-être."
+          }
+          action={
+            view === "PENDING" ? null : (
+              <Button label="Voir la file de travail" variant="secondary" href={root(queue)} />
+            )
           }
         />
-
-        {shown === 0 ? (
-          <EmptyState
-            sketch={answers ? "storefront" : "notebook"}
-            title={answers ? "Aucune contestation" : "Aucun signalement"}
-            body={
-              view === "PENDING"
-                ? "Rien n’attend d’être regardé. C’est le bon état de cet écran."
-                : "Rien dans cette vue. Les autres en contiennent peut-être."
-            }
-            action={
-              view === "PENDING" ? null : (
-                <Button
-                  label="Voir la file de travail"
-                  variant="secondary"
-                  href={root(queue)}
-                />
-              )
-            }
-          />
-        ) : (
-          <div className="stack stack-6">
-            <div className="stack stack-4">
-              {loaded.kind === "REPORTS"
-                ? loaded.page.data.map((report) => (
-                    <Report key={report.report_id} report={report} back={back} />
-                  ))
-                : loaded.page.data.map((contestation) => (
-                    <Contestation
-                      key={contestation.contestation_id}
-                      contestation={contestation}
-                      back={back}
-                    />
-                  ))}
-            </div>
-
-            {loaded.page.next_cursor ? (
-              <div className="row row-3">
-                <Button
-                  label="Voir la suite"
-                  variant="secondary"
-                  iconEnd="arrow-right"
-                  href={nextPage(queue, view, loaded.page.next_cursor)}
-                />
-              </div>
-            ) : null}
+      ) : (
+        <>
+          <div className="stack" style={{ "--stack-gap": "var(--s-4)" } as CSSProperties}>
+            {loaded.kind === "REPORTS"
+              ? loaded.page.data.map((report) => (
+                  <Report key={report.report_id} report={report} back={back} />
+                ))
+              : loaded.page.data.map((contestation) => (
+                  <Contestation
+                    key={contestation.contestation_id}
+                    contestation={contestation}
+                    back={back}
+                  />
+                ))}
           </div>
-        )}
-      </section>
+
+          {loaded.page.next_cursor ? (
+            <div className="row" style={{ marginTop: "var(--s-6)" }}>
+              <Button
+                label="Voir la suite"
+                variant="secondary"
+                size="sm"
+                iconEnd="arrow-right"
+                href={nextPage(queue, view, loaded.page.next_cursor)}
+              />
+            </div>
+          ) : null}
+        </>
+      )}
+    </Shell>
+  );
+}
+
+/**
+ * The operator's chrome, and the switch between the two queues.
+ *
+ * <p>Drawn here rather than in the layout because which queue is open is a
+ * search parameter, and a layout is never given one - so a bar drawn there
+ * could not mark the entry the reader is standing on.
+ */
+function Shell({ queue, children }: { queue?: string; children: ReactNode }) {
+  return (
+    <div className="op">
+      <div className="op__bar">
+        <div className="op__bar-in">
+          <Wordmark href="/admin" size={34} tone="inverse" hideText />
+          <span className="op__tag">Modération</span>
+          {queue ? (
+            <nav className="op__nav" aria-label="Navigation modération">
+              {QUEUES.map(([value, label]) => (
+                <Link
+                  key={value}
+                  href={root(value)}
+                  aria-current={value === queue ? "page" : undefined}
+                >
+                  {label}
+                </Link>
+              ))}
+            </nav>
+          ) : null}
+        </div>
+      </div>
+      <main id="contenu" className="op__main">
+        {children}
+
+        <div className="row" style={{ marginTop: "var(--s-8)" }}>
+          <span className="grow"></span>
+          {/* POST, because a sign-out on GET is triggered by any image tag. */}
+          <form method="post" action="/api/auth/logout">
+            <ActionButton
+              label="Se déconnecter"
+              variant="ghost"
+              size="sm"
+              type="submit"
+              icon="lock"
+            />
+          </form>
+        </div>
+      </main>
     </div>
   );
 }
@@ -373,73 +410,116 @@ async function load(queue: string, view: string, cursor: string | undefined): Pr
 function Report({ report, back }: { report: ProviderReportView; back: string }) {
   const pending = report.status === "PENDING";
   const suspended = report.provider_status === "SUSPENDED";
+  const suspendId = `susp-${report.report_id}`;
+  const reinstateId = `reinst-${report.report_id}`;
 
   return (
-    <article className="card card--pad stack stack-4">
-      <div className="row row--between row-3 row--wrap">
-        <span className="grow stack stack-1">
-          <strong className="t-body">{report.provider_name}</strong>
-          <span className="t-caption t-dim">
-            {report.service_name}
-            {" · "}
-            {dateTime(report.appointment_starts_at, OPERATOR_ZONE)}
-          </span>
-        </span>
-        <Badge
-          label={REASONS[report.reason] ?? report.reason}
-          tone={report.reason === SEVERE ? "danger" : "warning"}
-        />
-        {pending ? (
-          <Badge label="En attente" tone="outline" icon="clock" />
-        ) : (
-          <Badge label="Vu" tone="neutral" icon="check" />
-        )}
-        {suspended ? <Badge label="Salon suspendu" tone="danger" icon="ban" /> : null}
-      </div>
-
-      {report.details ? (
-        <p className="t-small measure">«&nbsp;{report.details}&nbsp;»</p>
-      ) : (
-        <p className="t-caption t-dim">Le client n’a rien écrit de plus.</p>
-      )}
-
-      <p className="t-caption t-dim">
-        Signalé le {dateTime(report.reported_at, OPERATOR_ZONE)}
-        {report.reviewed_at ? ` · vu le ${dateTime(report.reviewed_at, OPERATOR_ZONE)}` : ""}
-      </p>
-
-      <div className="row row-3 row--wrap">
-        {pending ? (
-          <form action={reviewReport}>
-            <input type="hidden" name="report_id" value={report.report_id} />
-            <input type="hidden" name="back" value={back} />
-            <ActionButton
-              label="Marquer comme vu"
-              type="submit"
-              variant="secondary"
-              size="sm"
-              icon="check"
-            />
-          </form>
+    <article className="panel">
+      <div className="panel__head">
+        <div className="row" style={{ gap: "var(--s-3)", flexWrap: "wrap" }}>
+          {pending ? (
+            <Badge label="À examiner" tone="warning" icon="hourglass" />
+          ) : (
+            <Badge label="Vu" tone="neutral" icon="check" />
+          )}
+          <div>
+            <div className="t-strong" style={{ fontSize: "var(--fs-sm)" }}>
+              {REASONS[report.reason] ?? report.reason}
+            </div>
+            <div className="t-xs" style={{ marginTop: 2 }}>
+              <Link className="link link--quiet" href={`/p/${report.provider_slug}`}>
+                {report.provider_name}
+              </Link>
+              {" · "}
+              {report.service_name} du {dateTime(report.appointment_starts_at, OPERATOR_ZONE)}
+              {" · "}
+              signalé le {day(report.reported_at, OPERATOR_ZONE)}
+            </div>
+          </div>
+        </div>
+        {report.reason === SEVERE ? (
+          <Badge label="Sécurité" tone="danger" icon="alert-triangle" />
         ) : null}
-        <Button
-          label="Voir la page publique"
-          variant="ghost"
-          size="sm"
-          href={`/p/${report.provider_slug}`}
-          iconEnd="external"
-        />
+        {suspended ? <Badge label="Suspendu" tone="danger" icon="ban" /> : null}
       </div>
 
-      {/* Both levers when the contract's optional `provider_status` is absent.
-          Guessing would hide the only one that helps: a salon whose state did
-          not travel would be offered a suspension it already has, and could
-          never be put back from this screen. */}
+      <div className="card__body" style={{ paddingBlock: "var(--s-5)" }}>
+        {report.details ? (
+          <blockquote
+            style={{
+              borderLeft: "3px solid var(--border-strong)",
+              paddingLeft: "var(--s-4)",
+              margin: 0,
+            }}
+          >
+            <p className="t-body">{report.details}</p>
+            {/* The mockup names the booking reference here. A report does not
+                carry one, so the row is identified above by the service and the
+                hour instead - the two things the API does send. */}
+            <footer className="t-xs" style={{ marginTop: "var(--s-2)" }}>
+              Client
+            </footer>
+          </blockquote>
+        ) : (
+          <p className="t-sm">Le client n’a rien écrit de plus.</p>
+        )}
+      </div>
+
+      <div className="card__foot">
+        <div className="row row--wrap" style={{ gap: "var(--s-3)" }}>
+          <Button
+            label="Voir la page publique"
+            variant="ghost"
+            size="sm"
+            href={`/p/${report.provider_slug}`}
+            icon="store"
+          />
+          <span className="grow"></span>
+          {pending ? (
+            <form action={reviewReport}>
+              <input type="hidden" name="report_id" value={report.report_id} />
+              <input type="hidden" name="back" value={back} />
+              <ActionButton
+                label="Marquer comme vu"
+                type="submit"
+                variant="secondary"
+                size="sm"
+                icon="check"
+              />
+            </form>
+          ) : report.reviewed_at ? (
+            <span className="t-xs">Examiné le {day(report.reviewed_at, OPERATOR_ZONE)}</span>
+          ) : null}
+
+          {/* Both levers when the contract's optional `provider_status` is
+              absent. Guessing would hide the only one that helps: an
+              establishment whose state did not travel would be offered a
+              suspension it already has, and could never be put back from this
+              screen. */}
+          {suspended ? null : (
+            <button className="btn btn--danger btn--sm" type="button" data-dialog-open={suspendId}>
+              <Icon name="ban" size={16} className="btn__icon--idle" />
+              <span className="btn__label--idle">Suspendre l’établissement</span>
+            </button>
+          )}
+          {report.provider_status === "ACTIVE" ? null : (
+            <button
+              className="btn btn--primary btn--sm"
+              type="button"
+              data-dialog-open={reinstateId}
+            >
+              <Icon name="refresh" size={16} className="btn__icon--idle" />
+              <span className="btn__label--idle">Rétablir l’établissement</span>
+            </button>
+          )}
+        </div>
+      </div>
+
       {suspended ? null : (
-        <Suspend slug={report.provider_slug} name={report.provider_name} back={back} />
+        <SuspendDialog id={suspendId} slug={report.provider_slug} back={back} />
       )}
       {report.provider_status === "ACTIVE" ? null : (
-        <Reinstate slug={report.provider_slug} name={report.provider_name} back={back} />
+        <ReinstateDialog id={reinstateId} slug={report.provider_slug} back={back} />
       )}
     </article>
   );
@@ -449,11 +529,11 @@ function Report({ report, back }: { report: ProviderReportView; back: string }) 
  * One business answering the platform, and where its suspension stands today.
  *
  * <p>Two dates, and they are not the same date. `about_suspension_at` is the
- * decision this message answers; `current_reason` is what the salon carries at
- * this instant, which is gone once somebody put them back - and can even be a
- * later suspension, since a business can be suspended, contest, be reinstated
- * and be suspended again. Both are on the row so the operator can see whether
- * they are reading about something still true.
+ * decision this message answers; `current_reason` is what the establishment
+ * carries at this instant, which is gone once somebody put them back - and can
+ * even be a later suspension, since a business can be suspended, contest, be
+ * reinstated and be suspended again. Both are on the row so the operator can
+ * see whether they are reading about something still true.
  */
 function Contestation({
   contestation,
@@ -466,134 +546,180 @@ function Contestation({
   // `provider_status` is required here, unlike on a report, so the state is
   // known rather than inferred from the reason being absent.
   const suspended = contestation.provider_status === "SUSPENDED";
+  const reinstateId = `reinst-c-${contestation.contestation_id}`;
 
   return (
-    <article className="card card--pad stack stack-4">
-      <div className="row row--between row-3 row--wrap">
-        <span className="grow stack stack-1">
-          <strong className="t-body">{contestation.provider_name}</strong>
-          <span className="t-caption t-dim">
-            Suspendu le {dateTime(contestation.about_suspension_at, OPERATOR_ZONE)}
-          </span>
-        </span>
-        {pending ? (
-          <Badge label="En attente" tone="outline" icon="clock" />
-        ) : (
-          <Badge label="Lu" tone="neutral" icon="check" />
-        )}
+    <article className="panel">
+      <div className="panel__head">
+        <div className="row" style={{ gap: "var(--s-3)", flexWrap: "wrap" }}>
+          {pending ? (
+            <Badge label="Non lue" tone="warning" icon="message" />
+          ) : (
+            <Badge label="Lue" tone="neutral" icon="check" />
+          )}
+          <div>
+            <div className="t-strong" style={{ fontSize: "var(--fs-sm)" }}>
+              {contestation.provider_name}
+            </div>
+            <div className="t-xs" style={{ marginTop: 2 }}>
+              Suspendu le {day(contestation.about_suspension_at, OPERATOR_ZONE)}
+              {" · "}
+              réponse envoyée le {day(contestation.submitted_at, OPERATOR_ZONE)}
+              {contestation.read_at ? ` · lue le ${day(contestation.read_at, OPERATOR_ZONE)}` : ""}
+            </div>
+          </div>
+        </div>
         {suspended ? (
-          <Badge label="Toujours suspendu" tone="danger" icon="ban" />
+          <Badge label="Suspendu" tone="danger" icon="ban" />
         ) : (
           <Badge label="Déjà rétabli" tone="success" icon="refresh" />
         )}
       </div>
 
-      <p className="t-small measure">«&nbsp;{contestation.message}&nbsp;»</p>
-
-      {contestation.current_reason ? (
-        <p className="t-caption t-dim measure">
-          Motif porté aujourd’hui&nbsp;: «&nbsp;{contestation.current_reason}&nbsp;»
-        </p>
-      ) : (
-        <p className="t-caption t-dim measure">
-          Plus aucun motif sur sa fiche&nbsp;: la décision contestée a déjà été
-          levée et la page est revenue dans l’annuaire.
-        </p>
-      )}
-
-      <p className="t-caption t-dim">
-        Envoyée le {dateTime(contestation.submitted_at, OPERATOR_ZONE)}
-        {contestation.read_at ? ` · lue le ${dateTime(contestation.read_at, OPERATOR_ZONE)}` : ""}
-      </p>
-
-      <div className="row row-3 row--wrap">
-        {pending ? (
-          <form action={markContestationRead}>
-            <input type="hidden" name="contestation_id" value={contestation.contestation_id} />
-            <input type="hidden" name="back" value={back} />
-            <ActionButton
-              label="Marquer comme lu"
-              type="submit"
-              variant="secondary"
-              size="sm"
-              icon="check"
-            />
-          </form>
-        ) : null}
-        {/* Only once they are back. A suspended salon's public page answers
-            "introuvable" by design, and offering the link anyway would send the
-            operator to a 404 on almost every row of this list. */}
-        {suspended ? null : (
-          <Button
-            label="Voir la page publique"
-            variant="ghost"
-            size="sm"
-            href={`/p/${contestation.provider_slug}`}
-            iconEnd="external"
-          />
+      <div className="card__body">
+        <div className="t-overline" style={{ marginBottom: "var(--s-2)" }}>
+          Motif de la suspension
+        </div>
+        {contestation.current_reason ? (
+          <p className="t-sm">{contestation.current_reason}</p>
+        ) : (
+          <p className="t-sm">
+            Plus aucun motif sur sa fiche&nbsp;: la décision contestée a déjà été
+            levée et la page est revenue dans l’annuaire.
+          </p>
         )}
+
+        <div className="t-overline" style={{ margin: "var(--s-5) 0 var(--s-2)" }}>
+          Réponse de l’établissement
+        </div>
+        <blockquote
+          style={{
+            borderLeft: "3px solid var(--brand-border)",
+            paddingLeft: "var(--s-4)",
+            margin: 0,
+          }}
+        >
+          <p className="t-body">{contestation.message}</p>
+        </blockquote>
+      </div>
+
+      <div className="card__foot">
+        <div className="row row--wrap" style={{ gap: "var(--s-3)" }}>
+          {/* Only once they are back. A suspended establishment's public page
+              answers "introuvable" by design, and offering the link anyway
+              would send the operator to a 404 on almost every row. */}
+          {suspended ? null : (
+            <Button
+              label="Voir la page publique"
+              variant="ghost"
+              size="sm"
+              href={`/p/${contestation.provider_slug}`}
+              icon="store"
+            />
+          )}
+          <span className="grow"></span>
+          {pending ? (
+            <form action={markContestationRead}>
+              <input type="hidden" name="contestation_id" value={contestation.contestation_id} />
+              <input type="hidden" name="back" value={back} />
+              <ActionButton
+                label="Marquer comme lue"
+                type="submit"
+                variant="secondary"
+                size="sm"
+                icon="check"
+              />
+            </form>
+          ) : null}
+          {suspended ? (
+            <button
+              className="btn btn--primary btn--sm"
+              type="button"
+              data-dialog-open={reinstateId}
+            >
+              <Icon name="refresh" size={16} className="btn__icon--idle" />
+              <span className="btn__label--idle">Rétablir l’établissement</span>
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {suspended ? (
-        <Reinstate
-          slug={contestation.provider_slug}
-          name={contestation.provider_name}
-          back={back}
-        />
+        <ReinstateDialog id={reinstateId} slug={contestation.provider_slug} back={back} />
       ) : null}
     </article>
   );
 }
 
 /**
- * Behind a disclosure, and behind a motive nobody can skip.
+ * The confirmation, and the motive nobody can skip.
  *
  * <p>The motive is mandatory in the contract and required in the form, so the
  * refusal is not what teaches it. The day a provider contests the decision,
  * "who, when, why" has to exist, and a sentence written at the moment of the
  * decision is worth more than one reconstructed afterwards.
  */
-function Suspend({ slug, name, back }: { slug: string; name: string; back: string }) {
+function SuspendDialog({ id, slug, back }: { id: string; slug: string; back: string }) {
   return (
-    <details className="card card--pad card--sunken stack stack-3">
-      {/* The flex row is inside the summary rather than on it: `display: flex`
-          on a summary is what removes the browser's own disclosure triangle,
-          and the one control here that takes a salon off the hub should not be
-          the one that looks like a sentence. */}
-      <summary>
-        <span className="row row-2">
-          <Icon name="ban" size={16} />
-          <span className="t-small">Suspendre ce salon</span>
-        </span>
-      </summary>
-
-      <form action={suspendProvider} className="stack stack-3">
-        <input type="hidden" name="slug" value={slug} />
-        <input type="hidden" name="back" value={back} />
-        <label className="field">
-          <span className="field__label">
-            Motif
-            <span className="field__req" aria-hidden="true">
-              *
-            </span>
-          </span>
-          <textarea
-            className="textarea"
-            name="reason"
-            rows={2}
-            required
-            minLength={3}
-            maxLength={500}
-            placeholder="Trois clients signalent des rendez-vous non honorés."
-          />
-        </label>
-        <p className="field__hint">
-          <Icon name="info" size={14} /> {name} lira ce motif sur son tableau de
-          bord. Ses rendez-vous déjà pris ne sont pas annulés.
-        </p>
-        <ActionButton label="Suspendre ce salon" type="submit" variant="danger" icon="ban" />
-      </form>
-    </details>
+    <dialog className="dialog" id={id}>
+      <div className="dialog__inner">
+        <div className="dialog__head">
+          <h2 className="dialog__title">Suspendre cet établissement&nbsp;?</h2>
+        </div>
+        <form action={suspendProvider}>
+          <input type="hidden" name="slug" value={slug} />
+          <input type="hidden" name="back" value={back} />
+          <div className="dialog__body">
+            <ul className="stack" style={{ "--stack-gap": "var(--s-2)" } as CSSProperties}>
+              {SUSPENSION_EFFECTS.map((effect) => (
+                <li
+                  key={effect}
+                  className="row"
+                  style={{ alignItems: "flex-start", gap: "var(--s-3)" }}
+                >
+                  <span style={{ color: "var(--warning)", marginTop: 2 }}>
+                    <Icon name="alert-triangle" size={16} />
+                  </span>
+                  <span className="t-sm">{effect}</span>
+                </li>
+              ))}
+            </ul>
+            <div style={{ marginTop: "var(--s-5)" }}>
+              <div className="field">
+                <label className="field__label" htmlFor={`${id}-reason`}>
+                  Motif communiqué au prestataire
+                  <span className="field__req" aria-hidden="true">
+                    *
+                  </span>
+                </label>
+                <textarea
+                  className="textarea"
+                  id={`${id}-reason`}
+                  name="reason"
+                  style={{ minHeight: 120 }}
+                  required
+                  minLength={3}
+                  maxLength={500}
+                  placeholder="Décrivez précisément ce qui est reproché et ce qui est attendu."
+                />
+                <p className="field__hint">
+                  Ce texte est le seul que le prestataire verra. Il doit permettre
+                  de comprendre et de corriger.
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="dialog__foot">
+            <button className="btn btn--secondary" type="button" data-dialog-close="">
+              <span className="btn__label--idle">Annuler</span>
+            </button>
+            <button className="btn btn--danger" type="submit">
+              <span className="btn__label--idle">Suspendre</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </dialog>
   );
 }
 
@@ -604,33 +730,45 @@ function Suspend({ slug, name, back }: { slug: string; name: string; back: strin
  * console that cannot undo its own decision does not have a moderation policy,
  * it has a delete button.
  */
-function Reinstate({ slug, name, back }: { slug: string; name: string; back: string }) {
+function ReinstateDialog({ id, slug, back }: { id: string; slug: string; back: string }) {
   return (
-    <details className="card card--pad card--sunken stack stack-3">
-      <summary>
-        <span className="row row-2">
-          <Icon name="refresh" size={16} />
-          <span className="t-small">Rétablir</span>
-        </span>
-      </summary>
-
-      <form action={reinstateProvider} className="stack stack-3">
-        <input type="hidden" name="slug" value={slug} />
-        <input type="hidden" name="back" value={back} />
-        <p className="field__hint">
-          <Icon name="info" size={14} /> La page de {name} revient dans
-          l’annuaire et le motif disparaît de sa fiche. Le journal d’audit garde
-          la décision et sa date.
-        </p>
-        <ActionButton label="Rétablir" type="submit" variant="secondary" icon="refresh" />
-      </form>
-    </details>
+    <dialog className="dialog" id={id}>
+      <div className="dialog__inner">
+        <div className="dialog__head">
+          <h2 className="dialog__title">Rétablir cet établissement&nbsp;?</h2>
+        </div>
+        <form action={reinstateProvider}>
+          <input type="hidden" name="slug" value={slug} />
+          <input type="hidden" name="back" value={back} />
+          <div className="dialog__body">
+            <p>
+              Sa page redevient immédiatement visible et accepte de nouvelles
+              réservations. Le motif disparaît de sa fiche&nbsp;; le journal
+              d’audit garde la décision et sa date.
+            </p>
+          </div>
+          <div className="dialog__foot">
+            <button className="btn btn--secondary" type="button" data-dialog-close="">
+              <span className="btn__label--idle">Annuler</span>
+            </button>
+            <button className="btn btn--primary" type="submit">
+              <span className="btn__label--idle">Rétablir</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </dialog>
   );
 }
 
 /** A queue at its first page, which is where switching lists should land. */
 function root(queue: string): string {
   return `/admin?${new URLSearchParams({ queue }).toString()}`;
+}
+
+/** A view of the queue being read, from its first page. */
+function viewHref(queue: string, view: string): string {
+  return `/admin?${new URLSearchParams({ queue, status: view }).toString()}`;
 }
 
 /** The view a lever was pressed from, so the redirect comes back to it. */

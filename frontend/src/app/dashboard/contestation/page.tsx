@@ -1,11 +1,8 @@
 import { Icon } from "@/components/icon";
-import { ActionButton, Badge, Notice, SectionHead } from "@/components/ui";
+import { Badge, Notice } from "@/components/ui";
 import { api } from "@/lib/api";
-import { dateTime } from "@/lib/format";
-import type {
-  ContestationView,
-  ProviderProfile,
-} from "@/lib/types";
+import { dateTime, day } from "@/lib/format";
+import type { ContestationView, ProviderProfile } from "@/lib/types";
 import { contest } from "./actions";
 
 /**
@@ -53,31 +50,6 @@ const REFUSALS: Record<string, string> = {
   UNKNOWN: "L'envoi n'a pas abouti.",
 };
 
-/**
- * What a suspension actually does, which is narrower than it feels.
- *
- * <p>Spelled out because the first belief of a provider whose page vanished is
- * that the business is closed and the bookings are gone. Neither is true, and
- * the diary they are about to stop opening is where today's clients are.
- */
-const EFFECTS: { icon: string; title: string; body: string }[] = [
-  {
-    icon: "ban",
-    title: "Votre page est retirée de l'annuaire",
-    body: "Elle n'apparaît plus dans les recherches, et vos clients ne peuvent plus l'ouvrir — même avec le lien que vous leur avez donné. Personne ne peut donc réserver en ligne.",
-  },
-  {
-    icon: "calendar-check",
-    title: "Les rendez-vous déjà pris tiennent",
-    body: "Rien n'a été annulé. Les clients qui avaient réservé avant la suspension sont attendus à l'heure prévue, et vous devez les recevoir.",
-  },
-  {
-    icon: "calendar",
-    title: "Votre agenda continue de fonctionner",
-    body: "Vous confirmez, déplacez, terminez et inscrivez au comptoir comme d'habitude. Seule l'arrivée de nouveaux clients par la plateforme s'est arrêtée.",
-  },
-];
-
 export default async function Contestation({
   searchParams,
 }: {
@@ -93,14 +65,25 @@ export default async function Contestation({
   if (profile.status !== "SUSPENDED") {
     return (
       <>
-        <div className="pro-head stack stack-2">
-          <h1 className="pro-head__title">Contester</h1>
+        <div className="appbar">
+          <div className="appbar__in">
+            <div>
+              <h1 className="appbar__title">Contestation</h1>
+              <div className="appbar__sub">Votre page est en ligne</div>
+            </div>
+          </div>
         </div>
-        <div className="pro-body" id="contenu">
-          <Notice tone="success" title="Rien à contester" icon="check-circle">
-            Votre activité est en règle avec la plateforme.
-          </Notice>
-        </div>
+
+        <main className="app__main has-tabbar" id="contenu">
+          <div className="app__inner">
+            <div style={{ maxWidth: 760 }}>
+              <Notice tone="success" title="Rien à contester" icon="check-circle">
+                Votre page est visible du public et votre activité est en règle
+                avec la plateforme.
+              </Notice>
+            </div>
+          </div>
+        </main>
       </>
     );
   }
@@ -114,125 +97,158 @@ export default async function Contestation({
 
   return (
     <>
-      <div className="pro-head stack stack-2">
-        <h1 className="pro-head__title">Votre page est suspendue</h1>
-        <p className="t-small t-muted measure">
-          Ce que cela change, pourquoi, et comment répondre à la plateforme.
-        </p>
-      </div>
-
-      <div className="pro-body stack stack-8" id="contenu">
-        <section className="stack stack-4">
-          <SectionHead label="La décision" />
-          <div className="recap">
-            <div className="recap__row">
-              <span className="recap__key">Motif</span>
-              <span className="recap__val">
-                {profile.suspension_reason ?? "Aucun motif n'a été communiqué."}
-              </span>
-            </div>
+      <div className="appbar">
+        <div className="appbar__in">
+          <div>
+            <h1 className="appbar__title">Suspension de votre établissement</h1>
             {profile.suspended_at ? (
-              <div className="recap__row">
-                <span className="recap__key">Depuis le</span>
-                <span className="recap__val">
-                  {dateTime(profile.suspended_at, profile.timezone)}
-                </span>
+              <div className="appbar__sub">
+                Depuis le {dateTime(profile.suspended_at, profile.timezone)}
               </div>
             ) : null}
           </div>
-        </section>
-
-        <section className="stack stack-4">
-          <SectionHead label="Ce que cela change" />
-          <ul className="list list--boxed">
-            {EFFECTS.map((effect) => (
-              <li key={effect.title}>
-                <div className="list-row">
-                  <Icon name={effect.icon} size={20} />
-                  <span className="grow stack stack-1">
-                    <span className="t-small">{effect.title}</span>
-                    <span className="t-caption t-dim">{effect.body}</span>
-                  </span>
-                </div>
-              </li>
-            ))}
-          </ul>
-          <p className="t-small t-muted measure">
-            Republier votre page depuis «&nbsp;Ma page&nbsp;» n'y changera rien.
-            C'est la plateforme qui la remet en ligne, et elle seule.
-          </p>
-        </section>
-
-        <section className="stack stack-4">
-          <SectionHead label="Contester cette décision" />
-
-          {/* Above both branches: a second send is refused, and the refusal
-              belongs beside the message that already went rather than beside a
-              form this page no longer shows. */}
-          {query.error ? (
-            <Notice tone="danger" title="Votre message n'est pas parti">
-              {REFUSALS[query.error] ?? REFUSALS.UNKNOWN}
-            </Notice>
-          ) : null}
-
-          {contestation ? (
-            <div className="card card--pad stack stack-3">
-              <div className="row row--between row-3 row--wrap">
-                <p className="t-label">Votre message a été transmis</p>
-                {contestation.read ? (
-                  <Badge label="Lu par la plateforme" tone="success" icon="check" />
-                ) : (
-                  <Badge label="Pas encore ouvert" tone="neutral" icon="clock" />
-                )}
-              </div>
-              <p className="t-caption t-dim">
-                Envoyé le {dateTime(contestation.submitted_at, profile.timezone)}
-              </p>
-              <p className="t-body measure">{contestation.message}</p>
-              <p className="t-caption t-dim measure">
-                La plateforme ne répond pas sur cette page&nbsp;: si elle vous
-                donne raison, votre page revient en ligne et cet écran vous le
-                dira.
-              </p>
-            </div>
-          ) : (
-            <form action={contest} className="stack stack-4">
-              <p className="t-small t-muted measure">
-                Dites ce que vous contestez et ce qui s'est réellement passé. Si
-                vous avez une preuve — une photo, un message d'un client, un
-                reçu — décrivez-la&nbsp;: c'est ce qui fait la différence.
-              </p>
-
-              <label className="field">
-                <span className="field__label">
-                  Votre message
-                  <span className="field__req" aria-hidden="true">*</span>
-                </span>
-                <textarea
-                  className="textarea"
-                  name="message"
-                  rows={8}
-                  required
-                  maxLength={2000}
-                  placeholder="Ce que vous contestez, et ce qui s'est passé de votre côté."
-                />
-                <span className="field__hint">
-                  <Icon name="info" size={14} /> Un seul message par
-                  suspension&nbsp;: vous ne pourrez pas en envoyer un second, ni
-                  corriger celui-ci. 2 000 caractères au plus.
-                </span>
-              </label>
-
-              <ActionButton
-                label="Envoyer ma contestation"
-                variant="primary"
-                type="submit"
-                icon="send"
-              />
-            </form>
-          )}
-        </section>
+        </div>
       </div>
+
+      <main className="app__main has-tabbar" id="contenu">
+        <div className="app__inner">
+          <div style={{ maxWidth: 760 }} className="stack">
+            {/* The first belief of a provider whose page has vanished is that
+                the business is closed and the bookings are gone. Neither is
+                true, and the diary they are about to stop opening is where
+                today's clients are - so it is said before anything else. */}
+            <Notice tone="danger" title="Votre page n’est plus visible du public">
+              Elle n’apparaît plus dans les recherches et n’accepte plus de
+              nouvelles réservations, même avec le lien que vous avez donné à vos
+              clients. Les rendez-vous déjà pris restent valables et sont
+              toujours dans votre agenda&nbsp;: vous confirmez, déplacez et
+              terminez comme d’habitude. Republier votre page depuis
+              «&nbsp;Ma page&nbsp;» n’y changera rien&nbsp;: c’est la plateforme
+              qui la remet en ligne, et elle seule.
+            </Notice>
+
+            <div className="panel" style={{ marginTop: "var(--s-6)" }}>
+              <div className="panel__head">
+                <div>
+                  <div className="panel__title">Motif communiqué par la modération</div>
+                  {profile.suspended_at ? (
+                    <div className="panel__sub">
+                      Décision du {day(profile.suspended_at, profile.timezone)}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+              <div className="card__body">
+                <p className="t-body">
+                  {profile.suspension_reason ?? "Aucun motif n’a été communiqué."}
+                </p>
+                <div className="dl dl--lined" style={{ marginTop: "var(--s-6)" }}>
+                  {profile.suspended_at ? (
+                    <div className="dl__row">
+                      <span className="dl__key">Date de la décision</span>
+                      <span className="dl__val">
+                        {day(profile.suspended_at, profile.timezone)}
+                      </span>
+                    </div>
+                  ) : null}
+                  <div className="dl__row">
+                    <span className="dl__key">État</span>
+                    <span className="dl__val">
+                      <Badge label="Suspendu" tone="danger" icon="ban" />
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Above both branches: a second send is refused, and the refusal
+                belongs beside the message that already went rather than beside
+                a form this page no longer shows. */}
+            {query.error ? (
+              <div style={{ marginTop: "var(--s-6)" }}>
+                <Notice tone="danger" title="Votre message n’est pas parti">
+                  {REFUSALS[query.error] ?? REFUSALS.UNKNOWN}
+                </Notice>
+              </div>
+            ) : null}
+
+            {contestation ? (
+              <div className="panel" style={{ marginTop: "var(--s-6)" }}>
+                <div className="panel__head">
+                  <div className="panel__title">Votre réponse</div>
+                  {contestation.read ? (
+                    <Badge label="Lue par la plateforme" tone="success" icon="check" />
+                  ) : (
+                    <Badge label="Envoyée · pas encore ouverte" tone="info" icon="hourglass" />
+                  )}
+                </div>
+                <div className="card__body">
+                  <p className="t-sm" style={{ color: "var(--text-tertiary)" }}>
+                    Envoyée le {day(contestation.submitted_at, profile.timezone)}
+                  </p>
+                  <p className="t-body" style={{ marginTop: "var(--s-3)" }}>
+                    {contestation.message}
+                  </p>
+                  <div style={{ marginTop: "var(--s-5)" }}>
+                    <Notice tone="info" title="En attente d’une décision">
+                      La plateforme ne répond pas sur cette page&nbsp;: si elle
+                      vous donne raison, votre page revient en ligne et cet écran
+                      vous le dira. Vous ne pouvez envoyer qu’une seule réponse
+                      par suspension.
+                    </Notice>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="panel" style={{ marginTop: "var(--s-6)" }}>
+                <div className="panel__head">
+                  <div>
+                    <div className="panel__title">Répondre</div>
+                    <div className="panel__sub">
+                      Une seule réponse est possible. Prenez le temps de l’écrire.
+                    </div>
+                  </div>
+                </div>
+                <form action={contest}>
+                  <div className="card__body">
+                    <div className="field">
+                      <label className="field__label" htmlFor="appeal-message">
+                        Votre explication
+                        <span className="field__req" aria-hidden="true">
+                          *
+                        </span>
+                      </label>
+                      <textarea
+                        className="textarea"
+                        id="appeal-message"
+                        name="message"
+                        style={{ minHeight: 180 }}
+                        required
+                        maxLength={2000}
+                        placeholder="Expliquez ce qui s’est passé et ce que vous avez changé."
+                      />
+                      <p className="field__hint">
+                        Restez factuel. Décrivez ce qui a été corrigé&nbsp;: c’est
+                        ce qui pèse le plus dans la décision. Un seul message par
+                        suspension, 2 000 caractères au plus.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="card__foot">
+                    <div className="row">
+                      <span className="grow"></span>
+                      <button className="btn btn--primary" type="submit">
+                        <Icon name="send" size={18} className="btn__icon--idle" />
+                        <span className="btn__label--idle">Envoyer ma réponse</span>
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              </div>
+            )}
+          </div>
+        </div>
+      </main>
     </>
   );
 }

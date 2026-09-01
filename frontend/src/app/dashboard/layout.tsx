@@ -1,14 +1,14 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Icon } from "@/components/icon";
-import { ActionButton, Avatar, Badge, EmptyState, Wordmark } from "@/components/ui";
+import { ActionButton, EmptyState, Wordmark, initials } from "@/components/ui";
 import { ApiError, api, isSignedIn } from "@/lib/api";
 import type { CurrentMember, ProviderProfile } from "@/lib/types";
 
 /** A diary. Cached, it would be stale before it was drawn. */
 export const dynamic = "force-dynamic";
 
-type Section = {
+type Entry = {
   href: string;
   icon: string;
   label: string;
@@ -16,21 +16,55 @@ type Section = {
   ownerOnly?: boolean;
 };
 
+type Group = { title: string; entries: Entry[] };
+
 /**
- * Every room behind the sign-in, in the order a provider needs them.
+ * Every room behind the sign-in, grouped and in the order a provider needs it.
  *
- * <p>The diary is first because it is why the dashboard is opened. It is also
- * the root: there is no separate "accueil" above it, and two entries pointing
- * at one URL would be a navigation that cannot say where you are.
+ * <p>The grouping is the whole point. Six links in a flat list said nothing
+ * about what belonged to what, so every screen felt like a sibling of every
+ * other one and nobody could say where they were. Four short groups say it: the
+ * day first, then the shop a customer sees, then the people, then the platform.
+ *
+ * <p>The diary is the root. There is no separate "accueil" above it, and two
+ * entries pointing at one URL would be a navigation that cannot say where you
+ * are.
  */
-const SECTIONS: Section[] = [
-  { href: "/dashboard", icon: "calendar", label: "Agenda" },
-  { href: "/dashboard/hours", icon: "clock", label: "Horaires" },
-  { href: "/dashboard/services", icon: "briefcase", label: "Prestations", ownerOnly: true },
-  { href: "/dashboard/profile", icon: "store", label: "Ma page", ownerOnly: true },
-  { href: "/dashboard/customers", icon: "message", label: "Clientèle" },
-  { href: "/dashboard/team", icon: "users", label: "Équipe", ownerOnly: true },
+const GROUPS: Group[] = [
+  {
+    title: "Activité",
+    entries: [{ href: "/dashboard", icon: "calendar", label: "Agenda" }],
+  },
+  {
+    title: "Mon établissement",
+    entries: [
+      { href: "/dashboard/services", icon: "tag", label: "Prestations", ownerOnly: true },
+      { href: "/dashboard/hours", icon: "clock", label: "Horaires" },
+      { href: "/dashboard/profile", icon: "store", label: "Ma page", ownerOnly: true },
+    ],
+  },
+  {
+    title: "Clients",
+    entries: [
+      { href: "/dashboard/customers", icon: "users", label: "Clientèle" },
+      { href: "/dashboard/team", icon: "user-plus", label: "Équipe", ownerOnly: true },
+    ],
+  },
 ];
+
+/**
+ * The suspension room, which was in no navigation at all - the same thing as
+ * not existing. A business whose page vanished used to reach the one screen
+ * that explains why by typing the address.
+ *
+ * <p>Owner only, because the platform only reads the owner's answer.
+ */
+const APPEAL: Entry = {
+  href: "/dashboard/contestation",
+  icon: "shield-alert",
+  label: "Contestation",
+  ownerOnly: true,
+};
 
 /** How many fit under a thumb before the bar stops being tappable. */
 const BOTTOM_SLOTS = 4;
@@ -47,7 +81,7 @@ const BOTTOM_SLOTS = 4;
  * decides whether to render a sign-in link or a dashboard.
  *
  * <p>Two navigations rather than one shrunk. A sidebar on the brand's dark
- * green from 1024 px up, a five-slot bar at the bottom of a telephone, and the
+ * green from 1000 px up, a five-slot bar at the bottom of a telephone, and the
  * rest of the rooms in a list the bar's last slot jumps to. A 45 px sidebar is
  * neither readable nor tappable, so below that width there is not one.
  */
@@ -72,7 +106,7 @@ export default async function DashboardLayout({
     // succeed and land them here again.
     if (error instanceof ApiError && error.status === 403) {
       return (
-        <main className="container container--booking section">
+        <main className="page page--narrow section" id="contenu">
           <EmptyState
             sketch="storefront"
             title="Aucune activité rattachée à ce compte"
@@ -85,178 +119,212 @@ export default async function DashboardLayout({
     throw error;
   }
 
+  const owner = me.role === "OWNER";
+  const suspended = provider.status === "SUSPENDED";
+  const role = owner ? "Propriétaire" : "Équipe";
+
   // Hidden for an employee because the server refuses them anyway. The check is
   // on the server; this only stops the refusal being the first they hear of it.
-  const sections = SECTIONS.filter((s) => !s.ownerOnly || me.role === "OWNER");
-  const bottom = sections.slice(0, BOTTOM_SLOTS);
-  const role = me.role === "OWNER" ? "Propriétaire" : "Équipe";
+  const rooms = GROUPS.map((group) => ({
+    title: group.title,
+    entries: group.entries.filter((entry) => !entry.ownerOnly || owner),
+  })).filter((group) => group.entries.length > 0);
+
+  // Suspended, it is the only thing that matters and it goes first. Otherwise
+  // it is still there, at the bottom, because a screen nothing links to is a
+  // screen that does not exist.
+  const appeal = APPEAL.ownerOnly && !owner ? [] : [APPEAL];
+  const navigation: Group[] = [
+    ...(suspended && appeal.length > 0 ? [{ title: "Suspension", entries: appeal }] : []),
+    ...rooms,
+    ...(!suspended && appeal.length > 0 ? [{ title: "Plateforme", entries: appeal }] : []),
+  ];
+
+  const bottom = navigation.flatMap((group) => group.entries).slice(0, BOTTOM_SLOTS);
 
   return (
     <>
-      <div className="pro">
-        <nav className="sidebar" aria-label="Navigation principale">
-          <div style={{ padding: "var(--space-2) var(--space-3) var(--space-6)" }}>
+      <div className="app">
+        <aside className="side">
+          <div className="side__brand">
+            {/* The real monogram, not the mockup's letter tile: the brand sheet
+                forbids an approximation of the mark. */}
             <Wordmark href="/dashboard" size={26} tone="inverse" />
           </div>
 
-          <div className="sidenav">
-            {sections.map((section) => (
-              <Link key={section.href} className="sidenav__item" href={section.href}>
-                <Icon name={section.icon} size={18} />
-                <span>{section.label}</span>
-              </Link>
-            ))}
-          </div>
+          <BusinessCard provider={provider} owner={owner} suspended={suspended} />
 
-          <div className="sidenav__group">
-            <span
-              className="t-caption"
-              style={{
-                color: "var(--ink-accent)",
-                letterSpacing: "var(--ls-label)",
-                textTransform: "uppercase",
-                fontWeight: 700,
-              }}
-            >
-              {provider.business_name}
-            </span>
-          </div>
-
-          <div className="sidenav">
-            <Link className="sidenav__item" href={`/p/${provider.slug}`}>
-              <Icon name="eye" size={18} />
-              <span className="grow">Voir ma page publique</span>
-              <Icon name="external" size={16} />
-            </Link>
-            {provider.published ? null : (
-              <p
-                className="t-caption"
-                style={{ color: "var(--ink-fg-muted)", padding: "0 var(--space-3) var(--space-2)" }}
-              >
-                Votre page n’est pas encore publiée&nbsp;: personne ne peut la trouver.
-              </p>
-            )}
-          </div>
-
-          <div className="sidebar__foot">
-            <div
-              className="row row-3"
-              style={{ padding: "var(--space-2) var(--space-3)", minWidth: 0 }}
-            >
-              <Avatar name={me.display_name} size="sm" />
-              <span className="grow" style={{ minWidth: 0 }}>
-                <span
-                  style={{
-                    display: "block",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {me.display_name}
-                </span>
-                <span
-                  className="t-caption"
-                  style={{ color: "var(--ink-fg-muted)", display: "block" }}
-                >
-                  {role}
-                </span>
-              </span>
+          {navigation.map((group) => (
+            <div className="side__group" key={group.title}>
+              <div className="side__group-title">{group.title}</div>
+              {group.entries.map((entry) => (
+                <Link className="side__link" href={entry.href} key={entry.href}>
+                  <Icon name={entry.icon} size={18} />
+                  <span className="grow">{entry.label}</span>
+                </Link>
+              ))}
             </div>
+          ))}
+
+          <div className="side__foot">
+            {/* Who is signed in, which the card above does not say: an employee
+                working on the owner's laptop and the owner see the same salon
+                and must not see the same diary. The design's own place for this
+                is an account screen this application does not have. */}
+            <span className="side__biz-state" style={{ padding: "0 var(--s-3) var(--s-3)" }}>
+              {me.display_name} · {role}
+            </span>
+            <Link className="side__link" href={`/p/${provider.slug}`}>
+              <Icon name="external" size={18} />
+              <span className="grow">Voir ma page publique</span>
+            </Link>
             {/* Styled as a nav row rather than as a button: it sits on the dark
                 green, where a light-surface button would be the only thing on
                 the panel that does not belong to it. */}
             <form method="post" action="/api/auth/logout">
-              <button type="submit" className="sidenav__item" style={{ width: "100%" }}>
-                <Icon name="lock" size={18} />
-                <span>Se déconnecter</span>
+              <button type="submit" className="side__link" style={{ width: "100%" }}>
+                <Icon name="logout" size={18} />
+                <span className="grow">Déconnexion</span>
               </button>
             </form>
           </div>
-        </nav>
+        </aside>
 
-        <div className="pro__main">
-          <header className="topbar to-lg">
-            <Wordmark href="/dashboard" size={24} hideText />
-            <span className="grow" style={{ minWidth: 0 }}>
-              <span
-                className="t-small"
-                style={{
-                  fontWeight: "var(--weight-semibold)",
-                  display: "block",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {provider.business_name}
-              </span>
-              <span className="t-caption t-dim" style={{ display: "block" }}>
-                {me.display_name}
-              </span>
-            </span>
-            {provider.published ? null : <Badge label="Non publiée" tone="warning" icon="eye-off" />}
-          </header>
-
+        <div>
           {children}
 
           {/* The bar's last slot lands here. A sheet would be the nicer gesture
               and would cost a script; this is the same list, addressable, and it
               works on the first paint. */}
-          <section
-            className="pro-body to-lg stack stack-4"
-            id="sections"
-            aria-labelledby="sections-title"
-            style={{ paddingTop: "var(--space-10)" }}
-          >
-            <p className="t-label rule-accent" id="sections-title">
-              Toutes les sections
-            </p>
-            <ul className="list list--boxed">
-              {sections.map((section) => (
-                <li key={section.href}>
-                  <Link className="list-row" href={section.href}>
-                    <span style={{ color: "var(--text-tertiary)", flex: "none" }}>
-                      <Icon name={section.icon} size={20} />
-                    </span>
-                    <span className="grow t-small">{section.label}</span>
-                    <Icon name="chevron-right" size={16} />
-                  </Link>
-                </li>
-              ))}
-              <li>
-                <Link className="list-row" href={`/p/${provider.slug}`}>
-                  <span style={{ color: "var(--text-tertiary)", flex: "none" }}>
-                    <Icon name="eye" size={20} />
-                  </span>
-                  <span className="grow t-small">Voir ma page publique</span>
-                  <Icon name="external" size={16} />
-                </Link>
-              </li>
-            </ul>
-            <div className="row row--between row-3 row--wrap">
-              <span className="t-caption t-dim">
-                {me.display_name} — {role} chez {provider.business_name}
-              </span>
-              <SignOut />
+          <nav className="app__main has-tabbar hide-lg" id="sections" aria-label="Toutes les sections">
+            <div className="app__inner">
+              <div className="stack" style={{ "--stack-gap": "var(--s-6)" } as React.CSSProperties}>
+                {navigation.map((group) => (
+                  <div key={group.title}>
+                    <div className="t-overline" style={{ marginBottom: "var(--s-3)" }}>
+                      {group.title}
+                    </div>
+                    <div className="panel">
+                      <div className="list" style={{ borderTop: 0 }}>
+                        {group.entries.map((entry) => (
+                          <Link
+                            className="list__item list__item--link"
+                            href={entry.href}
+                            key={entry.href}
+                          >
+                            <span className="choice__icon" style={{ width: 34, height: 34 }}>
+                              <Icon name={entry.icon} size={18} />
+                            </span>
+                            <span className="grow t-sm t-strong">{entry.label}</span>
+                            <Icon name="chevron-right" size={18} />
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                <div>
+                  <div className="t-overline" style={{ marginBottom: "var(--s-3)" }}>
+                    Ma page publique
+                  </div>
+                  <div className="panel">
+                    <div className="list" style={{ borderTop: 0 }}>
+                      <Link className="list__item list__item--link" href={`/p/${provider.slug}`}>
+                        <span className="choice__icon" style={{ width: 34, height: 34 }}>
+                          <Icon name="external" size={18} />
+                        </span>
+                        <span className="grow t-sm t-strong">Voir ma page</span>
+                        <Icon name="chevron-right" size={18} />
+                      </Link>
+                      <div className="list__item">
+                        <span className="grow t-xs">
+                          {me.display_name} · {role} chez {provider.business_name}
+                        </span>
+                        <SignOut />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
-          </section>
+          </nav>
         </div>
       </div>
 
-      <nav className="bottomnav to-lg" aria-label="Navigation">
-        {bottom.map((section) => (
-          <Link key={section.href} className="bottomnav__item" href={section.href}>
-            <Icon name={section.icon} size={21} />
-            <span>{section.label}</span>
+      <nav className="apptabs" aria-label="Navigation prestataire">
+        {bottom.map((entry) => (
+          <Link className="apptabs__item" href={entry.href} key={entry.href}>
+            <Icon name={entry.icon} />
+            <span>{entry.label}</span>
           </Link>
         ))}
-        <Link className="bottomnav__item" href="#sections">
-          <Icon name="menu" size={21} />
+        <a className="apptabs__item" href="#sections">
+          <Icon name="more-h" />
           <span>Plus</span>
-        </Link>
+        </a>
       </nav>
     </>
+  );
+}
+
+/**
+ * Which salon this is, and whether anybody can find it.
+ *
+ * <p>A link only for an owner: it opens the page editor, which the server
+ * refuses to an employee. The state line is the only place in the shell that
+ * says a page is unpublished or suspended, and it is on every screen because
+ * either one is true until somebody acts on it.
+ */
+function BusinessCard({
+  provider,
+  owner,
+  suspended,
+}: {
+  provider: ProviderProfile;
+  owner: boolean;
+  suspended: boolean;
+}) {
+  const state = suspended
+    ? { dot: "#F0A9A2", text: "Suspendue par la plateforme" }
+    : provider.published
+      ? { dot: "#7FD3A5", text: `En ligne · /p/${provider.slug}` }
+      : { dot: "rgba(255,255,255,.4)", text: "Hors ligne · personne ne vous trouve" };
+
+  const inside = (
+    <>
+      <span
+        className="avatar avatar--sm"
+        style={{ background: "rgba(255,255,255,.14)", color: "#fff", borderColor: "transparent" }}
+        aria-hidden="true"
+      >
+        {initials(provider.business_name)}
+      </span>
+      <span className="grow">
+        <span className="side__biz-name">{provider.business_name}</span>
+        <span className="side__biz-state">
+          <span
+            style={{
+              width: "6px",
+              height: "6px",
+              borderRadius: "50%",
+              background: state.dot,
+              display: "inline-block",
+            }}
+          />
+          {state.text}
+        </span>
+      </span>
+      {owner ? <Icon name="chevron-right" size={18} /> : null}
+    </>
+  );
+
+  return owner ? (
+    <Link className="side__biz" href="/dashboard/profile" style={{ textDecoration: "none" }}>
+      {inside}
+    </Link>
+  ) : (
+    <div className="side__biz">{inside}</div>
   );
 }
 
@@ -264,7 +332,7 @@ export default async function DashboardLayout({
 function SignOut() {
   return (
     <form method="post" action="/api/auth/logout">
-      <ActionButton label="Se déconnecter" variant="secondary" size="sm" type="submit" icon="lock" />
+      <ActionButton label="Déconnexion" variant="secondary" size="sm" type="submit" icon="logout" />
     </form>
   );
 }

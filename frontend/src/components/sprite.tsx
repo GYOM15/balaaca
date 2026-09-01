@@ -23,16 +23,16 @@ const SPRITE = String.raw`<svg xmlns="http://www.w3.org/2000/svg" aria-hidden="t
       #bal-sprite symbol .fill { fill: currentColor; stroke: none; }
       #bal-sprite symbol .thin { stroke-width: 1.2; }
 
-      /* Les scenes ne sont pas des icones et ne peuvent pas partager leur
-         trait. Une icone vit sur une grille 24 et s'affiche autour de 20 px :
-         1.6 y rend a un peu plus d'un pixel. Une scene vit sur une grille 200
-         et s'affiche jusqu'a 460 px en filigrane : le meme 1.6 y rend a 3,7 px,
-         soit pres de trois fois le trait des croquis d'origine. C'est toute la
-         difference entre le crayon et le marqueur.
+      /* A scene is not an icon and cannot share its stroke. An icon lives on
+         a 24 grid and is drawn around 20 px, where 1.6 lands at a little over
+         one pixel. A scene lives on a 200 grid and is drawn up to 460 px as a
+         watermark, where the same 1.6 lands at 3.7 - nearly three times the
+         line of the sketches it was drawn from. That is the whole difference
+         between a pencil and a marker.
 
-         non-scaling-stroke rend le trait independant de l'echelle : la meme
-         epaisseur a l'ecran que la scene tienne 148 px en vignette ou 460 px
-         en fond de section. Une seule valeur au lieu d'une par contexte. */
+         non-scaling-stroke makes the line independent of the scale: the same
+         weight on screen whether the scene is a 148 px thumbnail or a 460 px
+         section ground. One value instead of one per context. */
       #bal-sprite symbol.scene { stroke-width: 1.1; vector-effect: non-scaling-stroke; }
       #bal-sprite symbol.scene * { vector-effect: non-scaling-stroke; }
     </style>
@@ -253,3 +253,15 @@ const SPRITE = String.raw`<svg xmlns="http://www.w3.org/2000/svg" aria-hidden="t
     <path class="thin" d="M56 108h20M124 108h20"/>
   </symbol>
 </svg>`;
+
+/**
+ * The trades the sprite actually draws, read from the sprite itself.
+ *
+ * <p>Read rather than listed, so a trade added to one and not the other cannot
+ * pass unnoticed: a `use` pointing at a symbol that is not there draws nothing
+ * at all, which reads as a layout bug rather than as a missing drawing.
+ * Computed once when the module loads.
+ */
+export const TRADE_GLYPHS: ReadonlySet<string> = new Set(
+  Array.from(SPRITE.matchAll(/id="t-([a-z0-9-]+)"/g), (m) => m[1]!),
+);

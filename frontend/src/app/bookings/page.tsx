@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Icon } from "@/components/icon";
 import { SiteFooter, SiteHeader } from "@/components/site";
-import { ActionButton, Notice } from "@/components/ui";
 
 export const metadata: Metadata = {
   title: "Retrouver ma réservation",
@@ -42,79 +41,110 @@ export default async function FindBooking({
   const invalid = typed.length > 0;
 
   return (
-    <div className="site">
+    <>
       <SiteHeader />
 
-      <main className="container container--booking section stack stack-8" id="contenu">
-        <div className="stack stack-2">
-          <h1 className="t-h2">Retrouver ma réservation</h1>
-          <p className="t-body-lg t-muted" style={{ fontWeight: 400 }}>
-            Votre référence vous a été donnée au moment de la réservation. Elle
-            ouvre votre rendez-vous : vous y voyez l’heure, et vous pouvez
-            l’annuler tant que le délai du professionnel le permet.
-          </p>
-        </div>
-
-        <form className="stack stack-5" method="get" action="/bookings">
-          <div className={invalid ? "field field--invalid" : "field"}>
-            <label className="field__label" htmlFor="reference">
-              Référence
-              <span className="field__req" aria-hidden="true">
-                *
+      <main id="contenu" className="has-tabbar">
+        <section className="section section--lg atmo tex-halo">
+          <svg className="wm wm--tr wm--gold" viewBox="0 0 24 24" aria-hidden="true">
+            <use href="#i-calendar-check" />
+          </svg>
+          <div className="page page--narrow">
+            <div
+              style={{ textAlign: "center", maxWidth: "46ch", marginInline: "auto" }}
+              data-reveal
+            >
+              <span className="badge badge--brand">
+                <Icon name="calendar-check" />
+                Sans compte
               </span>
-            </label>
-            <input
-              className="input tnum"
-              id="reference"
-              name="reference"
-              type="text"
-              required
-              defaultValue={query.reference ?? ""}
-              // Un téléphone met une majuscule et corrige tout seul, ce qui
-              // suffit à casser une référence qui distingue la casse.
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-              autoComplete="off"
-              placeholder="Collez-la ici"
-              aria-describedby={invalid ? "reference-error" : "reference-hint"}
-              aria-invalid={invalid ? "true" : undefined}
-            />
-            {invalid ? (
-              <p className="field__error" id="reference-error">
-                <Icon name="alert-circle" size={15} />
-                <span>
-                  Cette référence n’a pas la bonne forme. Vérifiez qu’elle est
-                  complète, sans espace ni caractère en trop.
+              <h1 className="t-h1" style={{ marginTop: "var(--s-4)" }}>
+                Retrouver ma réservation
+              </h1>
+              <p className="t-lead" style={{ marginTop: "var(--s-3)" }}>
+                Saisissez la référence reçue au moment de la réservation. Elle
+                ouvre votre rendez-vous : vous y voyez l’heure, et vous pouvez le
+                déplacer ou l’annuler tant que le délai du professionnel le
+                permet.
+              </p>
+            </div>
+
+            <form
+              className="card card--pad"
+              method="get"
+              action="/bookings"
+              style={{ marginTop: "var(--s-8)" }}
+            >
+              <div className="field">
+                <label className="field__label" htmlFor="reference">
+                  Référence
+                  <span className="field__req" aria-hidden="true">
+                    *
+                  </span>
+                </label>
+                <input
+                  className="input t-num"
+                  id="reference"
+                  name="reference"
+                  type="text"
+                  required
+                  defaultValue={query.reference ?? ""}
+                  // A phone capitalises and autocorrects on its own, which is
+                  // enough to break a reference that is case-sensitive.
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  autoComplete="off"
+                  placeholder="Collez-la ici"
+                  aria-describedby={invalid ? "reference-error" : "reference-hint"}
+                  aria-invalid={invalid ? "true" : undefined}
+                />
+                {invalid ? (
+                  <p className="field__error" id="reference-error">
+                    <Icon name="alert-circle" size={16} />
+                    <span>
+                      Cette référence n’a pas la bonne forme. Vérifiez qu’elle est
+                      complète, sans espace ni caractère en trop.
+                    </span>
+                  </p>
+                ) : (
+                  <p className="field__hint" id="reference-hint">
+                    Les majuscules comptent. Vous pouvez aussi coller le lien
+                    complet de votre rendez-vous : la référence y est.
+                  </p>
+                )}
+              </div>
+
+              <div style={{ marginTop: "var(--s-5)" }}>
+                <button className="btn btn--primary btn--lg btn--block" type="submit">
+                  <span>Ouvrir ma réservation</span>
+                  <Icon name="arrow-right" size={18} className="ico--arrow" />
+                </button>
+              </div>
+            </form>
+
+            <div style={{ marginTop: "var(--s-6)" }}>
+              <div className="alert alert--neutral" role="status">
+                <span className="alert__icon">
+                  <Icon name="info" />
                 </span>
-              </p>
-            ) : (
-              <p className="field__hint" id="reference-hint">
-                Vous pouvez aussi coller le lien complet de votre rendez-vous :
-                la référence y est.
-              </p>
-            )}
+                <div className="grow">
+                  <div className="alert__title">Référence perdue&nbsp;?</div>
+                  <div className="alert__body">
+                    Elle est dans le message de confirmation reçu du prestataire,
+                    et dans l’adresse de la page ouverte après la réservation.
+                    Sinon, appelez directement l’établissement : il retrouve votre
+                    rendez-vous avec votre numéro de téléphone.
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
-
-          <ActionButton
-            label="Ouvrir ma réservation"
-            variant="primary"
-            size="lg"
-            type="submit"
-            iconEnd="arrow-right"
-          />
-        </form>
-
-        <Notice tone="neutral" icon="help" title="Vous n’avez plus votre référence ?">
-          Elle est dans le message de confirmation, et dans l’adresse de la page
-          que vous avez ouverte après avoir réservé. Sans elle, appelez le
-          professionnel : le rendez-vous est dans son agenda, et lui peut le
-          retrouver à votre nom.
-        </Notice>
+        </section>
       </main>
 
       <SiteFooter />
-    </div>
+    </>
   );
 }
 

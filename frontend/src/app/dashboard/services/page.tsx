@@ -1,14 +1,9 @@
+import Link from "next/link";
+import type { CSSProperties, ReactNode } from "react";
 import { api } from "@/lib/api";
 import { mediaUrl, money } from "@/lib/format";
 import { Icon } from "@/components/icon";
-import {
-  ActionButton,
-  Badge,
-  Button,
-  EmptyState,
-  Notice,
-  SectionHead,
-} from "@/components/ui";
+import { ActionButton, Badge, Button, EmptyState, Notice } from "@/components/ui";
 import type {
   Fulfilment,
   PerformerList,
@@ -17,10 +12,6 @@ import type {
   ServicePhotoList,
   StaffList,
 } from "@/lib/types";
-// The one contract type this page needs that `@/lib/types` does not name yet.
-// Read from the generated document rather than written out by hand, because a
-// shape restated is a shape that can drift; it belongs in that file, one line,
-// beside every other.
 import {
   addServicePhoto,
   createService,
@@ -28,7 +19,6 @@ import {
   replacePerformers,
   replaceService,
 } from "./actions";
-
 
 export const dynamic = "force-dynamic";
 
@@ -77,47 +67,78 @@ const PHOTO_REFUSALS: Record<string, string> = {
   RESOURCE_NOT_FOUND: "Cette prestation n'existe plus.",
 };
 
+/** One of the three shapes a service can take, as the page draws it. */
+type ServiceShape = {
+  value: Fulfilment;
+  label: string;
+  icon: string;
+  mode: string;
+  desc: string;
+};
+
 /**
- * The three shapes a service can take.
+ * The shape a service falls back to.
  *
- * <p>One control, not two. The API derives the shape from `turnaround_hours`
+ * <p>Named rather than indexed because it is the answer to a question the
+ * contract settles: a fulfilment this client does not know is an on-site
+ * service, and that is what every service created before the enum grew is.
+ */
+const ON_SITE: ServiceShape = {
+  value: "ON_SITE",
+  label: "Sur place",
+  icon: "mode-onsite",
+  mode: "on-site",
+  desc: "Le client vient et attend sur place.",
+};
+
+/**
+ * The three shapes, as one control.
+ *
+ * <p>One control and not two. The API derives the shape from `turnaround_hours`
  * and `location`, refuses them together, and the only way a form can be sure
  * never to send that pair is never to offer them as two questions.
  */
-const SHAPES: { value: Fulfilment; label: string; icon: string; hint: string }[] = [
-  {
-    value: "ON_SITE",
-    label: "Sur place",
-    icon: "store",
-    hint: "Le client s'installe chez vous et repart avec. La durée est celle du travail.",
-  },
+const SHAPES: ServiceShape[] = [
+  ON_SITE,
   {
     value: "DROP_OFF",
-    label: "À déposer",
-    icon: "hourglass",
-    hint: "Le client dépose et revient : garage, réparation, retouche. La durée est celle du passage au comptoir, pas celle de l'atelier.",
+    label: "Dépôt",
+    icon: "mode-dropoff",
+    mode: "drop-off",
+    desc: "Le client dépose et repasse. Le rendez-vous ne dure que la remise au comptoir.",
   },
   {
     value: "AT_CUSTOMER",
     label: "À domicile",
-    icon: "map-pin",
-    hint: "Vous vous déplacez : plomberie, électricité, ménage. Le rendez-vous portera l'adresse du client.",
+    icon: "mode-atcustomer",
+    mode: "at-customer",
+    desc: "Vous vous déplacez chez le client. L'adresse est jointe au rendez-vous.",
   },
 ];
 
+/** The gap the mockup's panel stacks are built on. */
+const PANEL_GAP = { "--stack-gap": "var(--s-6)" } as CSSProperties;
+
 /**
- * The catalogue.
+ * The catalogue, and the one service being edited.
+ *
+ * <p>Two shapes on one route, because the API has one collection and the panels
+ * that hang off a service are read by their own parameter. `?edit=` opens the
+ * editor; `?performers=` and `?photos=` open it too, since that is where those
+ * two actions send a provider back to, and landing on the list would hide the
+ * refusal they need to read.
  *
  * <p>Nothing is deleted here, and the page says so: a retired service is kept
  * because appointments booked at its price still name it, and removing the row
- * would take that history with it. What looks like deletion is the box marked
- * "proposée aux clients", unticked.
+ * would take that history with it. What looks like deletion is the switch
+ * marked "Visible sur ma page", unticked.
  */
 export default async function Services({
   searchParams,
 }: {
   searchParams: Promise<{
     error?: string;
+    edit?: string;
     performers?: string;
     performer_error?: string;
     photos?: string;
@@ -138,16 +159,14 @@ export default async function Services({
   // Resolved against the catalogue rather than taken from the URL: an id naming
   // nothing then opens no panel, where reading it straight would answer 404 for
   // the whole page.
-  const opened = services.data.some((s) => s.service_offering_id === query.performers)
-    ? query.performers
-    : undefined;
+  const known = (id: string | undefined) =>
+    services.data.some((s) => s.service_offering_id === id) ? id : undefined;
 
-  // The photographs are read the same way and for the same reason: there is one
-  // list per offering and no bulk read, so drawing every album on this page
-  // would be one request per row on a page that loads a hundred of them.
-  const openedPhotos = services.data.some((s) => s.service_offering_id === query.photos)
-    ? query.photos
-    : undefined;
+  const opened = known(query.performers);
+  const openedPhotos = known(query.photos);
+  const editedId = known(query.edit) ?? opened ?? openedPhotos;
+  const edited = services.data.find((s) => s.service_offering_id === editedId);
+  const creating = query.edit === "new";
 
   const roster = opened ? await rosterFor(opened) : null;
   // Sequential rather than parallel because the two are exclusive in practice:
@@ -158,163 +177,832 @@ export default async function Services({
       )
     : null;
 
+  const refusal = query.error ? (
+    <Notice tone="danger" title="L'enregistrement n'a pas abouti">
+      {REFUSALS[query.error] ?? "Réessayez, ou rechargez la page."}
+    </Notice>
+  ) : null;
+
+  if (creating || edited) {
+    return (
+      <Editor
+        service={edited ?? null}
+        currency={currency}
+        refusal={refusal}
+        performers={
+          edited && opened === edited.service_offering_id && roster
+            ? { roster, refusal: query.performer_error }
+            : null
+        }
+        photos={
+          edited && openedPhotos === edited.service_offering_id && album
+            ? { album, refusal: query.photo_error }
+            : null
+        }
+      />
+    );
+  }
+
   return (
-    <div className="stack stack-8">
-      <header className="pro-head">
-        <h1 className="pro-head__title">Prestations</h1>
-        <p className="t-small t-muted">
-          Ce que vos clients peuvent réserver — sur place, à déposer ou à
-          domicile — avec la durée, le prix, et qui la réalise.
-        </p>
-      </header>
-
-      {query.error ? (
-        <Notice tone="danger" title="L'enregistrement n'a pas abouti">
-          {REFUSALS[query.error] ?? "Réessayez, ou rechargez la page."}
-        </Notice>
-      ) : null}
-
-      <section className="stack stack-4">
-        <SectionHead
-          label="Au catalogue"
-          aside={
-            services.data.length > 0
-              ? `${live.length} en ligne sur ${services.data.length}`
-              : undefined
-          }
-        />
-
-        {services.data.length === 0 ? (
-          <EmptyState
-            sketch="tools"
-            title="Aucune prestation"
-            body="Votre page ne peut pas être réservée tant qu'elle n'en porte aucune. Une durée, un prix, et c'est réservable."
-          />
-        ) : (
-          <div className="stack stack-3">
-            {services.data.map((service) => {
-              const id = service.service_offering_id;
-              const shape = SHAPES.find((s) => s.value === service.fulfilment);
-              return (
-                // Open when it is the one whose performers are being read: the
-                // link that loads them is a navigation, and a closed card would
-                // hide what the visitor just asked for.
-                <details
-                  className="card card--pad svc-card"
-                  key={id}
-                  id={`svc-${id}`}
-                  open={id === opened || id === openedPhotos}
-                >
-                  <summary className="row row--between row-3 row--wrap">
-                    <span className="grow stack stack-1">
-                      <span className="t-body" style={{ fontWeight: 600 }}>
-                        {service.name}
-                      </span>
-                      <span className="t-caption t-dim">
-                        <span className="tnum">{money(service.price)}</span>
-                        {" · "}
-                        <span className="tnum">{service.duration_minutes} min</span>
-                        {service.buffer_before_minutes + service.buffer_after_minutes > 0 ? (
-                          <>
-                            {" · +"}
-                            <span className="tnum">
-                              {service.buffer_before_minutes + service.buffer_after_minutes} min
-                            </span>
-                            {" de battement"}
-                          </>
-                        ) : null}
-                        {service.turnaround_hours ? (
-                          <>
-                            {" · Prêt sous "}
-                            <span className="tnum">{service.turnaround_hours}</span>
-                            {" h"}
-                          </>
-                        ) : null}
-                      </span>
-                    </span>
-                    {/* Only the two that change what a customer has to do. On
-                        site is the ordinary case and needs no announcement. */}
-                    {shape && shape.value !== "ON_SITE" ? (
-                      <Badge label={shape.label} tone="info" icon={shape.icon} />
-                    ) : null}
-                    {service.active ? null : <Badge label="Retirée" tone="outline" />}
-                    {service.active && !service.price_visible ? (
-                      <Badge label="Prix masqué" tone="neutral" icon="eye-off" />
-                    ) : null}
-                  </summary>
-
-                  <div className="stack stack-5" style={{ marginTop: "var(--space-4)" }}>
-                    <form action={replaceService} className="stack stack-4">
-                      <input type="hidden" name="id" value={id} />
-                      <Fields service={service} currency={currency} />
-                      <ActionButton label="Enregistrer" variant="primary" type="submit" icon="check" />
-                    </form>
-
-                    <hr />
-
-                    {id === opened && roster ? (
-                      <Performers
-                        serviceId={id}
-                        roster={roster}
-                        refusal={query.performer_error}
-                      />
-                    ) : (
-                      <div className="stack stack-2">
-                        <p className="t-label">Qui réalise cette prestation</p>
-                        <p className="field__hint">
-                          Toute votre équipe la réalise. Ouvrez la liste pour en
-                          retirer quelqu'un.
-                        </p>
-                        <Button
-                          label="Voir la liste"
-                          variant="secondary"
-                          icon="users"
-                          href={`/dashboard/services?performers=${encodeURIComponent(id)}#svc-${id}`}
-                        />
-                      </div>
-                    )}
-
-                    <hr />
-
-                    {id === openedPhotos && album ? (
-                      <Photos
-                        serviceId={id}
-                        album={album}
-                        refusal={query.photo_error}
-                      />
-                    ) : (
-                      <div className="stack stack-2">
-                        <p className="t-label">Photos de la prestation</p>
-                        <p className="field__hint">
-                          Cinq au maximum. La première représente la prestation
-                          dans les listes.
-                        </p>
-                        <Button
-                          label="Voir les photos"
-                          variant="secondary"
-                          icon="image"
-                          href={`/dashboard/services?photos=${encodeURIComponent(id)}#svc-${id}`}
-                        />
-                      </div>
-                    )}
-                  </div>
-                </details>
-              );
-            })}
+    <>
+      <div className="appbar">
+        <div className="appbar__in">
+          <div>
+            <h1 className="appbar__title">Prestations</h1>
+            <div className="appbar__sub">
+              {live.length} en ligne · {services.data.length} au total
+            </div>
           </div>
-        )}
-      </section>
+          <div className="appbar__actions">
+            <Button
+              label="Nouvelle prestation"
+              variant="primary"
+              size="sm"
+              icon="plus"
+              href="/dashboard/services?edit=new"
+            />
+          </div>
+        </div>
+      </div>
 
-      <section className="stack stack-4">
-        <SectionHead label="Ajouter une prestation" />
-        <form action={createService} className="card card--pad-lg stack stack-4">
-          <Fields service={null} currency={currency} />
-          <ActionButton label="Ajouter" variant="primary" type="submit" icon="plus" />
-        </form>
-      </section>
+      <main id="contenu" className="app__main has-tabbar">
+        <div className="app__inner">
+          {refusal ? (
+            <div style={{ marginBottom: "var(--s-6)" }}>{refusal}</div>
+          ) : null}
+
+          {services.data.length === 0 ? (
+            <EmptyState
+              sketch="notebook"
+              title="Votre catalogue est encore vide"
+              body="Ajoutez votre première prestation pour commencer à recevoir des réservations. Une seule suffit pour publier votre page."
+              action={
+                <Button
+                  label="Ajouter une prestation"
+                  variant="primary"
+                  icon="plus"
+                  href="/dashboard/services?edit=new"
+                />
+              }
+            />
+          ) : (
+            <>
+              <div className="panel">
+                <div className="list" style={{ borderTop: 0 }}>
+                  {services.data.map((service) => (
+                    <Row key={service.service_offering_id} service={service} />
+                  ))}
+                </div>
+              </div>
+              <p className="t-xs" style={{ marginTop: "var(--s-4)" }}>
+                Masquer une prestation la retire de votre page publique. Les
+                rendez-vous déjà pris ne sont pas affectés et leur prix reste
+                figé.
+              </p>
+            </>
+          )}
+        </div>
+      </main>
+    </>
+  );
+}
+
+/**
+ * One line of the catalogue.
+ *
+ * <p>No thumbnail and no photograph count, though the mockup draws both: the
+ * collection carries neither, and there is one photograph list per offering -
+ * so a picture per row would be a hundred requests on a page that reads a
+ * hundred services in one.
+ */
+function Row({ service }: { service: ServiceOffering }) {
+  const id = service.service_offering_id;
+  const shape = SHAPES.find((s) => s.value === service.fulfilment) ?? ON_SITE;
+  const buffer = service.buffer_before_minutes + service.buffer_after_minutes;
+  const href = `/dashboard/services?edit=${encodeURIComponent(id)}`;
+
+  return (
+    <div className="list__item" style={{ alignItems: "flex-start" }}>
+      <div className="grow">
+        <div className="row" style={{ gap: "var(--s-2)", flexWrap: "wrap" }}>
+          <Link href={href} className="t-strong" style={{ textDecoration: "none" }}>
+            {service.name}
+          </Link>
+          {service.active ? null : (
+            <Badge label="Masquée" tone="neutral" icon="eye-off" />
+          )}
+          {service.active && !service.price_visible ? (
+            <Badge label="Prix masqué" tone="neutral" icon="eye-off" />
+          ) : null}
+        </div>
+        <div
+          className="row row--wrap"
+          style={{ gap: "var(--s-2)", marginTop: "var(--s-2)" }}
+        >
+          <span className={`mode mode--${shape.mode}`}>
+            <Icon name={shape.icon} />
+            {shape.label}
+          </span>
+          <span className="fact">
+            <Icon name="clock" />
+            {durationLabel(service.duration_minutes)}
+          </span>
+          {service.turnaround_hours ? (
+            <span className="fact">
+              <Icon name="hourglass" />
+              Prêt sous {turnaroundLabel(service.turnaround_hours)}
+            </span>
+          ) : null}
+          {buffer > 0 ? (
+            <span className="fact">
+              <Icon name="history" />+{buffer} min de battement
+            </span>
+          ) : null}
+        </div>
+      </div>
+      <div className="row" style={{ gap: "var(--s-3)" }}>
+        <span className="t-price">{money(service.price)}</span>
+        <Button
+          label="Modifier"
+          variant="secondary"
+          size="sm"
+          icon="pencil"
+          href={href}
+        />
+      </div>
     </div>
   );
 }
+
+/** "3 h", "2 h 30", "45 min" — a length as a provider says it out loud. */
+function durationLabel(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (hours === 0) return `${rest} min`;
+  return rest === 0 ? `${hours} h` : `${hours} h ${rest}`;
+}
+
+/** The promise a drop-off carries, in the unit the customer will read it in. */
+function turnaroundLabel(hours: number): string {
+  if (hours < 24 || hours % 24 !== 0) return `${hours} h`;
+  const days = hours / 24;
+  if (days % 7 === 0) {
+    const weeks = days / 7;
+    return weeks === 1 ? "1 semaine" : `${weeks} semaines`;
+  }
+  return days === 1 ? "1 jour" : `${days} jours`;
+}
+
+/**
+ * One service, whole.
+ *
+ * <p>Three forms and not one, because they post to three routes: the offering
+ * is replaced whole, the performer list is replaced whole, and a photograph is
+ * its own request carrying nothing but bytes. HTML forbids nesting them, so the
+ * two panels the mockup draws inside the editor's form sit after it instead.
+ *
+ * <p>The photographs and the performers only appear once the service exists:
+ * both hang off an identifier a creation does not have yet.
+ */
+function Editor({
+  service,
+  currency,
+  refusal,
+  performers,
+  photos,
+}: {
+  service: ServiceOffering | null;
+  currency: string;
+  refusal: ReactNode;
+  performers: { roster: Roster; refusal?: string } | null;
+  photos: { album: ServicePhotoList; refusal?: string } | null;
+}) {
+  const id = service?.service_offering_id;
+
+  return (
+    <>
+      <div className="appbar">
+        <div className="appbar__in">
+          <div>
+            <h1 className="appbar__title">
+              {service ? service.name : "Nouvelle prestation"}
+            </h1>
+            <div className="appbar__sub">
+              {service ? "Modifier cette prestation" : "Ajouter au catalogue"}
+            </div>
+          </div>
+          <div className="appbar__actions">
+            <Button
+              label="Retour"
+              variant="ghost"
+              size="sm"
+              icon="arrow-left"
+              href="/dashboard/services"
+            />
+          </div>
+        </div>
+      </div>
+
+      <main id="contenu" className="app__main has-tabbar">
+        <div className="app__inner">
+          {refusal ? (
+            <div style={{ marginBottom: "var(--s-6)" }}>{refusal}</div>
+          ) : null}
+
+          <div className="stack" style={PANEL_GAP}>
+            <form
+              action={service ? replaceService : createService}
+              className="cols cols--main-aside"
+            >
+              {id ? <input type="hidden" name="id" value={id} /> : null}
+
+              <div className="stack" style={PANEL_GAP}>
+                <Essentials service={service} currency={currency} />
+                <Shape service={service} />
+                <Settings service={service} currency={currency} />
+
+                <div
+                  className="row row--wrap"
+                  style={{ gap: "var(--s-3)", paddingTop: "var(--s-2)" }}
+                >
+                  <span className="grow" />
+                  <Button label="Annuler" variant="ghost" href="/dashboard/services" />
+                  <ActionButton
+                    label={service ? "Enregistrer" : "Ajouter la prestation"}
+                    variant="primary"
+                    size="lg"
+                    type="submit"
+                  />
+                </div>
+              </div>
+
+              <aside
+                className="sticky-aside"
+                style={{ display: "grid", gap: "var(--s-5)" }}
+              >
+                <Visibility service={service} />
+              </aside>
+            </form>
+
+            {id ? (
+              <>
+                <Photos serviceId={id} opened={photos} />
+                <Performers serviceId={id} opened={performers} />
+              </>
+            ) : null}
+          </div>
+        </div>
+      </main>
+    </>
+  );
+}
+
+/**
+ * Name, description, price and length.
+ *
+ * <p>The price is a number field and not the mockup's spaced "150 000": what is
+ * typed is posted as `amount_minor`, and a thousands separator would arrive as
+ * something that is not a number at all.
+ */
+function Essentials({
+  service,
+  currency,
+}: {
+  service: ServiceOffering | null;
+  currency: string;
+}) {
+  return (
+    <div className="panel">
+      <div className="panel__head">
+        <div className="panel__title">L&rsquo;essentiel</div>
+      </div>
+      <div className="card__body">
+        <div className="field">
+          <label className="field__label" htmlFor="f-name">
+            Nom
+            <span className="field__req" aria-hidden="true">
+              *
+            </span>
+          </label>
+          <input
+            className="input"
+            type="text"
+            id="f-name"
+            name="name"
+            required
+            maxLength={120}
+            defaultValue={service?.name ?? ""}
+            placeholder="Tresses collées, vidange, réparation d'écran…"
+          />
+        </div>
+
+        <div className="field">
+          <label className="field__label" htmlFor="f-description">
+            Description
+            <span className="field__optional">facultatif</span>
+          </label>
+          <textarea
+            className="textarea"
+            id="f-description"
+            name="description"
+            defaultValue={service?.description ?? ""}
+          />
+          <p className="field__hint">
+            Dites ce qui est compris et ce qui ne l&rsquo;est pas. C&rsquo;est ce
+            qui évite les malentendus.
+          </p>
+        </div>
+
+        <div className="cols cols--2" style={{ gap: "var(--s-5)" }}>
+          <div className="field">
+            <label className="field__label" htmlFor="f-amount">
+              Prix
+              <span className="field__req" aria-hidden="true">
+                *
+              </span>
+            </label>
+            <div className="input-group input-group--suffix">
+              <input
+                className="input"
+                type="number"
+                id="f-amount"
+                name="amount_minor"
+                inputMode="numeric"
+                required
+                min={0}
+                defaultValue={service?.price.amount_minor ?? 0}
+              />
+              <span className="input-group__suffix">
+                {service?.price.currency ?? currency}
+              </span>
+            </div>
+            <p className="field__hint">
+              Modifier ce prix n&rsquo;affecte aucune réservation déjà prise.
+            </p>
+          </div>
+
+          <div className="field">
+            <label className="field__label" htmlFor="f-duration">
+              Durée du rendez-vous
+              <span className="field__req" aria-hidden="true">
+                *
+              </span>
+            </label>
+            <div className="input-group input-group--suffix">
+              <input
+                className="input"
+                type="number"
+                id="f-duration"
+                name="duration_minutes"
+                inputMode="numeric"
+                required
+                min={1}
+                max={720}
+                defaultValue={service?.duration_minutes ?? 30}
+              />
+              <span className="input-group__suffix">min</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The one control that picks the shape, and the one field that follows from it.
+ *
+ * <p>The delay is shown only for a drop-off, which is the only shape that
+ * carries one. It is not `required`: the panel is hidden for the other two, and
+ * a hidden field a browser refuses to submit is a save that fails with nothing
+ * on screen to explain it. An empty box on a drop-off arrives as a delay the
+ * server refuses, and that refusal is a sentence this page prints.
+ */
+function Shape({ service }: { service: ServiceOffering | null }) {
+  // Falling back also means no radio group ever renders with nothing checked.
+  const shape: Fulfilment =
+    SHAPES.find((s) => s.value === service?.fulfilment)?.value ?? ON_SITE.value;
+
+  return (
+    <div className="panel">
+      <div className="panel__head">
+        <div>
+          <div className="panel__title">Déroulement</div>
+          <div className="panel__sub">
+            Un seul mode par prestation&nbsp;: la base de données refuse toute
+            combinaison.
+          </div>
+        </div>
+      </div>
+      <div className="card__body">
+        <fieldset
+          style={{ border: 0, padding: 0, margin: 0 }}
+          data-reveal-group="fulfilment"
+        >
+          <legend className="sr-only">Mode de la prestation</legend>
+          <div className="choice-grid choice-grid--3">
+            {SHAPES.map((s) => (
+              <label className="choice" key={s.value}>
+                <input
+                  type="radio"
+                  name="fulfilment"
+                  value={s.value}
+                  defaultChecked={s.value === shape}
+                />
+                <span className="choice__mark">
+                  <Icon name="check-circle" />
+                </span>
+                <span className="choice__head">
+                  <span className="choice__icon">
+                    <Icon name={s.icon} />
+                  </span>
+                  <span className="choice__title">{s.label}</span>
+                </span>
+                <span className="choice__desc">{s.desc}</span>
+              </label>
+            ))}
+          </div>
+
+          {/* Rendered already open when the stored shape is the drop-off, so
+              the field is right on the first paint and reachable even if the
+              presentation script never runs. */}
+          <div
+            data-reveal-when="DROP_OFF"
+            hidden={shape !== "DROP_OFF"}
+            style={{ marginTop: "var(--s-5)" }}
+          >
+            <div className="field">
+              <label className="field__label" htmlFor="f-turnaround">
+                Délai promis
+                <span className="field__req" aria-hidden="true">
+                  *
+                </span>
+              </label>
+              <div className="input-group input-group--suffix">
+                <input
+                  className="input"
+                  type="number"
+                  id="f-turnaround"
+                  name="turnaround_hours"
+                  inputMode="numeric"
+                  min={1}
+                  max={2160}
+                  defaultValue={service?.turnaround_hours ?? 48}
+                />
+                <span className="input-group__suffix">heures</span>
+              </div>
+              <p className="field__hint">
+                Le client lit «&nbsp;Prêt sous 48&nbsp;h&nbsp;». La durée du
+                rendez-vous ci-dessus ne représente que la remise au comptoir.
+              </p>
+            </div>
+          </div>
+
+          <div
+            data-reveal-when="AT_CUSTOMER"
+            hidden={shape !== "AT_CUSTOMER"}
+            style={{ marginTop: "var(--s-5)" }}
+          >
+            <Notice title="Le client saisira son adresse">
+              Commune, quartier et repères écrits. Aucune coordonnée GPS
+              n&rsquo;est demandée ni conservée.
+            </Notice>
+          </div>
+        </fieldset>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * What the customer never sees.
+ *
+ * <p>Absent from the mockup and kept anyway: the API replaces the whole
+ * offering, so a buffer, an order or a currency this form left out would not be
+ * a field kept, it would be a field cleared on the next save.
+ */
+function Settings({
+  service,
+  currency,
+}: {
+  service: ServiceOffering | null;
+  currency: string;
+}) {
+  return (
+    <div className="panel">
+      <div className="panel__head">
+        <div>
+          <div className="panel__title">Réglages</div>
+          <div className="panel__sub">Ce que le client ne voit pas.</div>
+        </div>
+      </div>
+      <div className="card__body">
+        <div className="cols cols--2" style={{ gap: "var(--s-5)" }}>
+          <div className="field">
+            <label className="field__label" htmlFor="f-buffer-before">
+              Battement avant
+            </label>
+            <div className="input-group input-group--suffix">
+              <input
+                className="input"
+                type="number"
+                id="f-buffer-before"
+                name="buffer_before_minutes"
+                inputMode="numeric"
+                min={0}
+                max={240}
+                defaultValue={service?.buffer_before_minutes ?? 0}
+              />
+              <span className="input-group__suffix">min</span>
+            </div>
+          </div>
+          <div className="field">
+            <label className="field__label" htmlFor="f-buffer-after">
+              Battement après
+            </label>
+            <div className="input-group input-group--suffix">
+              <input
+                className="input"
+                type="number"
+                id="f-buffer-after"
+                name="buffer_after_minutes"
+                inputMode="numeric"
+                min={0}
+                max={240}
+                defaultValue={service?.buffer_after_minutes ?? 0}
+              />
+              <span className="input-group__suffix">min</span>
+            </div>
+          </div>
+        </div>
+        <p className="field__hint">
+          Le temps de préparer et de ranger entre deux clients.
+          L&rsquo;agenda le réserve sans le facturer.
+        </p>
+
+        <div
+          className="cols cols--2"
+          style={{ gap: "var(--s-5)", marginTop: "var(--s-5)" }}
+        >
+          <div className="field">
+            <label className="field__label" htmlFor="f-currency">
+              Monnaie
+              <span className="field__req" aria-hidden="true">
+                *
+              </span>
+            </label>
+            <input
+              className="input"
+              type="text"
+              id="f-currency"
+              name="currency"
+              required
+              pattern="[A-Z]{3}"
+              maxLength={3}
+              defaultValue={service?.price.currency ?? currency}
+            />
+            <p className="field__hint">
+              Le code à trois lettres de la monnaie que vous facturez.
+            </p>
+          </div>
+          <div className="field">
+            <label className="field__label" htmlFor="f-sort">
+              Ordre d&rsquo;affichage
+            </label>
+            <input
+              className="input"
+              type="number"
+              id="f-sort"
+              name="sort_order"
+              inputMode="numeric"
+              defaultValue={service?.sort_order ?? 0}
+            />
+            <p className="field__hint">
+              Le plus petit passe en premier sur votre page.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Whether the service is offered at all, and whether its price is shown. */
+function Visibility({ service }: { service: ServiceOffering | null }) {
+  return (
+    <div className="panel">
+      <div className="panel__head">
+        <div className="panel__title">Visibilité</div>
+      </div>
+      <div className="card__body">
+        <div className="stack" style={{ "--stack-gap": "var(--s-4)" } as CSSProperties}>
+          <label className="switch" style={{ width: "100%" }}>
+            <input
+              type="checkbox"
+              name="active"
+              defaultChecked={service?.active ?? true}
+            />
+            <span className="switch__track" />
+            <span className="grow">
+              <span className="t-sm t-strong">Visible sur ma page</span>
+              <span className="t-xs" style={{ display: "block" }}>
+                Décocher la retire du public sans la supprimer. Les rendez-vous
+                déjà pris portent encore son prix.
+              </span>
+            </span>
+          </label>
+
+          <label className="switch" style={{ width: "100%" }}>
+            <input
+              type="checkbox"
+              name="price_visible"
+              defaultChecked={service?.price_visible ?? true}
+            />
+            <span className="switch__track" />
+            <span className="grow">
+              <span className="t-sm t-strong">Afficher le prix</span>
+              <span className="t-xs" style={{ display: "block" }}>
+                Masqué, la prestation reste réservable et le client vous demande
+                le prix.
+              </span>
+            </span>
+          </label>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * What the service looks like.
+ *
+ * <p>For braids, nails, a decorated hall or a buffet, the photograph IS the
+ * specification: "tresses collées" names a family and not a style, and a
+ * customer choosing between two of them is choosing between two pictures. A
+ * service with none is a service described in words to people who came to look.
+ *
+ * <p>The slots do not renumber. The API takes the lowest free one on upload and
+ * leaves a gap on removal, so the first photograph stays the first until its
+ * owner removes it - and that is stated on the page, because a provider who
+ * chose their opening picture should not find it changed by deleting another.
+ */
+function Photos({
+  serviceId,
+  opened,
+}: {
+  serviceId: string;
+  opened: { album: ServicePhotoList; refusal?: string } | null;
+}) {
+  return (
+    <div className="panel" id={`svc-${serviceId}`}>
+      <div className="panel__head">
+        <div>
+          <div className="panel__title">Photos</div>
+          <div className="panel__sub">
+            5 au maximum · la première sert de vignette dans les listes
+          </div>
+        </div>
+      </div>
+      <div className="card__body">
+        {opened ? (
+          <Album serviceId={serviceId} album={opened.album} refusal={opened.refusal} />
+        ) : (
+          <>
+            <p className="field__hint" style={{ marginTop: 0 }}>
+              Cinq photos au maximum, et retirer l&rsquo;une d&rsquo;elles ne
+              renumérote pas les autres&nbsp;: la place libérée est celle que
+              reprendra la prochaine.
+            </p>
+            <div style={{ marginTop: "var(--s-4)" }}>
+              <Button
+                label="Voir les photos"
+                variant="secondary"
+                icon="image"
+                href={`/dashboard/services?photos=${encodeURIComponent(serviceId)}#svc-${serviceId}`}
+              />
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Album({
+  serviceId,
+  album,
+  refusal,
+}: {
+  serviceId: string;
+  album: ServicePhotoList;
+  refusal?: string;
+}) {
+  const photos = album.data;
+  const full = photos.length >= MAX_PHOTOS;
+
+  return (
+    <div className="stack" style={{ "--stack-gap": "var(--s-4)" } as CSSProperties}>
+      {refusal ? (
+        <Notice tone="danger" title="Les photos n'ont pas changé">
+          {PHOTO_REFUSALS[refusal] ?? "Réessayez, ou rechargez la page."}
+        </Notice>
+      ) : null}
+
+      {photos.length === 0 ? (
+        <p className="field__hint" style={{ marginTop: 0 }}>
+          Deux tresses ne se distinguent pas avec des mots. Une photo dit ce que
+          trois lignes de description n&rsquo;arrivent pas à dire.
+        </p>
+      ) : null}
+
+      <div className="photos">
+        {photos.map((photo, rank) => (
+          <div className="photo" key={photo.photo_id}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={mediaUrl(photo.url)}
+              alt={`Photo ${photo.position + 1} de la prestation`}
+            />
+            <span className="photo__tag">
+              {rank === 0 ? "Vignette" : `Place ${photo.position + 1}`}
+            </span>
+            <form action={removeServicePhoto}>
+              <input type="hidden" name="id" value={serviceId} />
+              <input type="hidden" name="photo_id" value={photo.photo_id} />
+              <button
+                className="photo__del"
+                type="submit"
+                aria-label={`Supprimer la photo ${photo.position + 1}`}
+              >
+                <Icon name="trash" size={16} />
+              </button>
+            </form>
+          </div>
+        ))}
+
+        {/* The tile labels the input in the form below rather than wrapping it,
+            which is what the mockup does: the preview replaces this tile's
+            contents, and an input living inside would be replaced by the
+            picture it produced - along with the file the upload was to send. */}
+        {full ? null : (
+          <label className="photo photo--add" id="photo-slot" htmlFor="photo-file">
+            <Icon name="upload" />
+            <span className="t-xs" style={{ fontWeight: 700 }}>
+              Ajouter une photo
+            </span>
+          </label>
+        )}
+      </div>
+
+      <p className="field__hint" style={{ marginTop: 0 }}>
+        <Icon name="info" size={16} /> Cinq photos au maximum. La première
+        représente la prestation dans les listes. Retirer une photo ne
+        renumérote pas les autres&nbsp;: la place libérée est celle que
+        reprendra la prochaine, et c&rsquo;est ainsi qu&rsquo;on change la photo
+        de tête.
+      </p>
+
+      {full ? (
+        <Notice title="Cinq photos, c'est le maximum">
+          Retirez-en une pour en ajouter une autre.
+        </Notice>
+      ) : (
+        <form action={addServicePhoto}>
+          <input type="hidden" name="id" value={serviceId} />
+          {/* Visible rather than hidden behind the tile: a label is not
+              focusable, so an input clipped out of sight would leave somebody
+              on a keyboard with a control they cannot see themselves reach. */}
+          <input
+            className="input"
+            type="file"
+            id="photo-file"
+            name="image"
+            accept="image/jpeg,image/png"
+            required
+            data-preview="photo-slot"
+          />
+          <p className="field__hint">
+            JPEG ou PNG, 5&nbsp;Mo au maximum. Chaque photo est réduite à
+            1600&nbsp;px sur son plus grand côté et ses métadonnées sont
+            supprimées — y compris les coordonnées GPS qu&rsquo;un téléphone
+            écrit dans une photo sans le demander. Elle n&rsquo;est envoyée
+            qu&rsquo;au moment où vous appuyez sur le bouton.
+          </p>
+          <div style={{ marginTop: "var(--s-4)" }}>
+            <ActionButton
+              label="Envoyer cette photo"
+              variant="secondary"
+              type="submit"
+              icon="upload"
+            />
+          </div>
+        </form>
+      )}
+    </div>
+  );
+}
+
+type Roster = { team: StaffList; performs: Set<string> };
 
 /**
  * The team, and which of them perform one service.
@@ -323,7 +1011,7 @@ export default async function Services({
  * list per offering, so reading them all would be a request per row on a page
  * that loads a hundred of them.
  */
-async function rosterFor(serviceId: string) {
+async function rosterFor(serviceId: string): Promise<Roster> {
   const [team, performers] = await Promise.all([
     api<StaffList>("/v1/staff"),
     api<PerformerList>(
@@ -343,18 +1031,82 @@ async function rosterFor(serviceId: string) {
  */
 function Performers({
   serviceId,
+  opened,
+}: {
+  serviceId: string;
+  opened: { roster: Roster; refusal?: string } | null;
+}) {
+  return (
+    <div className="panel">
+      <div className="panel__head">
+        <div>
+          <div className="panel__title">Qui réalise cette prestation</div>
+          <div className="panel__sub">
+            Détermine les créneaux proposés au client.
+          </div>
+        </div>
+      </div>
+      <div className="card__body">
+        {opened ? (
+          <Roll serviceId={serviceId} roster={opened.roster} refusal={opened.refusal} />
+        ) : (
+          <>
+            <p className="field__hint" style={{ marginTop: 0 }}>
+              Toute votre équipe la réalise. Ouvrez la liste pour en retirer
+              quelqu&rsquo;un.
+            </p>
+            <div style={{ marginTop: "var(--s-4)" }}>
+              <Button
+                label="Voir la liste"
+                variant="secondary"
+                icon="users"
+                href={`/dashboard/services?performers=${encodeURIComponent(serviceId)}`}
+              />
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Roll({
+  serviceId,
   roster,
   refusal,
 }: {
   serviceId: string;
-  roster: { team: StaffList; performs: Set<string> };
+  roster: Roster;
   refusal?: string;
 }) {
   const { team, performs } = roster;
 
+  if (team.data.length === 0) {
+    return (
+      <EmptyState
+        compact
+        sketch="chair"
+        title="Personne dans l'équipe"
+        body="Qui réalise quoi se décide entre des personnes. Ajoutez-en d'abord une."
+        action={
+          <Button
+            label="Composer l'équipe"
+            variant="secondary"
+            href="/dashboard/team"
+            iconEnd="arrow-right"
+          />
+        }
+      />
+    );
+  }
+
   return (
-    <section className="stack stack-3">
-      <p className="t-label">Qui réalise cette prestation</p>
+    <form
+      action={replacePerformers}
+      className="stack"
+      style={{ "--stack-gap": "var(--s-4)" } as CSSProperties}
+    >
+      <input type="hidden" name="id" value={serviceId} />
 
       {refusal ? (
         <Notice tone="danger" title="La liste n'a pas été enregistrée">
@@ -362,392 +1114,49 @@ function Performers({
         </Notice>
       ) : null}
 
-      {team.data.length === 0 ? (
-        <EmptyState
-          compact
-          sketch="chair"
-          title="Personne dans l'équipe"
-          body="Qui réalise quoi se décide entre des personnes. Ajoutez-en d'abord une."
-          action={
-            <Button
-              label="Composer l'équipe"
-              variant="secondary"
-              href="/dashboard/team"
-              iconEnd="arrow-right"
-            />
-          }
-        />
-      ) : (
-        <form action={replacePerformers} className="stack stack-3">
-          <input type="hidden" name="id" value={serviceId} />
-          <p className="field__hint">
-            <Icon name="info" size={14} /> Toute l'équipe réalise une nouvelle
-            prestation. Décochez qui ne la fait pas&nbsp;: cette personne ne
-            pourra plus recevoir de réservation pour celle-ci. Tout décocher la
-            rend irréservable.
-          </p>
-
-          {/* Everyone the team list returns, including someone who has left:
-              the save sends the whole set, so a name this list did not draw is
-              a name the save would quietly take away. */}
-          <div className="stack stack-1">
-            {team.data.map((person) => (
-              <label className="checkbox" key={person.staff_id}>
-                <input
-                  type="checkbox"
-                  name="staff_ids"
-                  value={person.staff_id}
-                  defaultChecked={performs.has(person.staff_id)}
-                />
-                <span className="checkbox__box">
-                  <Icon name="check" size={14} />
-                </span>
-                <span className="grow row row-2 row--wrap">
-                  <span className="t-small">{person.display_name}</span>
-                  {person.active ? null : <Badge label="A quitté" tone="outline" />}
-                  {person.active && !person.bookable ? (
-                    <Badge label="Non réservable" tone="neutral" />
-                  ) : null}
-                </span>
-              </label>
-            ))}
-          </div>
-
-          <ActionButton
-            label="Enregistrer la liste"
-            variant="primary"
-            type="submit"
-            icon="check"
-          />
-        </form>
-      )}
-    </section>
-  );
-}
-
-/**
- * What the service looks like.
- *
- * <p>For braids, nails, a decorated hall or a buffet, the photograph IS the
- * specification: "tresses collées" names a family and not a style, and a
- * customer choosing between two of them is choosing between two pictures. A
- * service with none is a service described in words to people who came to look.
- *
- * <p>The slots do not renumber. The API takes the lowest free one on upload and
- * leaves a gap on removal, so the first photograph stays the first until its
- * owner removes it - and that is stated on the page, because a provider who
- * chose their opening picture should not find it changed by deleting another.
- */
-function Photos({
-  serviceId,
-  album,
-  refusal,
-}: {
-  serviceId: string;
-  album: ServicePhotoList;
-  refusal?: string;
-}) {
-  const photos = album.data;
-  const full = photos.length >= MAX_PHOTOS;
-
-  return (
-    <section className="stack stack-3">
-      <div className="row row--between row-3 row--wrap">
-        <p className="t-label">Photos de la prestation</p>
-        <span className="t-caption t-dim tnum">
-          {photos.length} sur {MAX_PHOTOS}
-        </span>
-      </div>
-
-      {refusal ? (
-        <Notice tone="danger" title="Les photos n'ont pas changé">
-          {PHOTO_REFUSALS[refusal] ?? "Réessayez, ou rechargez la page."}
-        </Notice>
-      ) : null}
-
-      {photos.length === 0 ? (
-        <EmptyState
-          compact
-          sketch="photographer"
-          title="Aucune photo"
-          body="Deux tresses ne se distinguent pas avec des mots. Une photo dit ce que trois lignes de description n'arrivent pas à dire."
-        />
-      ) : (
-        <div className="row row-4 row--wrap row--top">
-          {photos.map((photo) => (
-            <form
-              action={removeServicePhoto}
-              className="stack stack-2"
-              key={photo.photo_id}
-            >
-              <input type="hidden" name="id" value={serviceId} />
-              <input type="hidden" name="photo_id" value={photo.photo_id} />
-              {/* The box the monogram stands in elsewhere, so a row of
-                  photographs lines up with the rest of the dashboard. */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                className="avatar avatar--xl avatar--photo"
-                src={mediaUrl(photo.url)}
-                alt={`Photo ${photo.position + 1} de la prestation`}
-                width={88}
-                height={88}
-              />
-              {photo.position === 0 ? (
-                <Badge label="La première" tone="brand" icon="star" />
-              ) : (
-                <span className="t-caption t-dim tnum">
-                  Place {photo.position + 1}
-                </span>
-              )}
-              <ActionButton
-                label="Retirer"
-                variant="quiet-danger"
-                size="sm"
-                type="submit"
-                icon="trash"
-              />
-            </form>
-          ))}
-        </div>
-      )}
-
-      <p className="field__hint">
-        <Icon name="info" size={14} /> Cinq au maximum. La première représente
-        la prestation dans les listes. Retirer une photo ne renumérote pas les
-        autres&nbsp;: la place libérée est celle que reprendra la suivante, et
-        c'est ainsi qu'on change celle de tête.
+      <p className="field__hint" style={{ marginTop: 0 }}>
+        <Icon name="info" size={16} /> Toute l&rsquo;équipe réalise une nouvelle
+        prestation. Décochez qui ne la fait pas&nbsp;: cette personne ne pourra
+        plus recevoir de réservation pour celle-ci. Tout décocher la rend
+        irréservable.
       </p>
 
-      {full ? (
-        <Notice tone="info" title="Cinq photos, c'est le maximum">
-          Retirez-en une pour en ajouter une autre.
-        </Notice>
-      ) : (
-        <form action={addServicePhoto} className="stack stack-3">
-          <input type="hidden" name="id" value={serviceId} />
-          <label className="field">
-            <span className="field__label">Ajouter une photo</span>
+      {/* Everyone the team list returns, including someone who has left: the
+          save sends the whole set, so a name this list did not draw is a name
+          the save would quietly take away. Nobody is disabled here either -
+          a box a browser will not submit is a competence removed in silence. */}
+      <div className="stack" style={{ "--stack-gap": "var(--s-3)" } as CSSProperties}>
+        {team.data.map((person) => (
+          <label className="check" key={person.staff_id}>
             <input
-              className="input"
-              type="file"
-              name="image"
-              accept="image/jpeg,image/png"
-              required
+              type="checkbox"
+              name="staff_ids"
+              value={person.staff_id}
+              defaultChecked={performs.has(person.staff_id)}
             />
-            <span className="field__hint">
-              JPEG ou PNG, 5&nbsp;Mo au maximum. Les métadonnées sont retirées à
-              l'envoi — y compris les coordonnées GPS qu'un téléphone écrit dans
-              une photo sans le demander.
+            <span className="check__box">
+              <Icon name="check" />
             </span>
-          </label>
-          <ActionButton
-            label="Ajouter une photo"
-            variant="secondary"
-            type="submit"
-            icon="plus"
-          />
-        </form>
-      )}
-    </section>
-  );
-}
-
-/**
- * Every field, always.
- *
- * <p>The API replaces the whole offering, so a field this form left out would
- * be a field the save cleared. That is why an edit form and a creation form are
- * the same form.
- */
-function Fields({
-  service,
-  currency,
-}: {
-  service: ServiceOffering | null;
-  currency: string;
-}) {
-  // A fulfilment this client does not know is an on-site service - the contract
-  // says so, and it is what every service created before the enum grew is.
-  // Falling back also means no radio group ever renders with nothing checked.
-  const shape: Fulfilment =
-    SHAPES.find((s) => s.value === service?.fulfilment)?.value ?? "ON_SITE";
-
-  return (
-    <>
-      <label className="field">
-        <span className="field__label">
-          Nom<span className="field__req" aria-hidden="true">*</span>
-        </span>
-        <input
-          className="input"
-          type="text"
-          name="name"
-          required
-          maxLength={120}
-          defaultValue={service?.name ?? ""}
-          placeholder="Tresses collées, vidange, réparation d'écran…"
-        />
-      </label>
-
-      <label className="field">
-        <span className="field__label">Description</span>
-        <textarea
-          className="textarea"
-          name="description"
-          rows={2}
-          defaultValue={service?.description ?? ""}
-          placeholder="Ce que le client doit savoir avant de réserver."
-        />
-      </label>
-
-      <fieldset className="stack stack-2" style={{ border: 0, padding: 0, margin: 0 }}>
-        <legend className="field__label">Comment ça se passe</legend>
-        {SHAPES.map((s) => (
-          <label className="choice" key={s.value}>
-            <input
-              type="radio"
-              name="fulfilment"
-              value={s.value}
-              defaultChecked={s.value === shape}
-            />
-            <span className="grow">
-              <span className="t-small">{s.label}</span>
-              <span className="field__hint" style={{ display: "block" }}>
-                {s.hint}
-              </span>
+            <span className="check__text grow">
+              <strong>{person.display_name}</strong>
+              <span>{person.role}</span>
             </span>
+            {person.active ? null : <Badge label="A quitté" tone="neutral" />}
+            {person.active && !person.bookable ? (
+              <Badge label="Non réservable" tone="neutral" />
+            ) : null}
           </label>
         ))}
-      </fieldset>
+      </div>
 
-      <label className="field">
-        <span className="field__label">
-          Prêt sous (heures)<span className="field__req" aria-hidden="true">*</span>
-        </span>
-        {/* Required and pre-filled even though two of the three shapes ignore
-            it: an empty box on a drop-off would arrive as no delay announced,
-            which the server reads as an ordinary on-site service - the shape
-            changing under a provider who picked the other one. */}
-        <input
-          className="input"
-          type="number"
-          name="turnaround_hours"
-          required
-          min={1}
-          max={2160}
-          defaultValue={service?.turnaround_hours ?? 48}
+      <div>
+        <ActionButton
+          label="Enregistrer la liste"
+          variant="primary"
+          type="submit"
+          icon="check"
         />
-        <span className="field__hint">
-          <Icon name="info" size={14} /> Ce que vous annoncez au client qui
-          dépose&nbsp;: «&nbsp;Prêt sous 48&nbsp;h&nbsp;». Sans effet sur une
-          prestation sur place ou à domicile.
-        </span>
-      </label>
-
-      <div className="row row-3 row--wrap row--top">
-        <label className="field">
-          <span className="field__label">
-            Durée (min)<span className="field__req" aria-hidden="true">*</span>
-          </span>
-          <input
-            className="input"
-            type="number"
-            name="duration_minutes"
-            required
-            min={1}
-            max={720}
-            defaultValue={service?.duration_minutes ?? 30}
-          />
-        </label>
-        <label className="field">
-          <span className="field__label">
-            Prix<span className="field__req" aria-hidden="true">*</span>
-          </span>
-          <input
-            className="input"
-            type="number"
-            name="amount_minor"
-            required
-            min={0}
-            defaultValue={service?.price.amount_minor ?? 0}
-          />
-        </label>
-        <label className="field">
-          <span className="field__label">Monnaie</span>
-          <input
-            className="input"
-            type="text"
-            name="currency"
-            required
-            pattern="[A-Z]{3}"
-            maxLength={3}
-            size={5}
-            defaultValue={service?.price.currency ?? currency}
-          />
-        </label>
-        <label className="field">
-          <span className="field__label">Ordre</span>
-          <input
-            className="input"
-            type="number"
-            name="sort_order"
-            size={5}
-            defaultValue={service?.sort_order ?? 0}
-          />
-        </label>
       </div>
-
-      <div className="row row-3 row--wrap row--top">
-        <label className="field">
-          <span className="field__label">Battement avant</span>
-          <input
-            className="input"
-            type="number"
-            name="buffer_before_minutes"
-            min={0}
-            max={240}
-            defaultValue={service?.buffer_before_minutes ?? 0}
-          />
-        </label>
-        <label className="field">
-          <span className="field__label">Battement après</span>
-          <input
-            className="input"
-            type="number"
-            name="buffer_after_minutes"
-            min={0}
-            max={240}
-            defaultValue={service?.buffer_after_minutes ?? 0}
-          />
-        </label>
-      </div>
-      <p className="field__hint">
-        <Icon name="info" size={14} /> Le temps de préparer et de ranger entre
-        deux clients. L'agenda le réserve sans le facturer.
-      </p>
-
-      <label className="switch">
-        <input type="checkbox" name="price_visible" defaultChecked={service?.price_visible ?? true} />
-        <span className="switch__track"><span className="switch__thumb" /></span>
-        <span className="grow">
-          <span className="t-small">Afficher le prix sur ma page</span>
-          <span className="field__hint" style={{ display: "block" }}>
-            Masqué, la prestation reste réservable et le client vous demande le prix.
-          </span>
-        </span>
-      </label>
-
-      <label className="switch">
-        <input type="checkbox" name="active" defaultChecked={service?.active ?? true} />
-        <span className="switch__track"><span className="switch__thumb" /></span>
-        <span className="grow">
-          <span className="t-small">Proposée aux clients</span>
-          <span className="field__hint" style={{ display: "block" }}>
-            Décochée, elle disparaît de votre page. Rien ne se supprime&nbsp;:
-            les rendez-vous déjà pris portent encore son prix.
-          </span>
-        </span>
-      </label>
-    </>
+    </form>
   );
 }

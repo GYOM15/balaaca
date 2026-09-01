@@ -1,14 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Icon } from "@/components/icon";
-import {
-  ActionButton,
-  Button,
-  EmptyState,
-  Notice,
-  StatusBadge,
-} from "@/components/ui";
+import type { CSSProperties, ReactNode } from "react";
+import { Icon, Scene } from "@/components/icon";
+import { SiteFooter, SiteHeader } from "@/components/site";
+import { initials } from "@/components/ui";
 import { ApiError, publicApi } from "@/lib/api";
 import { dateTime, day, money, time } from "@/lib/format";
 import type {
@@ -78,13 +74,74 @@ const REPORT_REFUSALS: Record<string, string> = {
  * <p>Typed by the contract's own enum, so a reason added or removed there stops
  * this page compiling instead of quietly offering a value the API refuses.
  */
-const REASONS: { value: ReportReason; label: string }[] = [
-  { value: "NO_SHOW", label: "Le salon était fermé" },
-  { value: "NOT_AS_DESCRIBED", label: "La prestation n’était pas celle annoncée" },
-  { value: "OVERCHARGED", label: "Le prix n’était pas celui annoncé" },
-  { value: "RUDE_OR_UNSAFE", label: "Comportement inacceptable" },
-  { value: "OTHER", label: "Autre" },
+const REASONS: { value: ReportReason; label: string; hint: string }[] = [
+  {
+    value: "NO_SHOW",
+    label: "Le professionnel ne s’est pas présenté",
+    hint: "Personne au rendez-vous, aucun message.",
+  },
+  {
+    value: "NOT_AS_DESCRIBED",
+    label: "La prestation n’était pas celle annoncée",
+    hint: "Le contenu ou la durée ne correspondait pas.",
+  },
+  {
+    value: "OVERCHARGED",
+    label: "Le prix demandé était différent",
+    hint: "Un montant autre que le prix figé a été réclamé.",
+  },
+  {
+    value: "RUDE_OR_UNSAFE",
+    label: "Comportement inacceptable",
+    hint: "Propos ou attitude déplacés.",
+  },
+  { value: "OTHER", label: "Autre", hint: "Décrivez la situation ci-dessous." },
 ];
+
+/**
+ * The status, as the badge beside the title says it.
+ *
+ * <p>Never colour alone: every entry carries a glyph and a word, which is what
+ * makes "annulé" readable to somebody who cannot tell the two greys apart.
+ */
+const STATUS: Record<string, { label: string; tone: string; icon: string }> = {
+  PENDING: { label: "À confirmer", tone: "warning", icon: "hourglass" },
+  CONFIRMED: { label: "Confirmé", tone: "brand", icon: "check-circle" },
+  CANCELLED: { label: "Annulé", tone: "neutral", icon: "x-circle" },
+  COMPLETED: { label: "Terminé", tone: "success", icon: "check-circle" },
+  NO_SHOW: { label: "Non honoré", tone: "danger", icon: "alert-circle" },
+};
+
+/** What the status means for the person reading, not what it means in the schema. */
+const STATUS_ALERT: Record<
+  string,
+  { tone: string; icon: string; title: string; body: string }
+> = {
+  PENDING: {
+    tone: "warning",
+    icon: "alert-triangle",
+    title: "En attente de confirmation",
+    body: "Le professionnel confirme les rendez-vous à la main. Vous gardez votre place tant que ce n’est pas fait.",
+  },
+  CANCELLED: {
+    tone: "neutral",
+    icon: "info",
+    title: "Ce rendez-vous a été annulé",
+    body: "Le créneau a été rendu. Vous pouvez reprendre un créneau quand vous voulez, aux mêmes conditions.",
+  },
+  COMPLETED: {
+    tone: "neutral",
+    icon: "check-circle",
+    title: "Ce rendez-vous a eu lieu",
+    body: "La prestation a été faite. Il n’y a rien d’autre à faire de votre côté.",
+  },
+  NO_SHOW: {
+    tone: "neutral",
+    icon: "alert-circle",
+    title: "Ce rendez-vous n’a pas été honoré",
+    body: "Le professionnel a noté que personne ne s’est présenté. Si c’est une erreur, signalez-le ci-dessous.",
+  },
+};
 
 /**
  * How many days of slots the move offers at once.
@@ -110,6 +167,7 @@ type MoveWindow = {
 
 type Search = {
   error?: string;
+  cancel?: string;
   cancelled?: string;
   move?: string;
   moved?: string;
@@ -128,14 +186,15 @@ type Search = {
  * mean asking somebody to create an account to look at a haircut they have
  * already booked.
  *
- * <p>The mockup built its confirmation screen on the belief that this page
- * could not exist - "cette page ne pourra pas être rouverte plus tard" - and
- * told the customer to take a screenshot. `getBooking` is in the contract, so
- * the screenshot is not the product: this is.
- *
  * <p>The same reference authorises three things and no more: reading this,
  * moving it, calling it off. The report at the bottom is the fourth, and it is
  * the one that goes somewhere other than the salon.
+ *
+ * <p>Four screens on one route. The mockup drew the move, the cancellation and
+ * the report as pages of their own, and they are: each one asks a single
+ * question and owns the h1 that states it. They are query parameters rather
+ * than segments because all four read the same appointment, and a segment would
+ * mean reading it again per screen.
  */
 export default async function BookingPage({
   params,
@@ -178,260 +237,283 @@ export default async function BookingPage({
   const deadline = booking.cancellable_until;
   // Still ahead of the customer, as opposed to over, called off, or missed.
   const open = booking.status === "PENDING" || booking.status === "CONFIRMED";
-  const providerPage = `/p/${encodeURIComponent(booking.provider_slug)}`;
+  const changeable = open && Boolean(deadline);
+
+  const view: "detail" | "move" | "cancel" | "report" =
+    query.report === "1"
+      ? "report"
+      : changeable && query.move === "1"
+        ? "move"
+        : changeable && query.cancel === "1"
+          ? "cancel"
+          : "detail";
 
   // Three more calls, so they are made only when the customer has asked to see
   // slots. Most people open this page to re-read a reference and leave.
-  const move =
-    open && deadline && query.move === "1" ? await loadMove(booking, query.date) : null;
+  const move = view === "move" ? await loadMove(booking, query.date) : null;
 
   return (
-    <div className="book">
-      <header className="topbar">
-        <Link
-          className="icon-btn"
-          href={providerPage}
-          aria-label={`Retour à la page de ${booking.provider_name}`}
-        >
-          <Icon name="arrow-left" size={18} />
-        </Link>
-        <div className="grow stack" style={{ gap: 0 }}>
-          <span className="t-small">Ma réservation</span>
-          <span className="t-caption t-dim">{booking.provider_name}</span>
-        </div>
-      </header>
+    <>
+      <SiteHeader />
 
-      <main className="container container--booking book__body stack stack-8" id="contenu">
-        <div className="stack stack-2">
-          <h1 className="t-h2">Votre rendez-vous</h1>
-          <p className="t-body-lg t-muted" style={{ fontWeight: 400 }}>
-            {lead(booking, zone)}
-          </p>
+      <main id="contenu" className="has-tabbar">
+        {view === "move" ? (
+          <MoveView booking={booking} week={move} zone={zone} query={query} />
+        ) : view === "cancel" ? (
+          <CancelView booking={booking} zone={zone} />
+        ) : view === "report" ? (
+          <ReportView booking={booking} query={query} />
+        ) : (
+          <DetailView
+            booking={booking}
+            zone={zone}
+            query={query}
+            deadline={deadline}
+            open={open}
+            changeable={changeable}
+          />
+        )}
+      </main>
+
+      <SiteFooter />
+    </>
+  );
+}
+
+/* --- The appointment ----------------------------------------------------- */
+
+/**
+ * The appointment itself: with whom, what, by whom, when, how much.
+ *
+ * <p>Everything a customer needs on arriving, and nothing they have to press to
+ * see. The two things that change it - the move and the cancellation - sit in
+ * the card's foot, and only while the professional's own deadline still holds.
+ */
+function DetailView({
+  booking,
+  zone,
+  query,
+  deadline,
+  open,
+  changeable,
+}: {
+  booking: CustomerBooking;
+  zone: string;
+  query: Search;
+  deadline: string | undefined;
+  open: boolean;
+  changeable: boolean;
+}) {
+  const base = hrefOf(booking.reference);
+  const providerPage = `/p/${encodeURIComponent(booking.provider_slug)}`;
+  const status = STATUS[booking.status];
+  // Suppressed right after the customer's own action: the flash above already
+  // says "c'est annulé", and saying it twice reads as two different events.
+  const note = query.cancelled ? undefined : STATUS_ALERT[booking.status];
+
+  return (
+    <section className="section atmo tex-dots" style={{ paddingBlock: "var(--s-8) var(--s-16)" }}>
+      <div className="page page--narrow">
+        <nav className="crumbs" aria-label="Fil d’Ariane">
+          <Link href="/">Accueil</Link>
+          <Icon name="chevron-right" />
+          <span aria-current="page">Ma réservation</span>
+        </nav>
+
+        <div
+          className="row row--between"
+          style={{ marginTop: "var(--s-5)", alignItems: "flex-start", gap: "var(--s-4)" }}
+        >
+          <div>
+            <p className="t-overline">Réservation</p>
+            <h1 className="t-h2" style={{ marginTop: "var(--s-2)" }}>
+              {booking.service_name}
+            </h1>
+          </div>
+          <span className={`badge badge--${status?.tone ?? "neutral"}`}>
+            <Icon name={status?.icon ?? "info"} />
+            {status?.label ?? booking.status}
+          </span>
         </div>
 
         {query.cancelled ? (
-          <Notice tone="success" title="C’est annulé.">
+          <Flash tone="success" icon="check-circle" title="C’est annulé.">
             Le créneau a été rendu. Vous pouvez reprendre rendez-vous quand vous
             voulez, sur la page du professionnel.
-          </Notice>
+          </Flash>
         ) : null}
 
         {query.moved ? (
-          <Notice tone="success" title="C’est déplacé.">
-            Le billet ci-dessous porte la nouvelle heure, et le professionnel a
-            été prévenu. L’ancien créneau a été rendu.
-          </Notice>
+          <Flash tone="success" icon="check-circle" title="C’est déplacé.">
+            Le rendez-vous ci-dessous porte la nouvelle heure, et le professionnel
+            a été prévenu. L’ancien créneau a été rendu.
+          </Flash>
         ) : null}
 
         {query.reported ? (
-          <Notice tone="success" title="Le signalement est parti.">
-            Balaaca l’a reçu. Le professionnel n’en est pas informé et ne peut
-            pas le lire. Il n’y a rien d’autre à faire de votre côté, et rien à
-            venir consulter ici.
-          </Notice>
+          <Flash tone="success" icon="check-circle" title="Le signalement est parti.">
+            Balaaca l’a reçu. Le professionnel n’en est pas informé et ne peut pas
+            le lire. Il n’y a rien d’autre à faire de votre côté, et rien à venir
+            consulter ici.
+          </Flash>
         ) : null}
 
         {query.error ? (
-          <Notice tone="danger" title="L’annulation n’a pas abouti">
+          <Flash tone="danger" icon="alert-circle" title="L’annulation n’a pas abouti" alert>
             {REFUSALS[query.error] ??
               "Réessayez dans un instant, ou appelez le professionnel : son numéro est sur sa page."}
-          </Notice>
+          </Flash>
         ) : null}
 
-        {query.move_error ? (
-          <Notice tone="danger" title="Le déplacement n’a pas abouti">
-            {MOVE_REFUSALS[query.move_error] ??
-              "Réessayez dans un instant, ou appelez le professionnel : son numéro est sur sa page."}
-          </Notice>
+        {note ? (
+          <div style={{ marginTop: "var(--s-6)" }}>
+            <div className={`alert alert--${note.tone}`} role="status">
+              <span className="alert__icon">
+                <Icon name={note.icon} />
+              </span>
+              <div className="grow">
+                <div className="alert__title">{note.title}</div>
+                <div className="alert__body">{note.body}</div>
+                {booking.status === "CANCELLED" ? (
+                  <div className="alert__actions">
+                    <Link className="btn btn--primary btn--sm" href={providerPage}>
+                      Reprendre rendez-vous
+                    </Link>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
         ) : null}
 
-        {query.report_error ? (
-          <Notice tone="danger" title="Le signalement n’est pas parti">
-            {REPORT_REFUSALS[query.report_error] ??
-              "Réessayez dans un instant."}
-          </Notice>
-        ) : null}
+        <div className="card" style={{ marginTop: "var(--s-6)" }}>
+          <div className="card__head" style={{ alignItems: "center", gap: "var(--s-4)" }}>
+            <span className="avatar avatar--lg" aria-hidden="true">
+              {initials(booking.provider_name)}
+            </span>
+            <div className="grow">
+              <div className="t-h4">{booking.provider_name}</div>
+            </div>
+            <Link className="btn btn--ghost btn--sm" href={providerPage}>
+              <span>Voir la page</span>
+              <Icon name="arrow-right" size={16} className="ico--arrow" />
+            </Link>
+          </div>
 
-        {/* Le billet. Ce qui est écrit dessus est ce qu'il faut savoir en
-            arrivant : chez qui, quoi, avec qui, quand, combien. */}
-        <div className="ticket">
-          <div className="ticket__head on-dark stack stack-3">
-            <div className="row row--between row-4 row--wrap">
-              <div className="stack" style={{ gap: 2 }}>
-                <span className="t-label">Référence</span>
-                <span className="t-h4 tnum nowrap" style={{ color: "var(--ink-fg)" }}>
-                  {booking.reference}
+          <div className="card__body">
+            <div className="dl dl--lined">
+              <div className="dl__row">
+                <span className="dl__key">Quand</span>
+                <span className="dl__val">{day(booking.starts_at, zone)}</span>
+              </div>
+              <div className="dl__row">
+                <span className="dl__key">Heure</span>
+                <span className="dl__val">
+                  {time(booking.starts_at, zone)} – {time(booking.ends_at, zone)}
+                  <br />
+                  {/* An aunt in Paris booking for her niece in Conakry
+                      otherwise reads an hour that is nobody's. */}
+                  <span className="t-xs">Heure de {placeOf(zone)}</span>
                 </span>
               </div>
-              <StatusBadge status={booking.status} />
+              <div className="dl__row">
+                <span className="dl__key">Avec</span>
+                <span className="dl__val">{booking.staff_name}</span>
+              </div>
+              <div className="dl__row">
+                <span className="dl__key">Prix figé</span>
+                <span className="dl__val t-price">{money(booking.price)}</span>
+              </div>
+              {booking.ready_by ? (
+                <div className="dl__row">
+                  <span className="dl__key">Promesse de retrait</span>
+                  <span className="dl__val">{dateTime(booking.ready_by, zone)}</span>
+                </div>
+              ) : null}
+              {booking.ready_at ? (
+                <div className="dl__row">
+                  <span className="dl__key">Prêt depuis</span>
+                  <span className="dl__val">{dateTime(booking.ready_at, zone)}</span>
+                </div>
+              ) : null}
             </div>
-            <p className="t-small t-muted" style={{ fontWeight: 400 }}>
-              {STATUS_NOTE[booking.status] ?? ""}
-            </p>
           </div>
 
-          <div className="ticket__perf" aria-hidden="true" />
-
-          <div className="ticket__body stack stack-4">
-            <TicketRow icon="store" label="Chez" value={booking.provider_name} />
-            <TicketRow icon="scissors" label="Prestation" value={booking.service_name} />
-            <TicketRow icon="user" label="Avec" value={booking.staff_name} />
-            <TicketRow icon="calendar" label="Date" value={day(booking.starts_at, zone)} />
-            <TicketRow
-              icon="clock"
-              label="Heure"
-              value={`${time(booking.starts_at, zone)} – ${time(booking.ends_at, zone)}`}
-              // Le rendez-vous est à l'heure du salon. Une tante à Paris qui
-              // réserve pour sa nièce à Conakry lit sinon une heure qui n'est
-              // celle de personne.
-              hint={`Heure de ${placeOf(zone)}`}
-            />
-            <TicketRow
-              icon="wallet"
-              label="À régler sur place"
-              value={money(booking.price)}
-            />
-          </div>
+          {changeable ? (
+            <div className="card__foot">
+              <div className="row row--wrap" style={{ gap: "var(--s-3)" }}>
+                <Link className="btn btn--secondary" href={moveHref(booking.reference)}>
+                  <Icon name="calendar" size={18} />
+                  <span>Déplacer</span>
+                </Link>
+                <Link className="btn btn--ghost" href={`${base}?cancel=1`}>
+                  <Icon name="x-circle" size={18} />
+                  <span>Annuler</span>
+                </Link>
+              </div>
+            </div>
+          ) : null}
         </div>
 
-        {/* La référence est la seule clé. Dans un champ, parce qu'un appui long
-            sur un champ propose « Tout sélectionner / Copier » sur un
-            téléphone, ce qu'un simple paragraphe ne fait pas. */}
-        <div className="card card--pad stack stack-3">
-          <div className="field">
-            <label className="field__label" htmlFor="reference">
-              Gardez cette référence
-            </label>
-            <input
-              className="input tnum"
-              id="reference"
-              type="text"
-              value={booking.reference}
-              readOnly
-              aria-describedby="reference-hint"
-            />
-            <p className="field__hint" id="reference-hint">
-              Appuyez longuement dessus pour la copier. C’est le seul moyen de
-              rouvrir cette page : il n’y a pas de compte, et personne d’autre
-              ne peut vous la redonner. Le lien de cette page la contient déjà,
-              alors gardez-le aussi.
-            </p>
+        {/* The reference is the only key: there is no account, and nobody
+            else can hand it back. */}
+        <div className="card card--pad" style={{ marginTop: "var(--s-6)" }}>
+          <div className="row row--between row--wrap" style={{ gap: "var(--s-4)" }}>
+            <div>
+              <p className="t-overline">Votre référence</p>
+              <div className="ref" style={{ marginTop: "var(--s-2)" }}>
+                {booking.reference}
+              </div>
+            </div>
+            <button className="btn btn--secondary" type="button" data-copy={booking.reference}>
+              <Icon name="copy" size={18} />
+              <span>Copier</span>
+            </button>
           </div>
+          <p className="t-xs" style={{ marginTop: "var(--s-4)" }}>
+            Gardez-la. C’est le seul moyen de rouvrir cette page, et le lien de
+            cette page la contient déjà.
+          </p>
         </div>
-
-        {/* Offered before the cancellation, on purpose: keeping the customer is
-            the better outcome for both sides, and somebody who only needs
-            another hour should meet that option first. */}
-        {open && deadline ? (
-          <section className="stack stack-4" id="move" aria-labelledby="move-head">
-            <div className="stack stack-2">
-              <div className="row row-3">
-                <span className="rule-accent" aria-hidden="true" />
-                <h2 className="t-label" id="move-head">
-                  Déplacer
-                </h2>
-              </div>
-              <p className="t-small t-muted" style={{ fontWeight: 400 }}>
-                La même prestation avec la même personne, à une autre heure.
-                Comme l’annulation, c’est possible en ligne jusqu’au{" "}
-                <strong>{dateTime(deadline, zone)}</strong>.
-              </p>
-            </div>
-
-            {move ? (
-              <MoveForm booking={booking} week={move} zone={zone} />
-            ) : query.move === "1" ? (
-              <Notice tone="warning" title="Le déplacement en ligne n’est pas possible">
-                Cette prestation n’est plus proposée en ligne, alors la
-                plateforme ne sait plus quels créneaux vous proposer. Appelez le
-                professionnel : son numéro est sur sa page, et il déplacera le
-                rendez-vous lui-même.
-              </Notice>
-            ) : (
-              <Button
-                label="Déplacer mon rendez-vous"
-                variant="secondary"
-                icon="calendar"
-                href={moveHref(booking.reference)}
-              />
-            )}
-          </section>
-        ) : null}
-
-        {open && deadline ? (
-          <section className="stack stack-4" aria-labelledby="cancel-head">
-            <div className="stack stack-2">
-              {/* La barre est un élément à elle seule - 28 px sur 2 - et non un
-                  modificateur de texte : posée sur le titre, elle le réduirait
-                  à un trait. */}
-              <div className="row row-3">
-                <span className="rule-accent" aria-hidden="true" />
-                <h2 className="t-label" id="cancel-head">
-                  Annuler
-                </h2>
-              </div>
-              <p className="t-small t-muted" style={{ fontWeight: 400 }}>
-                Vous pouvez encore annuler en ligne jusqu’au{" "}
-                <strong>{dateTime(deadline, zone)}</strong>. Le créneau sera
-                rendu tout de suite et le professionnel en sera averti.
-              </p>
-            </div>
-
-            <form className="stack stack-4" action={cancelBooking}>
-              <input type="hidden" name="reference" value={booking.reference} />
-              <div className="field">
-                <label className="field__label" htmlFor="reason">
-                  Un mot pour le professionnel{" "}
-                  <span className="t-caption t-dim" style={{ fontWeight: 500 }}>
-                    facultatif
-                  </span>
-                </label>
-                <textarea
-                  className="textarea"
-                  id="reason"
-                  name="reason"
-                  rows={2}
-                  maxLength={200}
-                  placeholder="Ex. un imprévu, je reprendrai rendez-vous."
-                  aria-describedby="reason-hint"
-                />
-                <p className="field__hint" id="reason-hint">
-                  Il le lira dans son agenda. Deux cents caractères au plus.
-                </p>
-              </div>
-              <ActionButton
-                label="Annuler ce rendez-vous"
-                variant="danger"
-                type="submit"
-                icon="ban"
-              />
-            </form>
-          </section>
-        ) : null}
 
         {open && !deadline ? (
-          <Notice tone="warning" title="Les changements en ligne sont fermés">
-            Le délai fixé par le professionnel est passé : ce rendez-vous ne peut
-            plus être déplacé ni annulé depuis cette page. Si vous avez un
-            empêchement, appelez-le : son numéro est sur sa page, et prévenir
-            vaut mieux que ne pas venir.
-          </Notice>
+          <div style={{ marginTop: "var(--s-6)" }}>
+            <div className="alert alert--warning" role="status">
+              <span className="alert__icon">
+                <Icon name="alert-triangle" />
+              </span>
+              <div className="grow">
+                <div className="alert__title">Les changements en ligne sont fermés</div>
+                <div className="alert__body">
+                  Le délai fixé par le professionnel est passé : ce rendez-vous ne
+                  peut plus être déplacé ni annulé depuis cette page. Si vous avez
+                  un empêchement, appelez-le : son numéro est sur sa page, et
+                  prévenir vaut mieux que ne pas venir.
+                </div>
+              </div>
+            </div>
+          </div>
         ) : null}
 
-        <div className="stack stack-3">
-          <Button
-            label={`Revenir chez ${booking.provider_name}`}
-            variant={open ? "secondary" : "primary"}
-            block
-            iconEnd="arrow-right"
-            href={providerPage}
-          />
-          <Button label="Rechercher un autre professionnel" variant="ghost" block href="/" />
+        {/* The report is secondary and stays that way: a quiet line under
+            the card, never a button the size of "Annuler". */}
+        <div
+          className="row row--between"
+          style={{ marginTop: "var(--s-8)", gap: "var(--s-4)", flexWrap: "wrap" }}
+        >
+          <p className="t-xs" style={{ maxWidth: "44ch" }}>
+            Un problème avec ce rendez-vous&nbsp;? Le signalement arrive à
+            l’équipe Balaaca et non au professionnel : il n’en est pas informé et
+            ne peut pas le lire. Il ne remplace pas un appel si vous attendez une
+            réponse de sa part.
+          </p>
+          <Link className="btn btn--ghost btn--sm" href={`${base}?report=1`}>
+            <Icon name="flag" size={16} />
+            <span>Signaler un problème</span>
+          </Link>
         </div>
-
-        <ReportSection booking={booking} query={query} />
-      </main>
-    </div>
+      </div>
+    </section>
   );
 }
 
@@ -446,6 +528,90 @@ export default async function BookingPage({
  * asking "are you sure" between two taps is the friction that sends people to
  * the telephone instead.
  */
+function MoveView({
+  booking,
+  week: at,
+  zone,
+  query,
+}: {
+  booking: CustomerBooking;
+  week: MoveWindow | null;
+  zone: string;
+  query: Search;
+}) {
+  const base = hrefOf(booking.reference);
+
+  return (
+    <div className="page page--narrow" style={{ paddingBlock: "var(--s-8) var(--s-16)" }}>
+      <nav className="crumbs" aria-label="Fil d’Ariane">
+        <Link href={base}>Ma réservation</Link>
+        <Icon name="chevron-right" />
+        <span aria-current="page">Déplacer</span>
+      </nav>
+
+      <h1 className="t-h2" style={{ marginTop: "var(--s-4)" }}>
+        Déplacer votre rendez-vous
+      </h1>
+      <p className="t-body" style={{ marginTop: "var(--s-3)" }}>
+        Le prix et la prestation ne changent pas. Seul l’horaire est modifié.
+      </p>
+
+      {query.move_error ? (
+        <Flash tone="danger" icon="alert-circle" title="Le déplacement n’a pas abouti" alert>
+          {MOVE_REFUSALS[query.move_error] ??
+            "Réessayez dans un instant, ou appelez le professionnel : son numéro est sur sa page."}
+        </Flash>
+      ) : null}
+
+      <div
+        className="card card--pad"
+        style={{ marginTop: "var(--s-6)", background: "var(--bg-sunken)", boxShadow: "none" }}
+      >
+        <div className="dl">
+          <div className="dl__row">
+            <span className="dl__key">Actuellement</span>
+            <span className="dl__val">
+              {day(booking.starts_at, zone)} à {time(booking.starts_at, zone)}
+            </span>
+          </div>
+          <div className="dl__row">
+            <span className="dl__key">Prestation</span>
+            <span className="dl__val">
+              {booking.service_name} · {money(booking.price)}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {at === null ? (
+        <div style={{ marginTop: "var(--s-6)" }}>
+          <div className="alert alert--warning" role="status">
+            <span className="alert__icon">
+              <Icon name="alert-triangle" />
+            </span>
+            <div className="grow">
+              <div className="alert__title">Le déplacement en ligne n’est pas possible</div>
+              <div className="alert__body">
+                Cette prestation n’est plus proposée en ligne, alors la plateforme
+                ne sait plus quels créneaux vous proposer. Appelez le
+                professionnel : son numéro est sur sa page, et il déplacera le
+                rendez-vous lui-même.
+              </div>
+              <div className="alert__actions">
+                <Link className="btn btn--secondary btn--sm" href={base}>
+                  Revenir à ma réservation
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <MoveForm booking={booking} week={at} zone={zone} />
+      )}
+    </div>
+  );
+}
+
 function MoveForm({
   booking,
   week: at,
@@ -455,98 +621,136 @@ function MoveForm({
   week: MoveWindow;
   zone: string;
 }) {
+  const base = hrefOf(booking.reference);
+  const counts = new Map(at.groups.map((group) => [group.date, group.slots.length]));
+  const days = Array.from({ length: WINDOW_DAYS }, (_, index) => addDays(at.from, index));
+
   return (
-    <form className="stack stack-5" action={rescheduleBooking}>
+    <form action={rescheduleBooking}>
       <input type="hidden" name="reference" value={booking.reference} />
       {/* The week being read, so a refusal comes back to this same week. */}
       <input type="hidden" name="date" value={at.from} />
 
-      <p className="t-small t-muted" style={{ fontWeight: 400 }}>
+      <p className="t-body" style={{ marginTop: "var(--s-8)" }}>
         Choisissez une heure : le rendez-vous est déplacé aussitôt et le
-        professionnel est prévenu. Tant que le délai ci-dessus tient, vous
-        pouvez en changer à nouveau.
+        professionnel est prévenu. Tant que le délai tient, vous pouvez en changer
+        à nouveau.
       </p>
 
-      <div className="row row--between row-3 row--wrap">
-        <span className="t-caption t-dim">
+      <div
+        className="row row--between row--wrap"
+        style={{ marginTop: "var(--s-6)", gap: "var(--s-3)" }}
+      >
+        <span className="t-xs">
           Du {dayLabel(at.from)} au {dayLabel(at.to)}
         </span>
-        <div className="row row-2">
+        <div className="row" style={{ gap: "var(--s-2)" }}>
           {at.from > at.today ? (
-            <Button
-              label="Semaine précédente"
-              variant="ghost"
-              size="sm"
-              icon="chevron-left"
+            <Link
+              className="btn btn--ghost btn--sm"
               href={moveHref(
                 booking.reference,
                 laterOf(at.today, addDays(at.from, -WINDOW_DAYS)),
               )}
-            />
+            >
+              <Icon name="chevron-left" size={16} />
+              <span>Semaine précédente</span>
+            </Link>
           ) : null}
-          <Button
-            label="Semaine suivante"
-            variant="ghost"
-            size="sm"
-            iconEnd="chevron-right"
+          <Link
+            className="btn btn--ghost btn--sm"
             href={moveHref(booking.reference, addDays(at.from, WINDOW_DAYS))}
-          />
+          >
+            <span>Semaine suivante</span>
+            <Icon name="chevron-right" size={16} />
+          </Link>
+        </div>
+      </div>
+
+      <div style={{ marginTop: "var(--s-6)" }}>
+        <div className="slots__label">
+          <Icon name="calendar" size={16} /> Choisir un nouveau jour
+        </div>
+        <div className="daystrip">
+          {days.map((date) => {
+            const free = counts.get(date) ?? 0;
+            return (
+              <a
+                className={free === 0 ? "day is-full" : "day"}
+                href={`#d-${date}`}
+                key={date}
+                aria-label={`${dayLabel(date)} : ${freeLabel(free)}`}
+              >
+                <span className="day__dow">{shortDow(date)}</span>
+                <span className="day__num">{dayNumber(date)}</span>
+                <span className="day__free">{freeLabel(free)}</span>
+              </a>
+            );
+          })}
         </div>
       </div>
 
       {at.groups.length === 0 ? (
-        <EmptyState
-          compact
-          sketch="chair"
-          title="Rien de libre cette semaine"
-          body={`Il n’y a plus de place du ${dayLabel(at.from)} au ${dayLabel(at.to)}. La semaine suivante est souvent plus ouverte, et votre rendez-vous actuel reste réservé tant que vous n’en changez pas.`}
-          action={
-            <Button
-              label="Voir la semaine suivante"
-              variant="secondary"
-              iconEnd="chevron-right"
+        <div className="empty" style={{ marginTop: "var(--s-8)" }}>
+          <Scene name="chair" className="scene-ill scene-ill--sm" />
+          <div className="empty__title">Rien de libre cette semaine</div>
+          <p className="empty__body">
+            Il n’y a plus de place du {dayLabel(at.from)} au {dayLabel(at.to)}. La
+            semaine suivante est souvent plus ouverte, et votre rendez-vous actuel
+            reste réservé tant que vous n’en changez pas.
+          </p>
+          <div className="empty__actions">
+            <Link
+              className="btn btn--secondary"
               href={moveHref(booking.reference, addDays(at.from, WINDOW_DAYS))}
-            />
-          }
-        />
-      ) : (
-        at.groups.map((group) => (
-          <div className="slot-group" key={group.date}>
-            <div className="slot-group__head">
-              <span className="t-caption t-dim">{dayLabel(group.date)}</span>
-            </div>
-            <div
-              className="slot-grid"
-              role="group"
-              aria-label={`Créneaux du ${dayLabel(group.date)}`}
             >
-              {group.slots.map((slot) => (
-                <button
-                  key={slot.starts_at}
-                  className="slot"
-                  type="submit"
-                  name="starts_at"
-                  value={slot.starts_at}
-                  // The visible label is an hour, which says nothing on its own
-                  // to somebody hearing the page rather than seeing the grid it
-                  // sits in - and this button is not a navigation, it moves an
-                  // appointment.
-                  aria-label={`Déplacer ce rendez-vous au ${dayLabel(group.date)} à ${time(slot.starts_at, zone)}`}
-                >
-                  {time(slot.starts_at, zone)}
-                </button>
-              ))}
-            </div>
+              <span>Voir la semaine suivante</span>
+              <Icon name="chevron-right" size={18} />
+            </Link>
           </div>
-        ))
+        </div>
+      ) : (
+        <div style={{ marginTop: "var(--s-8)" }}>
+          {at.groups.map((group) => (
+            <div className="slots__group" id={`d-${group.date}`} key={group.date}>
+              <div className="slots__label">
+                <Icon name="calendar" size={16} /> {dayLabel(group.date)}
+              </div>
+              <div className="slots" role="group" aria-label={`Créneaux du ${dayLabel(group.date)}`}>
+                {group.slots.map((slot) => (
+                  <button
+                    key={slot.starts_at}
+                    className="slot"
+                    type="submit"
+                    name="starts_at"
+                    value={slot.starts_at}
+                    // The visible label is an hour, which says nothing on its own
+                    // to somebody hearing the page rather than seeing the grid it
+                    // sits in - and this button is not a navigation, it moves an
+                    // appointment.
+                    aria-label={`Déplacer ce rendez-vous au ${dayLabel(group.date)} à ${time(slot.starts_at, zone)}`}
+                  >
+                    {time(slot.starts_at, zone)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
       )}
 
       {at.more ? (
-        <p className="t-caption t-dim">
-          Cette semaine compte plus de créneaux que la page n’en montre. Les
-          jours suivants en ont d’autres.
+        <p className="t-xs" style={{ marginTop: "var(--s-4)" }}>
+          Cette semaine compte plus de créneaux que la page n’en montre. Les jours
+          suivants en ont d’autres.
         </p>
       ) : null}
+
+      <div className="row row--wrap" style={{ marginTop: "var(--s-8)", gap: "var(--s-3)" }}>
+        <Link className="btn btn--ghost" href={base}>
+          Annuler la modification
+        </Link>
+      </div>
     </form>
   );
 }
@@ -627,9 +831,94 @@ async function loadMove(
 function moveHref(reference: string, date?: string): string {
   const query = new URLSearchParams({ move: "1" });
   if (date) query.set("date", date);
-  // The fragment is what keeps a customer where they were reading: opening the
-  // list is a navigation, and a navigation otherwise lands them at the title.
-  return `/bookings/${encodeURIComponent(reference)}?${query.toString()}#move`;
+  return `${hrefOf(reference)}?${query.toString()}`;
+}
+
+/* --- Cancelling ---------------------------------------------------------- */
+
+/**
+ * The one question, and the recap that answers "which one?" before it.
+ *
+ * <p>A screen of its own rather than a form under the appointment, because a
+ * red button permanently below a confirmed rendezvous is an invitation, and
+ * this one should be reached on purpose.
+ */
+function CancelView({ booking, zone }: { booking: CustomerBooking; zone: string }) {
+  const base = hrefOf(booking.reference);
+
+  return (
+    <div className="page page--narrow" style={{ paddingBlock: "var(--s-10) var(--s-16)" }}>
+      <nav className="crumbs" aria-label="Fil d’Ariane">
+        <Link href={base}>Ma réservation</Link>
+        <Icon name="chevron-right" />
+        <span aria-current="page">Annuler</span>
+      </nav>
+
+      <h1 className="t-h2" style={{ marginTop: "var(--s-4)" }}>
+        Annuler ce rendez-vous&nbsp;?
+      </h1>
+      <p className="t-body" style={{ marginTop: "var(--s-3)" }}>
+        Le créneau sera immédiatement rendu disponible à d’autres clients. Vous
+        pourrez reprendre rendez-vous, mais peut-être pas au même horaire.
+      </p>
+
+      <div
+        className="card card--pad"
+        style={{ marginTop: "var(--s-6)", background: "var(--bg-sunken)", boxShadow: "none" }}
+      >
+        <div className="dl">
+          <div className="dl__row">
+            <span className="dl__key">Prestation</span>
+            <span className="dl__val">{booking.service_name}</span>
+          </div>
+          <div className="dl__row">
+            <span className="dl__key">Quand</span>
+            <span className="dl__val">
+              {day(booking.starts_at, zone)} à {time(booking.starts_at, zone)}
+            </span>
+          </div>
+          <div className="dl__row">
+            <span className="dl__key">Chez</span>
+            <span className="dl__val">{booking.provider_name}</span>
+          </div>
+        </div>
+      </div>
+
+      <form action={cancelBooking}>
+        <input type="hidden" name="reference" value={booking.reference} />
+        <div style={{ marginTop: "var(--s-6)" }}>
+          <div className="field">
+            <label className="field__label" htmlFor="reason">
+              Un mot pour le professionnel
+              <span className="field__optional">facultatif</span>
+            </label>
+            <textarea
+              className="textarea"
+              id="reason"
+              name="reason"
+              rows={2}
+              maxLength={200}
+              placeholder="Empêchement de dernière minute, je reprendrai la semaine prochaine."
+              aria-describedby="reason-hint"
+            />
+            <p className="field__hint" id="reason-hint">
+              Il le lira dans son agenda. Deux cents caractères au plus.
+            </p>
+          </div>
+        </div>
+        <div className="row row--wrap" style={{ marginTop: "var(--s-8)", gap: "var(--s-3)" }}>
+          <Link className="btn btn--secondary" href={base}>
+            Garder mon rendez-vous
+          </Link>
+          <span className="grow" />
+          <button className="btn btn--danger" type="submit">
+            <Icon name="x-circle" size={18} />
+            <span>Annuler le rendez-vous</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  );
 }
 
 /* --- Reporting ----------------------------------------------------------- */
@@ -637,165 +926,136 @@ function moveHref(reference: string, date?: string): string {
 /**
  * Telling the platform, which is not telling the salon.
  *
- * <p>Last on the page and quiet on purpose. It is not a competitor of the
- * appointment details, and a report button drawn as loudly as "annuler" invites
- * the press that was meant for the other one.
- *
- * <p>Folded away until asked for, because the five reasons are worth reading
- * only to somebody who has already decided they have one.
+ * <p>Reached from a quiet line at the foot of the appointment, and never
+ * competing with it. The five reasons are worth reading only to somebody who
+ * has already decided they have one.
  */
-function ReportSection({ booking, query }: { booking: CustomerBooking; query: Search }) {
+function ReportView({ booking, query }: { booking: CustomerBooking; query: Search }) {
+  const base = hrefOf(booking.reference);
+
   return (
-    <section className="stack stack-3" id="report" aria-labelledby="report-head">
-      <div className="row row-3">
-        <span className="rule-accent" aria-hidden="true" />
-        <h2 className="t-label" id="report-head">
-          Signaler un problème
-        </h2>
-      </div>
-      <p className="t-caption t-dim">
-        Ce signalement arrive à Balaaca et pas au salon : le professionnel n’en
-        est pas informé et ne peut pas le lire. Il ne remplace pas un appel si
-        vous attendez une réponse de sa part.
+    <div className="page page--narrow" style={{ paddingBlock: "var(--s-10) var(--s-16)" }}>
+      <nav className="crumbs" aria-label="Fil d’Ariane">
+        <Link href={base}>Ma réservation</Link>
+        <Icon name="chevron-right" />
+        <span aria-current="page">Signaler</span>
+      </nav>
+
+      <h1 className="t-h2" style={{ marginTop: "var(--s-4)" }}>
+        Signaler un problème
+      </h1>
+      <p className="t-body" style={{ marginTop: "var(--s-3)" }}>
+        Votre signalement est lu par l’équipe Balaaca et non par le
+        professionnel : il n’en est pas informé et ne peut pas le lire. Cela ne
+        remplace pas un appel si le problème est urgent.
       </p>
 
-      {query.report === "1" ? (
-        <form className="stack stack-4" action={reportProvider}>
-          <input type="hidden" name="reference" value={booking.reference} />
+      {query.report_error ? (
+        <Flash tone="danger" icon="alert-circle" title="Le signalement n’est pas parti" alert>
+          {REPORT_REFUSALS[query.report_error] ?? "Réessayez dans un instant."}
+        </Flash>
+      ) : null}
 
-          <div className="field">
-            <label className="field__label" htmlFor="report-reason">
-              Que s’est-il passé ?
-              <span className="field__req" aria-hidden="true">*</span>
-            </label>
-            {/* An empty first option rather than a preselected reason: a select
-                that opens on "Le salon était fermé" is a report already half
-                written by the page. `required` refuses the empty one. */}
-            <select
-              className="select"
-              id="report-reason"
-              name="reason"
-              defaultValue=""
-              required
-            >
-              <option value="">Choisissez un motif</option>
-              {REASONS.map((one) => (
-                <option key={one.value} value={one.value}>
-                  {one.label}
-                </option>
-              ))}
-            </select>
+      <form action={reportProvider} style={{ marginTop: "var(--s-8)" }}>
+        <input type="hidden" name="reference" value={booking.reference} />
+
+        <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
+          <legend className="field__label" style={{ padding: 0, marginBottom: "var(--s-3)" }}>
+            Que s’est-il passé&nbsp;?
+          </legend>
+          {/* Nothing preselected: a report half-written by the page is not
+              the report the person came to make. */}
+          <div className="stack" style={{ "--stack-gap": "var(--s-2)" } as CSSProperties}>
+            {REASONS.map((one) => (
+              <label className="choice" key={one.value}>
+                <input type="radio" name="reason" value={one.value} required />
+                <span className="choice__mark">
+                  <Icon name="check-circle" />
+                </span>
+                <span>
+                  <span className="choice__title">{one.label}</span>
+                  <span className="choice__desc">{one.hint}</span>
+                </span>
+              </label>
+            ))}
           </div>
+        </fieldset>
 
-          <div className="field">
-            <label className="field__label" htmlFor="report-details">
-              En quelques mots{" "}
-              <span className="t-caption t-dim" style={{ fontWeight: 500 }}>
-                facultatif
-              </span>
-            </label>
-            <textarea
-              className="textarea"
-              id="report-details"
-              name="details"
-              rows={3}
-              maxLength={1000}
-              placeholder="Ex. la boutique était fermée à l’heure du rendez-vous."
-              aria-describedby="report-details-hint"
-            />
-            <p className="field__hint" id="report-details-hint">
-              Mille caractères au plus. Personne ne vous demandera d’écrire une
-              lettre pour dire qu’on vous a mal reçu.
-            </p>
-          </div>
-
-          <ActionButton
-            label="Envoyer le signalement"
-            variant="quiet-danger"
-            type="submit"
-            icon="send"
+        <div className="field" style={{ marginTop: "var(--s-6)" }}>
+          <label className="field__label" htmlFor="report-details">
+            Décrivez ce qui s’est passé
+            <span className="field__optional">facultatif</span>
+          </label>
+          <textarea
+            className="textarea"
+            id="report-details"
+            name="details"
+            rows={3}
+            maxLength={1000}
+            style={{ minHeight: 140 }}
+            aria-describedby="report-details-hint"
           />
-        </form>
-      ) : (
-        // A row rather than a bare stack child, so the link stays the width of
-        // its own words. Stretched across the page it would read as the last
-        // call to action on the screen, which is what it must not be.
-        <div className="row row-2">
-          <Button
-            label="Signaler un problème"
-            variant="ghost"
-            size="sm"
-            icon="alert-triangle"
-            href={`/bookings/${encodeURIComponent(booking.reference)}?report=1#report`}
-          />
+          <p className="field__hint" id="report-details-hint">
+            Restez factuel : dates, heures, ce qui a été dit. Mille caractères au
+            plus, et personne ne vous demandera d’écrire une lettre pour dire
+            qu’on vous a mal reçu.
+          </p>
         </div>
-      )}
-    </section>
-  );
-}
 
-/* --- The ticket ---------------------------------------------------------- */
-
-/**
- * The one line that says where things stand, under the title.
- *
- * <p>Written per status rather than once, because "vous attend" is a lie for a
- * request the salon has not looked at yet, and the mockup said it anyway.
- */
-function lead(booking: CustomerBooking, zone: string): string {
-  const when = `${day(booking.starts_at, zone)} à ${time(booking.starts_at, zone)}`;
-  switch (booking.status) {
-    case "PENDING":
-      return `Votre demande est partie chez ${booking.provider_name} pour le ${when}.`;
-    case "CONFIRMED":
-      return `${booking.provider_name} vous attend le ${when}.`;
-    case "CANCELLED":
-      return `Ce rendez-vous chez ${booking.provider_name} est annulé.`;
-    case "COMPLETED":
-      return `Ce rendez-vous chez ${booking.provider_name} a eu lieu.`;
-    default:
-      return `Ce rendez-vous chez ${booking.provider_name} n’a pas été honoré.`;
-  }
-}
-
-/** What the status means for the person reading, not what it means in the schema. */
-const STATUS_NOTE: Record<string, string> = {
-  PENDING:
-    "Le professionnel confirme les rendez-vous à la main. Vous gardez votre place tant que ce n’est pas fait.",
-  CONFIRMED: "C’est confirmé. Présentez-vous à l’heure, il n’y a rien d’autre à faire.",
-  CANCELLED: "Le créneau a été rendu. Rien ne vous est dû ni demandé.",
-  COMPLETED: "La prestation a été faite.",
-  NO_SHOW: "Le professionnel a noté que ce rendez-vous n’a pas été honoré.",
-};
-
-function TicketRow({
-  icon,
-  label,
-  value,
-  hint,
-}: {
-  icon: string;
-  label: string;
-  value: string;
-  hint?: string;
-}) {
-  return (
-    <div className="row row--top row-3">
-      <span
-        aria-hidden="true"
-        style={{ color: "var(--text-tertiary)", flex: "none", marginTop: 1 }}
-      >
-        <Icon name={icon} size={17} />
-      </span>
-      <span className="grow stack" style={{ gap: 1 }}>
-        <span className="t-caption t-dim">{label}</span>
-        <span className="t-small" style={{ fontWeight: 600 }}>
-          {value}
-        </span>
-        {hint ? <span className="t-caption t-dim">{hint}</span> : null}
-      </span>
+        <div className="row row--wrap" style={{ marginTop: "var(--s-8)", gap: "var(--s-3)" }}>
+          <Link className="btn btn--ghost" href={base}>
+            Retour
+          </Link>
+          <span className="grow" />
+          <button className="btn btn--primary" type="submit">
+            <Icon name="send" size={18} />
+            <span>Envoyer le signalement</span>
+          </button>
+        </div>
+      </form>
     </div>
   );
+}
+
+/* --- Shared pieces ------------------------------------------------------- */
+
+/**
+ * What just happened, said once above the appointment.
+ *
+ * <p>`role=alert` only for a refusal: a screen reader interrupts on alert, and
+ * a confirmation that interrupts is one nobody wants twice.
+ */
+function Flash({
+  tone,
+  icon,
+  title,
+  children,
+  alert,
+}: {
+  tone: string;
+  icon: string;
+  title: string;
+  children: ReactNode;
+  alert?: boolean;
+}) {
+  return (
+    <div style={{ marginTop: "var(--s-6)" }}>
+      <div className={`alert alert--${tone}`} role={alert ? "alert" : "status"}>
+        <span className="alert__icon">
+          <Icon name={icon} />
+        </span>
+        <div className="grow">
+          <div className="alert__title">{title}</div>
+          <div className="alert__body">{children}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** This appointment's own URL. */
+function hrefOf(reference: string): string {
+  return `/bookings/${encodeURIComponent(reference)}`;
 }
 
 /**
@@ -863,10 +1123,31 @@ function laterOf(a: string, b: string): string {
  * other zone would move it by one.
  */
 function dayLabel(date: string): string {
-  return new Intl.DateTimeFormat("fr", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    timeZone: "UTC",
-  }).format(new Date(`${date}T00:00:00Z`));
+  return written(date, { weekday: "long", day: "numeric", month: "long" });
+}
+
+/** The three letters the day strip shows above the number. */
+function shortDow(date: string): string {
+  return written(date, { weekday: "short" });
+}
+
+function dayNumber(date: string): string {
+  return written(date, { day: "numeric" });
+}
+
+function written(date: string, options: Intl.DateTimeFormatOptions): string {
+  return new Intl.DateTimeFormat("fr", { ...options, timeZone: "UTC" }).format(
+    new Date(`${date}T00:00:00Z`),
+  );
+}
+
+/**
+ * How many hours a day still has.
+ *
+ * <p>"Aucun" and not "fermé": an empty day may be a closed one or a full one,
+ * and the slot list cannot tell the two apart.
+ */
+function freeLabel(free: number): string {
+  if (free === 0) return "aucun";
+  return free === 1 ? "1 libre" : `${free} libres`;
 }

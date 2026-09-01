@@ -1,3 +1,5 @@
+import { TRADE_GLYPHS } from "./sprite";
+
 /**
  * One glyph, drawn from the sprite the root layout laid down.
  *
@@ -63,7 +65,7 @@ export function TradeIcon({
 }) {
   return (
     <svg className={`ico ${size ? SIZES[size] ?? "" : ""} ${className}`.replace(/\s+/g, " ").trim()} aria-hidden="true" focusable="false">
-      <use href={`#t-${slug}`} />
+      <use href={`#t-${TRADE_GLYPHS.has(slug) ? slug : "default"}`} />
     </svg>
   );
 }

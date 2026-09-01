@@ -1,294 +1,711 @@
 import type { Metadata } from "next";
-import { Icon } from "@/components/icon";
-import { Sketch } from "@/components/sketch";
+import Link from "next/link";
+import type { CSSProperties } from "react";
+import { Icon, TradeIcon } from "@/components/icon";
 import { SiteFooter, SiteHeader } from "@/components/site";
-import { Button } from "@/components/ui";
 
 /**
- * The long answer, moved off the pitch.
+ * The four screens a customer goes through, from the search to the reference.
  *
  * <p>Static, like the rest of the showcase: nothing here is read from the API.
  *
- * <p>This is where the six steps, the preview of a public page and the FAQ
- * live, because a provider who is still deciding does not need them and a
- * provider who has decided needs all of them. Splitting them off is what took
- * the pitch from eight phone screens to three.
+ * <p>Buttons are plain anchors carrying the mockup's own classes, for the same
+ * reason as the pitch: `ui.tsx`'s `Button` was written against the previous
+ * stylesheet's variants.
  */
 export const metadata: Metadata = {
   title: "Comment ça marche",
   description:
-    "De votre première visite à votre premier rendez-vous : six étapes, et " +
-    "les questions que l’on nous pose le plus souvent.",
+    "Vous cherchez, vous regardez, vous réservez, vous gardez une référence. " +
+    "Rien à installer, rien à créer, rien à payer en ligne.",
 };
 
-/**
- * The order is the product's, not a presentation's: a link cannot be shared
- * before the page exists, and a slot cannot be offered before an opening hour
- * and a duration say how long it lasts.
- */
-const STEPS = [
-  {
-    icon: "store",
-    title: "Créez votre page",
-    text:
-      "Le nom de votre activité, votre métier, votre quartier et quelques " +
-      "phrases de présentation. Vous obtenez un lien court, qui s’ouvre sans " +
-      "installation et sans compte.",
-    detail:
-      "Une couturière de Madina, un loueur de salle de Kindia et un DJ de " +
-      "Bambeto remplissent le même formulaire.",
-  },
-  {
-    icon: "list",
-    title: "Décrivez vos prestations",
-    text:
-      "Pour chacune : un nom, une description, une durée et un prix. La durée " +
-      "sert à calculer les créneaux réellement disponibles.",
-    detail:
-      "Le prix peut rester masqué, prestation par prestation. La durée, elle, " +
-      "reste toujours visible.",
-  },
-  {
-    icon: "clock",
-    title: "Réglez vos horaires",
-    text:
-      "Vos jours et vos heures d’ouverture, et vos fermetures " +
-      "exceptionnelles. Les créneaux proposés à vos clients en découlent " +
-      "directement.",
-    detail:
-      "Un salon fermé le lundi et un traiteur qui ne travaille que le " +
-      "week-end décrivent tous les deux leur réalité.",
-  },
-  {
-    icon: "users",
-    title: "Ajoutez votre équipe",
-    text:
-      "Chaque membre a son propre calendrier et ses propres horaires. Un " +
-      "client peut demander quelqu’un en particulier, ou vous laisser choisir.",
-    detail:
-      "Deux photographes dans le même studio ne se marchent plus sur les " +
-      "pieds.",
-  },
-  {
-    icon: "share",
-    title: "Partagez votre lien",
-    text:
-      "Sur WhatsApp, sur votre devanture, sur vos affiches, dans votre bio. " +
-      "Le lien est court et s’ouvre en une page.",
-    detail:
-      "C’est le même lien pour tout le monde : vous n’avez qu’une adresse à " +
-      "retenir.",
-  },
-  {
-    icon: "calendar-check",
-    title: "Recevez, confirmez, suivez",
-    text:
-      "Les demandes arrivent dans votre agenda, en vue jour ou semaine. Vous " +
-      "confirmez, vous marquez terminé, vous notez une absence, vous reportez.",
-    detail:
-      "Confirmation automatique si vous préférez ne rien avoir à faire. Vos " +
-      "clients sont prévenus par WhatsApp.",
-  },
+/** How a search can be narrowed, and each one is a parameter the API takes. */
+const SEARCH_CHIPS = ["Mot-clé", "Plusieurs métiers", "Commune", "Quartier libre"];
+
+const MODES: [string, string, string][] = [
+  [
+    "mode-onsite",
+    "Sur place",
+    "Vous vous rendez chez le prestataire et la prestation est réalisée pendant que vous attendez.",
+  ],
+  [
+    "mode-dropoff",
+    "Dépôt",
+    "Vous déposez l’article, vous repassez le récupérer une fois le travail terminé.",
+  ],
+  [
+    "mode-atcustomer",
+    "À domicile",
+    "Le prestataire se déplace jusqu’à l’adresse que vous indiquez.",
+  ],
 ];
 
-/** What a public page carries, in the order a thumb meets it. */
-const PREVIEW = [
-  ["list", "Vos prestations, avec leur durée et leur prix"],
-  ["clock", "Vos horaires réels, fermetures comprises"],
-  ["calendar-check", "Le bouton Réserver, toujours à portée du pouce"],
+const FAQ: [string, string][][] = [
+  [
+    [
+      "Faut-il créer un compte ?",
+      "Non. Le client ne crée jamais de compte sur Balaaca. Seul le professionnel se connecte.",
+    ],
+    [
+      "Est-ce que je paie sur Balaaca ?",
+      "Non. Vous payez le professionnel directement, comme d’habitude. Balaaca ne traite aucun paiement et ne prend aucune commission.",
+    ],
+    [
+      "Le prix peut-il changer après ma réservation ?",
+      "Non. Le prix est figé au moment de la réservation, même si le professionnel modifie son tarif ensuite.",
+    ],
+    [
+      "Qui voit mon numéro de téléphone ?",
+      "Le professionnel chez qui vous réservez, et lui seul. Il le conserve dans sa fiche client pour vous reconnaître la fois suivante.",
+    ],
+  ],
+  [
+    [
+      "J’ai perdu ma référence.",
+      "Le message WhatsApp du professionnel la contient. Sinon, appelez l’établissement : il vous retrouve avec votre numéro.",
+    ],
+    [
+      "Comment le professionnel me contacte-t-il ?",
+      "Par WhatsApp, sur le numéro que vous avez indiqué. Il n’y a ni SMS ni e-mail automatique.",
+    ],
+    [
+      "Puis-je annuler ?",
+      "Oui, depuis votre page de suivi, dans le délai fixé par le professionnel. Passé ce délai, appelez-le directement.",
+    ],
+    [
+      "Et pour une prestation à domicile ?",
+      "On vous demande votre commune, votre quartier et des repères écrits. Aucune position GPS n’est demandée ni enregistrée.",
+    ],
+  ],
 ];
 
-const FAQ: [string, string][] = [
-  [
-    "Faut-il un ordinateur ?",
-    "Non. Tout se fait depuis un téléphone, y compris la création de votre " +
-      "page et la gestion de votre agenda. Balaaca est un site : il n’y a rien " +
-      "à télécharger.",
-  ],
-  [
-    "Mes clients doivent-ils créer un compte ?",
-    "Non. Ils ouvrent votre lien, choisissent une prestation et un créneau, " +
-      "laissent un nom et un numéro. C’est tout.",
-  ],
-  [
-    "Comment mes clients sont-ils prévenus ?",
-    "Par WhatsApp : confirmation, rappel avant le rendez-vous, annulation et " +
-      "report. C’est le seul canal disponible aujourd’hui.",
-  ],
-  [
-    "Puis-je masquer mes prix ?",
-    "Oui, prestation par prestation. La durée reste affichée, pour que le " +
-      "client sache combien de temps prévoir.",
-  ],
-  [
-    "Et si un client veut annuler ?",
-    "Il retrouve son rendez-vous depuis son lien et peut l’annuler dans le " +
-      "délai fixé. Vous le voyez disparaître de votre agenda.",
-  ],
-];
+const SUMMARY_STYLE = {
+  cursor: "pointer",
+  listStyle: "none",
+  gap: "var(--s-3)",
+} as const;
 
 export default function HowItWorks() {
   return (
-    <div className="site">
-      <SiteHeader kind="pro" />
+    <>
+      <SiteHeader />
 
-      <main id="contenu">
+      <main id="contenu" className="has-tabbar">
         <section
-          className="container container--landing"
-          style={{ paddingBlock: "var(--space-12) var(--space-8)" }}
+          className="hero atmo grain grain--dark tex-halo tex-halo--dark"
+          style={{ paddingBottom: "var(--s-8)" }}
         >
-          <div className="stack stack-4">
-            <p className="t-label t-label--accent">Comment ça marche</p>
-            <h1 className="t-h1" style={{ maxWidth: "20ch" }}>
-              De votre première visite à votre premier rendez-vous.
-            </h1>
-            <p className="t-body-lg t-muted measure" style={{ fontWeight: 400 }}>
-              Six étapes. Comptez une vingtaine de minutes pour les cinq
-              premières, une seule fois.
-            </p>
+          <div
+            className="page hero__in"
+            style={{ paddingBlock: "var(--s-12) var(--s-10)" }}
+          >
+            <div
+              className="feature feature--wide-left"
+              style={{ alignItems: "center" }}
+            >
+              <div>
+                <p className="hero__eyebrow" data-enter="1">
+                  <Icon name="help" size={18} /> Côté client
+                </p>
+                <h1 className="t-display hero__title" data-enter="2">
+                  Quatre écrans, <em>aucun compte.</em>
+                </h1>
+                <p className="hero__sub" data-enter="3">
+                  Vous cherchez, vous regardez, vous réservez, vous gardez une
+                  référence. Rien à installer, rien à créer, rien à payer en
+                  ligne.
+                </p>
+                <div
+                  className="row row--wrap"
+                  style={{ marginTop: "var(--s-8)", gap: "var(--s-3)" }}
+                  data-enter="4"
+                >
+                  {/* The mockup's /search is the hub itself here: the
+                      directory and its filters live at the root. */}
+                  <Link className="btn btn--inverse btn--lg" href="/">
+                    <span
+                      className="btn__icon--idle"
+                      style={{ display: "inline-flex" }}
+                    >
+                      <Icon name="search" size={18} />
+                    </span>
+                    <span className="btn__label--idle">
+                      Chercher un professionnel
+                    </span>
+                  </Link>
+                  <Link className="btn btn--secondary btn--lg" href="/bookings">
+                    <span className="btn__label--idle">
+                      Retrouver ma réservation
+                    </span>
+                  </Link>
+                </div>
+              </div>
+              <div className="feature__art" data-enter="5">
+                <HomeScreenShot />
+              </div>
+            </div>
           </div>
         </section>
 
-        {/* An ordered list, because the order is load-bearing. The number is
-            decoration only in the visual sense: a screen reader gets the same
-            sequence from the <ol> itself. */}
-        <section className="container container--editorial">
-          <ol className="stack stack-10">
-            {STEPS.map((st, i) => (
-              <li className="step" key={st.title}>
-                <span className="step__num" aria-hidden="true">
-                  {i + 1}
-                </span>
-                <div className="grow stack stack-3">
-                  <div className="row row-3">
-                    <span className="step__icon" aria-hidden="true">
-                      <Icon name={st.icon} size={24} />
+        <section className="section section--lg atmo tex-rules">
+          <div className="page">
+            <div className="stepline" data-reveal>
+              <div className="stepline__n">01</div>
+              <div>
+                <h2 className="t-h2">Vous cherchez</h2>
+                <p className="t-lead" style={{ marginTop: "var(--s-4)" }}>
+                  Par mot, par métier, par commune ou par quartier. Demander
+                  «&nbsp;Conakry&nbsp;» retient aussi ce qui est enregistré à
+                  Ratoma.
+                </p>
+                <p className="t-body" style={{ marginTop: "var(--s-4)" }}>
+                  Les résultats sont classés par ordre alphabétique. Personne ne
+                  paie pour passer devant, et aucun classement ne dépend de ce
+                  que vous avez cherché hier.
+                </p>
+                <div
+                  className="row row--wrap"
+                  style={{ marginTop: "var(--s-6)", gap: "var(--s-2)" }}
+                >
+                  {SEARCH_CHIPS.map((chip) => (
+                    <span className="chip" key={chip}>
+                      {chip}
                     </span>
-                    <h2 className="step__title">{st.title}</h2>
-                  </div>
-                  <p className="t-body t-muted" style={{ fontWeight: 400 }}>
-                    {st.text}
-                  </p>
+                  ))}
+                </div>
+              </div>
+              <div className="stepline__art">
+                <svg
+                  className="scene-ill"
+                  viewBox="0 0 200 150"
+                  aria-hidden="true"
+                  style={{ color: "var(--p-warm-300)" }}
+                >
+                  <use href="#s-storefront" />
+                </svg>
+              </div>
+            </div>
+
+            <div className="stepline" data-reveal>
+              <div className="stepline__n">02</div>
+              <div>
+                <h2 className="t-h2">
+                  Vous regardez la page du professionnel
+                </h2>
+                <p className="t-lead" style={{ marginTop: "var(--s-4)" }}>
+                  Ses prestations, ses prix, ses horaires, son équipe, et
+                  surtout la façon dont chaque prestation se déroule.
+                </p>
+                <div
+                  className="stack"
+                  style={
+                    {
+                      "--stack-gap": "var(--s-3)",
+                      marginTop: "var(--s-6)",
+                    } as CSSProperties
+                  }
+                >
+                  {MODES.map(([icon, name, body]) => (
+                    <div
+                      className="row"
+                      style={{ alignItems: "flex-start", gap: "var(--s-4)" }}
+                      key={name}
+                    >
+                      <span className="choice__icon">
+                        <Icon name={icon} />
+                      </span>
+                      <span>
+                        <span className="t-strong">{name}</span>
+                        <span
+                          className="t-sm"
+                          style={{ display: "block", marginTop: "2px" }}
+                        >
+                          {body}
+                        </span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="stepline__art">
+                <PublicPageShot />
+              </div>
+            </div>
+
+            <div className="stepline" data-reveal>
+              <div className="stepline__n">03</div>
+              <div>
+                <h2 className="t-h2">Vous prenez un créneau libre</h2>
+                <p className="t-lead" style={{ marginTop: "var(--s-4)" }}>
+                  Vous choisissez le jour, l’horaire, et la personne si
+                  l’établissement en compte plusieurs.
+                </p>
+                <p className="t-body" style={{ marginTop: "var(--s-4)" }}>
+                  Seuls les créneaux réellement disponibles sont proposés.
+                  Balaaca ne publie jamais l’emploi du temps de quelqu’un : ce
+                  qui est déjà pris n’apparaît nulle part, il est simplement
+                  absent de la liste.
+                </p>
+                <div
+                  className="card card--pad-sm"
+                  style={{
+                    marginTop: "var(--s-6)",
+                    background: "var(--accent-soft)",
+                    borderColor: "var(--border-accent)",
+                    boxShadow: "none",
+                  }}
+                >
                   <p
-                    className="t-small"
-                    style={{
-                      fontWeight: 400,
-                      color: "var(--text-tertiary)",
-                      borderLeft: "2px solid var(--accent)",
-                      paddingLeft: "var(--space-4)",
-                    }}
+                    className="t-sm"
+                    style={{ color: "var(--accent-strong)" }}
                   >
-                    {st.detail}
+                    <Icon name="lock" size={16} /> Le prix affiché au moment où
+                    vous réservez est figé. Il ne changera pas, même si le
+                    professionnel modifie son tarif ensuite.
                   </p>
                 </div>
-              </li>
-            ))}
-          </ol>
+              </div>
+              <div className="stepline__art">
+                <SlotPickerShot />
+              </div>
+            </div>
+
+            <div className="stepline" data-reveal>
+              <div className="stepline__n">04</div>
+              <div>
+                <h2 className="t-h2">Vous gardez une référence</h2>
+                {/* The mockup promised eight characters a customer could
+                    dictate over the telephone. The server mints thirty-two
+                    random bytes and returns the base64url of them, so the
+                    sentence that counted them is gone. */}
+                <p className="t-lead" style={{ marginTop: "var(--s-4)" }}>
+                  C’est la seule chose à conserver : il n’y a pas de compte à
+                  retrouver.
+                </p>
+                <p className="t-body" style={{ marginTop: "var(--s-4)" }}>
+                  Elle ouvre votre page de suivi : déplacer le rendez-vous,
+                  l’annuler dans le délai fixé par le professionnel, ou signaler
+                  un problème.
+                </p>
+                <div
+                  className="row row--wrap"
+                  style={{ marginTop: "var(--s-6)", gap: "var(--s-3)" }}
+                >
+                  <Link className="btn btn--secondary" href="/bookings">
+                    <span
+                      className="btn__icon--idle"
+                      style={{ display: "inline-flex" }}
+                    >
+                      <Icon name="search" size={18} />
+                    </span>
+                    <span className="btn__label--idle">
+                      Retrouver une réservation
+                    </span>
+                  </Link>
+                </div>
+              </div>
+              <div className="stepline__art">
+                <ConfirmationShot />
+              </div>
+            </div>
+          </div>
         </section>
 
-        {/* A description and a way in, not a rendering. The mockup embedded a
-            provider's entire public page here, live, at 335 px inside a 375 px
-            phone - a phone frame drawn inside a phone - which cost an API call
-            this page does not otherwise need and showed the reader a page too
-            small to read. The link goes to the directory rather than to a
-            fixed slug: which providers are published is not something this
-            static page can know. */}
-        <section
-          className="container container--landing section"
-          aria-labelledby="hiw-preview"
-        >
-          <div className="card card--pad-lg stack stack-5">
-            <div className="row row-4 row--wrap row--between">
-              <h2 className="t-h3" id="hiw-preview">
-                Ce que voit votre client
-              </h2>
-              <span
-                aria-hidden="true"
-                style={{ color: "var(--accent)", opacity: 0.5 }}
-              >
-                <Sketch name="storefront" level={2} width={120} />
-              </span>
+        <section className="section section--sunken atmo grain">
+          <svg className="wm wm--br" viewBox="0 0 24 24" aria-hidden="true">
+            <use href="#i-message" />
+          </svg>
+          <div className="page">
+            <div className="section-head">
+              <div className="section-head__text">
+                <p className="t-overline">Questions fréquentes</p>
+                <h2 className="t-h2">Ce qu’il faut savoir avant de réserver</h2>
+              </div>
             </div>
-            <p className="t-body t-muted measure" style={{ fontWeight: 400 }}>
-              Une page, un lien. Le même gabarit sert un studio photo, une
-              couturière, un loueur de salle ou un DJ : ce sont vos prestations
-              et vos horaires qui le remplissent, pas un modèle à choisir.
-            </p>
-            <ul className="stack stack-3">
-              {PREVIEW.map(([ic, label]) => (
-                <li className="benefit" key={label}>
-                  <span
-                    className="benefit__icon"
-                    style={{ color: "var(--accent-strong)" }}
-                    aria-hidden="true"
-                  >
-                    <Icon name={ic as string} size={18} />
-                  </span>
-                  <span
-                    className="benefit__text"
-                    style={{ color: "var(--text-primary)", fontWeight: 500 }}
-                  >
-                    {label}
-                  </span>
-                </li>
+            <div className="cols cols--2" style={{ gap: "var(--s-6)" }}>
+              {FAQ.map((column, i) => (
+                <div
+                  className="stack"
+                  key={i}
+                  style={{ "--stack-gap": "var(--s-2)" } as CSSProperties}
+                >
+                  {column.map(([question, answer]) => (
+                    // <details>, so an answer opens with no JavaScript and the
+                    // browser's own find-in-page reaches the closed ones.
+                    <details className="card card--pad-sm" key={question}>
+                      <summary
+                        className="row row--between"
+                        style={SUMMARY_STYLE}
+                      >
+                        <span className="t-strong">{question}</span>
+                        <Icon name="chevron-down" size={18} />
+                      </summary>
+                      <p className="t-sm" style={{ marginTop: "var(--s-3)" }}>
+                        {answer}
+                      </p>
+                    </details>
+                  ))}
+                </div>
               ))}
-            </ul>
-            <div>
-              <Button
-                label="Voir un exemple de page"
-                variant="secondary"
-                iconEnd="arrow-right"
-                href="/"
-              />
             </div>
           </div>
         </section>
 
         <section
-          className="container container--editorial section stack stack-6"
-          style={{ paddingTop: 0 }}
-          aria-labelledby="hiw-faq"
+          className="section section--dark on-dark atmo grain grain--dark tex-halo tex-halo--dark"
+          style={{ paddingBlock: "var(--s-14)" }}
         >
-          <h2 className="t-h3" id="hiw-faq">
-            Questions fréquentes
-          </h2>
-          {/* <details>, so the page needs no JavaScript to open an answer and
-              the browser's own find-in-page reaches the closed ones. */}
-          <div className="faq">
-            {FAQ.map(([q, a], i) => (
-              <details key={q} open={i === 0}>
-                <summary>{q}</summary>
-                <div className="faq__body">{a}</div>
-              </details>
-            ))}
-          </div>
-        </section>
-
-        <section className="cta-band on-dark" aria-labelledby="hiw-cta">
-          <div className="container container--landing stack stack-5">
-            <h2 className="t-h3" id="hiw-cta" style={{ maxWidth: "20ch" }}>
-              Prêt à créer votre page ?
+          <div
+            className="page"
+            style={{
+              display: "grid",
+              gap: "var(--s-6)",
+              justifyItems: "center",
+              textAlign: "center",
+            }}
+          >
+            <h2 className="t-h1" style={{ color: "#fff", maxWidth: "22ch" }}>
+              Trouvez quelqu’un près de chez vous
             </h2>
-            <div className="row row-3 row--wrap">
-              <Button
-                label="Inscrire mon activité"
-                variant="accent"
-                size="lg"
-                iconEnd="arrow-right"
-                href="/inscription"
-              />
-              <Button
-                label="Voir les tarifs"
-                variant="secondary"
-                size="lg"
-                href="/professionnels/tarifs"
-              />
-            </div>
+            <p
+              className="t-lead"
+              style={{
+                color: "var(--text-on-dark-muted)",
+                maxWidth: "50ch",
+              }}
+            >
+              35 métiers, à Conakry et dans l’intérieur du pays.
+            </p>
+            <Link className="btn btn--inverse btn--lg" href="/">
+              <span className="btn__label--idle">Commencer une recherche</span>
+              <Icon name="arrow-right" size={18} className="ico--arrow" />
+            </Link>
           </div>
         </section>
       </main>
 
-      <SiteFooter kind="pro" />
+      <SiteFooter />
+    </>
+  );
+}
+
+/* --- The device mockups -------------------------------------------------- */
+/* Local rather than shared: the pitch shows three of the same four, but a
+   component file is not this page's to add. */
+
+const HOME_TRADES = [
+  "coiffure",
+  "couture",
+  "mecanique-auto",
+  "traiteur",
+  "plomberie",
+  "photographie",
+];
+
+/** The customer's first screen, on a telephone. */
+function HomeScreenShot() {
+  return (
+    <div className="shot-phone shot-phone--sm">
+      <div className="shot-phone__screen">
+        <span className="shot-phone__notch" />
+        <div className="mini">
+          <div
+            style={{
+              background: "var(--surface-inverse)",
+              padding: "22px 12px 14px",
+            }}
+          >
+            <div
+              style={{
+                color: "#fff",
+                fontSize: "15px",
+                fontWeight: 800,
+                letterSpacing: "-.02em",
+                lineHeight: 1.2,
+              }}
+            >
+              Le bon professionnel,{" "}
+              <span style={{ color: "var(--accent)" }}>
+                à l’heure qui vous arrange.
+              </span>
+            </div>
+            <div
+              style={{
+                background: "#fff",
+                borderRadius: "8px",
+                padding: "8px 10px",
+                marginTop: "10px",
+                display: "grid",
+                gap: "6px",
+              }}
+            >
+              <div
+                className="mini__sub"
+                style={{
+                  fontSize: "8.5px",
+                  fontWeight: 700,
+                  letterSpacing: ".09em",
+                  textTransform: "uppercase",
+                }}
+              >
+                Que cherchez-vous
+              </div>
+              <div
+                style={{
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  color: "var(--text-tertiary)",
+                }}
+              >
+                Tresses, vidange, robe…
+              </div>
+              <div className="mini__btn" style={{ padding: "6px" }}>
+                Rechercher
+              </div>
+            </div>
+          </div>
+          <div className="mini__body">
+            <div className="mini__grid3">
+              {HOME_TRADES.map((slug) => (
+                <div
+                  key={slug}
+                  style={{
+                    border: "1px solid var(--border)",
+                    borderRadius: "6px",
+                    padding: "8px 4px",
+                    display: "grid",
+                    justifyItems: "center",
+                    gap: "3px",
+                    background: "var(--surface)",
+                  }}
+                >
+                  <span style={{ color: "var(--brand)" }}>
+                    <TradeIcon slug={slug} size={18} />
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** A provider's public page, in a browser frame. */
+function PublicPageShot() {
+  return (
+    <div className="shot-browser">
+      <div className="shot-browser__bar">
+        <span className="shot-browser__dot" />
+        <span className="shot-browser__dot" />
+        <span className="shot-browser__dot" />
+        <span className="shot-browser__url">balaaca.gn/p/salon-aissatou</span>
+      </div>
+      <div className="shot-browser__body mini">
+        <div className="mini__cover">
+          <svg
+            viewBox="0 0 200 150"
+            aria-hidden="true"
+            style={{
+              position: "absolute",
+              right: "-14px",
+              top: "-30px",
+              width: "150px",
+              color: "rgba(201,168,106,.5)",
+            }}
+          >
+            <use href="#s-chair" />
+          </svg>
+        </div>
+        <div className="mini__body">
+          <div className="mini__row">
+            <span className="mini__logo">SA</span>
+            <span>
+              <span className="mini__title">Salon Aïssatou</span>
+              <span className="mini__sub" style={{ display: "block" }}>
+                Coiffure · Nongo, Ratoma
+              </span>
+            </span>
+            {/* The mockup carried two `style` attributes here, of which a
+                browser keeps the first; `.mini__pill` declares a border with
+                no colour, so the pill needs both. */}
+            <span
+              className="mini__pill"
+              style={{
+                marginLeft: "auto",
+                borderColor: "var(--success-border)",
+                background: "var(--success-bg)",
+                color: "var(--success-text)",
+              }}
+            >
+              Ouvert
+            </span>
+          </div>
+          <div className="mini__card">
+            <div className="mini__row">
+              <strong style={{ fontSize: "12px" }}>Tresses collées</strong>
+              <strong style={{ marginLeft: "auto", fontSize: "12px" }}>
+                150 000 GNF
+              </strong>
+            </div>
+            <div className="mini__row" style={{ gap: "5px" }}>
+              <span
+                className="mini__pill"
+                style={{
+                  borderColor: "var(--brand-border)",
+                  background: "var(--brand-soft)",
+                  color: "var(--brand)",
+                }}
+              >
+                <Icon name="mode-onsite" /> Sur place
+              </span>
+              <span className="mini__sub">3 h</span>
+            </div>
+          </div>
+          <div className="mini__card">
+            <div className="mini__row">
+              <strong style={{ fontSize: "12px" }}>Coiffure de mariée</strong>
+              <strong style={{ marginLeft: "auto", fontSize: "12px" }}>
+                650 000 GNF
+              </strong>
+            </div>
+            <div className="mini__row" style={{ gap: "5px" }}>
+              <span
+                className="mini__pill"
+                style={{
+                  borderColor: "var(--info-border)",
+                  background: "var(--info-bg)",
+                  color: "var(--info-text)",
+                }}
+              >
+                <Icon name="mode-atcustomer" /> À domicile
+              </span>
+              <span className="mini__sub">4 h</span>
+            </div>
+          </div>
+          <div className="mini__btn">Réserver une prestation</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const SLOT_GROUP_STYLE = {
+  fontWeight: 700,
+  letterSpacing: ".08em",
+  textTransform: "uppercase",
+  fontSize: "9px",
+  marginTop: "2px",
+} as const;
+
+/** Step four of the booking flow, on a telephone. */
+function SlotPickerShot() {
+  return (
+    <div className="shot-phone">
+      <div className="shot-phone__screen">
+        <span className="shot-phone__notch" />
+        <div className="mini">
+          <div className="mini__bar">
+            <span className="mini__logo">B</span>
+            <span className="mini__sub">Étape 4 sur 5</span>
+          </div>
+          <div className="mini__body">
+            <div
+              className="mini__title"
+              style={{ fontSize: "15px", lineHeight: 1.25 }}
+            >
+              Quel horaire, mercredi 9 septembre ?
+            </div>
+            <div className="mini__sub">
+              Seuls les créneaux réservables sont affichés.
+            </div>
+            <div className="mini__sub" style={SLOT_GROUP_STYLE}>
+              Matin
+            </div>
+            <div className="mini__grid3">
+              <span className="mini__slot">10:00</span>
+              <span className="mini__slot mini__slot--on">10:30</span>
+              <span className="mini__slot">11:00</span>
+            </div>
+            <div className="mini__sub" style={SLOT_GROUP_STYLE}>
+              Après-midi
+            </div>
+            <div className="mini__grid3">
+              <span className="mini__slot">13:00</span>
+              <span className="mini__slot">14:30</span>
+              <span className="mini__slot">16:00</span>
+            </div>
+            <div
+              className="mini__card"
+              style={{ background: "var(--bg-sunken)", borderStyle: "dashed" }}
+            >
+              <div className="mini__row">
+                <span className="mini__sub">Prix figé</span>
+                <strong style={{ marginLeft: "auto", fontSize: "13px" }}>
+                  150 000 GNF
+                </strong>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** What the customer sees once the slot is taken. */
+function ConfirmationShot() {
+  return (
+    <div className="shot-phone shot-phone--sm">
+      <div className="shot-phone__screen">
+        <span className="shot-phone__notch" />
+        <div className="mini">
+          <div
+            className="mini__body"
+            style={{
+              paddingTop: "22px",
+              justifyItems: "center",
+              textAlign: "center",
+            }}
+          >
+            <div
+              style={{
+                width: "42px",
+                height: "42px",
+                borderRadius: "50%",
+                background: "var(--success-bg)",
+                border: "1px solid var(--success-border)",
+                color: "var(--success)",
+                display: "grid",
+                placeItems: "center",
+                marginInline: "auto",
+              }}
+            >
+              <Icon name="check" />
+            </div>
+            <div className="mini__title" style={{ textAlign: "center" }}>
+              C’est réservé.
+            </div>
+            <div
+              style={{
+                border: "1.4px dashed var(--border-strong)",
+                borderRadius: "6px",
+                padding: "7px 10px",
+                fontWeight: 800,
+                letterSpacing: ".14em",
+                fontSize: "15px",
+              }}
+            >
+              JZ75 KA5V
+            </div>
+            <div className="mini__sub">
+              Gardez cette référence pour déplacer ou annuler.
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
