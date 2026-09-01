@@ -89,7 +89,7 @@ const SUMMARY_STYLE = {
 export default function HowItWorks() {
   return (
     <>
-      <SiteHeader active="comment-ca-marche" />
+      <SiteHeader />
 
       <main id="contenu" className="has-tabbar">
         <section

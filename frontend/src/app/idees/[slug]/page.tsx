@@ -81,7 +81,7 @@ export default async function CollectionPage({
 
   return (
     <>
-      <SiteHeader active="idees" />
+      <SiteHeader />
 
       <main id="contenu" className="has-tabbar">
         <section

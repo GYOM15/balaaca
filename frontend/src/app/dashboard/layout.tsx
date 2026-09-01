@@ -4,6 +4,7 @@ import { Icon } from "@/components/icon";
 import { ActionButton, EmptyState, Wordmark, initials } from "@/components/ui";
 import { ApiError, api, isSignedIn } from "@/lib/api";
 import type { AppointmentPage, CurrentMember, ProviderProfile } from "@/lib/types";
+import { CurrentLink } from "@/components/current-link";
 
 /** A diary. Cached, it would be stale before it was drawn. */
 export const dynamic = "force-dynamic";
@@ -172,7 +173,12 @@ export default async function DashboardLayout({
             <div className="side__group" key={group.title}>
               <div className="side__group-title">{group.title}</div>
               {group.entries.map((entry) => (
-                <Link className="side__link" href={entry.href} key={entry.href}>
+                <CurrentLink
+                  className="side__link"
+                  href={entry.href}
+                  exact={entry.href === "/dashboard"}
+                  key={entry.href}
+                >
                   <Icon name={entry.icon} size={18} />
                   <span className="grow">{entry.label}</span>
                   {/* The design carries this figure on the diary from every
@@ -182,7 +188,7 @@ export default async function DashboardLayout({
                   {entry.href === "/dashboard" && waiting ? (
                     <span className="count">{waiting}</span>
                   ) : null}
-                </Link>
+                </CurrentLink>
               ))}
             </div>
           ))}
@@ -279,10 +285,15 @@ export default async function DashboardLayout({
 
       <nav className="apptabs" aria-label="Navigation prestataire">
         {bottom.map((entry) => (
-          <Link className="apptabs__item" href={entry.href} key={entry.href}>
+          <CurrentLink
+            className="apptabs__item"
+            href={entry.href}
+            exact={entry.href === "/dashboard"}
+            key={entry.href}
+          >
             <Icon name={entry.icon} />
             <span>{entry.label}</span>
-          </Link>
+          </CurrentLink>
         ))}
         <a className="apptabs__item" href="#sections">
           <Icon name="more-h" />

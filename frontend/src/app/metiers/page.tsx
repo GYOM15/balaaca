@@ -67,7 +67,7 @@ export default async function Trades() {
 
   return (
     <>
-      <SiteHeader active="metiers" />
+      <SiteHeader />
 
       <main id="contenu" className="has-tabbar">
         <section

@@ -48,7 +48,7 @@ export default async function Ideas() {
 
   return (
     <>
-      <SiteHeader active="idees" />
+      <SiteHeader />
 
       <main id="contenu" className="has-tabbar">
         <section

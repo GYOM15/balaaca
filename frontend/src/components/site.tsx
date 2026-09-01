@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CurrentLink } from "./current-link";
 import { Icon } from "./icon";
 import { Mark } from "./ui";
 
@@ -29,19 +30,7 @@ function LogoWord() {
   );
 }
 
-export function SiteHeader({
-  active,
-}: {
-  /**
-   * Accepted and ignored, so a page need not know. The design has one public
-   * header; a provider standing in front of it gets the same bar as anyone
-   * else, and the door to their own side is on it either way.
-   */
-  kind?: "hub" | "pro";
-  /** The nav entry this page IS, so it can be announced rather than guessed. */
-  active?: "metiers" | "idees" | "comment-ca-marche";
-}) {
-  const current = (entry: string) => (active === entry ? "page" : undefined);
+export function SiteHeader({ kind = "hub" }: { kind?: "hub" | "pro" }) {
   return (
     <header className="hdr">
       <div className="page hdr__in">
@@ -49,49 +38,57 @@ export function SiteHeader({
           <Mark size={34} />
           <LogoWord />
         </Link>
+        {/* Which entry is current is worked out from the address rather than
+            passed down. Half the pages were forgetting to pass it, and a page
+            that forgets is a navigation that says nothing about where you are
+            - which is the complaint this whole pass started from. */}
         <nav className="hdr__nav" aria-label="Navigation principale">
-          <Link className="hdr__link" href="/metiers" aria-current={current("metiers")}>
+          <CurrentLink className="hdr__link" href="/metiers">
             Métiers
-          </Link>
-          <Link className="hdr__link" href="/idees" aria-current={current("idees")}>
+          </CurrentLink>
+          <CurrentLink className="hdr__link" href="/idees">
             Idées
-          </Link>
-          <Link
-            className="hdr__link"
-            href="/professionnels/comment-ca-marche"
-            aria-current={current("comment-ca-marche")}
-          >
+          </CurrentLink>
+          <CurrentLink className="hdr__link" href="/professionnels/comment-ca-marche">
             Comment ça marche
-          </Link>
+          </CurrentLink>
         </nav>
         <div className="hdr__actions">
-          {/* Below 700 px the header keeps the professional door and drops
-              this one: a customer who has a booking has its link in their
-              messages, and the footer carries it on every page. */}
-          <Link className="hdr__link" href="/bookings" style={{ display: "none" }} data-show-md="">
-            Ma réservation
-          </Link>
-          <Link className="btn btn--secondary btn--sm hide-sm" href="/professionnels">
-            <span className="btn__label--idle">Espace professionnel</span>
-          </Link>
-          <Link
-            className="hdr__link show-sm-only"
-            href="/professionnels"
-            style={{ fontSize: "var(--fs-xs)" }}
-          >
-            Espace pro
-          </Link>
+          {kind === "pro" ? (
+            <>
+              <Link className="hdr__link hide-sm" href="/">
+                Trouver un professionnel
+              </Link>
+              <Link className="btn btn--primary btn--sm" href="/inscription">
+                <span className="btn__label--idle">Créer ma page</span>
+              </Link>
+            </>
+          ) : (
+            <>
+              {/* Below 700 px the header keeps the professional door and drops
+                  this one: a customer who has a booking has its link in their
+                  messages, and the footer carries it on every page. */}
+              <Link className="hdr__link" href="/bookings" style={{ display: "none" }} data-show-md>
+                Ma réservation
+              </Link>
+              <Link className="btn btn--secondary btn--sm hide-sm" href="/professionnels">
+                <span className="btn__label--idle">Espace professionnel</span>
+              </Link>
+              <Link
+                className="hdr__link show-sm-only"
+                href="/professionnels"
+                style={{ fontSize: "var(--fs-xs)" }}
+              >
+                Espace pro
+              </Link>
+            </>
+          )}
         </div>
       </div>
     </header>
   );
 }
 
-/**
- * The footer is the same for both audiences on purpose: it is the one place
- * where somebody who arrived on the wrong side of the site can cross over.
- * `kind` is accepted so a page need not know that, and changes nothing.
- */
 export function SiteFooter(_props: { kind?: "hub" | "pro" } = {}) {
   return (
     <footer className="foot">
