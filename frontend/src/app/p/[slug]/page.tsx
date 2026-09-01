@@ -3,14 +3,15 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cache } from "react";
 import { Icon, Scene, TradeIcon } from "@/components/icon";
-import { SiteFooter, SiteHeader } from "@/components/site";
-import { initials } from "@/components/ui";
+import { SiteFooter, SiteHeader, TabBar } from "@/components/site";
+import { Avatar, initials } from "@/components/ui";
 import { ApiError, publicApi } from "@/lib/api";
 import { env } from "@/lib/env";
 import { mediaUrl, money } from "@/lib/format";
 import type {
   CategoryList,
   Fulfilment,
+  Money,
   PublicOpeningHours,
   PublicProvider,
   PublicServiceOffering,
@@ -123,7 +124,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { slug } = await params;
   const data = await load(slug);
-  if (!data) return { title: "Page introuvable" };
+  if (!data) return { title: "Page indisponible" };
 
   const provider = data.provider;
   const trade = tradeLabel(data.categories, provider.category_slug);
@@ -165,6 +166,9 @@ export default async function ProviderPage({
 }) {
   const { slug } = await params;
   const data = await load(slug);
+  // The design gives this state a screen of its own, and it is not the one a
+  // mistyped URL gets - so it lives in this segment's not-found, where it also
+  // carries the 404 the address deserves.
   if (!data) notFound();
 
   const { provider, hours, staff, categories } = data;
@@ -183,7 +187,7 @@ export default async function ProviderPage({
   return (
     <>
       <SiteHeader />
-      <main id="contenu">
+      <main id="contenu" className="has-tabbar">
         {/* No drawing behind an absent cover: the design system gives `.pcover`
             a slot for a photograph and none for anything else, and the grain
             on the dark ground is what carries the band without one. */}
@@ -242,15 +246,6 @@ export default async function ProviderPage({
                 </div>
               ) : null}
 
-              {provider.description ? (
-                <p
-                  className="t-body"
-                  style={{ marginTop: "var(--s-4)", maxWidth: "60ch" }}
-                >
-                  {provider.description}
-                </p>
-              ) : null}
-
               <div
                 className="row row--wrap"
                 style={{ marginTop: "var(--s-4)", gap: "var(--s-2)" }}
@@ -271,12 +266,7 @@ export default async function ProviderPage({
                 <Icon name="arrow-right" size={18} className="ico--arrow" />
               </Link>
               {whatsApp ? (
-                <a
-                  className="btn btn--secondary btn--block"
-                  href={whatsAppHref(whatsApp, provider.business_name, url)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
+                <a className="btn btn--secondary btn--block" href={whatsAppHref(whatsApp)}>
                   <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
                     <Icon name="whatsapp" size={18} />
                   </span>
@@ -341,21 +331,29 @@ export default async function ProviderPage({
                   </div>
                 </div>
 
+                {/* One shape is not a choice: a catalogue that is only at-home
+                    shows no filter at all, which is what the design does. */}
+                {modes.length > 1 ? (
+                  <div className="row row--wrap" style={{ marginBottom: "var(--s-2)" }}>
+                    <span className="chip is-active">Toutes</span>
+                    {modes.map((mode) => (
+                      <span key={mode} className="chip">
+                        <Icon name={MODES[mode].icon} size={16} /> {MODES[mode].label}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+
                 {provider.services.length === 0 ? (
                   <div className="empty">
-                    <Scene name="tools" className="scene-ill scene-ill--sm" />
+                    <Scene name="tools" className="scene-ill" />
                     <div className="empty__title">Aucune prestation publiée</div>
                     <p className="empty__body">
                       Ce professionnel n’a pas encore mis son catalogue en ligne.
                     </p>
                     {whatsApp ? (
                       <div className="empty__actions">
-                        <a
-                          className="btn btn--primary"
-                          href={whatsAppHref(whatsApp, provider.business_name, url)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
+                        <a className="btn btn--primary" href={whatsAppHref(whatsApp)}>
                           <span className="btn__label--idle">
                             Lui demander ce qu’il propose
                           </span>
@@ -446,10 +444,8 @@ export default async function ProviderPage({
               </div>
               <div className="trades" data-reveal-group>
                 {staff.data.map((member) => (
-                  <div className="trade" key={member.staff_id}>
-                    <span className="avatar" aria-hidden="true">
-                      {initials(member.display_name)}
-                    </span>
+                  <div className="trade" style={{ cursor: "default" }} key={member.staff_id}>
+                    <Avatar name={member.display_name} />
                     <span className="grow">
                       <span className="trade__name">{member.display_name}</span>
                     </span>
@@ -502,24 +498,27 @@ export default async function ProviderPage({
                   Infos pratiques
                 </h2>
                 <div className="dl dl--lined">
-                  {provider.address_line || place ? (
+                  {place ? (
                     <div className="dl__row">
                       <span className="dl__key">Adresse</span>
+                      <span className="dl__val">{place}</span>
+                    </div>
+                  ) : null}
+                  {/* `address_line` is the landmark, not a street number: it is
+                      the field the dashboard labels "Repères" and the one a
+                      customer navigates by here. */}
+                  {provider.address_line ? (
+                    <div className="dl__row">
+                      <span className="dl__key">Repères</span>
                       <span className="dl__val" style={{ maxWidth: "32ch" }}>
-                        {[provider.address_line, place].filter(Boolean).join(", ")}
+                        {provider.address_line}
                       </span>
                     </div>
                   ) : null}
                   {provider.public_phone_e164 ? (
                     <div className="dl__row">
                       <span className="dl__key">Téléphone</span>
-                      <span className="dl__val">{provider.public_phone_e164}</span>
-                    </div>
-                  ) : null}
-                  {whatsApp ? (
-                    <div className="dl__row">
-                      <span className="dl__key">WhatsApp</span>
-                      <span className="dl__val">{whatsApp}</span>
+                      <span className="dl__val">{phone(provider.public_phone_e164)}</span>
                     </div>
                   ) : null}
                   <div className="dl__row">
@@ -527,6 +526,11 @@ export default async function ProviderPage({
                     <span className="dl__val">{pageLabel(slug)}</span>
                   </div>
                 </div>
+                {provider.description ? (
+                  <p className="t-body" style={{ marginTop: "var(--s-6)" }}>
+                    {provider.description}
+                  </p>
+                ) : null}
               </div>
             </div>
           </div>
@@ -563,11 +567,13 @@ export default async function ProviderPage({
         </section>
       </main>
       <SiteFooter />
+      <TabBar />
     </>
   );
 }
 
 /* --- Pieces --------------------------------------------------------------- */
+
 
 /**
  * One service, and the way into booking it.
@@ -593,15 +599,19 @@ function ServiceRow({
       <div className="svc__photo">
         {photo ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={photo}
-            alt={`Photo de la prestation ${service.name}`}
-            loading="lazy"
-            decoding="async"
-            width={400}
-            height={300}
-          />
-        ) : null}
+          <img src={photo} alt="" loading="lazy" width={400} height={300} />
+        ) : (
+          <span
+            style={{
+              display: "grid",
+              placeItems: "center",
+              height: "100%",
+              color: "var(--p-warm-400)",
+            }}
+          >
+            <Icon name="image" size={24} />
+          </span>
+        )}
         {photos.length > 1 ? (
           <span className="svc__photo-count">
             <Icon name="image" size={16} />
@@ -638,14 +648,10 @@ function ServiceRow({
 
       <div className="svc__cta">
         <div className="svc__price">
-          {/* `price` is ABSENT when the provider chose not to publish it - the
-              projection has no field at all, so there is no zero to mistake
-              for free. */}
-          {service.price ? (
-            <span className="t-price">{money(service.price)}</span>
-          ) : (
-            <span className="t-xs">Prix sur demande</span>
-          )}
+          {/* `price` is ABSENT when the provider set `price_visible` to false -
+              the projection has no field at all, so there is no zero to mistake
+              for free, and nothing is written in its place. */}
+          {service.price ? <span className="t-price">{amount(service.price)}</span> : null}
         </div>
         <Link
           className="btn btn--primary"
@@ -685,6 +691,7 @@ function TodayBadge({
     </span>
   );
 }
+
 
 /* --- Reading the data ----------------------------------------------------- */
 
@@ -756,6 +763,11 @@ function todayIndex(timeZone: string): number {
 
 /* --- Writing the data ----------------------------------------------------- */
 
+/** A published price, or the word for the one that costs nothing. */
+function amount(price: Money): string {
+  return price.amount_minor === 0 ? "Gratuit" : money(price);
+}
+
 /** Non-breaking spaces: "2 h 30" must never break across two lines. */
 function duration(minutes: number): string {
   if (minutes < 60) return `${minutes} min`;
@@ -782,6 +794,19 @@ function turnaround(hours: number): string {
   return `${hours} h`;
 }
 
+/**
+ * The number as it is written on a card, not as it travels.
+ *
+ * <p>Grouped only for the one country whose shape this can read without
+ * guessing - +224 and nine digits. Any other number is printed as the contract
+ * sent it, because cutting it into threes and twos would be inventing a
+ * convention that country does not use.
+ */
+function phone(e164: string): string {
+  const parts = /^\+224(\d{3})(\d{2})(\d{2})(\d{2})$/.exec(e164);
+  return parts ? `+224 ${parts[1]} ${parts[2]} ${parts[3]} ${parts[4]}` : e164;
+}
+
 /** The address the customer is standing on, as this server is reached from outside. */
 function pageUrl(slug: string): string {
   return new URL(`/p/${slug}`, env.publicOrigin).toString();
@@ -800,8 +825,6 @@ function pageLabel(slug: string): string {
  * answers "phone number shared via url is invalid" for anything else - which
  * is what an E.164 string pasted straight in produces.
  */
-function whatsAppHref(e164: string, businessName: string, url: string): string {
-  const digits = e164.replace(/\D/g, "");
-  const text = `Bonjour ${businessName}, j'ai vu votre page sur Balaaca et je souhaite réserver. ${url}`;
-  return `https://wa.me/${digits}?text=${encodeURIComponent(text)}`;
+function whatsAppHref(e164: string): string {
+  return `https://wa.me/${e164.replace(/\D/g, "")}`;
 }

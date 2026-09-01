@@ -2,11 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import { Icon, Scene, TradeIcon } from "@/components/icon";
+import { SiteFooter, SiteHeader, TabBar } from "@/components/site";
 import { initials } from "@/components/ui";
 import { publicApi } from "@/lib/api";
+import { COLLECTIONS } from "@/lib/collections";
 import { mediaUrl } from "@/lib/format";
 import type { CategoryList, ProviderSummary, ProviderSummaryPage } from "@/lib/types";
-import { SiteFooter, SiteHeader } from "@/components/site";
 
 /** A selection shows who is registered under it, and that changes daily. */
 export const dynamic = "force-dynamic";
@@ -16,68 +17,6 @@ export const metadata: Metadata = {
   description:
     "Un mariage, une rentrée, une panne, un véhicule : chaque sélection interroge plusieurs métiers d’un coup.",
 };
-
-/**
- * The four selections, written here on purpose.
- *
- * <p>Editorial, not data. There is no collections endpoint and there should
- * not be one: a selection is a sentence about an occasion plus a handful of
- * trade slugs, and the API already publishes the trades. What a table would
- * add is a second place to edit French copy.
- *
- * <p>The slugs are `category_slug` values the directory accepts. One that no
- * longer exists in `GET /v1/categories` is dropped rather than drawn - a chip
- * with no label is a promise the taxonomy has stopped keeping.
- */
-export const COLLECTIONS = [
-  {
-    id: "mariage",
-    eyebrow: "Sélection 01",
-    title: "Préparer un mariage",
-    lead: "Le photographe, le traiteur, la salle, le DJ et la décoration, au même endroit, avec les disponibilités de chacun.",
-    scene: "photographer",
-    trades: [
-      "photographie",
-      "traiteur",
-      "location-salle",
-      "dj-animation",
-      "decoration-evenementielle",
-      "fleuriste",
-      "video",
-      "maquillage",
-    ],
-  },
-  {
-    id: "rentree",
-    eyebrow: "Sélection 02",
-    title: "La rentrée",
-    lead: "Uniformes cousus sur mesure, cours de soutien et cours de langues avant la reprise.",
-    scene: "tailor",
-    trades: ["couture", "cours-particuliers", "cours-langues", "formation-professionnelle"],
-  },
-  {
-    id: "panne-maison",
-    eyebrow: "Sélection 03",
-    title: "Une panne à la maison",
-    lead: "Plomberie, climatisation, électricité, énergie solaire : quelqu’un se déplace chez vous.",
-    scene: "tools",
-    trades: [
-      "plomberie",
-      "climatisation",
-      "electricite",
-      "energie-solaire",
-      "reparation-telephone",
-    ],
-  },
-  {
-    id: "vehicule",
-    eyebrow: "Sélection 04",
-    title: "Votre véhicule",
-    lead: "Révision, lavage, réparation moto ou location : déposez le matin, récupérez le soir.",
-    scene: "mechanic",
-    trades: ["mecanique-auto", "mecanique-moto", "lavage-auto", "location-vehicule", "auto-ecole"],
-  },
-] as const;
 
 /** How many of a selection's professionals are shown beside it. */
 const SHOWN = 3;
@@ -102,6 +41,10 @@ export default async function Ideas() {
     trades: c.trades.map((slug) => known.get(slug)).filter((t): t is Category => t !== undefined),
     providers: pages[i]?.data ?? [],
   })).filter((c) => c.trades.length > 0);
+
+  // The closing section argues about the wedding in particular, so it lists the
+  // wedding's own trades rather than whichever selection happens to be first.
+  const wedding = selections.find((c) => c.slug === "mariage");
 
   return (
     <>
@@ -139,7 +82,7 @@ export default async function Ideas() {
                   data-enter="4"
                 >
                   {selections.map((c) => (
-                    <a key={c.id} className="suggest__chip" href={`#c-${c.id}`}>
+                    <a key={c.slug} className="suggest__chip" href={`#c-${c.slug}`}>
                       {c.title}
                     </a>
                   ))}
@@ -167,8 +110,8 @@ export default async function Ideas() {
           const sunken = i % 2 === 1;
           return (
             <section
-              key={c.id}
-              id={`c-${c.id}`}
+              key={c.slug}
+              id={`c-${c.slug}`}
               className={sunken ? "section section--sunken atmo grain" : "section atmo tex-dots"}
             >
               <Scene name={c.scene} className={sunken ? "wm wm--br" : "wm wm--bl"} />
@@ -182,10 +125,7 @@ export default async function Ideas() {
                     <h2 className="t-h1 hair" style={{ marginTop: "var(--s-5)" }}>
                       {c.title}
                     </h2>
-                    <p
-                      className="t-lead"
-                      style={{ marginTop: "var(--s-4)", maxWidth: "46ch" }}
-                    >
+                    <p className="t-lead" style={{ marginTop: "var(--s-4)", maxWidth: "46ch" }}>
                       {c.lead}
                     </p>
                     <div
@@ -204,7 +144,7 @@ export default async function Ideas() {
                       ))}
                     </div>
                     <div style={{ marginTop: "var(--s-8)" }}>
-                      <Link className="btn btn--primary" href={directory(c.trades)}>
+                      <Link className="btn btn--primary" href={`/idees/${c.slug}`}>
                         <span className="btn__label--idle">Ouvrir la sélection</span>
                         <Icon name="arrow-right" size={18} className="ico--arrow" />
                       </Link>
@@ -215,27 +155,17 @@ export default async function Ideas() {
                     <p className="t-overline" style={{ marginBottom: "var(--s-4)" }}>
                       Quelques professionnels de la sélection
                     </p>
-                    {c.providers.length === 0 ? (
-                      <p className="t-sm">
-                        Personne n’est encore inscrit sous ces métiers. Ce sera le cas dès la
-                        première page publiée.
-                      </p>
-                    ) : (
-                      <div
-                        className="stack"
-                        style={{ "--stack-gap": "var(--s-3)" } as CSSProperties}
-                      >
-                        {c.providers.map((p) => (
-                          <ProviderRow
-                            key={p.slug}
-                            provider={p}
-                            tradeLabel={
-                              p.category_slug ? known.get(p.category_slug)?.label_fr : undefined
-                            }
-                          />
-                        ))}
-                      </div>
-                    )}
+                    <div className="stack" style={{ "--stack-gap": "var(--s-3)" } as CSSProperties}>
+                      {c.providers.map((p) => (
+                        <ProviderRow
+                          key={p.slug}
+                          provider={p}
+                          tradeLabel={
+                            p.category_slug ? known.get(p.category_slug)?.label_fr : undefined
+                          }
+                        />
+                      ))}
+                    </div>
                     <div
                       className="card card--pad-sm"
                       style={{
@@ -283,8 +213,8 @@ export default async function Ideas() {
                   className="t-body"
                   style={{ color: "var(--text-on-dark-muted)", marginTop: "var(--s-4)" }}
                 >
-                  Une sélection est donc une recherche sur plusieurs métiers à la fois, pas une
-                  case supplémentaire dans le catalogue.
+                  Une sélection est donc une recherche sur plusieurs métiers à la fois, pas une case
+                  supplémentaire dans le catalogue.
                 </p>
               </div>
               <div className="feature__art" data-reveal="right">
@@ -292,7 +222,7 @@ export default async function Ideas() {
                   className="row row--wrap"
                   style={{ gap: "var(--s-3)", justifyContent: "center", maxWidth: 420 }}
                 >
-                  {(selections[0]?.trades ?? []).map((t) => (
+                  {(wedding?.trades ?? []).map((t) => (
                     <span key={t.slug} className="suggest__chip">
                       <TradeIcon slug={t.slug} size={18} /> {t.label_fr}
                     </span>
@@ -318,26 +248,13 @@ const SCENE_LAYERS = [
   { name: "mechanic", at: { color: "rgba(255,255,255,0.31)", bottom: 0, right: "6%" } },
 ] as const;
 
-/** The directory, filtered on every trade of a selection at once. */
-function directory(trades: Category[]): string {
-  const params = new URLSearchParams();
-  for (const t of trades) params.append("category_slug", t.slug);
-  return `/?${params.toString()}`;
-}
-
 /**
  * A professional, as a selection lists them.
  *
  * <p>No starting price: `ProviderSummary` carries none, and the cheapest
  * service is a figure only the provider's own page can state truthfully.
  */
-function ProviderRow({
-  provider,
-  tradeLabel,
-}: {
-  provider: ProviderSummary;
-  tradeLabel?: string;
-}) {
+function ProviderRow({ provider, tradeLabel }: { provider: ProviderSummary; tradeLabel?: string }) {
   const logo = mediaUrl(provider.logo_url);
   const place = provider.area ?? provider.locality?.label_fr;
   return (
@@ -370,26 +287,3 @@ function ProviderRow({
   );
 }
 
-
-function TabBar() {
-  return (
-    <nav className="tabbar" aria-label="Navigation mobile">
-      <Link className="tabbar__item" href="/">
-        <Icon name="home" />
-        <span>Accueil</span>
-      </Link>
-      <Link className="tabbar__item" href="/metiers">
-        <Icon name="grid" />
-        <span>Métiers</span>
-      </Link>
-      <Link className="tabbar__item" href="/">
-        <Icon name="search" />
-        <span>Rechercher</span>
-      </Link>
-      <Link className="tabbar__item" href="/bookings">
-        <Icon name="calendar-check" />
-        <span>Réservation</span>
-      </Link>
-    </nav>
-  );
-}

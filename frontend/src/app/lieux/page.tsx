@@ -4,7 +4,7 @@ import { Icon } from "@/components/icon";
 import { publicApi } from "@/lib/api";
 import { groupLocalities } from "@/lib/localities";
 import type { LocalityList } from "@/lib/types";
-import { SiteFooter, SiteHeader } from "@/components/site";
+import { SiteFooter, SiteHeader, TabBar } from "@/components/site";
 
 /** The published map is stable, but it is read live like everything else here. */
 export const dynamic = "force-dynamic";
@@ -42,42 +42,31 @@ export default async function Places() {
               </p>
             </div>
 
-            {regions.length === 0 ? (
-              <p className="t-sm" style={{ marginTop: "var(--s-10)", textAlign: "center" }}>
-                Aucun lieu n’est publié pour le moment.
-              </p>
-            ) : (
-              regions.map(({ region, children }) => (
-                <div key={region.slug} style={{ marginTop: "var(--s-10)" }}>
-                  <div
-                    className="row row--between"
-                    style={{
-                      marginBottom: "var(--s-4)",
-                      borderBottom: "1px solid var(--border)",
-                      paddingBottom: "var(--s-3)",
-                    }}
-                  >
-                    <h2 className="t-h4">{region.label_fr}</h2>
-                    <Link className="link-action" href={directory(region.slug)}>
-                      Tout {region.label_fr} <Icon name="arrow-right" size={18} className="ico--arrow" />
-                    </Link>
-                  </div>
-                  {children.length === 0 ? (
-                    <p className="t-xs">
-                      Aucune subdivision publiée&nbsp;: cherchez dans toute la région.
-                    </p>
-                  ) : (
-                    <div className="row row--wrap" style={{ gap: "var(--s-2)" }} data-reveal="fade">
-                      {children.map((l) => (
-                        <Link key={l.slug} className="chip" href={directory(l.slug)}>
-                          <Icon name="pin" size={16} /> {l.label_fr}
-                        </Link>
-                      ))}
-                    </div>
-                  )}
+            {regions.map(({ region, children }) => (
+              <div key={region.slug} style={{ marginTop: "var(--s-10)" }}>
+                <div
+                  className="row row--between"
+                  style={{
+                    marginBottom: "var(--s-4)",
+                    borderBottom: "1px solid var(--border)",
+                    paddingBottom: "var(--s-3)",
+                  }}
+                >
+                  <h2 className="t-h4">{region.label_fr}</h2>
+                  <Link className="link-action" href={directory(region.slug)}>
+                    Tout {region.label_fr}{" "}
+                    <Icon name="arrow-right" size={18} className="ico--arrow" />
+                  </Link>
                 </div>
-              ))
-            )}
+                <div className="row row--wrap" style={{ gap: "var(--s-2)" }} data-reveal="fade">
+                  {children.map((l) => (
+                    <Link key={l.slug} className="chip" href={directory(l.slug)}>
+                      <Icon name="pin" size={16} /> {l.label_fr}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         </section>
       </main>
@@ -93,26 +82,3 @@ function directory(slug: string): string {
   return `/?locality=${encodeURIComponent(slug)}`;
 }
 
-
-function TabBar() {
-  return (
-    <nav className="tabbar" aria-label="Navigation mobile">
-      <Link className="tabbar__item" href="/">
-        <Icon name="home" />
-        <span>Accueil</span>
-      </Link>
-      <Link className="tabbar__item" href="/metiers">
-        <Icon name="grid" />
-        <span>Métiers</span>
-      </Link>
-      <Link className="tabbar__item" href="/">
-        <Icon name="search" />
-        <span>Rechercher</span>
-      </Link>
-      <Link className="tabbar__item" href="/bookings">
-        <Icon name="calendar-check" />
-        <span>Réservation</span>
-      </Link>
-    </nav>
-  );
-}

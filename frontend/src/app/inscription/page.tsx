@@ -17,9 +17,9 @@ export const metadata: Metadata = { title: "Créer ma page" };
  * Le lien public, tel que la personne le lira.
  *
  * <p>Built from the origin this server is reached at rather than written down:
- * a hardcoded domain reads as a promise, and it would be wrong on every
- * environment but one. In development it says localhost, which is exactly what
- * the link will be.
+ * the design prints `balaaca.gn/p/` because a static mock has one environment,
+ * and a hardcoded domain here would be wrong on every environment but one. In
+ * development it says localhost, which is exactly what the link will be.
  */
 const PUBLIC_HOST = new URL(env.publicOrigin).host;
 
@@ -38,11 +38,9 @@ type Search = {
  * photographes, traiteurs, couturières, loueurs de salle - and a word that
  * names one of them tells the others this is not for them.
  *
- * <p>One screen and three fields, where the mockup drew a four-step wizard.
- * The wizard asked for a city, a district, a phone number and a presentation
- * that `POST /v1/providers` does not accept: it would have collected them, put
- * up a progress bar, and thrown four of the six answers away. The dashboard
- * asks for those, after the business exists and where they are actually saved.
+ * <p>One screen and three fields. The readiness thread the design draws after
+ * it - activité, prestation, disponibilités, publier - lives on the dashboard,
+ * which is where those four answers are actually saved.
  */
 export default async function Register({
   searchParams,
@@ -119,29 +117,38 @@ export default async function Register({
 
       {taken ? (
         <div style={{ marginTop: "var(--s-6)" }}>
-          <Notice tone="danger" title="Cette adresse est déjà prise">
-            Choisissez un autre identifiant&nbsp;: il figurera sur votre lien et
+          <Refusal code="SLUG_UNAVAILABLE" title="Cette adresse est déjà prise">
+            Choisissez un autre identifiant : il figurera sur votre lien et
             votre QR code, et ne changera plus.
-          </Notice>
+          </Refusal>
         </div>
       ) : null}
 
       {query.error === "VALIDATION_FAILED" ? (
         <div style={{ marginTop: "var(--s-6)" }}>
-          <Notice tone="danger" title="L’adresse n’a pas la bonne forme">
-            Elle ne prend que des minuscules, des chiffres et des tirets&nbsp;:
-            ni espace, ni accent, ni point. Elle commence et finit par une
-            lettre ou un chiffre, et compte entre 3 et 60 caractères.
-          </Notice>
+          <Refusal code="VALIDATION_FAILED" title="L’adresse n’a pas la bonne forme">
+            Elle ne prend que des minuscules, des chiffres et des tirets : ni
+            espace, ni accent, ni point. Elle commence et finit par une lettre
+            ou un chiffre, et compte entre 3 et 60 caractères.
+          </Refusal>
+        </div>
+      ) : null}
+
+      {query.error === "RATE_LIMITED" ? (
+        <div style={{ marginTop: "var(--s-6)" }}>
+          <Refusal code="RATE_LIMITED" title="Trop de demandes d’un coup">
+            Rien n’a été créé. Attendez un instant et renvoyez le formulaire :
+            c’est le rythme des envois qui est en cause, pas votre saisie.
+          </Refusal>
         </div>
       ) : null}
 
       {query.error && !KNOWN.has(query.error) ? (
         <div style={{ marginTop: "var(--s-6)" }}>
-          <Notice tone="danger" title="L’inscription n’a pas abouti">
-            Rien n’a été créé. Réessayez dans un instant&nbsp;; si la réponse
-            est la même, ce n’est pas votre saisie qui est en cause.
-          </Notice>
+          <Refusal code={query.error} title="L’inscription n’a pas abouti">
+            Rien n’a été créé. Réessayez dans un instant ; si la réponse est la
+            même, ce n’est pas votre saisie qui est en cause.
+          </Refusal>
         </div>
       ) : null}
 
@@ -153,26 +160,25 @@ export default async function Register({
           </label>
           <input
             className="input"
+            type="text"
             id="business_name"
             name="business_name"
-            type="text"
+            placeholder="Salon Aïssatou"
             required
             maxLength={120}
             autoComplete="organization"
             defaultValue={typedName}
-            placeholder="Salon Aïssatou"
             aria-describedby="business_name_hint"
           />
           <p className="field__hint" id="business_name_hint">
             Le nom que vos clients connaissent, tel qu’il est écrit sur votre
-            enseigne. Il se modifie à tout moment.
+            enseigne.
           </p>
         </div>
 
         <div className="field">
           <label className="field__label" htmlFor="slug">
-            Adresse de votre page
-            <span className="field__req" aria-hidden="true">*</span>
+            Adresse de votre page <span className="field__req" aria-hidden="true">*</span>
           </label>
           <div className="input-group input-group--suffix">
             <input
@@ -201,7 +207,6 @@ export default async function Register({
             />
             <span
               className="input-group__icon"
-              aria-hidden="true"
               style={{
                 pointerEvents: "none",
                 left: "var(--s-4)",
@@ -214,50 +219,35 @@ export default async function Register({
             </span>
           </div>
           {taken ? (
-            // The refusal sits under the box it is about, with the way out
-            // inside it: a neighbouring handle, offered as a link so the form
-            // comes back filled and nothing has to be typed twice.
+            // The refusal replaces the hint, under the box it is about, with a
+            // neighbouring handle to try. Only the server knows what is free,
+            // so it is offered rather than substituted.
             <p className="field__error" id="slug_hint">
-              <Icon name="alert-circle" size={16} />
-              <span>
-                Cette adresse est déjà utilisée.
-                {suggestion ? (
-                  <>
-                    {" "}
-                    Essayez{" "}
-                    <Link
-                      className="link"
-                      href={prefilled({
-                        slug: suggestion,
-                        name: typedName,
-                        category: typedCategory,
-                      })}
-                    >
-                      <strong>{suggestion}</strong>
-                    </Link>
-                    .
-                  </>
-                ) : null}
-              </span>
+              <Icon name="alert-circle" size={16} /> Cette adresse est déjà
+              utilisée.
+              {suggestion ? (
+                <>
+                  {" "}
+                  Essayez <strong>{suggestion}</strong>.
+                </>
+              ) : null}
             </p>
           ) : (
             <p className="field__hint" id="slug_hint">
-              <Icon name="lock" size={16} /> Cette adresse ne changera
-              jamais&nbsp;: elle sera imprimée sur votre QR code et envoyée à
-              vos clients. Minuscules, chiffres et tirets, sans espace ni
-              accent.
+              <Icon name="lock" size={16} /> Cette adresse ne changera jamais :
+              elle sera imprimée sur votre QR code et envoyée à vos clients.
             </p>
           )}
         </div>
 
         <div className="field">
           <label className="field__label" htmlFor="category_slug">
-            Votre métier
-            {/* Optional, and said so: `POST /v1/providers` omits the field
-                when none is chosen, so the asterisk the mockup draws here
-                would announce a rule the server does not enforce. */}
-            <span className="field__optional">facultatif</span>
+            Votre métier <span className="field__req" aria-hidden="true">*</span>
           </label>
+          {/* No `required` attribute, exactly as the design draws it: the
+              asterisk is the house style for a field somebody should fill, and
+              `POST /v1/providers` omits `category_slug` when none is chosen.
+              Enforcing it here would refuse a submission the server accepts. */}
           <select
             className="select"
             id="category_slug"
@@ -265,7 +255,7 @@ export default async function Register({
             defaultValue={typedCategory}
             aria-describedby="category_hint"
           >
-            <option value="">Je choisirai plus tard</option>
+            <option value="">Choisir un métier</option>
             {groupByFamily(categories.data).map((group) => (
               <optgroup key={group.label} label={group.label}>
                 {group.items.map((category) => (
@@ -277,10 +267,8 @@ export default async function Register({
             ))}
           </select>
           <p className="field__hint" id="category_hint">
-            Un seul métier par établissement, et il range votre page dans
-            l’annuaire&nbsp;: c’est par là qu’un client qui ne vous connaît pas
-            encore vous trouve. Vos prestations, elles, peuvent être très
-            variées.
+            Un seul métier par établissement. Vos prestations peuvent en
+            revanche être très variées.
           </p>
         </div>
 
@@ -293,7 +281,7 @@ export default async function Register({
             block
           />
           <p className="t-xs" style={{ textAlign: "center", marginTop: "var(--s-4)" }}>
-            Déjà inscrit&nbsp;?{" "}
+            Déjà inscrit ?{" "}
             <Link className="link" href="/dashboard">
               Accéder à mon espace
             </Link>
@@ -307,7 +295,7 @@ export default async function Register({
 /**
  * The chrome, written once: two returns share it.
  *
- * <p>Stripped to the mark and one way back, as the mockup draws this route.
+ * <p>Stripped to the mark and one way back, as the design draws this route.
  * The full navigation belongs on pages somebody is browsing; here it is one
  * task, and every extra door is a way to abandon it.
  */
@@ -348,8 +336,43 @@ function Shell({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * A refusal, at the top of the page.
+ *
+ * <p>The design system's `.alert`, written out rather than taken from
+ * `Notice`, for the one attribute `Notice` does not carry: the design puts the
+ * published error code on the element itself, so what the server refused is
+ * legible in the DOM and not only in the sentence.
+ */
+function Refusal({
+  code,
+  title,
+  children,
+}: {
+  code: string;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="alert alert--danger" role="alert" data-error-code={code}>
+      <span className="alert__icon">
+        <Icon name="alert-circle" />
+      </span>
+      <div className="grow">
+        <div className="alert__title">{title}</div>
+        <div className="alert__body">{children}</div>
+      </div>
+    </div>
+  );
+}
+
 /** The refusals this page has words for. Anything else gets the plain one. */
-const KNOWN = new Set(["SLUG_UNAVAILABLE", "ALREADY_REGISTERED", "VALIDATION_FAILED"]);
+const KNOWN = new Set([
+  "SLUG_UNAVAILABLE",
+  "ALREADY_REGISTERED",
+  "VALIDATION_FAILED",
+  "RATE_LIMITED",
+]);
 
 type CategoryGroup = { label: string; items: CategoryList["data"] };
 
@@ -378,13 +401,12 @@ function groupByFamily(categories: CategoryList["data"]): CategoryGroup[] {
 }
 
 /**
- * Une adresse voisine, à un clic.
+ * Une adresse voisine, à essayer.
  *
  * <p>A numbered variant and nothing cleverer, because only the server knows
- * what is free: this is a starting point, not a promise, and it is offered
- * rather than substituted so the person still sees the handle they asked for.
- * `salon-awa` becomes `salon-awa-2` and `salon-awa-2` becomes `salon-awa-3`,
- * so clicking twice does not walk into the same refusal twice.
+ * what is free: this is a starting point, not a promise. `salon-awa` becomes
+ * `salon-awa-2` and `salon-awa-2` becomes `salon-awa-3`, so a second attempt
+ * does not walk into the same refusal twice.
  *
  * <p>Returns null when the result would not satisfy the contract's pattern -
  * suggesting something the server is bound to reject would be worse than
@@ -399,12 +421,4 @@ function variantOf(slug: string): string | null {
 
   const candidate = `${base}-${next}`;
   return candidate.length >= 3 && candidate.length <= 60 ? candidate : null;
-}
-
-/** The same page with the boxes already filled: a link, so it needs no script. */
-function prefilled(values: { slug: string; name: string; category: string }): string {
-  const query = new URLSearchParams({ slug: values.slug });
-  if (values.name) query.set("name", values.name);
-  if (values.category) query.set("category", values.category);
-  return `/inscription?${query.toString()}`;
 }

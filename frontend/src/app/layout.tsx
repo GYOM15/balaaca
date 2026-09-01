@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Manrope } from "next/font/google";
+import { Suspense } from "react";
 import { Presentation } from "@/components/presentation";
 import { Sprite } from "@/components/sprite";
 import "./globals.css";
@@ -47,6 +48,13 @@ export const viewport: Viewport = {
   // viewport-fit=cover: the bottom navigation of the dashboard sits on the
   // home indicator otherwise.
   viewportFit: "cover",
+  // The mockup's first declaration, before a single token: `:root {
+  // color-scheme: light }`. The palette is one warm light theme and nothing in
+  // it answers to prefers-color-scheme, so a phone in dark mode would repaint
+  // the form controls, the scrollbars and the <dialog> backdrop dark against
+  // it. Said as the meta tag rather than as a CSS rule, because globals.css is
+  // byte-identical to the design source and stays that way.
+  colorScheme: "light",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -57,13 +65,36 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             than another parse, which is what makes an icon free on the
             telephones this is built for. */}
         <Sprite />
-        <a className="skip-link" href="#contenu">
-          Aller au contenu
-        </a>
-        {children}
+        {/* Every screen of the mockup was a `section.route` that its hash
+            router showed and hid, and the design system keys the opening
+            sequence off exactly that: `.js .route:not([hidden]) [data-enter]`.
+            Next shows one screen at a time and needs no router, but the class
+            still has to be on the element that holds the screen, or every
+            data-enter in the product is inert. The only rule that reads
+            `.route` otherwise hides one carrying `hidden`, which nothing here
+            ever sets, so the class costs nothing else.
+
+            `anim-fade` is in the server's markup rather than added at
+            hydration: the fade starts with the first paint instead of blanking
+            a page the reader can already see. Presentation retriggers it on
+            every later navigation, the way the mockup's router did on every
+            hash change. */}
+        <div className="route anim-fade">
+          <a className="skip-link" href="#contenu">
+            Aller au contenu
+          </a>
+          {children}
+        </div>
         {/* Animation, copying, previews and toasts - nothing that reads a
-            value. The session never leaves the server. */}
-        <Presentation />
+            value. The session never leaves the server.
+
+            Suspended because it reads the query string to know a screen has
+            changed, and useSearchParams outside a boundary would opt every
+            statically rendered page into dynamic rendering. It draws nothing,
+            so the fallback is nothing. */}
+        <Suspense fallback={null}>
+          <Presentation />
+        </Suspense>
       </body>
     </html>
   );

@@ -173,18 +173,27 @@ export function boot(teardown) {
       var none = scope.querySelector('[data-trade-empty]');
       if (none) none.hidden = shown > 0;
       /* On cherche par attribut, jamais par identifiant : dans le fichier unique,
-         un seul document. */
-      var count = document.querySelector('[data-trade-count-label]');
+         les identifiants sont préfixés par route. */
+      var count = (input.closest('.route') || document).querySelector('[data-trade-count-label]');
       if (count) count.textContent = shown === 0 ? 'Aucun métier ne correspond.'
         : shown + (shown > 1 ? ' métiers affichés.' : ' métier affiché.');
     });
   
   /* ---------- Amorçage --------------------------------------------------- */
   // No collect() and no hashchange: those belonged to the prototype router.
-  // The document IS the current route here, so the observer watches it whole.
+  // Everything else the original boot() did is below, unchanged - including
+  // the scope it observed, which resolves to the one .route the layout draws.
   document.documentElement.classList.add('js');
   syncReveals();
-  observe(document);
+  observe(document.querySelector('.route:not([hidden])') || document);
   on(window, 'scroll', onScroll, { passive: true });
   onScroll();
+
+  // The observer outlives the listeners and holds every node it still watches,
+  // so a teardown that only unbinds events leaks one per boot.
+  teardown.push(function () { if (io) io.disconnect(); });
+
+  // What the prototype's router called on a screen change, handed back so the
+  // Next equivalent can call the same two functions instead of re-booting.
+  return { observe: observe, syncReveals: syncReveals };
 }

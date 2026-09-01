@@ -1,35 +1,42 @@
 import Link from "next/link";
+import { Icon } from "./icon";
 import { Mark } from "./ui";
 
 /**
  * The chrome around every public page.
  *
- * <p>Two audiences share one site, and the header is what tells them apart: a
- * customer gets the ways into the directory, a provider gets the one door to
- * their own side. The `kind` says which of the two is standing there, and the
- * only thing it changes is that door - a provider already inside does not need
- * to be sold the idea again.
+ * <p>One header and one footer, drawn the same on every screen that has them.
+ * The design draws no second variant: the page that sells the product to a
+ * provider carries the same bar as the directory, down to the "Espace
+ * professionnel" button on it. Nothing here branches on who is looking.
+ *
+ * <p>The booking flow, the sign-up and the dashboard use their own reduced bar
+ * instead - a mark and one way out - and build it themselves, because what that
+ * way out points at is the screen's own business.
  */
 
-/** The mark and the name, as the header and the footer draw them. */
-function Logo({ tone }: { tone?: "inverse" }) {
+/**
+ * The mark, as both the header and the footer draw it: the design system's
+ * 34-pixel tile, with the real monogram inside it rather than a letter B. The
+ * brand sheet forbids an approximation of the mark, and public/brand/ is the
+ * one path any code names it by.
+ */
+function LogoWord() {
   return (
-    <Link className="logo" href="/" aria-label="Balaaca, accueil">
-      {/* The real monogram, not the mockup's letter tile: the brand sheet
-          forbids an approximation of the mark, and public/brand/ is the one
-          path any code names it by. */}
-      <Mark size={34} tone={tone} />
-      <span className="logo__word">
-        Bala<em>a</em>ca
-      </span>
-    </Link>
+    <span className="logo__word">
+      Bala<em>a</em>ca
+    </span>
   );
 }
 
 export function SiteHeader({
-  kind = "hub",
   active,
 }: {
+  /**
+   * Accepted and ignored, so a page need not know. The design has one public
+   * header; a provider standing in front of it gets the same bar as anyone
+   * else, and the door to their own side is on it either way.
+   */
   kind?: "hub" | "pro";
   /** The nav entry this page IS, so it can be announced rather than guessed. */
   active?: "metiers" | "idees" | "comment-ca-marche";
@@ -38,7 +45,10 @@ export function SiteHeader({
   return (
     <header className="hdr">
       <div className="page hdr__in">
-        <Logo />
+        <Link className="logo" href="/">
+          <Mark size={34} />
+          <LogoWord />
+        </Link>
         <nav className="hdr__nav" aria-label="Navigation principale">
           <Link className="hdr__link" href="/metiers" aria-current={current("metiers")}>
             Métiers
@@ -55,35 +65,22 @@ export function SiteHeader({
           </Link>
         </nav>
         <div className="hdr__actions">
-          {kind === "pro" ? (
-            <>
-              <Link className="hdr__link hide-sm" href="/">
-                Trouver un professionnel
-              </Link>
-              <Link className="btn btn--primary btn--sm" href="/inscription">
-                <span className="btn__label--idle">Créer ma page</span>
-              </Link>
-            </>
-          ) : (
-            <>
-              {/* Below 700 px the header keeps the professional door and drops
-                  this one: a customer who has a booking has its link in their
-                  messages, and the footer carries it on every page. */}
-              <Link className="hdr__link" href="/bookings" style={{ display: "none" }} data-show-md>
-                Ma réservation
-              </Link>
-              <Link className="btn btn--secondary btn--sm hide-sm" href="/professionnels">
-                <span className="btn__label--idle">Espace professionnel</span>
-              </Link>
-              <Link
-                className="hdr__link show-sm-only"
-                href="/professionnels"
-                style={{ fontSize: "var(--fs-xs)" }}
-              >
-                Espace pro
-              </Link>
-            </>
-          )}
+          {/* Below 700 px the header keeps the professional door and drops
+              this one: a customer who has a booking has its link in their
+              messages, and the footer carries it on every page. */}
+          <Link className="hdr__link" href="/bookings" style={{ display: "none" }} data-show-md="">
+            Ma réservation
+          </Link>
+          <Link className="btn btn--secondary btn--sm hide-sm" href="/professionnels">
+            <span className="btn__label--idle">Espace professionnel</span>
+          </Link>
+          <Link
+            className="hdr__link show-sm-only"
+            href="/professionnels"
+            style={{ fontSize: "var(--fs-xs)" }}
+          >
+            Espace pro
+          </Link>
         </div>
       </div>
     </header>
@@ -101,7 +98,12 @@ export function SiteFooter(_props: { kind?: "hub" | "pro" } = {}) {
       <div className="page">
         <div className="foot__grid">
           <div>
-            <Logo tone="inverse" />
+            {/* Not a link: the mark at the top of the same page already goes
+                home, and the design draws this one as plain text. */}
+            <div className="logo" style={{ color: "#fff" }}>
+              <Mark size={34} />
+              <LogoWord />
+            </div>
             <p
               className="t-sm"
               style={{ color: "var(--text-on-dark-muted)", marginTop: "1rem", maxWidth: "34ch" }}
@@ -133,6 +135,8 @@ export function SiteFooter(_props: { kind?: "hub" | "pro" } = {}) {
             links={[
               ["Comment ça marche", "/professionnels/comment-ca-marche"],
               ["Retrouver ma réservation", "/bookings"],
+              ["Confidentialité", "/confidentialite"],
+              ["Conditions", "/conditions"],
             ]}
           />
         </div>
@@ -147,10 +151,8 @@ export function SiteFooter(_props: { kind?: "hub" | "pro" } = {}) {
 
 function FooterColumn({ title, links }: { title: string; links: [string, string][] }) {
   return (
-    <nav aria-label={title}>
-      {/* A real heading, unlike the mockup's div, because a footer column IS a
-          section of the page - and it is styled as a label either way. */}
-      <h2 className="foot__title">{title}</h2>
+    <div>
+      <div className="foot__title">{title}</div>
       <div className="foot__list">
         {links.map(([label, href]) => (
           <Link key={href} href={href}>
@@ -158,6 +160,45 @@ function FooterColumn({ title, links }: { title: string; links: [string, string]
           </Link>
         ))}
       </div>
+    </div>
+  );
+}
+
+/** Which of the four the reader is standing on, so it can be announced. */
+export type TabBarTab = "accueil" | "metiers" | "recherche" | "reservation";
+
+/**
+ * The bar under a thumb, on every public screen.
+ *
+ * <p>It was fifteen copies of one navigation in four slightly different
+ * versions, which differed only in which entry claimed aria-current - and the
+ * home page, which reserves its height with `has-tabbar`, drew no bar at all,
+ * so a phone got a strip of empty page where the bar should be.
+ *
+ * <p>Accueil and Rechercher both point at "/", and that is not a mistake: the
+ * design has a hub and a search screen, this product serves both from one
+ * route, and the two entries say which of the two the reader is asking for.
+ */
+export function TabBar({ active }: { active?: TabBarTab }) {
+  const on = (tab: TabBarTab) => (active === tab ? "page" : undefined);
+  return (
+    <nav className="tabbar" aria-label="Navigation mobile">
+      <Link className="tabbar__item" href="/" aria-current={on("accueil")}>
+        <Icon name="home" />
+        <span>Accueil</span>
+      </Link>
+      <Link className="tabbar__item" href="/metiers" aria-current={on("metiers")}>
+        <Icon name="grid" />
+        <span>Métiers</span>
+      </Link>
+      <Link className="tabbar__item" href="/" aria-current={on("recherche")}>
+        <Icon name="search" />
+        <span>Rechercher</span>
+      </Link>
+      <Link className="tabbar__item" href="/bookings" aria-current={on("reservation")}>
+        <Icon name="calendar-check" />
+        <span>Réservation</span>
+      </Link>
     </nav>
   );
 }

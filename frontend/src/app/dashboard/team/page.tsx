@@ -1,15 +1,16 @@
 import type { CSSProperties } from "react";
+import Link from "next/link";
 import { Icon } from "@/components/icon";
-import { Avatar, Badge, EmptyState, Notice } from "@/components/ui";
+import { Avatar, Badge, Notice } from "@/components/ui";
 import { api } from "@/lib/api";
 import { env } from "@/lib/env";
-import type { CurrentMember, StaffList, StaffView } from "@/lib/types";
+import type { CurrentMember, ProviderProfile, StaffList, StaffView } from "@/lib/types";
 import { addMember, invite, replaceMember, transferOwnership } from "./actions";
 
 export const dynamic = "force-dynamic";
 
 const REFUSALS: Record<string, string> = {
-  FORBIDDEN: "Seul le propriétaire compose l'équipe.",
+  FORBIDDEN: "Seul le propriétaire compose l’équipe.",
   // One sentence for both, because the API sends one code for both: a member
   // who cannot be invited and a team that would be left with nobody bookable
   // are the same INVALID_STATE_TRANSITION. Branching on codes the catalogue
@@ -17,7 +18,7 @@ const REFUSALS: Record<string, string> = {
   // abouti" while the server knew exactly what was wrong.
   INVALID_STATE_TRANSITION:
     "Cette personne ne peut pas être invitée, ou votre page resterait sans personne de réservable.",
-  RESOURCE_NOT_FOUND: "Cette personne n'existe plus.",
+  RESOURCE_NOT_FOUND: "Cette personne n’existe plus.",
   VALIDATION_FAILED: "Il faut un nom.",
 };
 
@@ -31,10 +32,10 @@ const REFUSALS: Record<string, string> = {
 const TRANSFER_REFUSALS: Record<string, string> = {
   FORBIDDEN: "Seul le propriétaire peut céder le salon.",
   VALIDATION_FAILED:
-    "Cette personne n'a pas encore de compte, ou ne travaille plus ici. Créez-lui un code d'accès, laissez-la se connecter, puis revenez.",
+    "Cette personne n’a pas encore de compte, ou ne travaille plus ici. Créez-lui un code d’invitation, laissez-la se connecter, puis revenez.",
 };
 
-/** The consequence list of a transfer, which the mockup spaces by hand. */
+/** The consequence list of a transfer, which the design spaces by hand. */
 const CONSEQUENCES = {
   "--stack-gap": "var(--s-2)",
   marginTop: "var(--s-4)",
@@ -63,9 +64,13 @@ export default async function Team({
   }>;
 }) {
   const query = await searchParams;
-  const [me, team] = await Promise.all([
+  // The profile is read for one sentence: the transfer warning names the
+  // business being handed over, which is the whole point of reading it twice
+  // before pressing the button.
+  const [me, team, provider] = await Promise.all([
     api<CurrentMember>("/v1/me"),
     api<StaffList>("/v1/staff"),
+    api<ProviderProfile>("/v1/provider-profile"),
   ]);
 
   const bookable = team.data.filter((p) => p.active && p.bookable).length;
@@ -74,8 +79,8 @@ export default async function Team({
   // Who the salon can go to. Active, and not the caller: the API refuses a
   // departed colleague and refuses the owner naming themselves. The third
   // condition is having an account, which StaffView does not carry - so it is
-  // said in words below and named again by the refusal, rather than guessed at
-  // by a screen that would be wrong either way round.
+  // named by the refusal rather than guessed at by a screen that would be
+  // wrong either way round.
   const candidates =
     me.role === "OWNER"
       ? team.data.filter((p) => p.active && p.staff_id !== me.staff_id)
@@ -86,6 +91,13 @@ export default async function Team({
     <>
       <div className="appbar">
         <div className="appbar__in">
+          <a
+            className="btn btn--ghost btn--icon btn--sm hide-lg"
+            href="#sections"
+            aria-label="Menu"
+          >
+            <Icon name="menu" />
+          </a>
           <div>
             <h1 className="appbar__title">Équipe</h1>
             <div className="appbar__sub">
@@ -94,19 +106,25 @@ export default async function Team({
             </div>
           </div>
           <div className="appbar__actions">
-            <button className="btn btn--primary btn--sm" type="button" data-dialog-open="dlg-add">
-              <Icon name="user-plus" size={16} className="btn__icon--idle" />
-              <span className="btn__label--idle">Ajouter quelqu'un</span>
+            <button
+              className="btn btn--primary btn--sm"
+              type="button"
+              data-dialog-open="dlg-invite"
+            >
+              <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
+                <Icon name="user-plus" size={18} />
+              </span>
+              <span className="btn__label--idle">Inviter quelqu’un</span>
             </button>
           </div>
         </div>
       </div>
 
-      <main className="app__main has-tabbar" id="contenu">
+      <main id="contenu" className="app__main has-tabbar">
         <div className="app__inner">
           {query.error ? (
             <div style={{ marginBottom: "var(--s-5)" }}>
-              <Notice tone="danger" title="La modification n'a pas abouti">
+              <Notice tone="danger" title="La modification n’a pas abouti">
                 {REFUSALS[query.error] ?? "Réessayez, ou rechargez la page."}
               </Notice>
             </div>
@@ -114,7 +132,7 @@ export default async function Team({
 
           {query.transfer ? (
             <div style={{ marginBottom: "var(--s-5)" }}>
-              <Notice tone="danger" title="Le salon n'a pas changé de mains">
+              <Notice tone="danger" title="Le salon n’a pas changé de mains">
                 {TRANSFER_REFUSALS[query.transfer] ?? "Réessayez, ou rechargez la page."}
               </Notice>
             </div>
@@ -124,15 +142,15 @@ export default async function Team({
             <div style={{ marginBottom: "var(--s-5)" }}>
               <Notice tone="success" title="Le salon a changé de propriétaire">
                 {query.given} est désormais propriétaire. Vous gardez votre chaise, vos
-                horaires et vos rendez-vous — mais seul {query.given} peut vous rendre
-                le salon.
+                horaires et vos rendez-vous — mais seul {query.given} peut vous rendre le
+                salon.
               </Notice>
             </div>
           ) : null}
 
           {query.invited ? (
             <div style={{ marginBottom: "var(--s-5)" }}>
-              <Notice tone="success" title="Code d'accès créé" icon="shield">
+              <Notice tone="success" title="Code d’invitation créé" icon="shield">
                 Transmettez ce code à {query.name ?? "cette personne"}, avec le lien{" "}
                 <strong>{env.publicOrigin}/rejoindre</strong>.
                 <div className="publink" style={{ marginTop: "var(--s-3)" }}>
@@ -141,28 +159,20 @@ export default async function Team({
                     className="btn btn--ghost btn--sm btn--icon"
                     type="button"
                     data-copy={query.invited}
-                    aria-label="Copier le code d'accès"
+                    aria-label="Copier le code d’invitation"
                   >
                     <Icon name="copy" size={18} className="btn__icon--idle" />
                   </button>
                 </div>
                 <div className="t-xs" style={{ marginTop: "var(--s-3)" }}>
-                  Il n'est affiché qu'une fois. En créer un autre remplace celui-ci —
-                  c'est aussi comme ça qu'on le révoque.
+                  Il n’est affiché qu’une fois. En créer un autre remplace celui-ci —
+                  c’est aussi comme ça qu’on le révoque.
                 </div>
               </Notice>
             </div>
           ) : null}
 
           <div className="panel">
-            {size === 0 ? (
-              <EmptyState
-                compact
-                sketch="chair"
-                title="Personne dans l'équipe"
-                body="Ajoutez la première personne qui travaille ici : elle pourra être proposée aux clients dès que votre page sera en ligne."
-              />
-            ) : null}
             <div className="list" style={{ borderTop: 0 }}>
               {team.data.map((person) => (
                 <div
@@ -190,10 +200,13 @@ export default async function Team({
                         <Badge label="Non réservable" tone="neutral" icon="eye-off" />
                       )}
                     </div>
+                    {/* The design prints a trade under the name - "Coiffeuse ·
+                        tissages". Nothing stores one, so the line says the one
+                        thing that is stored about a chair. */}
                     <div className="t-xs" style={{ marginTop: "var(--s-2)" }}>
                       {person.role === "OWNER"
-                        ? "Propriétaire de l'établissement"
-                        : "Membre de l'équipe"}
+                        ? "Propriétaire de l’établissement"
+                        : "Membre de l’équipe"}
                     </div>
                   </div>
 
@@ -213,12 +226,19 @@ export default async function Team({
                         <Icon name="pencil" size={18} /> Modifier
                       </button>
 
+                      <Link
+                        className="menu__item"
+                        href={`/dashboard/hours?staff=${encodeURIComponent(person.staff_id)}`}
+                      >
+                        <Icon name="calendar" size={18} /> Horaires de cette personne
+                      </Link>
+
                       {person.role === "OWNER" ? null : (
                         <form action={invite}>
                           <input type="hidden" name="id" value={person.staff_id} />
                           <input type="hidden" name="name" value={person.display_name} />
                           <button className="menu__item" type="submit">
-                            <Icon name="lock" size={18} /> Créer un code d'accès
+                            <Icon name="refresh" size={18} /> Créer un code d’invitation
                           </button>
                         </form>
                       )}
@@ -259,25 +279,54 @@ export default async function Team({
               title="Une personne « réservable » apparaît dans le choix du client"
             >
               Une apprentie ou une gérante qui ne prend pas de rendez-vous peut rester
-              dans l'équipe sans être proposée à la réservation. Une chaise n'est pas un
-              compte&nbsp;: on ajoute la personne qui travaille ici bien avant qu'elle ne
-              se connecte, et beaucoup ne se connecteront jamais.
+              dans l’équipe sans être proposée à la réservation.
             </Notice>
           </div>
 
-          <dialog className="dialog" id="dlg-add">
+          <dialog className="dialog" id="dlg-invite">
             <div className="dialog__inner">
               <div className="dialog__head">
-                <h2 className="dialog__title">Ajouter quelqu'un</h2>
+                <h2 className="dialog__title">Inviter quelqu’un</h2>
               </div>
               <form action={addMember}>
+                {/* The chair is created active. The design's dialog has no
+                    switch for it, and a person added inactive would be added
+                    to nothing. */}
+                <input type="hidden" name="active" value="on" />
                 <div className="dialog__body">
                   <p>
-                    La chaise existe d'abord, le compte vient après&nbsp;: créez-lui
-                    ensuite un code d'accès depuis sa ligne, et transmettez-le-lui.
+                    Un code d’invitation sera généré depuis sa ligne, une fois la
+                    personne ajoutée. Transmettez-le-lui&nbsp;: elle le saisira sur{" "}
+                    {env.publicOrigin}/rejoindre.
                   </p>
                   <div style={{ marginTop: "var(--s-5)" }}>
-                    <MemberFields member={null} prefix="add" />
+                    <div className="field">
+                      <label className="field__label" htmlFor="invite-name">
+                        Nom
+                        <span className="field__req" aria-hidden="true">
+                          *
+                        </span>
+                      </label>
+                      <input
+                        className="input"
+                        type="text"
+                        id="invite-name"
+                        name="display_name"
+                        placeholder="Fanta Diallo"
+                        maxLength={120}
+                        required
+                      />
+                    </div>
+                    <label className="check" style={{ marginTop: "var(--s-4)" }}>
+                      <input type="checkbox" name="bookable" defaultChecked />
+                      <span className="check__box">
+                        <Icon name="check" />
+                      </span>
+                      <span className="check__text">
+                        <strong>Réservable par les clients</strong>
+                        <span>Elle apparaîtra au moment de choisir une personne.</span>
+                      </span>
+                    </label>
                   </div>
                 </div>
                 <div className="dialog__foot">
@@ -293,7 +342,11 @@ export default async function Team({
           </dialog>
 
           {team.data.map((person) => (
-            <dialog className="dialog" id={`dlg-edit-${person.staff_id}`} key={person.staff_id}>
+            <dialog
+              className="dialog"
+              id={`dlg-edit-${person.staff_id}`}
+              key={person.staff_id}
+            >
               <div className="dialog__inner">
                 <div className="dialog__head">
                   <h2 className="dialog__title">{person.display_name}</h2>
@@ -301,7 +354,56 @@ export default async function Team({
                 <form action={replaceMember}>
                   <input type="hidden" name="id" value={person.staff_id} />
                   <div className="dialog__body">
-                    <MemberFields member={person} prefix={`edit-${person.staff_id}`} />
+                    <div className="field">
+                      <label
+                        className="field__label"
+                        htmlFor={`edit-${person.staff_id}-name`}
+                      >
+                        Nom
+                        <span className="field__req" aria-hidden="true">
+                          *
+                        </span>
+                      </label>
+                      <input
+                        className="input"
+                        type="text"
+                        id={`edit-${person.staff_id}-name`}
+                        name="display_name"
+                        placeholder="Fanta Diallo"
+                        maxLength={120}
+                        required
+                        defaultValue={person.display_name}
+                      />
+                    </div>
+
+                    <label className="check" style={{ marginTop: "var(--s-4)" }}>
+                      <input
+                        type="checkbox"
+                        name="bookable"
+                        defaultChecked={person.bookable}
+                      />
+                      <span className="check__box">
+                        <Icon name="check" />
+                      </span>
+                      <span className="check__text">
+                        <strong>Réservable par les clients</strong>
+                        <span>Elle apparaîtra au moment de choisir une personne.</span>
+                      </span>
+                    </label>
+
+                    <label className="check" style={{ marginTop: "var(--s-4)" }}>
+                      <input type="checkbox" name="active" defaultChecked={person.active} />
+                      <span className="check__box">
+                        <Icon name="check" />
+                      </span>
+                      <span className="check__text">
+                        <strong>Travaille ici</strong>
+                        <span>
+                          Décochée pour quelqu’un qui est parti. Ses rendez-vous passés
+                          restent, et son accès s’arrête à la requête suivante.
+                        </span>
+                      </span>
+                    </label>
                   </div>
                   <div className="dialog__foot">
                     <button className="btn btn--secondary" type="button" data-dialog-close>
@@ -316,51 +418,19 @@ export default async function Team({
             </dialog>
           ))}
 
-          {team.data.filter(canDeactivate).map((person) => (
-            <dialog className="dialog" id={`dlg-off-${person.staff_id}`} key={person.staff_id}>
-              <div className="dialog__inner">
-                <div className="dialog__head">
-                  <h2 className="dialog__title">Désactiver cette personne&nbsp;?</h2>
-                </div>
-                <form action={replaceMember}>
-                  <input type="hidden" name="id" value={person.staff_id} />
-                  <input type="hidden" name="display_name" value={person.display_name} />
-                  {/* The PUT replaces the whole row, so what is not meant to change
-                      travels with it. `active` is left out on purpose: absent is
-                      false, and false is the whole point of this form. */}
-                  {person.bookable ? (
-                    <input type="hidden" name="bookable" value="on" />
-                  ) : null}
-                  <div className="dialog__body">
-                    <p>
-                      {person.display_name} ne pourra plus se connecter et disparaîtra
-                      du choix proposé aux clients.{" "}
-                      <strong>Ses rendez-vous à venir ne sont pas annulés</strong>.
-                      Pensez à les réattribuer depuis l'agenda.
-                    </p>
-                  </div>
-                  <div className="dialog__foot">
-                    <button className="btn btn--secondary" type="button" data-dialog-close>
-                      <span className="btn__label--idle">Annuler</span>
-                    </button>
-                    <button className="btn btn--danger" type="submit">
-                      <span className="btn__label--idle">Désactiver</span>
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </dialog>
-          ))}
-
           {/* Behind a dialog, and the consequences are read before the button is
               reachable. Nothing else on this page is irreversible from the
               caller's side: only the new owner can hand the salon back. */}
           {candidates.map((person) => (
-            <dialog className="dialog" id={`dlg-own-${person.staff_id}`} key={person.staff_id}>
+            <dialog
+              className="dialog"
+              id={`dlg-own-${person.staff_id}`}
+              key={person.staff_id}
+            >
               <div className="dialog__inner">
                 <div className="dialog__head">
                   <h2 className="dialog__title">
-                    Céder la propriété de l'établissement&nbsp;?
+                    Céder la propriété de l’établissement&nbsp;?
                   </h2>
                 </div>
                 <form action={transferOwnership}>
@@ -369,7 +439,7 @@ export default async function Team({
                   <div className="dialog__body">
                     <p>
                       <strong>
-                        Cette action est définitive et vous ne pourrez pas l'annuler
+                        Cette action est définitive et vous ne pourrez pas l’annuler
                         vous-même.
                       </strong>
                     </p>
@@ -379,8 +449,8 @@ export default async function Team({
                           <Icon name="alert-circle" size={16} />
                         </span>
                         <span className="t-sm">
-                          {person.display_name} deviendra propriétaire de
-                          l'établissement.
+                          {person.display_name} deviendra propriétaire de{" "}
+                          {provider.business_name}.
                         </span>
                       </li>
                       <li className="row" style={CONSEQUENCE_ROW}>
@@ -388,7 +458,7 @@ export default async function Team({
                           <Icon name="alert-circle" size={16} />
                         </span>
                         <span className="t-sm">
-                          Vous deviendrez un membre ordinaire de l'équipe.
+                          Vous deviendrez un membre ordinaire de l’équipe.
                         </span>
                       </li>
                       <li className="row" style={CONSEQUENCE_ROW}>
@@ -396,8 +466,8 @@ export default async function Team({
                           <Icon name="alert-circle" size={16} />
                         </span>
                         <span className="t-sm">
-                          Vous perdrez l'accès à l'équipe, au catalogue et à la
-                          publication de la page.
+                          Vous perdrez l’accès au catalogue, à l’équipe et à la
+                          publication.
                         </span>
                       </li>
                       <li className="row" style={CONSEQUENCE_ROW}>
@@ -432,11 +502,6 @@ export default async function Team({
                           required
                           pattern="[Cc][ÉéEe][Dd][Ee][Rr]"
                         />
-                        <span className="field__hint">
-                          Cette personne doit déjà s'être connectée avec un code
-                          d'accès&nbsp;: une chaise sans compte ne peut pas recevoir le
-                          salon.
-                        </span>
                       </div>
                     </div>
                   </div>
@@ -446,6 +511,46 @@ export default async function Team({
                     </button>
                     <button className="btn btn--danger" type="submit">
                       <span className="btn__label--idle">Céder la propriété</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </dialog>
+          ))}
+
+          {team.data.filter(canDeactivate).map((person) => (
+            <dialog
+              className="dialog"
+              id={`dlg-off-${person.staff_id}`}
+              key={person.staff_id}
+            >
+              <div className="dialog__inner">
+                <div className="dialog__head">
+                  <h2 className="dialog__title">Désactiver cette personne&nbsp;?</h2>
+                </div>
+                <form action={replaceMember}>
+                  <input type="hidden" name="id" value={person.staff_id} />
+                  <input type="hidden" name="display_name" value={person.display_name} />
+                  {/* The PUT replaces the whole row, so what is not meant to change
+                      travels with it. `active` is left out on purpose: absent is
+                      false, and false is the whole point of this form. */}
+                  {person.bookable ? (
+                    <input type="hidden" name="bookable" value="on" />
+                  ) : null}
+                  <div className="dialog__body">
+                    <p>
+                      Elle ne pourra plus se connecter et disparaîtra du choix proposé
+                      aux clients.{" "}
+                      <strong>Ses rendez-vous à venir ne sont pas annulés</strong>. Pensez
+                      à les réattribuer depuis l’agenda.
+                    </p>
+                  </div>
+                  <div className="dialog__foot">
+                    <button className="btn btn--secondary" type="button" data-dialog-close>
+                      <span className="btn__label--idle">Annuler</span>
+                    </button>
+                    <button className="btn btn--danger" type="submit">
+                      <span className="btn__label--idle">Désactiver</span>
                     </button>
                   </div>
                 </form>
@@ -467,58 +572,4 @@ export default async function Team({
  */
 function canDeactivate(person: StaffView): boolean {
   return person.active && person.role !== "OWNER";
-}
-
-function MemberFields({ member, prefix }: { member: StaffView | null; prefix: string }) {
-  return (
-    <>
-      <div className="field">
-        <label className="field__label" htmlFor={`${prefix}-name`}>
-          Nom
-          <span className="field__req" aria-hidden="true">
-            *
-          </span>
-        </label>
-        <input
-          className="input"
-          type="text"
-          id={`${prefix}-name`}
-          name="display_name"
-          placeholder="Fanta Diallo"
-          maxLength={120}
-          required
-          defaultValue={member?.display_name ?? ""}
-        />
-        <span className="field__hint">Tel qu'une cliente le lira sur votre page.</span>
-      </div>
-
-      <label className="check" style={{ marginTop: "var(--s-4)" }}>
-        <input type="checkbox" name="bookable" defaultChecked={member?.bookable ?? true} />
-        <span className="check__box">
-          <Icon name="check" />
-        </span>
-        <span className="check__text">
-          <strong>Réservable par les clients</strong>
-          <span>
-            Elle apparaîtra au moment de choisir une personne. Une réceptionniste
-            travaille ici sans l'être.
-          </span>
-        </span>
-      </label>
-
-      <label className="check" style={{ marginTop: "var(--s-4)" }}>
-        <input type="checkbox" name="active" defaultChecked={member?.active ?? true} />
-        <span className="check__box">
-          <Icon name="check" />
-        </span>
-        <span className="check__text">
-          <strong>Travaille ici</strong>
-          <span>
-            Décochée pour quelqu'un qui est parti. Ses rendez-vous passés restent, et
-            son accès s'arrête à la requête suivante.
-          </span>
-        </span>
-      </label>
-    </>
-  );
 }

@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { Icon } from "@/components/icon";
 import { ActionButton, EmptyState, Wordmark, initials } from "@/components/ui";
 import { ApiError, api, isSignedIn } from "@/lib/api";
-import type { CurrentMember, ProviderProfile } from "@/lib/types";
+import type { AppointmentPage, CurrentMember, ProviderProfile } from "@/lib/types";
 
 /** A diary. Cached, it would be stale before it was drawn. */
 export const dynamic = "force-dynamic";
@@ -21,14 +21,15 @@ type Group = { title: string; entries: Entry[] };
 /**
  * Every room behind the sign-in, grouped and in the order a provider needs it.
  *
- * <p>The grouping is the whole point. Six links in a flat list said nothing
- * about what belonged to what, so every screen felt like a sibling of every
- * other one and nobody could say where they were. Four short groups say it: the
- * day first, then the shop a customer sees, then the people, then the platform.
+ * <p>The grouping is the design's own: the day first, then the shop a customer
+ * sees, then the people, then the platform. Six links in a flat list said
+ * nothing about what belonged to what, so every screen felt like a sibling of
+ * every other one and nobody could say where they were.
  *
- * <p>The diary is the root. There is no separate "accueil" above it, and two
- * entries pointing at one URL would be a navigation that cannot say where you
- * are.
+ * <p>The design splits the first group in two - an overview at /dashboard and a
+ * diary at /dashboard/schedule. They are one screen here, so they are one
+ * entry: two rows pointing at one URL would be a navigation that cannot say
+ * where you are.
  */
 const GROUPS: Group[] = [
   {
@@ -50,12 +51,28 @@ const GROUPS: Group[] = [
       { href: "/dashboard/team", icon: "user-plus", label: "Équipe", ownerOnly: true },
     ],
   },
+  {
+    title: "Configuration",
+    entries: [
+      {
+        href: "/dashboard/reglages",
+        icon: "sliders",
+        label: "Règles de réservation",
+        ownerOnly: true,
+      },
+      { href: "/dashboard/compte", icon: "user", label: "Mon compte" },
+    ],
+  },
 ];
 
 /**
- * The suspension room, which was in no navigation at all - the same thing as
- * not existing. A business whose page vanished used to reach the one screen
- * that explains why by typing the address.
+ * The suspension room, which the design puts in the navigation only while the
+ * business is suspended.
+ *
+ * <p>It is here whatever the state, because a screen nothing links to is a
+ * screen that does not exist - a business whose page vanished used to reach the
+ * one page that explains why by typing the address. Suspended, it is the only
+ * thing that matters and it goes first, exactly as the design draws it.
  *
  * <p>Owner only, because the platform only reads the owner's answer.
  */
@@ -121,7 +138,7 @@ export default async function DashboardLayout({
 
   const owner = me.role === "OWNER";
   const suspended = provider.status === "SUSPENDED";
-  const role = owner ? "Propriétaire" : "Équipe";
+  const waiting = await pendingCount();
 
   // Hidden for an employee because the server refuses them anyway. The check is
   // on the server; this only stops the refusal being the first they hear of it.
@@ -130,9 +147,6 @@ export default async function DashboardLayout({
     entries: group.entries.filter((entry) => !entry.ownerOnly || owner),
   })).filter((group) => group.entries.length > 0);
 
-  // Suspended, it is the only thing that matters and it goes first. Otherwise
-  // it is still there, at the bottom, because a screen nothing links to is a
-  // screen that does not exist.
   const appeal = APPEAL.ownerOnly && !owner ? [] : [APPEAL];
   const navigation: Group[] = [
     ...(suspended && appeal.length > 0 ? [{ title: "Suspension", entries: appeal }] : []),
@@ -161,26 +175,27 @@ export default async function DashboardLayout({
                 <Link className="side__link" href={entry.href} key={entry.href}>
                   <Icon name={entry.icon} size={18} />
                   <span className="grow">{entry.label}</span>
+                  {/* The design carries this figure on the diary from every
+                      screen, and it is the one number that has to travel: a
+                      request nobody answered is not a thing to discover by
+                      opening the agenda on the off chance. */}
+                  {entry.href === "/dashboard" && waiting ? (
+                    <span className="count">{waiting}</span>
+                  ) : null}
                 </Link>
               ))}
             </div>
           ))}
 
           <div className="side__foot">
-            {/* Who is signed in, which the card above does not say: an employee
-                working on the owner's laptop and the owner see the same salon
-                and must not see the same diary. The design's own place for this
-                is an account screen this application does not have. */}
-            <span className="side__biz-state" style={{ padding: "0 var(--s-3) var(--s-3)" }}>
-              {me.display_name} · {role}
-            </span>
             <Link className="side__link" href={`/p/${provider.slug}`}>
               <Icon name="external" size={18} />
               <span className="grow">Voir ma page publique</span>
             </Link>
             {/* Styled as a nav row rather than as a button: it sits on the dark
                 green, where a light-surface button would be the only thing on
-                the panel that does not belong to it. */}
+                the panel that does not belong to it. POST, because a sign-out
+                on GET is triggered by any image tag anywhere. */}
             <form method="post" action="/api/auth/logout">
               <button type="submit" className="side__link" style={{ width: "100%" }}>
                 <Icon name="logout" size={18} />
@@ -193,9 +208,10 @@ export default async function DashboardLayout({
         <div>
           {children}
 
-          {/* The bar's last slot lands here. A sheet would be the nicer gesture
-              and would cost a script; this is the same list, addressable, and it
-              works on the first paint. */}
+          {/* The bar's last slot lands here. The design gives this list its own
+              route; a sheet would be the nicer gesture and would cost a script.
+              This is the same list, addressable, and it works on the first
+              paint. */}
           <nav className="app__main has-tabbar hide-lg" id="sections" aria-label="Toutes les sections">
             <div className="app__inner">
               <div className="stack" style={{ "--stack-gap": "var(--s-6)" } as React.CSSProperties}>
@@ -216,6 +232,9 @@ export default async function DashboardLayout({
                               <Icon name={entry.icon} size={18} />
                             </span>
                             <span className="grow t-sm t-strong">{entry.label}</span>
+                            {entry.href === "/dashboard" && waiting ? (
+                              <span className="count">{waiting}</span>
+                            ) : null}
                             <Icon name="chevron-right" size={18} />
                           </Link>
                         ))}
@@ -237,12 +256,18 @@ export default async function DashboardLayout({
                         <span className="grow t-sm t-strong">Voir ma page</span>
                         <Icon name="chevron-right" size={18} />
                       </Link>
-                      <div className="list__item">
-                        <span className="grow t-xs">
-                          {me.display_name} · {role} chez {provider.business_name}
-                        </span>
-                        <SignOut />
-                      </div>
+                      <form method="post" action="/api/auth/logout">
+                        <button
+                          type="submit"
+                          className="list__item list__item--link"
+                          style={{ width: "100%" }}
+                        >
+                          <span className="choice__icon" style={{ width: 34, height: 34 }}>
+                            <Icon name="logout" size={18} />
+                          </span>
+                          <span className="grow t-sm t-strong">Déconnexion</span>
+                        </button>
+                      </form>
                     </div>
                   </div>
                 </div>
@@ -269,6 +294,25 @@ export default async function DashboardLayout({
 }
 
 /**
+ * How many requests are waiting on an answer, for the badge on the diary.
+ *
+ * <p>Its own call rather than a number handed down from the page: the shell is
+ * drawn on every screen and the figure has to be right on all of them. A
+ * refusal here costs the badge and nothing else - the navigation is not the
+ * place to fail a whole dashboard.
+ */
+async function pendingCount(): Promise<number> {
+  try {
+    const page = await api<AppointmentPage>("/v1/appointments", {
+      query: { status: "PENDING", limit: 200 },
+    });
+    return page.data.length;
+  } catch {
+    return 0;
+  }
+}
+
+/**
  * Which salon this is, and whether anybody can find it.
  *
  * <p>A link only for an owner: it opens the page editor, which the server
@@ -285,12 +329,6 @@ function BusinessCard({
   owner: boolean;
   suspended: boolean;
 }) {
-  const state = suspended
-    ? { dot: "#F0A9A2", text: "Suspendue par la plateforme" }
-    : provider.published
-      ? { dot: "#7FD3A5", text: `En ligne · /p/${provider.slug}` }
-      : { dot: "rgba(255,255,255,.4)", text: "Hors ligne · personne ne vous trouve" };
-
   const inside = (
     <>
       <span
@@ -303,16 +341,29 @@ function BusinessCard({
       <span className="grow">
         <span className="side__biz-name">{provider.business_name}</span>
         <span className="side__biz-state">
-          <span
-            style={{
-              width: "6px",
-              height: "6px",
-              borderRadius: "50%",
-              background: state.dot,
-              display: "inline-block",
-            }}
-          />
-          {state.text}
+          {suspended ? (
+            <span style={{ color: "#F0A9A2" }}>
+              <Icon name="shield-alert" size={16} /> Suspendu
+            </span>
+          ) : (
+            <>
+              <span
+                style={{
+                  width: "6px",
+                  height: "6px",
+                  borderRadius: "50%",
+                  // The design draws a live page and a suspended one. A page
+                  // that was never published is neither, and it is the state a
+                  // new business is in for its whole first hour.
+                  background: provider.published ? "#7FD3A5" : "rgba(255,255,255,.4)",
+                  display: "inline-block",
+                }}
+              />
+              {provider.published
+                ? ` En ligne · /p/${provider.slug}`
+                : " Hors ligne · personne ne vous trouve"}
+            </>
+          )}
         </span>
       </span>
       {owner ? <Icon name="chevron-right" size={18} /> : null}

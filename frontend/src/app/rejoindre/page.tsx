@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { isSignedIn } from "@/lib/api";
-import { ActionButton, Button, Notice, Wordmark } from "@/components/ui";
+import { Icon } from "@/components/icon";
+import { Button, Notice, Wordmark } from "@/components/ui";
 import { join } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -73,8 +74,7 @@ export default async function Join({ searchParams }: { searchParams: Promise<Sea
           </h1>
           <p className="t-body" style={{ marginTop: "var(--s-3)" }}>
             Il vous a été transmis par le propriétaire de l’établissement. Une
-            fois accepté, vous aurez votre propre agenda dans son espace, sous
-            le nom qu’il a inscrit sur la place qu’il vous réserve.
+            fois accepté, vous aurez votre propre agenda dans son espace.
           </p>
 
           {query.error === "MEMBER" ? (
@@ -123,9 +123,10 @@ export default async function Join({ searchParams }: { searchParams: Promise<Sea
               </label>
               <input
                 className="input"
+                type="text"
                 id="code"
                 name="code"
-                type="text"
+                placeholder="BAL-4K2P-9XQ"
                 required
                 // The contract's own bounds, to the character: a code is 20 to
                 // 64 of [A-Za-z0-9_-]. The browser catches a truncated paste
@@ -139,27 +140,33 @@ export default async function Join({ searchParams }: { searchParams: Promise<Sea
                 spellCheck={false}
                 autoComplete="off"
                 defaultValue={offered}
-                // Tracking only. The mockup also upper-cased the box, which
-                // would show a code that is not the one the server issued:
-                // these are case-sensitive to the character.
-                style={{ letterSpacing: ".12em", fontWeight: 700 }}
-                aria-describedby="code_hint"
+                style={{
+                  textTransform: "uppercase",
+                  letterSpacing: ".12em",
+                  fontWeight: 700,
+                }}
                 aria-invalid={refused ? true : undefined}
               />
-              <p className="field__hint" id="code_hint">
-                Une longue suite de lettres et de chiffres. Collez-la telle
-                quelle&nbsp;; les majuscules comptent.
-              </p>
             </div>
 
             <div style={{ marginTop: "var(--s-5)" }}>
-              <ActionButton
-                label="Rejoindre l’équipe"
-                type="submit"
-                variant="primary"
-                size="lg"
-                block
-              />
+              {/* Written out rather than taken from `ActionButton`, which emits
+                  the idle label alone: this button carries the four states the
+                  design system draws, and `globals.css` swaps them on
+                  `data-busy` / `data-done`. The design's `data-optimistic` is
+                  deliberately not carried - it cancels the click and raises a
+                  toast that says "welcome", on a form that really submits. */}
+              <button className="btn btn--primary btn--lg btn--block" type="submit">
+                <span className="btn__label--idle">Rejoindre l’équipe</span>
+                <span className="btn__icon--busy">
+                  <Icon name="loader" size={18} className="ico--spin" />
+                </span>
+                <span className="btn__label--busy">Vérification…</span>
+                <span className="btn__icon--done">
+                  <Icon name="check" size={18} />
+                </span>
+                <span className="btn__label--done">Bienvenue</span>
+              </button>
             </div>
           </form>
 

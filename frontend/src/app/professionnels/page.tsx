@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import { Icon, TradeIcon } from "@/components/icon";
-import { SiteFooter, SiteHeader } from "@/components/site";
+import { SiteFooter, SiteHeader, TabBar } from "@/components/site";
 
 /**
  * The pitch, and the only page where Balaaca talks about Balaaca.
@@ -13,8 +13,8 @@ import { SiteFooter, SiteHeader } from "@/components/site";
  *
  * <p>The buttons are plain anchors carrying the mockup's own classes - the
  * `btn--inverse` variant and the `btn__label--idle` span - rather than
- * `ui.tsx`'s `Button`, whose variant list was written against the previous
- * stylesheet and does not name either.
+ * `ui.tsx`'s `Button`, whose `icon` prop puts the class on the glyph where the
+ * design puts it on a wrapper.
  */
 export const metadata: Metadata = {
   title: "Espace professionnel",
@@ -161,11 +161,7 @@ export default function ProLanding() {
 
         <section className="section atmo tex-dots">
           <div className="page">
-            {/* feature--flip moves the first child to order 2. Three sections
-                running would otherwise stand their device on the same side, so
-                this one puts the text second visually and the device first.
-                Reading order is untouched: the flip is CSS, not markup. */}
-            <div className="feature feature--flip">
+            <div className="feature">
               <div data-reveal="left">
                 <p className="t-overline t-overline--accent">Votre vitrine</p>
                 <h2 className="t-h2 hair" style={{ marginTop: "var(--s-5)" }}>
@@ -224,6 +220,10 @@ export default function ProLanding() {
             <use href="#i-calendar" />
           </svg>
           <div className="page">
+            {/* feature--flip moves the first child to order 2, and the
+                stylesheet reads it a second time to lean the device the other
+                way. Which rows carry it is a design decision, not a layout
+                convenience. */}
             <div className="feature feature--flip">
               <div className="feature__art" data-reveal="left">
                 <DashboardShot />
@@ -274,10 +274,12 @@ export default function ProLanding() {
                   statut WhatsApp. L’adresse de votre page ne changera jamais :
                   ce que vous imprimez aujourd’hui fonctionnera dans cinq ans.
                 </p>
-                {/* The mockup's third row promised an eight-character
-                    reference a customer could dictate. The server mints
-                    thirty-two random bytes and hands back the base64url of
-                    them, so the row is gone rather than wrong. */}
+                {/* The mockup's third row promised a reference of eight
+                    dictable characters. AppointmentSqlRepository.mintReference
+                    draws thirty-two random bytes and returns the base64url of
+                    them - forty-three characters nobody reads down a telephone
+                    - so the row states nothing true and is gone rather than
+                    wrong. */}
                 <div
                   className="dl dl--lined"
                   style={{ marginTop: "var(--s-7)" }}
@@ -489,9 +491,11 @@ export default function ProLanding() {
       </main>
 
       <SiteFooter />
+      <TabBar />
     </>
   );
 }
+
 
 /* --- The device mockups -------------------------------------------------- */
 /* Local rather than shared: `comment-ca-marche` shows three of the same four,

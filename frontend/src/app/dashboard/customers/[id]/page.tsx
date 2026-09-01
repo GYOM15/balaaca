@@ -1,9 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Icon } from "@/components/icon";
-import { ActionButton, EmptyState, Notice, STATUS, StatusBadge } from "@/components/ui";
+import { EmptyState, Notice, STATUS, StatusBadge } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
-import { dateTime, day } from "@/lib/format";
 import type { CustomerDetail, CustomerVisit, ProviderProfile } from "@/lib/types";
 import { saveNotes } from "./actions";
 
@@ -21,16 +20,14 @@ const REFUSALS: Record<string, string> = {
 };
 
 type Query = {
-  q?: string;
   error?: string;
 };
 
 /**
  * One person, and everything this business knows about them.
  *
- * <p>Three things, in the order a salon reaches for them: how to call them, what
- * they were told to remember, and what they have booked. The telephone number is
- * a `tel:` link because it is the whole reason the number was taken.
+ * <p>Three things, in the order a salon reaches for them: what they have
+ * booked, how to reach them, and what they were told to remember.
  */
 export default async function CustomerCard({
   params,
@@ -41,7 +38,6 @@ export default async function CustomerCard({
 }) {
   const { id } = await params;
   const query = await searchParams;
-  const q = query.q?.trim() ?? "";
 
   const [provider, customer] = await Promise.all([
     api<ProviderProfile>("/v1/provider-profile"),
@@ -49,40 +45,45 @@ export default async function CustomerCard({
   ]);
 
   const zone = provider.timezone;
-  const appointments = customer.history.length;
 
   return (
     <>
       <div className="appbar">
         <div className="appbar__in">
-          <Link
-            className="btn btn--ghost btn--icon btn--sm"
-            href={listHref(q)}
-            aria-label="Retour à la clientèle"
+          <a
+            className="btn btn--ghost btn--icon btn--sm hide-lg"
+            href="#sections"
+            aria-label="Menu"
           >
-            <Icon name="arrow-left" />
-          </Link>
+            <Icon name="menu" />
+          </a>
           <div>
             <h1 className="appbar__title">{customer.full_name}</h1>
+            {/* The design writes "Cliente depuis février 2024" here. Nothing
+                serves a first visit, so the line says what is served. */}
             <div className="appbar__sub">
               {customer.visits} rendez-vous
-              {customer.last_visit ? ` · dernier le ${day(customer.last_visit, zone)}` : ""}
+              {customer.last_visit ? ` · dernier le ${longDay(customer.last_visit, zone)}` : ""}
             </div>
           </div>
           <div className="appbar__actions">
-            <a className="btn btn--secondary btn--sm" href={`tel:${customer.phone}`}>
-              <Icon name="phone" size={16} className="btn__icon--idle" />
-              <span className="btn__label--idle">Appeler</span>
-            </a>
             <a className="btn btn--secondary btn--sm" href={whatsapp(customer.phone)}>
-              <Icon name="whatsapp" size={16} className="btn__icon--idle" />
+              <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
+                <Icon name="whatsapp" size={18} />
+              </span>
               <span className="btn__label--idle">WhatsApp</span>
             </a>
+            <Link className="btn btn--primary btn--sm" href="/dashboard#walkin">
+              <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
+                <Icon name="plus" size={18} />
+              </span>
+              <span className="btn__label--idle">Nouveau rendez-vous</span>
+            </Link>
           </div>
         </div>
       </div>
 
-      <main className="app__main has-tabbar" id="contenu">
+      <main id="contenu" className="app__main has-tabbar">
         <div className="app__inner">
           {query.error ? (
             <div style={{ marginBottom: "var(--s-5)" }}>
@@ -93,29 +94,31 @@ export default async function CustomerCard({
           ) : null}
 
           <div className="cols cols--main-aside">
-            <div className="panel">
-              <div className="panel__head">
-                <div className="panel__title">Historique</div>
-                <span className="t-xs">{appointments} rendez-vous</span>
-              </div>
-
-              {appointments === 0 ? (
-                <EmptyState
-                  compact
-                  sketch="chair"
-                  title="Aucun rendez-vous"
-                  body="Cette personne est dans votre fichier sans avoir encore de rendez-vous à son nom."
-                />
-              ) : (
-                <div className="list" style={{ borderTop: 0 }}>
-                  {/* Most recent first, as the API sends it, and capped at fifty on
-                      its side. Nothing is re-sorted here: a second opinion on the
-                      order would be one that can disagree with the server's. */}
-                  {customer.history.map((visit, index) => (
-                    <Visit key={`${visit.starts_at}-${index}`} visit={visit} zone={zone} />
-                  ))}
+            <div className="stack" style={{ "--stack-gap": "var(--s-6)" } as React.CSSProperties}>
+              <div className="panel">
+                <div className="panel__head">
+                  <div className="panel__title">Historique</div>
+                  <span className="t-xs">{customer.visits} rendez-vous</span>
                 </div>
-              )}
+
+                {customer.history.length === 0 ? (
+                  <EmptyState
+                    compact
+                    sketch="chair"
+                    title="Aucun rendez-vous"
+                    body="Cette personne est dans votre fichier sans avoir encore de rendez-vous à son nom."
+                  />
+                ) : (
+                  <div className="list" style={{ borderTop: 0 }}>
+                    {/* Most recent first, as the API sends it, and capped at fifty on
+                        its side. Nothing is re-sorted here: a second opinion on the
+                        order would be one that can disagree with the server's. */}
+                    {customer.history.map((visit, index) => (
+                      <Visit key={`${visit.starts_at}-${index}`} visit={visit} zone={zone} />
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             <aside className="sticky-aside" style={{ display: "grid", gap: "var(--s-5)" }}>
@@ -129,26 +132,19 @@ export default async function CustomerCard({
                   <div className="dl">
                     <div className="dl__row">
                       <span className="dl__key">Téléphone</span>
-                      <span className="dl__val">
-                        <a href={`tel:${customer.phone}`}>{customer.phone}</a>
-                      </span>
+                      <span className="dl__val">{customer.phone}</span>
                     </div>
-                    {customer.email ? (
-                      <div className="dl__row">
-                        <span className="dl__key">E-mail</span>
-                        <span className="dl__val">
-                          <a href={`mailto:${customer.email}`}>{customer.email}</a>
-                        </span>
-                      </div>
-                    ) : null}
                     <div className="dl__row">
                       <span className="dl__key">Rendez-vous</span>
                       <span className="dl__val">{customer.visits}</span>
                     </div>
+                    {/* The design's fourth row is "Première visite". The oldest
+                        appointment is not served - the history stops at fifty -
+                        so the row carries the one visit date that is. */}
                     <div className="dl__row">
                       <span className="dl__key">Dernière visite</span>
                       <span className="dl__val">
-                        {customer.last_visit ? day(customer.last_visit, zone) : "Aucune"}
+                        {customer.last_visit ? longDay(customer.last_visit, zone) : "Aucune"}
                       </span>
                     </div>
                   </div>
@@ -165,7 +161,6 @@ export default async function CustomerCard({
                 <div className="card__body">
                   <form action={saveNotes}>
                     <input type="hidden" name="id" value={customer.customer_id} />
-                    <input type="hidden" name="q" value={q} />
                     <textarea
                       className="textarea"
                       style={{ minHeight: "130px" }}
@@ -173,20 +168,19 @@ export default async function CustomerCard({
                       maxLength={MAX_NOTES}
                       defaultValue={customer.notes ?? ""}
                       aria-label="Note privée"
-                      placeholder="Allergique à ce produit, arrive toujours en avance, préfère Mariam…"
                     />
-                    <div className="t-xs" style={{ marginTop: "var(--s-3)" }}>
-                      <Icon name="lock" size={16} /> Pour vous et votre équipe
-                      seulement&nbsp;: cette personne ne la verra jamais. Videz le champ
-                      pour l’effacer.
-                    </div>
                     <div style={{ marginTop: "var(--s-4)" }}>
-                      <ActionButton
-                        label="Enregistrer la note"
-                        variant="primary"
-                        block
-                        type="submit"
-                      />
+                      <button className="btn btn--primary btn--block" type="submit">
+                        <span className="btn__label--idle">Enregistrer la note</span>
+                        <span className="btn__icon--busy">
+                          <Icon name="loader" size={18} className="ico--spin" />
+                        </span>
+                        <span className="btn__label--busy">Enregistrement…</span>
+                        <span className="btn__icon--done">
+                          <Icon name="check" size={18} />
+                        </span>
+                        <span className="btn__label--done">Enregistrée</span>
+                      </button>
                     </div>
                   </form>
                 </div>
@@ -209,7 +203,7 @@ export default async function CustomerCard({
 function Visit({ visit, zone }: { visit: CustomerVisit; zone: string }) {
   return (
     <div className="list__item">
-      <span className="choice__icon">
+      <span className="choice__icon" style={{ background: "var(--bg-sunken)" }}>
         <Icon name={STATUS[visit.status]?.icon ?? "clock"} size={18} />
       </span>
       <div className="grow">
@@ -217,7 +211,7 @@ function Visit({ visit, zone }: { visit: CustomerVisit; zone: string }) {
           {visit.service_name}
         </div>
         <div className="t-xs" style={{ marginTop: "2px" }}>
-          {dateTime(visit.starts_at, zone)} · {visit.staff_name}
+          {longDay(visit.starts_at, zone)}
         </div>
       </div>
       <StatusBadge status={visit.status} />
@@ -225,9 +219,15 @@ function Visit({ visit, zone }: { visit: CustomerVisit; zone: string }) {
   );
 }
 
-/** Back to the list, and back to the search that found this person. */
-function listHref(q: string): string {
-  return q ? `/dashboard/customers?q=${encodeURIComponent(q)}` : "/dashboard/customers";
+/**
+ * A date without its weekday, which is how the design writes one here.
+ * `format.ts` only has the long form, and this line is read at a glance rather
+ * than out loud.
+ */
+function longDay(instant: string, timeZone: string): string {
+  return new Intl.DateTimeFormat("fr", { dateStyle: "long", timeZone }).format(
+    new Date(instant),
+  );
 }
 
 /**

@@ -1,7 +1,7 @@
 import { Icon } from "@/components/icon";
 import { Badge, Notice } from "@/components/ui";
 import { api } from "@/lib/api";
-import { dateTime, day } from "@/lib/format";
+import { day } from "@/lib/format";
 import type { ContestationView, ProviderProfile } from "@/lib/types";
 import { contest } from "./actions";
 
@@ -67,10 +67,18 @@ export default async function Contestation({
       <>
         <div className="appbar">
           <div className="appbar__in">
+            <a
+              className="btn btn--ghost btn--icon btn--sm hide-lg"
+              href="#sections"
+              aria-label="Menu"
+            >
+              <Icon name="menu" />
+            </a>
             <div>
               <h1 className="appbar__title">Contestation</h1>
               <div className="appbar__sub">Votre page est en ligne</div>
             </div>
+            <div className="appbar__actions"></div>
           </div>
         </div>
 
@@ -99,14 +107,22 @@ export default async function Contestation({
     <>
       <div className="appbar">
         <div className="appbar__in">
+          <a
+            className="btn btn--ghost btn--icon btn--sm hide-lg"
+            href="#sections"
+            aria-label="Menu"
+          >
+            <Icon name="menu" />
+          </a>
           <div>
             <h1 className="appbar__title">Suspension de votre établissement</h1>
             {profile.suspended_at ? (
               <div className="appbar__sub">
-                Depuis le {dateTime(profile.suspended_at, profile.timezone)}
+                Depuis le {day(profile.suspended_at, profile.timezone)}
               </div>
             ) : null}
           </div>
+          <div className="appbar__actions"></div>
         </div>
       </div>
 
@@ -119,12 +135,8 @@ export default async function Contestation({
                 today's clients are - so it is said before anything else. */}
             <Notice tone="danger" title="Votre page n’est plus visible du public">
               Elle n’apparaît plus dans les recherches et n’accepte plus de
-              nouvelles réservations, même avec le lien que vous avez donné à vos
-              clients. Les rendez-vous déjà pris restent valables et sont
-              toujours dans votre agenda&nbsp;: vous confirmez, déplacez et
-              terminez comme d’habitude. Republier votre page depuis
-              «&nbsp;Ma page&nbsp;» n’y changera rien&nbsp;: c’est la plateforme
-              qui la remet en ligne, et elle seule.
+              nouvelles réservations. Les rendez-vous déjà pris restent valables
+              et sont toujours dans votre agenda.
             </Notice>
 
             <div className="panel" style={{ marginTop: "var(--s-6)" }}>
@@ -142,6 +154,10 @@ export default async function Contestation({
                 <p className="t-body">
                   {profile.suspension_reason ?? "Aucun motif n’a été communiqué."}
                 </p>
+                {/* The design opens this list with "Signalements retenus". The
+                    profile carries no such figure, and printing one nobody sent
+                    would be inventing the count a business is about to argue
+                    against. */}
                 <div className="dl dl--lined" style={{ marginTop: "var(--s-6)" }}>
                   {profile.suspended_at ? (
                     <div className="dl__row">
@@ -179,7 +195,7 @@ export default async function Contestation({
                   {contestation.read ? (
                     <Badge label="Lue par la plateforme" tone="success" icon="check" />
                   ) : (
-                    <Badge label="Envoyée · pas encore ouverte" tone="info" icon="hourglass" />
+                    <Badge label="Envoyée · en cours de lecture" tone="info" icon="hourglass" />
                   )}
                 </div>
                 <div className="card__body">
@@ -191,10 +207,8 @@ export default async function Contestation({
                   </p>
                   <div style={{ marginTop: "var(--s-5)" }}>
                     <Notice tone="info" title="En attente d’une décision">
-                      La plateforme ne répond pas sur cette page&nbsp;: si elle
-                      vous donne raison, votre page revient en ligne et cet écran
-                      vous le dira. Vous ne pouvez envoyer qu’une seule réponse
-                      par suspension.
+                      La modération vous répondra sur votre numéro WhatsApp. Vous
+                      ne pouvez envoyer qu’une seule réponse par suspension.
                     </Notice>
                   </div>
                 </div>
@@ -229,8 +243,7 @@ export default async function Contestation({
                       />
                       <p className="field__hint">
                         Restez factuel. Décrivez ce qui a été corrigé&nbsp;: c’est
-                        ce qui pèse le plus dans la décision. Un seul message par
-                        suspension, 2 000 caractères au plus.
+                        ce qui pèse le plus dans la décision.
                       </p>
                     </div>
                   </div>
@@ -238,8 +251,15 @@ export default async function Contestation({
                     <div className="row">
                       <span className="grow"></span>
                       <button className="btn btn--primary" type="submit">
-                        <Icon name="send" size={18} className="btn__icon--idle" />
                         <span className="btn__label--idle">Envoyer ma réponse</span>
+                        <span className="btn__icon--busy">
+                          <Icon name="loader" size={18} className="ico--spin" />
+                        </span>
+                        <span className="btn__label--busy">Envoi…</span>
+                        <span className="btn__icon--done">
+                          <Icon name="check" size={18} />
+                        </span>
+                        <span className="btn__label--done">Envoyée</span>
                       </button>
                     </div>
                   </div>

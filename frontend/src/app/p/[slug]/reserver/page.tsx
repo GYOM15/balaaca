@@ -1,14 +1,16 @@
 import { Fragment } from "react";
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Icon, Scene } from "@/components/icon";
 import { Avatar, Wordmark } from "@/components/ui";
+import { SiteFooter, SiteHeader, TabBar } from "@/components/site";
 import { ApiError, publicApi } from "@/lib/api";
 import { mediaUrl, money, time } from "@/lib/format";
 import type {
   AreaList,
   AvailableSlotPage,
+  CustomerBooking,
   Fulfilment,
   LocalityList,
   PublicProvider,
@@ -25,19 +27,18 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Réserver" };
 
 /**
- * The three questions, in the order a customer answers them.
+ * The five questions, in the order a customer answers them.
  *
- * <p>The second one is the whole point of this flow existing as three screens
- * rather than one form. Asking for a person by name is a different booking
- * from taking whatever is free, and a select buried between a service and a
- * date never reads as a question at all.
- *
- * <p>Three where the mockup drew five: it split the slot into a day, an hour
- * and a details screen, and this flow takes all three in one submission - the
- * slot travels with the name and the telephone because a slot chosen and not
- * confirmed is a slot nobody took.
+ * <p>One route, five positions in the URL. `?etape=&service=&staff=&date=&time=`
+ * is the whole state of the flow, which is what makes the back button work:
+ * going back a step is going back a URL, and a customer who reloads at the
+ * fourth step is still at the fourth step with the same day. A wizard holding
+ * its answers in memory loses all of them to a phone that reclaims a tab.
  */
-const STEPS = ["Prestation", "Personne", "Créneau"] as const;
+const STEPS = ["Prestation", "Personne", "Date", "Horaire", "Coordonnées"] as const;
+
+/** The confirmation, which is a sixth position and not a sixth question. */
+const CONFIRMATION = 6;
 
 /**
  * Why the booking was refused, in words the customer can act on.
@@ -87,6 +88,9 @@ function refusalText(code: string, service: PublicServiceOffering | undefined): 
  */
 const WINDOW_DAYS = 7;
 
+/** Where the morning ends. Both mocked salons break for lunch before it. */
+const AFTERNOON = 13 * 60;
+
 /** A date as the contract writes one, and as this page puts one in a URL. */
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -95,18 +99,11 @@ type Search = {
   service?: string;
   staff?: string;
   date?: string;
+  time?: string;
+  ref?: string;
   error?: string;
 };
 
-/**
- * Booking, in three steps carried entirely by the URL.
- *
- * <p>`?etape=&service=&staff=&date=` is the whole state of the flow. Nothing
- * is held in the browser, which is what makes the back button work: going back
- * a step is going back a URL, and a customer who reloads at the third step is
- * still at the third step with the same service. A wizard holding its answers
- * in memory loses all of them to a phone that decides to reclaim a tab.
- */
 export default async function BookingFlow({
   params,
   searchParams,
@@ -125,21 +122,42 @@ export default async function BookingFlow({
   );
   const person = staff.data.find((one) => one.staff_id === query.staff);
   const hasTeam = staff.data.length > 0;
-  const step = resolveStep(query.etape, service !== undefined, hasTeam);
 
   const zone = provider.timezone;
   // Today where the salon is, not where this process runs. `from` and `to` are
   // dates in the provider's own zone by the contract's own words, and a server
   // in Paris would otherwise start the week a day early for half of every day.
   const today = calendarDay(new Date(), zone);
-  const from = query.date && DATE.test(query.date) && query.date >= today ? query.date : today;
+  const day =
+    query.date && DATE.test(query.date) && query.date >= today ? query.date : undefined;
+  // The instant the customer tapped, carried whole. It is the value the slot
+  // list minted; nothing here reads a wall clock, so nothing here converts one.
+  const slotAt =
+    query.time && !Number.isNaN(Date.parse(query.time)) ? query.time : undefined;
+
+  const step = resolveStep(query, service !== undefined, hasTeam, day, slotAt);
+
+  // The confirmation is not a step of the form: full site chrome, no progress
+  // bar, no recap. It reads the appointment back by the one handle a customer
+  // without an account has.
+  if (step === CONFIRMATION) {
+    return (
+      <Confirmation
+        provider={provider}
+        booking={await loadBooking(query.ref ?? "")}
+        service={service}
+      />
+    );
+  }
+
+  const from = day ?? today;
   const to = addDays(from, WINDOW_DAYS - 1);
 
   const [slots, places] = await Promise.all([
-    // Only once a service is chosen, and only on the step that shows them: a
+    // Only once a service is chosen, and only on the steps that show them: a
     // slot's length comes from that offering's own duration and buffers, so
     // there is no such thing as the slot list of a provider in general.
-    step === 3 && service
+    (step === 3 || step === 4) && service
       ? publicApi<AvailableSlotPage>(
           `/v1/providers/${encodeURIComponent(slug)}/available-slots`,
           {
@@ -157,7 +175,7 @@ export default async function BookingFlow({
       : null,
     // The map and the quartiers, read only when the form is going to ask for
     // an address. Every other booking happens where the business already is.
-    step === 3 && service?.fulfilment === "AT_CUSTOMER"
+    step === 5 && service?.fulfilment === "AT_CUSTOMER"
       ? loadPlaces(provider.locality?.slug)
       : null,
   ]);
@@ -166,15 +184,12 @@ export default async function BookingFlow({
   // reads a day at a time, so they are bucketed by the provider's own calendar
   // day - the day it is at the salon, which is the only day that matters here.
   const groups = slots ? groupByDay(slots.data, zone) : [];
-  const bookable = groups.length > 0;
-
-  const back = backStep(slug, step, query, hasTeam);
 
   // A step nobody will be shown is a step nobody should be told they passed:
   // with no bookable team, "avec qui" never happens and the progress bar says
-  // two, not three with a middle one mysteriously ticked.
-  const labels = hasTeam ? STEPS : [STEPS[0], STEPS[2]];
-  const current = hasTeam ? step : step === 1 ? 1 : 2;
+  // four, not five with a second one mysteriously ticked.
+  const labels = hasTeam ? [...STEPS] : [STEPS[0], STEPS[2], STEPS[3], STEPS[4]];
+  const current = hasTeam || step === 1 ? step : step - 1;
 
   const refusal = query.error ? (
     <div style={{ marginTop: "var(--s-5)" }}>
@@ -191,324 +206,65 @@ export default async function BookingFlow({
   ) : null;
 
   let content: ReactNode;
-  if (step === 3 && service) {
-    const nextWeek = stepHref(slug, {
-      etape: 3,
-      service: service.service_offering_id,
-      staff: person?.staff_id,
-      date: addDays(from, WINDOW_DAYS),
-    });
-
+  if (step === 5 && service && day && slotAt) {
     content = (
-      <>
-        <p className="t-overline">
-          Étape {current} sur {labels.length}
-        </p>
-        <h1 className="t-h2" style={{ marginTop: "var(--s-2)" }}>
-          Quel créneau vous convient ?
-        </h1>
-        <p className="t-body" style={{ marginTop: "var(--s-3)", maxWidth: "58ch" }}>
-          Seuls les créneaux réservables sont affichés. Ce qui est déjà pris
-          n'est pas publié.
-        </p>
-        {refusal}
-
-        {/* One form, one submission. The slot travels with the name and the
-            telephone because they are one decision: a slot chosen and then not
-            confirmed is a slot nobody took. */}
-        <form
-          action={book}
-          className="stack"
-          style={{ "--stack-gap": "var(--s-6)" } as CSSProperties}
-        >
-          <input type="hidden" name="slug" value={slug} />
-          <input
-            type="hidden"
-            name="service_offering_id"
-            value={service.service_offering_id}
-          />
-          {/* Rendered only when someone was asked for. An empty field would post
-              an empty staff_id, and the contract's answer to "nobody in
-              particular" is an absent field, never a null. */}
-          {person ? <input type="hidden" name="staff_id" value={person.staff_id} /> : null}
-          {/* The week being shown, so a refusal comes back to this same week. */}
-          <input type="hidden" name="date" value={from} />
-
-          {/* Above the slots rather than beside the fields, where the mockup
-              put it: on a drop-off the sentence changes what the times below
-              mean, and a customer who reads the handover as the length of the
-              repair comes back to a workshop that has not started. */}
-          <ModeNote service={service} />
-
-          <div>
-            <div className="row row--between" style={{ marginBottom: "var(--s-4)" }}>
-              <span className="t-strong">{windowLabel(from, to)}</span>
-              <span className="row" style={{ gap: "var(--s-1)" }}>
-                {from > today ? (
-                  <Link
-                    className="btn btn--ghost btn--sm btn--icon"
-                    aria-label="Semaine précédente"
-                    href={stepHref(slug, {
-                      etape: 3,
-                      service: service.service_offering_id,
-                      staff: person?.staff_id,
-                      date: laterOf(today, addDays(from, -WINDOW_DAYS)),
-                    })}
-                  >
-                    <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
-                      <Icon name="chevron-left" size={18} />
-                    </span>
-                  </Link>
-                ) : null}
-                <Link
-                  className="btn btn--ghost btn--sm btn--icon"
-                  aria-label="Semaine suivante"
-                  href={nextWeek}
-                >
-                  <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
-                    <Icon name="chevron-right" size={18} />
-                  </span>
-                </Link>
-              </span>
-            </div>
-
-            {bookable ? (
-              <>
-                {/* Days the week actually has room in, and how much. They jump
-                    to their own group rather than reloading: every slot of the
-                    week is already on this page, and a day is a heading in it
-                    rather than another request. */}
-                <div className="daystrip">
-                  {groups.map((group) => (
-                    <a className="day" key={group.date} href={`#creneaux-${group.date}`}>
-                      <span className="day__dow">{dayOfWeek(group.date)}</span>
-                      <span className="day__num">{dayNumber(group.date)}</span>
-                      <span className="day__free">
-                        {group.slots.length} libre{group.slots.length > 1 ? "s" : ""}
-                      </span>
-                    </a>
-                  ))}
-                </div>
-                <p className="t-xs" style={{ marginTop: "var(--s-4)" }}>
-                  <Icon name="info" size={16} /> Les jours de fermeture et les
-                  congés du professionnel n'apparaissent pas.
-                </p>
-
-                <div style={{ marginTop: "var(--s-6)" }}>
-                  {groups.map((group) => (
-                    <div
-                      className="slots__group"
-                      id={`creneaux-${group.date}`}
-                      key={group.date}
-                    >
-                      <div className="slots__label">
-                        <Icon name="calendar" size={16} /> {dayLabel(group.date)}
-                      </div>
-                      <div
-                        className="slots"
-                        role="group"
-                        aria-label={`Créneaux du ${dayLabel(group.date)}`}
-                      >
-                        {group.slots.map((slot) => (
-                          <label className="slot choice" key={slot.starts_at}>
-                            {/* `.slot` draws the tile, `.choice` is what the
-                                stylesheet gives a radio: the checked state and
-                                the focus ring the mockup's link had for free. */}
-                            <input
-                              type="radio"
-                              name="starts_at"
-                              value={slot.starts_at}
-                              required
-                            />
-                            <span>{time(slot.starts_at, zone)}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {slots?.next_cursor ? (
-                  <p className="t-xs" style={{ marginTop: "var(--s-4)" }}>
-                    Cette semaine compte plus de créneaux que la page n'en
-                    montre. Les jours suivants en ont d'autres.
-                  </p>
-                ) : null}
-              </>
-            ) : (
-              <div className="empty empty--tight">
-                <Scene name="chair" className="scene-ill scene-ill--sm" />
-                <div className="empty__title">Rien de libre cette semaine</div>
-                <p className="empty__body">
-                  {person
-                    ? `${person.display_name} n'a plus de place du ${dayLabel(from)} au ${dayLabel(to)}. La semaine suivante est souvent plus ouverte, ou revenez à l'étape précédente pour ne demander personne en particulier.`
-                    : `Tout est pris du ${dayLabel(from)} au ${dayLabel(to)}. Essayez la semaine suivante.`}
-                </p>
-                <div className="empty__actions">
-                  <Link className="btn btn--secondary" href={nextWeek}>
-                    <span className="btn__label--idle">Voir la semaine suivante</span>
-                    <Icon name="chevron-right" size={18} className="ico--arrow" />
-                  </Link>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {bookable ? (
-            <>
-              <div className="panel">
-                <div className="panel__head">
-                  <div>
-                    <div className="panel__title">Qui réserve</div>
-                    <div className="panel__sub">
-                      Ces informations servent uniquement au professionnel pour
-                      vous accueillir et vous prévenir. Aucun compte n'est créé.
-                    </div>
-                  </div>
-                </div>
-                <div className="card__body">
-                  <div className="field">
-                    <label className="field__label" htmlFor="bk-name">
-                      Nom et prénom
-                      <span className="field__req" aria-hidden="true">
-                        *
-                      </span>
-                    </label>
-                    <input
-                      className="input"
-                      id="bk-name"
-                      name="full_name"
-                      type="text"
-                      required
-                      maxLength={120}
-                      autoComplete="name"
-                      placeholder="Ex. Aminata Condé"
-                    />
-                  </div>
-
-                  {/* No "+224" prefix, which the mockup drew. The API normalises
-                      the number from the PROVIDER's own country, and this page
-                      has no country to read - printing one dialling code would
-                      be right in Conakry and wrong the first time a business is
-                      anywhere else. */}
-                  <div className="field">
-                    <label className="field__label" htmlFor="bk-phone">
-                      Téléphone
-                      <span className="field__req" aria-hidden="true">
-                        *
-                      </span>
-                    </label>
-                    <input
-                      className="input"
-                      id="bk-phone"
-                      name="phone"
-                      type="tel"
-                      required
-                      maxLength={24}
-                      inputMode="tel"
-                      autoComplete="tel"
-                      placeholder="6XX XX XX XX"
-                      aria-describedby="bk-phone-hint"
-                    />
-                    <p className="field__hint" id="bk-phone-hint">
-                      Le professionnel vous appelle sur ce numéro en cas
-                      d'imprévu.
-                    </p>
-                  </div>
-
-                  <div className="field">
-                    <label className="field__label" htmlFor="bk-note">
-                      Un mot pour le professionnel{" "}
-                      <span className="field__optional">facultatif</span>
-                    </label>
-                    <textarea
-                      className="textarea"
-                      id="bk-note"
-                      name="customer_note"
-                      rows={3}
-                      maxLength={500}
-                      placeholder="Ex. j'apporte mes propres mèches."
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Only on a call-out: the contract refuses an address on
-                  anything else, so a block shown always would turn every salon
-                  booking into a 422. */}
-              {places ? <AddressFields places={places} /> : null}
-
-              <div
-                className="card card--pad"
-                style={{ background: "var(--bg-sunken)", boxShadow: "none" }}
-              >
-                <label className="check">
-                  <input type="checkbox" required />
-                  <span className="check__box">
-                    <Icon name="check" />
-                  </span>
-                  <span className="check__text">
-                    <strong>
-                      J'accepte que mon nom et mon numéro soient transmis à{" "}
-                      {provider.business_name}
-                    </strong>
-                    <span>
-                      Ils sont conservés par ce professionnel, pas par Balaaca.
-                    </span>
-                  </span>
-                </label>
-              </div>
-
-              <div className="row row--wrap" style={{ gap: "var(--s-3)" }}>
-                <Link className="btn btn--ghost" href={back.href}>
-                  <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
-                    <Icon name="arrow-left" size={18} />
-                  </span>
-                  <span className="btn__label--idle">Retour</span>
-                </Link>
-                <span className="grow" />
-                <button className="btn btn--primary btn--lg" type="submit">
-                  <span className="btn__label--idle">
-                    {service.price
-                      ? `Confirmer · ${money(service.price)}`
-                      : "Confirmer la réservation"}
-                  </span>
-                </button>
-              </div>
-
-              {service.price ? (
-                <p className="t-xs">
-                  Le prix est figé maintenant. Il ne changera pas, même si le
-                  professionnel modifie son tarif ensuite.
-                </p>
-              ) : null}
-            </>
-          ) : null}
-        </form>
-      </>
-    );
-  } else if (step === 1) {
-    content = (
-      <ServiceStep
+      <DetailsStep
         slug={slug}
         provider={provider}
-        chosen={query.service}
-        hasTeam={hasTeam}
+        service={service}
+        person={person}
+        day={day}
+        slotAt={slotAt}
+        places={places}
         labels={labels}
+        current={current}
+      />
+    );
+  } else if (step === 4 && service && day) {
+    content = (
+      <TimeStep
+        slug={slug}
+        service={service}
+        person={person}
+        day={day}
+        chosen={slotAt}
+        slots={groups.find((group) => group.date === day)?.slots ?? []}
+        zone={zone}
+        labels={labels}
+        current={current}
         refusal={refusal}
       />
     );
-  } else {
+  } else if (step === 3 && service) {
+    content = (
+      <DateStep
+        slug={slug}
+        service={service}
+        person={person}
+        groups={groups}
+        active={day}
+        from={from}
+        to={to}
+        today={today}
+        hasTeam={hasTeam}
+        truncated={Boolean(slots?.next_cursor)}
+        labels={labels}
+        current={current}
+      />
+    );
+  } else if (step === 2) {
     content = (
       <StaffStep
         slug={slug}
         service={query.service ?? ""}
         staff={staff}
         chosen={query.staff}
-        back={back.href}
         labels={labels}
-        refusal={refusal}
       />
+    );
+  } else {
+    content = (
+      <ServiceStep slug={slug} provider={provider} hasTeam={hasTeam} labels={labels} refusal={refusal} />
     );
   }
 
@@ -521,6 +277,16 @@ export default async function BookingFlow({
             <Link className="hdr__link" href={`/p/${encodeURIComponent(slug)}`}>
               Quitter
             </Link>
+            <span className="t-xs" style={{ display: "none" }} data-show-md>
+              Besoin d’aide{"\u00A0"}?{" "}
+              <Link
+                className="link"
+                href="/professionnels/comment-ca-marche"
+                style={{ marginLeft: ".25rem" }}
+              >
+                Comment ça marche
+              </Link>
+            </span>
           </div>
         </div>
       </header>
@@ -543,6 +309,9 @@ export default async function BookingFlow({
                 person={person}
                 step={step}
                 hasTeam={hasTeam}
+                day={day}
+                slotAt={slotAt}
+                zone={zone}
               />
               <p
                 className="t-xs"
@@ -553,9 +322,9 @@ export default async function BookingFlow({
                   alignItems: "flex-start",
                 }}
               >
-                <Icon name="lock" size={16} />{" "}
+                <Icon name="lock" size={16} />
                 <span>
-                  Aucun compte n'est créé. Votre numéro sert uniquement à ce
+                  Aucun compte n’est créé. Votre numéro sert uniquement à ce
                   rendez-vous et reste chez {provider.business_name}.
                 </span>
               </p>
@@ -567,26 +336,23 @@ export default async function BookingFlow({
   );
 }
 
-/* --- Steps --------------------------------------------------------------- */
+/* --- Step 1: the service ------------------------------------------------- */
 
-/** Step one: what is being booked, with its duration and its price. */
 function ServiceStep({
   slug,
   provider,
-  chosen,
   hasTeam,
   labels,
   refusal,
 }: {
   slug: string;
   provider: PublicProvider;
-  chosen: string | undefined;
   hasTeam: boolean;
   labels: readonly string[];
   refusal: ReactNode;
 }) {
-  // Nobody is published as bookable, so "with whom" has a single answer and
-  // asking it would be a screen the customer taps through. Skip to the slots.
+  // Nobody is published as bookable, so "avec qui" has a single answer and
+  // asking it would be a screen the customer taps through. Skip to the days.
   const next = hasTeam ? 2 : 3;
 
   return (
@@ -604,9 +370,9 @@ function ServiceStep({
         {provider.services.length === 0 ? (
           <div className="empty empty--tight">
             <Scene name="notebook" className="scene-ill scene-ill--sm" />
-            <div className="empty__title">Rien à réserver pour l'instant</div>
+            <div className="empty__title">Rien à réserver pour l’instant</div>
             <p className="empty__body">
-              Ce professionnel n'a pas encore publié de prestation. Sa page
+              Ce professionnel n’a pas encore publié de prestation. Sa page
               indique comment le joindre.
             </p>
             <div className="empty__actions">
@@ -627,11 +393,23 @@ function ServiceStep({
                 className="svc"
                 style={{ textDecoration: "none", color: "inherit" }}
                 href={stepHref(slug, { etape: next, service: one.service_offering_id })}
-                aria-current={one.service_offering_id === chosen ? "true" : undefined}
               >
                 <div className="svc__photo">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  {photo ? <img src={photo} alt="" loading="lazy" /> : null}
+                  {photo ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={photo} alt="" loading="lazy" />
+                  ) : (
+                    <span
+                      style={{
+                        display: "grid",
+                        placeItems: "center",
+                        height: "100%",
+                        color: "var(--p-warm-400)",
+                      }}
+                    >
+                      <Icon name="image" size={24} />
+                    </span>
+                  )}
                 </div>
                 <div className="grow">
                   <h2 className="svc__name">{one.name}</h2>
@@ -640,19 +418,21 @@ function ServiceStep({
                   ) : null}
                   <div className="svc__facts">
                     <ModeBadge fulfilment={one.fulfilment} />
-                    <span className="fact">
-                      <Icon name="clock" />
-                      {duration(one.duration_minutes)}
-                    </span>
                     {/* Only a drop-off carries one, which is what makes it a
                         drop-off: the server derives the fulfilment from this
                         very field. */}
                     {one.turnaround_hours ? (
-                      <span className="fact">
+                      <span className="fact fact--strong">
                         <Icon name="hourglass" />
                         Prêt sous {turnaround(one.turnaround_hours)}
                       </span>
                     ) : null}
+                    <span className="fact">
+                      <Icon name="clock" />
+                      {one.fulfilment === "DROP_OFF"
+                        ? `Remise ${duration(one.duration_minutes)}`
+                        : duration(one.duration_minutes)}
+                    </span>
                   </div>
                 </div>
                 <div className="svc__cta">
@@ -661,8 +441,7 @@ function ServiceStep({
                       nothing to print and no "prix non communiqué" to invent. */}
                   {one.price ? <span className="t-price">{money(one.price)}</span> : null}
                   <span className="btn btn--secondary">
-                    <span className="btn__label--idle">Choisir</span>
-                    <Icon name="chevron-right" size={16} />
+                    Choisir <Icon name="chevron-right" size={18} />
                   </span>
                 </div>
               </Link>
@@ -674,34 +453,28 @@ function ServiceStep({
   );
 }
 
+/* --- Step 2: the person -------------------------------------------------- */
+
 /**
- * Step two: with whom.
+ * Radios and a button rather than links.
  *
- * <p>"Peu importe" is the default and it stays the default, because it is the
- * answer that gets a customer seen soonest. Naming somebody is offered, and
- * the sentence under the heading says what it costs - which is the difference
- * a select at the bottom of a form never manages to say.
- *
- * <p>Links rather than the mockup's radios: the answer is a step in the URL,
- * so choosing IS navigating and there is nothing left for a "Continuer" button
- * to do.
+ * <p>The form is a GET to this same route, so the answer still ends up in the
+ * URL and the back button still works - the difference is that "peu importe"
+ * is a choice the customer sees selected, which a grid of links cannot show.
+ * Nothing here runs in the browser.
  */
 function StaffStep({
   slug,
   service,
   staff,
   chosen,
-  back,
   labels,
-  refusal,
 }: {
   slug: string;
   service: string;
   staff: PublicStaffList;
   chosen: string | undefined;
-  back: string;
   labels: readonly string[];
-  refusal: ReactNode;
 }) {
   const named = staff.data.some((one) => one.staff_id === chosen);
 
@@ -712,59 +485,542 @@ function StaffStep({
         Avec qui ?
       </h1>
       <p className="t-body" style={{ marginTop: "var(--s-3)", maxWidth: "58ch" }}>
-        Demander une personne en particulier est une promesse différente : si
-        son créneau part, il ne sera pas remplacé par celui d'un collègue.
+        Vous pouvez laisser le salon choisir : cela ouvre davantage de créneaux.
       </p>
-      {refusal}
 
-      <div className="choice-grid" style={{ marginTop: "var(--s-6)" }}>
-        <Link
-          className="choice"
-          href={stepHref(slug, { etape: 3, service })}
-          aria-current={named ? undefined : "true"}
-        >
-          <span className="choice__head">
-            <span className="choice__icon">
-              <Icon name="users" />
-            </span>
-            <span>
-              <span className="choice__title">Peu importe</span>
-              <span className="choice__desc">
-                Vous voyez tous les créneaux libres de l'équipe, et le
-                professionnel vous confie à qui est disponible.
-              </span>
-            </span>
-          </span>
-        </Link>
+      <form method="get" style={{ marginTop: "var(--s-6)" }}>
+        {/* The rest of the position, which a GET form would otherwise drop:
+            the browser replaces the whole query string with these fields. */}
+        <input type="hidden" name="etape" value="3" />
+        <input type="hidden" name="service" value={service} />
 
-        {staff.data.map((one) => (
-          <Link
-            key={one.staff_id}
-            className="choice"
-            href={stepHref(slug, { etape: 3, service, staff: one.staff_id })}
-            aria-current={one.staff_id === chosen ? "true" : undefined}
-          >
+        <div className="choice-grid" data-reveal-group="staff">
+          <label className="choice">
+            <input type="radio" name="staff" value="" defaultChecked={!named} />
+            <span className="choice__mark">
+              <Icon name="check-circle" />
+            </span>
             <span className="choice__head">
-              <Avatar name={one.display_name} />
+              <span className="choice__icon">
+                <Icon name="users" />
+              </span>
               <span>
-                <span className="choice__title">{one.display_name}</span>
-                <span className="choice__desc">
-                  Seuls ses créneaux à elle ou à lui vous seront proposés.
+                <span className="choice__title">Peu importe</span>
+                <span className="choice__desc" style={{ marginTop: 0 }}>
+                  La première personne disponible
                 </span>
               </span>
             </span>
-          </Link>
-        ))}
-      </div>
+          </label>
 
-      <div className="row" style={{ marginTop: "var(--s-8)", gap: "var(--s-3)" }}>
-        <Link className="btn btn--ghost" href={back}>
-          <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
-            <Icon name="arrow-left" size={18} />
+          {staff.data.map((one) => (
+            <label className="choice" key={one.staff_id}>
+              <input
+                type="radio"
+                name="staff"
+                value={one.staff_id}
+                defaultChecked={one.staff_id === chosen}
+              />
+              <span className="choice__mark">
+                <Icon name="check-circle" />
+              </span>
+              <span className="choice__head">
+                <Avatar name={one.display_name} />
+                <span>
+                  <span className="choice__title">{one.display_name}</span>
+                </span>
+              </span>
+            </label>
+          ))}
+        </div>
+
+        <div className="row" style={{ marginTop: "var(--s-8)", gap: "var(--s-3)" }}>
+          <Link className="btn btn--ghost" href={stepHref(slug, { etape: 1 })}>
+            <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
+              <Icon name="arrow-left" size={18} />
+            </span>
+            <span className="btn__label--idle">Retour</span>
+          </Link>
+          <span className="toolbar__spacer grow" />
+          <button className="btn btn--primary" type="submit">
+            <span className="btn__label--idle">Continuer</span>
+            <Icon name="arrow-right" size={18} className="ico--arrow" />
+          </button>
+        </div>
+      </form>
+    </>
+  );
+}
+
+/* --- Step 3: the day ----------------------------------------------------- */
+
+function DateStep({
+  slug,
+  service,
+  person,
+  groups,
+  active,
+  from,
+  to,
+  today,
+  hasTeam,
+  truncated,
+  labels,
+  current,
+}: {
+  slug: string;
+  service: PublicServiceOffering;
+  person: PublicStaffMember | undefined;
+  groups: { date: string; slots: Slot[] }[];
+  active: string | undefined;
+  from: string;
+  to: string;
+  today: string;
+  hasTeam: boolean;
+  truncated: boolean;
+  labels: readonly string[];
+  current: number;
+}) {
+  const week = (date: string) =>
+    stepHref(slug, {
+      etape: 3,
+      service: service.service_offering_id,
+      staff: person?.staff_id,
+      date,
+    });
+  const nextWeek = week(addDays(from, WINDOW_DAYS));
+
+  return (
+    <>
+      <p className="t-overline">
+        Étape {current} sur {labels.length}
+      </p>
+      <h1 className="t-h2" style={{ marginTop: "var(--s-2)" }}>
+        Quel jour ?
+      </h1>
+      <p className="t-body" style={{ marginTop: "var(--s-3)", maxWidth: "58ch" }}>
+        Seuls les jours où il reste de la place sont proposés.
+      </p>
+
+      <div style={{ marginTop: "var(--s-6)" }}>
+        <div className="row row--between" style={{ marginBottom: "var(--s-4)" }}>
+          <span className="t-strong">{windowLabel(from, to)}</span>
+          <span className="row" style={{ gap: "var(--s-1)" }}>
+            {/* Absent rather than dead at the start of the window: a control
+                that answers with the page it is on is worse than none. */}
+            {from > today ? (
+              <Link
+                className="btn btn--ghost btn--sm btn--icon"
+                aria-label="Semaine précédente"
+                href={week(laterOf(today, addDays(from, -WINDOW_DAYS)))}
+              >
+                <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
+                  <Icon name="chevron-left" size={18} />
+                </span>
+              </Link>
+            ) : null}
+            <Link
+              className="btn btn--ghost btn--sm btn--icon"
+              aria-label="Semaine suivante"
+              href={nextWeek}
+            >
+              <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
+                <Icon name="chevron-right" size={18} />
+              </span>
+            </Link>
           </span>
-          <span className="btn__label--idle">Retour</span>
-        </Link>
+        </div>
+
+        {groups.length > 0 ? (
+          <>
+            <div className="daystrip">
+              {groups.map((group) => (
+                <Link
+                  key={group.date}
+                  className={group.date === active ? "day is-active" : "day"}
+                  aria-current={group.date === active ? "true" : undefined}
+                  href={stepHref(slug, {
+                    etape: 4,
+                    service: service.service_offering_id,
+                    staff: person?.staff_id,
+                    date: group.date,
+                  })}
+                >
+                  <span className="day__dow">{dayOfWeek(group.date)}</span>
+                  <span className="day__num">{dayNumber(group.date)}</span>
+                  <span className="day__free">
+                    {group.slots.length} libre{group.slots.length > 1 ? "s" : ""}
+                  </span>
+                </Link>
+              ))}
+            </div>
+            <p className="t-xs" style={{ marginTop: "var(--s-4)" }}>
+              <Icon name="info" size={16} /> Les jours de fermeture et les congés
+              du salon n’apparaissent pas.
+            </p>
+            {truncated ? (
+              <p className="t-xs" style={{ marginTop: "var(--s-4)" }}>
+                Cette semaine compte plus de créneaux que la page n’en montre.
+                Les jours suivants en ont d’autres.
+              </p>
+            ) : null}
+          </>
+        ) : (
+          <div className="empty empty--tight">
+            <Scene name="chair" className="scene-ill scene-ill--sm" />
+            <div className="empty__title">Rien de libre cette semaine</div>
+            <p className="empty__body">
+              {person
+                ? `${person.display_name} n’a plus de place du ${dayLabel(from)} au ${dayLabel(to)}. La semaine suivante est souvent plus ouverte, ou revenez à l’étape précédente pour ne demander personne en particulier.`
+                : `Tout est pris du ${dayLabel(from)} au ${dayLabel(to)}. Essayez la semaine suivante.`}
+            </p>
+            <div className="empty__actions">
+              <Link className="btn btn--secondary" href={nextWeek}>
+                <span className="btn__label--idle">Voir la semaine suivante</span>
+                <Icon name="chevron-right" size={18} className="ico--arrow" />
+              </Link>
+            </div>
+          </div>
+        )}
+
+        <div className="row" style={{ marginTop: "var(--s-8)" }}>
+          <Link
+            className="btn btn--ghost"
+            href={stepHref(slug, {
+              etape: hasTeam ? 2 : 1,
+              service: service.service_offering_id,
+              staff: person?.staff_id,
+            })}
+          >
+            <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
+              <Icon name="arrow-left" size={18} />
+            </span>
+            <span className="btn__label--idle">Retour</span>
+          </Link>
+        </div>
       </div>
+    </>
+  );
+}
+
+/* --- Step 4: the hour ---------------------------------------------------- */
+
+/**
+ * The hours of one day, and where a refusal lands.
+ *
+ * <p>A slot taken while the customer was typing comes back here rather than to
+ * the form they were on: the list below has just been re-read, so the sentence
+ * "les créneaux ci-dessous sont à jour" is true when it is printed.
+ */
+function TimeStep({
+  slug,
+  service,
+  person,
+  day,
+  chosen,
+  slots,
+  zone,
+  labels,
+  current,
+  refusal,
+}: {
+  slug: string;
+  service: PublicServiceOffering;
+  person: PublicStaffMember | undefined;
+  day: string;
+  chosen: string | undefined;
+  slots: Slot[];
+  zone: string;
+  labels: readonly string[];
+  current: number;
+  refusal: ReactNode;
+}) {
+  const morning = slots.filter((slot) => minutesOfDay(slot.starts_at, zone) < AFTERNOON);
+  const afternoon = slots.filter(
+    (slot) => minutesOfDay(slot.starts_at, zone) >= AFTERNOON,
+  );
+
+  const tile = (slot: Slot) => (
+    <Link
+      key={slot.starts_at}
+      className={slot.starts_at === chosen ? "slot is-selected" : "slot"}
+      aria-current={slot.starts_at === chosen ? "true" : undefined}
+      href={stepHref(slug, {
+        etape: 5,
+        service: service.service_offering_id,
+        staff: person?.staff_id,
+        date: day,
+        time: slot.starts_at,
+      })}
+    >
+      {time(slot.starts_at, zone)}
+    </Link>
+  );
+
+  return (
+    <>
+      <p className="t-overline">
+        Étape {current} sur {labels.length}
+      </p>
+      <h1 className="t-h2" style={{ marginTop: "var(--s-2)" }}>
+        Quel horaire, {dayLabel(day)} ?
+      </h1>
+      <p className="t-body" style={{ marginTop: "var(--s-3)", maxWidth: "58ch" }}>
+        Seuls les créneaux réservables sont affichés. Ce qui est déjà pris n’est
+        pas publié.
+      </p>
+      {refusal}
+
+      <div style={{ marginTop: "var(--s-6)" }}>
+        {/* Above the hours, where the mockup put it: on a drop-off the sentence
+            changes what the times below mean, and a customer who reads the
+            handover as the length of the work comes back to a workshop that
+            has not started. */}
+        {service.fulfilment === "DROP_OFF" ? (
+          <div style={{ marginBottom: "var(--s-6)" }}>
+            <ModeNote service={service} />
+          </div>
+        ) : null}
+
+        {slots.length > 0 ? (
+          <>
+            {morning.length > 0 ? (
+              <div className="slots__group">
+                <div className="slots__label">
+                  <Icon name="sun" size={16} /> Matin
+                </div>
+                <div className="slots">{morning.map(tile)}</div>
+              </div>
+            ) : null}
+            {afternoon.length > 0 ? (
+              <div className="slots__group">
+                <div className="slots__label">
+                  <Icon name="clock" size={16} /> Après-midi
+                </div>
+                <div className="slots">{afternoon.map(tile)}</div>
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <div className="empty empty--tight">
+            <Scene name="chair" className="scene-ill scene-ill--sm" />
+            <div className="empty__title">Plus rien de libre ce jour-là</div>
+            <p className="empty__body">
+              Les créneaux de {dayLabel(day)} sont tous pris. Choisissez un autre
+              jour : la liste est à jour.
+            </p>
+          </div>
+        )}
+
+        <div className="row" style={{ marginTop: "var(--s-8)" }}>
+          <Link
+            className="btn btn--ghost"
+            href={stepHref(slug, {
+              etape: 3,
+              service: service.service_offering_id,
+              staff: person?.staff_id,
+              date: day,
+            })}
+          >
+            <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
+              <Icon name="arrow-left" size={18} />
+            </span>
+            <span className="btn__label--idle">Changer de jour</span>
+          </Link>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* --- Step 5: who is booking ---------------------------------------------- */
+
+function DetailsStep({
+  slug,
+  provider,
+  service,
+  person,
+  day,
+  slotAt,
+  places,
+  labels,
+  current,
+}: {
+  slug: string;
+  provider: PublicProvider;
+  service: PublicServiceOffering;
+  person: PublicStaffMember | undefined;
+  day: string;
+  slotAt: string;
+  places: Places | null;
+  labels: readonly string[];
+  current: number;
+}) {
+  return (
+    <>
+      <p className="t-overline">
+        Étape {current} sur {labels.length}
+      </p>
+      <h1 className="t-h2" style={{ marginTop: "var(--s-2)" }}>
+        Vos coordonnées
+      </h1>
+      <p className="t-body" style={{ marginTop: "var(--s-3)", maxWidth: "58ch" }}>
+        Elles servent au prestataire pour vous reconnaître et vous prévenir.
+        Rien de plus.
+      </p>
+
+      <form action={book} className="stack" style={{ marginTop: "var(--s-6)" }}>
+        <input type="hidden" name="slug" value={slug} />
+        <input
+          type="hidden"
+          name="service_offering_id"
+          value={service.service_offering_id}
+        />
+        {/* Rendered only when someone was asked for. An empty field would post
+            an empty staff_id, and the contract's answer to "nobody in
+            particular" is an absent field, never a null. */}
+        {person ? <input type="hidden" name="staff_id" value={person.staff_id} /> : null}
+        {/* The hour chosen at the step before, carried whole. */}
+        <input type="hidden" name="starts_at" value={slotAt} />
+        {/* The day being shown, so a refusal comes back to this same day. */}
+        <input type="hidden" name="date" value={day} />
+
+        <div className="panel">
+          <div className="panel__head">
+            <div>
+              <div className="panel__title">Qui réserve</div>
+            </div>
+          </div>
+          <div className="card__body">
+            <div className="field">
+              <label className="field__label" htmlFor="bk-name">
+                Nom et prénom{" "}
+                <span className="field__req" aria-hidden="true">
+                  *
+                </span>
+              </label>
+              <input
+                className="input"
+                type="text"
+                id="bk-name"
+                name="full_name"
+                placeholder="Aminata Diallo"
+                required
+                maxLength={120}
+                autoComplete="name"
+              />
+            </div>
+
+            {/* No "+224" prefix, which the mockup drew. The API normalises the
+                number from the PROVIDER's own country, and this page has no
+                country to read - printing one dialling code would be right in
+                Conakry and wrong the first time a business is anywhere else. */}
+            <div className="field">
+              <label className="field__label" htmlFor="bk-phone">
+                Téléphone{" "}
+                <span className="field__req" aria-hidden="true">
+                  *
+                </span>
+              </label>
+              <input
+                className="input"
+                type="tel"
+                id="bk-phone"
+                name="phone"
+                placeholder="622 00 00 00"
+                required
+                maxLength={24}
+                inputMode="tel"
+                autoComplete="tel"
+                aria-describedby="bk-phone-hint"
+              />
+              <p className="field__hint" id="bk-phone-hint">
+                Le prestataire vous joindra par WhatsApp sur ce numéro.
+              </p>
+            </div>
+
+            <div className="field">
+              <label className="field__label" htmlFor="bk-note">
+                Un mot pour le prestataire{" "}
+                <span className="field__optional">facultatif</span>
+              </label>
+              <textarea
+                className="textarea"
+                id="bk-note"
+                name="customer_note"
+                maxLength={500}
+                placeholder="Je viens avec ma fille de 6 ans, prévoir deux places."
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Where the provider is going, or what happens where they already are.
+            The contract refuses an address on anything but a call-out, so the
+            block shown always would turn every salon booking into a 422. */}
+        {places ? (
+          <AddressFields places={places} />
+        ) : (
+          <div>
+            <ModeNote service={service} />
+          </div>
+        )}
+
+        <div
+          className="card card--pad"
+          style={{ background: "var(--bg-sunken)", boxShadow: "none" }}
+        >
+          <label className="check">
+            <input type="checkbox" required />
+            <span className="check__box">
+              <Icon name="check" />
+            </span>
+            <span className="check__text">
+              <strong>
+                J’accepte que mon nom et mon numéro soient transmis à{" "}
+                {provider.business_name}
+              </strong>
+              <span>
+                Ils sont conservés par ce prestataire, pas par Balaaca. Voir la
+                page Confidentialité.
+              </span>
+            </span>
+          </label>
+        </div>
+
+        <div className="row row--wrap" style={{ gap: "var(--s-3)" }}>
+          <Link
+            className="btn btn--ghost"
+            href={stepHref(slug, {
+              etape: 4,
+              service: service.service_offering_id,
+              staff: person?.staff_id,
+              date: day,
+              time: slotAt,
+            })}
+          >
+            <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
+              <Icon name="arrow-left" size={18} />
+            </span>
+            <span className="btn__label--idle">Retour</span>
+          </Link>
+          <span className="grow" />
+          <button className="btn btn--primary btn--lg" type="submit">
+            <span className="btn__label--idle">
+              {service.price
+                ? `Confirmer · ${money(service.price)}`
+                : "Confirmer la réservation"}
+            </span>
+          </button>
+        </div>
+
+        {service.price ? (
+          <p className="t-xs">
+            Le prix est figé maintenant. Il ne changera pas, même si le salon
+            modifie son tarif ensuite.
+          </p>
+        ) : null}
+      </form>
     </>
   );
 }
@@ -772,10 +1028,9 @@ function StaffStep({
 /**
  * Where the provider is going.
  *
- * <p>Part of the third step rather than a fourth one. The address is not a
- * decision the customer makes - it is where they already are - and a screen
- * that asks for it on its own would put a wall between choosing a time and
- * confirming, for a question that is three fields long.
+ * <p>Part of the fifth step rather than a sixth one, exactly as the mockup
+ * drew it: the address is not a decision the customer makes - it is where they
+ * already are - and it replaces the note about the mode rather than joining it.
  *
  * <p>Nothing here asks for a house number or a street, because most of Conakry
  * has neither. The one required field is the sentence a tradesman would ask
@@ -787,10 +1042,9 @@ function AddressFields({ places }: { places: Places }) {
     <div className="panel">
       <div className="panel__head">
         <div>
-          <div className="panel__title">Où doit-on venir ?</div>
+          <div className="panel__title">Où le prestataire doit-il se rendre</div>
           <div className="panel__sub">
-            Aucune coordonnée GPS n'est demandée ni enregistrée. Ces indications
-            ne servent qu'à ce rendez-vous.
+            Aucune coordonnée GPS n’est demandée ni enregistrée.
           </div>
         </div>
         <ModeBadge fulfilment="AT_CUSTOMER" />
@@ -806,7 +1060,7 @@ function AddressFields({ places }: { places: Places }) {
                 an answer the customer gave, and it is wrong the first time a
                 plumber in Ratoma is called out to Matoto. */}
             <select className="select" id="bk-locality" name="locality_slug" defaultValue="">
-              <option value="">Je préfère ne pas préciser</option>
+              <option value="">Choisir</option>
               {groupLocalities(places.localities.data).map(({ region, children }) => (
                 <optgroup key={region.slug} label={region.label_fr}>
                   {children.map((l) => (
@@ -829,13 +1083,13 @@ function AddressFields({ places }: { places: Places }) {
                 - which is exactly what the server accepts. */}
             <input
               className="input"
+              type="text"
               id="bk-area"
               name="area"
-              type="text"
+              placeholder="Nongo"
               list="bk-quartiers"
               maxLength={80}
               autoComplete="off"
-              placeholder="Ex. Nongo"
             />
             <p className="field__hint">Saisie libre.</p>
           </div>
@@ -849,7 +1103,7 @@ function AddressFields({ places }: { places: Places }) {
 
         <div className="field">
           <label className="field__label" htmlFor="bk-directions">
-            Comment vous trouver
+            Comment vous trouver{" "}
             <span className="field__req" aria-hidden="true">
               *
             </span>
@@ -858,19 +1112,193 @@ function AddressFields({ places }: { places: Places }) {
             className="textarea"
             id="bk-directions"
             name="directions"
-            rows={3}
             required
             maxLength={500}
-            placeholder="Derrière la mosquée de Nongo, portail bleu"
+            placeholder="Derrière la mosquée de Nongo, portail bleu, deuxième maison à gauche."
             aria-describedby="bk-directions-hint"
           />
           <p className="field__hint" id="bk-directions-hint">
-            Le repère qui amène le professionnel à votre porte : un commerce, un
-            carrefour, la couleur du portail.
+            Obligatoire : c’est ce qui permet au prestataire d’arriver chez vous.
           </p>
         </div>
       </div>
     </div>
+  );
+}
+
+/* --- The confirmation ---------------------------------------------------- */
+
+/**
+ * The appointment, read back by its reference.
+ *
+ * <p>The whole site's chrome and no progress bar: the flow is over, and what
+ * the customer needs now is the eight characters that let them come back.
+ */
+function Confirmation({
+  provider,
+  booking,
+  service,
+}: {
+  provider: PublicProvider;
+  booking: CustomerBooking;
+  service: PublicServiceOffering | undefined;
+}) {
+  const zone = booking.timezone;
+  const whatsapp = provider.whatsapp_phone_e164?.replace(/\D/g, "");
+
+  return (
+    <>
+      <SiteHeader />
+
+      <main id="contenu" className="has-tabbar">
+        <section
+          className="section section--lg atmo tex-halo"
+          style={{ paddingBlock: "var(--s-12)" }}
+        >
+          <svg className="wm wm--tr wm--gold" viewBox="0 0 24 24" aria-hidden="true">
+            <use href="#i-check-circle" />
+          </svg>
+          <div className="page page--narrow">
+            <div
+              style={{
+                display: "grid",
+                justifyItems: "center",
+                textAlign: "center",
+                gap: "var(--s-5)",
+              }}
+            >
+              <div className="tick tick--lg">
+                <Icon name="check" size={32} />
+              </div>
+              <h1 className="t-h1">C’est réservé.</h1>
+              <p className="t-lead" style={{ maxWidth: "44ch" }}>
+                {booking.provider_name} a reçu votre demande. Vous recevrez un
+                message WhatsApp dès qu’elle sera confirmée.
+              </p>
+            </div>
+
+            <div className="card" style={{ marginTop: "var(--s-10)" }}>
+              <div className="card__head" style={{ alignItems: "center" }}>
+                <div>
+                  <div className="t-overline">Votre référence</div>
+                  <div className="ref" style={{ marginTop: "var(--s-2)" }}>
+                    {spacedReference(booking.reference)}
+                  </div>
+                </div>
+                <button
+                  className="btn btn--secondary"
+                  type="button"
+                  data-copy={booking.reference}
+                >
+                  <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
+                    <Icon name="copy" size={18} />
+                  </span>
+                  <span className="btn__label--idle">Copier</span>
+                </button>
+              </div>
+
+              <div className="card__body">
+                <div className="dl dl--lined">
+                  <div className="dl__row">
+                    <span className="dl__key">Prestation</span>
+                    <span className="dl__val">{booking.service_name}</span>
+                  </div>
+                  <div className="dl__row">
+                    <span className="dl__key">Chez</span>
+                    <span className="dl__val">{booking.provider_name}</span>
+                  </div>
+                  <div className="dl__row">
+                    <span className="dl__key">Quand</span>
+                    <span className="dl__val">{whenLabel(booking.starts_at, zone)}</span>
+                  </div>
+                  <div className="dl__row">
+                    <span className="dl__key">Avec</span>
+                    <span className="dl__val">{booking.staff_name}</span>
+                  </div>
+                  <div className="dl__row">
+                    <span className="dl__key">Prix figé</span>
+                    <span className="dl__val t-price">{money(booking.price)}</span>
+                  </div>
+                  {service ? (
+                    <div className="dl__row">
+                      <span className="dl__key">Déroulement</span>
+                      <span className="dl__val">
+                        <ModeBadge fulfilment={service.fulfilment} large />
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
+
+                {service ? (
+                  <div style={{ marginTop: "var(--s-6)" }}>
+                    <ModeNote service={service} />
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="card__foot">
+                <div className="row row--wrap" style={{ gap: "var(--s-3)" }}>
+                  <Link
+                    className="btn btn--primary"
+                    href={`/bookings/${encodeURIComponent(booking.reference)}`}
+                  >
+                    <span className="btn__label--idle">Voir ma réservation</span>
+                    <Icon name="arrow-right" size={18} className="ico--arrow" />
+                  </Link>
+                  <button className="btn btn--secondary" type="button">
+                    <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
+                      <Icon name="calendar" size={18} />
+                    </span>
+                    <span className="btn__label--idle">Ajouter à mon agenda</span>
+                  </button>
+                  {whatsapp ? (
+                    <a className="btn btn--ghost" href={`https://wa.me/${whatsapp}`}>
+                      <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
+                        <Icon name="whatsapp" size={18} />
+                      </span>
+                      <span className="btn__label--idle">Écrire au salon</span>
+                    </a>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ marginTop: "var(--s-6)" }}>
+              <div className="alert alert--info" role="status">
+                <span className="alert__icon">
+                  <Icon name="info" />
+                </span>
+                <div className="grow">
+                  <div className="alert__title">Notez cette référence</div>
+                  <div className="alert__body">
+                    Huit caractères, faciles à dicter au téléphone. Elle vous
+                    sert à déplacer ou annuler le rendez-vous. C’est la seule
+                    chose à conserver : il n’y a pas de compte.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <p className="t-sm" style={{ textAlign: "center", marginTop: "var(--s-8)" }}>
+              <Link
+                className="link"
+                href={`/p/${encodeURIComponent(booking.provider_slug)}`}
+              >
+                Retour à la page de {booking.provider_name}
+              </Link>{" "}
+              ·{" "}
+              <Link className="link" href="/">
+                Chercher autre chose
+              </Link>
+            </p>
+          </div>
+        </section>
+      </main>
+
+      <SiteFooter />
+
+      <TabBar />
+    </>
   );
 }
 
@@ -906,26 +1334,25 @@ function Steps({ labels, current }: { labels: readonly string[]; current: number
   );
 }
 
-/**
- * What has been answered so far, and what the booking will cost.
- *
- * <p>No date and no hour, which the mockup's own recap carried: the slot is
- * chosen inside the form and posted with the rest, so until the submission
- * there is nothing the server knows about either - and a row that says "à
- * choisir" on every screen of the flow is a row that says nothing.
- */
+/** What has been answered so far, and what the booking will cost. */
 function Recap({
   provider,
   service,
   person,
   step,
   hasTeam,
+  day,
+  slotAt,
+  zone,
 }: {
   provider: PublicProvider;
   service: PublicServiceOffering | undefined;
   person: PublicStaffMember | undefined;
   step: number;
   hasTeam: boolean;
+  day: string | undefined;
+  slotAt: string | undefined;
+  zone: string;
 }) {
   const logo = mediaUrl(provider.logo_url);
   const place = [provider.area, provider.locality?.label_fr].filter(Boolean).join(", ");
@@ -959,26 +1386,28 @@ function Recap({
           {hasTeam ? (
             <RecapRow
               label="Personne"
-              value={person ? person.display_name : step === 3 ? "Peu importe" : "à choisir"}
+              value={person ? person.display_name : step >= 3 ? "Peu importe" : "à choisir"}
               pending={!person}
             />
           ) : null}
+          <RecapRow label="Date" value={day ? dayLabel(day) : "à choisir"} pending={!day} />
+          <RecapRow
+            label="Horaire"
+            value={slotAt ? time(slotAt, zone) : "à choisir"}
+            pending={!slotAt}
+          />
           {service ? (
             <>
-              <RecapRow
-                label={durationLabel(service.fulfilment)}
-                value={duration(service.duration_minutes)}
-              />
-              {service.turnaround_hours ? (
-                <RecapRow
-                  label="Prêt sous"
-                  value={turnaround(service.turnaround_hours)}
-                />
-              ) : null}
               <RecapRow
                 label="Déroulement"
                 value={<ModeBadge fulfilment={service.fulfilment} />}
               />
+              {service.turnaround_hours ? (
+                <RecapRow
+                  label="Promesse"
+                  value={`Prêt sous ${turnaround(service.turnaround_hours)}`}
+                />
+              ) : null}
             </>
           ) : null}
         </div>
@@ -1034,7 +1463,7 @@ const ON_SITE: ModeCopy = {
   icon: "mode-onsite",
   label: "Sur place",
   title: "Sur place · Vous venez sur place",
-  body: "Vous vous rendez chez le professionnel et la prestation est réalisée pendant que vous attendez.",
+  body: "Vous vous rendez chez le prestataire et la prestation est réalisée pendant que vous attendez.",
 };
 
 const MODE: Record<string, ModeCopy> = {
@@ -1043,8 +1472,8 @@ const MODE: Record<string, ModeCopy> = {
     slug: "at-customer",
     icon: "mode-atcustomer",
     label: "À domicile",
-    title: "À domicile · Le professionnel se déplace",
-    body: "Le professionnel se déplace jusqu'à l'adresse que vous indiquez.",
+    title: "À domicile · Le prestataire se déplace",
+    body: "Le prestataire se déplace jusqu’à l’adresse que vous indiquez.",
   },
   DROP_OFF: {
     slug: "drop-off",
@@ -1059,10 +1488,10 @@ function modeOf(fulfilment: Fulfilment): ModeCopy {
   return MODE[fulfilment] ?? ON_SITE;
 }
 
-function ModeBadge({ fulfilment }: { fulfilment: Fulfilment }) {
+function ModeBadge({ fulfilment, large }: { fulfilment: Fulfilment; large?: boolean }) {
   const mode = modeOf(fulfilment);
   return (
-    <span className={`mode mode--${mode.slug}`}>
+    <span className={`mode mode--${mode.slug}${large ? " mode--lg" : ""}`}>
       <Icon name={mode.icon} />
       {mode.label}
     </span>
@@ -1081,15 +1510,15 @@ function ModeNote({ service }: { service: PublicServiceOffering }) {
         <div className="mode-note__body">
           {service.fulfilment === "DROP_OFF" ? (
             <>
-              Vous déposez l'article, vous repassez le récupérer une fois le
+              Vous déposez l’article, vous repassez le récupérer une fois le
               travail terminé.{" "}
               {service.turnaround_hours ? (
                 <strong>Prêt sous {turnaround(service.turnaround_hours)}.</strong>
               ) : (
-                "Le professionnel vous dira quand revenir le chercher."
+                "Le prestataire vous dira quand revenir le chercher."
               )}{" "}
-              Le créneau ci-dessous n'est que la remise au comptoir (
-              {duration(service.duration_minutes)}), ce n'est pas la durée du
+              Le rendez-vous ci-dessus n’est que la remise au comptoir (
+              {duration(service.duration_minutes)}), ce n’est pas la durée du
               travail.
             </>
           ) : (
@@ -1122,6 +1551,23 @@ async function loadProvider(
   }
 }
 
+/** The appointment behind a reference, for the confirmation. */
+async function loadBooking(reference: string): Promise<CustomerBooking> {
+  try {
+    return await publicApi<CustomerBooking>(
+      `/v1/bookings/${encodeURIComponent(reference)}`,
+    );
+  } catch (error) {
+    // A reference that names nothing and one the contract's pattern rejects
+    // outright both name nothing, and a 500 would tell a mistyped character
+    // that the product is broken.
+    if (error instanceof ApiError && (error.status === 404 || error.status === 400)) {
+      notFound();
+    }
+    throw error;
+  }
+}
+
 type Places = { localities: LocalityList; areas: AreaList };
 
 /**
@@ -1141,7 +1587,6 @@ async function loadPlaces(locality: string | undefined): Promise<Places> {
   return { localities, areas };
 }
 
-
 /* --- URL ----------------------------------------------------------------- */
 
 type Position = {
@@ -1149,6 +1594,7 @@ type Position = {
   service?: string;
   staff?: string;
   date?: string;
+  time?: string;
 };
 
 /** One position in the flow, written as the URL that restores it. */
@@ -1157,6 +1603,7 @@ function stepHref(slug: string, at: Position): string {
   if (at.service) query.set("service", at.service);
   if (at.staff) query.set("staff", at.staff);
   if (at.date) query.set("date", at.date);
+  if (at.time) query.set("time", at.time);
   return `/p/${encodeURIComponent(slug)}/reserver?${query.toString()}`;
 }
 
@@ -1164,47 +1611,31 @@ function stepHref(slug: string, at: Position): string {
  * Which step the URL actually names.
  *
  * <p>A step is only reachable once the steps before it have an answer, so a
- * hand-typed `?etape=3` with no service is step one rather than a crash. The
+ * hand-typed `?etape=5` with no day is the day screen rather than a crash. The
  * URL is the state, which means the URL is also untrusted input.
+ *
+ * <p>A refusal is the one case that overrides what was asked for. The server
+ * action sends it back with the day it was for and no hour, because the hour
+ * is exactly what it refused - so it lands on the hour screen, above a list
+ * that has just been re-read.
  */
 function resolveStep(
-  asked: string | undefined,
+  query: Search,
   hasService: boolean,
   hasTeam: boolean,
-): 1 | 2 | 3 {
-  const wanted = Number(asked);
-  if (!hasService || !Number.isInteger(wanted) || wanted <= 1) return 1;
+  day: string | undefined,
+  slotAt: string | undefined,
+): 1 | 2 | 3 | 4 | 5 | 6 {
+  if (query.ref && Number(query.etape) === CONFIRMATION) return CONFIRMATION;
+  if (!hasService) return 1;
+  if (query.error && day) return 4;
+
+  const wanted = Number(query.etape);
+  if (!Number.isInteger(wanted) || wanted <= 1) return 1;
+  if (wanted >= 5 && day && slotAt) return 5;
+  if (wanted >= 4 && day) return 4;
   if (wanted >= 3) return 3;
   return hasTeam ? 2 : 3;
-}
-
-/** Where the arrow at the top goes: one step back, or out of the flow. */
-function backStep(
-  slug: string,
-  step: number,
-  query: Search,
-  hasTeam: boolean,
-): { href: string; label: string } {
-  if (step === 1) {
-    return {
-      href: `/p/${encodeURIComponent(slug)}`,
-      label: "Retour à la page du professionnel",
-    };
-  }
-  if (step === 2) {
-    return {
-      href: stepHref(slug, { etape: 1, service: query.service }),
-      label: "Étape précédente",
-    };
-  }
-  return {
-    href: stepHref(slug, {
-      etape: hasTeam ? 2 : 1,
-      service: query.service,
-      staff: query.staff,
-    }),
-    label: "Étape précédente",
-  };
 }
 
 /* --- Dates and durations ------------------------------------------------- */
@@ -1242,6 +1673,18 @@ function calendarDay(instant: Date, timeZone: string): string {
   }).format(instant);
 }
 
+/** How far into the salon's own day an instant falls, in minutes. */
+function minutesOfDay(instant: string, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(instant));
+  const at = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? "0");
+  return at("hour") * 60 + at("minute");
+}
+
 /** Days added to a date, both written the way the contract writes a date. */
 function addDays(date: string, days: number): string {
   return new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000)
@@ -1270,11 +1713,33 @@ function dayLabel(date: string): string {
   }).format(new Date(`${date}T00:00:00Z`));
 }
 
+/** An instant as the confirmation reads it: the day at the salon, then the hour. */
+function whenLabel(instant: string, timeZone: string): string {
+  const date = new Intl.DateTimeFormat("fr", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    timeZone,
+  }).format(new Date(instant));
+  return `${date} à ${time(instant, timeZone)}`;
+}
+
+/**
+ * The reference, in two halves.
+ *
+ * <p>Eight characters read back over a bad line one group at a time. Anything
+ * that is not eight is printed whole rather than cut somewhere arbitrary.
+ */
+function spacedReference(reference: string): string {
+  return reference.length === 8
+    ? `${reference.slice(0, 4)} ${reference.slice(4)}`
+    : reference;
+}
+
 /** Minutes as a provider writes them: "45 min", "1 h", "1 h 30". */
 function duration(minutes: number): string {
-  // A narrow no-break space, so a duration never wraps between its digits and
-  // its unit at the end of a line.
-  const gap = " ";
+  // A plain space, as the mockup sets one: "3 h", "1 h 15".
+  const gap = " ";
   if (minutes < 60) return `${minutes}${gap}min`;
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
@@ -1288,21 +1753,16 @@ function duration(minutes: number): string {
  *
  * <p>Whole days are written as days: "prêt sous 72 h" is arithmetic the
  * customer has to do before knowing whether they can wait, and "sous 3 jours"
- * is not. Anything that is not a round day stays in hours, because rounding a
+ * is not. A week is written as a week, which is how the mockup wrote seven
+ * days. Anything that is not a round day stays in hours, because rounding a
  * promise the provider made is not this page's decision.
  */
 function turnaround(hours: number): string {
-  const gap = " ";
+  const gap = " ";
+  if (hours === 168) return `1${gap}semaine`;
   return hours >= 24 && hours % 24 === 0
     ? `${hours / 24}${gap}jour${hours === 24 ? "" : "s"}`
     : `${hours}${gap}h`;
-}
-
-/** What the offering's duration is a duration OF - the fulfilment decides. */
-function durationLabel(fulfilment: Fulfilment): string {
-  if (fulfilment === "DROP_OFF") return "Dépôt";
-  if (fulfilment === "AT_CUSTOMER") return "Durée de la visite";
-  return "Durée";
 }
 
 /**

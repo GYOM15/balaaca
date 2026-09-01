@@ -1,11 +1,11 @@
-import { api, publicApi } from "@/lib/api";
+import Link from "next/link";
+import { api } from "@/lib/api";
 import { dateTime, mediaUrl } from "@/lib/format";
 import { Icon } from "@/components/icon";
-import { ActionButton, Badge, Button, EmptyState, Notice, initials } from "@/components/ui";
+import { EmptyState, Notice, initials } from "@/components/ui";
 import type {
   AreaList,
   BookingPolicy,
-  CategoryList,
   LocalityList,
   ProviderProfile,
   ReadinessView,
@@ -33,15 +33,15 @@ const REFUSALS: Record<string, string> = {
   // so every refusal to publish fell through to the generic sentence while a
   // useful one sat unreachable on this line.
   INVALID_STATE_TRANSITION:
-    "Il faut au moins une prestation, des horaires et quelqu'un de réservable avant de publier.",
+    "Il faut au moins une prestation, des horaires et quelqu’un de réservable avant de publier.",
   VALIDATION_FAILED:
-    "Vérifiez la commune, le numéro de téléphone (format +224…) et le fuseau horaire.",
-  NO_FILE: "Choisissez un fichier avant d'envoyer.",
+    "Vérifiez la commune et le numéro de téléphone (format +224…).",
+  NO_FILE: "Choisissez un fichier avant d’envoyer.",
   NOT_AN_IMAGE: "Seuls le JPEG et le PNG sont acceptés.",
-  UNKNOWN: "L'enregistrement n'a pas abouti.",
+  UNKNOWN: "L’enregistrement n’a pas abouti.",
 };
 
-/** The stack's gap, written the way the mockup writes it. */
+/** The stack's gap, written the way the design writes it. */
 const gap = (value: string) => ({ "--stack-gap": value }) as React.CSSProperties;
 
 export default async function Profile({
@@ -50,11 +50,10 @@ export default async function Profile({
   searchParams: Promise<{ error?: string }>;
 }) {
   const query = await searchParams;
-  const [profile, readiness, policy, categories, localities, areas] = await Promise.all([
+  const [profile, readiness, policy, localities, areas] = await Promise.all([
     api<ProviderProfile>("/v1/provider-profile"),
     api<ReadinessView>("/v1/provider-profile/readiness"),
     api<BookingPolicy>("/v1/booking-policy"),
-    publicApi<CategoryList>("/v1/categories"),
     api<LocalityList>("/v1/localities"),
     // Every quartier already written, not only those of this provider's own
     // commune: the form has no JavaScript, so the list cannot follow a change
@@ -71,22 +70,30 @@ export default async function Profile({
     <>
       <div className="appbar">
         <div className="appbar__in">
+          <a
+            className="btn btn--ghost btn--icon btn--sm hide-lg"
+            href="#sections"
+            aria-label="Menu"
+          >
+            <Icon name="menu" />
+          </a>
           <div>
             <h1 className="appbar__title">Ma page</h1>
             <div className="appbar__sub">
               {profile.suspended_at
                 ? "Retirée de l’annuaire"
-                : `${profile.published ? "En ligne" : "Brouillon"} · ${address}`}
+                : profile.published
+                  ? `En ligne · ${address}`
+                  : "Brouillon · non publiée"}
             </div>
           </div>
           <div className="appbar__actions">
-            <Button
-              label="Voir en public"
-              variant="secondary"
-              size="sm"
-              icon="external"
-              href={`/p/${profile.slug}`}
-            />
+            <Link className="btn btn--secondary btn--sm" href={`/p/${profile.slug}`}>
+              <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
+                <Icon name="external" size={18} />
+              </span>
+              <span className="btn__label--idle">Voir en public</span>
+            </Link>
           </div>
         </div>
       </div>
@@ -102,12 +109,9 @@ export default async function Profile({
                 title="Votre page est retirée de l’annuaire"
                 icon="ban"
                 actions={
-                  <Button
-                    label="Comprendre et répondre"
-                    variant="danger"
-                    size="sm"
-                    href="/dashboard/contestation"
-                  />
+                  <Link className="btn btn--danger btn--sm" href="/dashboard/contestation">
+                    <span className="btn__label--idle">Comprendre et répondre</span>
+                  </Link>
                 }
               >
                 Depuis le {dateTime(profile.suspended_at, profile.timezone)}, elle
@@ -144,7 +148,6 @@ export default async function Profile({
                 <div className="card__body">
                   <form action={uploadCover}>
                     <div
-                      id="cover-preview"
                       style={{
                         position: "relative",
                         borderRadius: "var(--r-sm)",
@@ -167,47 +170,34 @@ export default async function Profile({
                           body="Un croquis de votre métier tient la place sur votre page publique."
                         />
                       )}
-                    </div>
-                    <div className="field" style={{ marginTop: "var(--s-5)" }}>
-                      <label className="field__label" htmlFor="cover-file">
-                        Changer le bandeau
+                      <label
+                        className="btn btn--secondary btn--sm"
+                        style={{ position: "absolute", right: 12, bottom: 12 }}
+                      >
+                        <input
+                          type="file"
+                          className="sr-only"
+                          accept="image/jpeg,image/png"
+                          name="image"
+                        />
+                        <Icon name="camera" size={18} /> Changer le bandeau
                       </label>
-                      <input
-                        className="input"
-                        id="cover-file"
-                        type="file"
-                        name="image"
-                        accept="image/jpeg,image/png"
-                        required
-                        data-preview="cover-preview"
-                      />
-                      <p className="field__hint">
-                        JPEG ou PNG, 5 Mo maximum. Les métadonnées sont retirées
-                        à l’envoi&nbsp;— y compris les coordonnées GPS qu’un
-                        téléphone écrit dans une photo sans le demander.
-                      </p>
                     </div>
-                    <div style={{ marginTop: "var(--s-4)" }}>
-                      <ActionButton
-                        label="Envoyer le bandeau"
-                        variant="secondary"
-                        size="sm"
-                        type="submit"
-                        icon="camera"
-                      />
+                    {/* The design changes the image the moment one is chosen. No
+                        page here writes JavaScript, so the send is a button. */}
+                    <div style={{ marginTop: "var(--s-3)" }}>
+                      <button className="btn btn--secondary btn--sm" type="submit">
+                        <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
+                          <Icon name="upload" size={18} />
+                        </span>
+                        <span className="btn__label--idle">Envoyer le bandeau</span>
+                      </button>
                     </div>
                   </form>
 
                   <form action={uploadLogo}>
                     <div className="row" style={{ marginTop: "var(--s-5)", gap: "var(--s-4)" }}>
-                      {/* Positioned because the preview drops an overlay into
-                          it, and an overlay needs a containing block. */}
-                      <span
-                        className="avatar avatar--xl"
-                        id="logo-preview"
-                        style={{ position: "relative" }}
-                        aria-hidden={logo ? undefined : true}
-                      >
+                      <span className="avatar avatar--xl">
                         {logo ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={logo} alt="Logo actuel" width={76} height={76} />
@@ -218,33 +208,30 @@ export default async function Profile({
                       <div className="grow">
                         <div className="t-strong">Logo</div>
                         <p className="t-xs" style={{ marginTop: 2 }}>
-                          Carré, JPEG ou PNG, 5 Mo maximum. Sans logo, vos
-                          initiales tiennent la place.
+                          Carré, JPEG ou PNG, 5 Mo maximum.
                         </p>
+                        <div style={{ marginTop: "var(--s-3)" }}>
+                          <label className="btn btn--secondary btn--sm">
+                            <input
+                              type="file"
+                              className="sr-only"
+                              accept="image/jpeg,image/png"
+                              name="image"
+                            />
+                            <Icon name="upload" size={18} /> Remplacer
+                          </label>
+                          <button
+                            className="btn btn--secondary btn--sm"
+                            type="submit"
+                            style={{ marginLeft: "var(--s-2)" }}
+                          >
+                            <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
+                              <Icon name="upload" size={18} />
+                            </span>
+                            <span className="btn__label--idle">Envoyer le logo</span>
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                    <div className="field" style={{ marginTop: "var(--s-4)" }}>
-                      <label className="field__label" htmlFor="logo-file">
-                        Remplacer le logo
-                      </label>
-                      <input
-                        className="input"
-                        id="logo-file"
-                        type="file"
-                        name="image"
-                        accept="image/jpeg,image/png"
-                        required
-                        data-preview="logo-preview"
-                      />
-                    </div>
-                    <div style={{ marginTop: "var(--s-4)" }}>
-                      <ActionButton
-                        label="Envoyer le logo"
-                        variant="secondary"
-                        size="sm"
-                        type="submit"
-                        icon="upload"
-                      />
                     </div>
                   </form>
                 </div>
@@ -253,19 +240,33 @@ export default async function Profile({
               {/* --- The profile --- */}
               <div className="panel">
                 <div className="panel__head">
-                  <div>
-                    <div className="panel__title">Informations publiques</div>
-                    <div className="panel__sub">Ce que vos clients lisent</div>
-                  </div>
+                  <div className="panel__title">Informations publiques</div>
                 </div>
                 <form action={saveProfile} id={PROFILE_FORM}>
                   <div className="card__body">
-                    {/* Superseded by the commune and the quartier, and carried
-                        through rather than dropped: the API replaces the
-                        profile whole, and the directory card still prints this
-                        field. Saving would blank the place of every provider
-                        who has not yet chosen a commune. */}
+                    {/* The API replaces the profile whole, so what this screen
+                        does not draw travels with it as it stands. Dropping any
+                        of these from the body would clear the column on the
+                        next save: `city` still feeds the directory card, the
+                        trade decides which trade page carries this business,
+                        and a blank timezone is not a timezone at all. */}
                     <input type="hidden" name="city" value={profile.city ?? ""} />
+                    <input
+                      type="hidden"
+                      name="category_slug"
+                      value={profile.category_slug ?? ""}
+                    />
+                    <input
+                      type="hidden"
+                      name="public_phone_e164"
+                      value={profile.public_phone_e164 ?? ""}
+                    />
+                    <input
+                      type="hidden"
+                      name="public_email"
+                      value={profile.public_email ?? ""}
+                    />
+                    <input type="hidden" name="timezone" value={profile.timezone} />
 
                     <div className="field">
                       <label className="field__label" htmlFor="p-name">
@@ -297,27 +298,7 @@ export default async function Profile({
                         maxLength={2000}
                         style={{ minHeight: 120 }}
                         defaultValue={profile.description ?? ""}
-                        placeholder="Ce que vous faites, depuis quand, ce qui vous distingue."
                       />
-                    </div>
-
-                    <div className="field">
-                      <label className="field__label" htmlFor="p-category">
-                        Métier
-                      </label>
-                      <select
-                        className="select"
-                        id="p-category"
-                        name="category_slug"
-                        defaultValue={profile.category_slug ?? ""}
-                      >
-                        <option value="">Non précisé</option>
-                        {categories.data.map((c) => (
-                          <option key={c.slug} value={c.slug}>
-                            {c.label_fr}
-                          </option>
-                        ))}
-                      </select>
                     </div>
 
                     <div className="cols cols--2" style={{ gap: "var(--s-5)" }}>
@@ -331,7 +312,7 @@ export default async function Profile({
                           name="locality_slug"
                           defaultValue={profile.locality?.slug ?? ""}
                         >
-                          <option value="">Non précisée</option>
+                          <option value="">Partout en Guinée</option>
                           {groupLocalities(localities.data).map(({ region, children }) => (
                             <optgroup key={region.slug} label={region.label_fr}>
                               {children.map((l) => (
@@ -342,9 +323,6 @@ export default async function Profile({
                             </optgroup>
                           ))}
                         </select>
-                        <p className="field__hint">
-                          C’est là-dessus qu’un client filtre l’annuaire.
-                        </p>
                       </div>
                       <div className="field">
                         <label className="field__label" htmlFor="p-area">
@@ -362,119 +340,68 @@ export default async function Profile({
                           name="area"
                           list="quartiers"
                           maxLength={80}
-                          autoComplete="off"
                           defaultValue={profile.area ?? ""}
-                          placeholder="Nongo, Kipé, Dixinn Port…"
                         />
-                        <datalist id="quartiers">
-                          {areas.data.map((a) => (
-                            <option key={a.label} value={a.label} />
-                          ))}
-                        </datalist>
-                        <p className="field__hint">
-                          Reprenez l’orthographe proposée si elle existe&nbsp;:
-                          c’est ce qui regroupe les pages d’un même quartier.
-                        </p>
                       </div>
                     </div>
+                    <datalist id="quartiers">
+                      {areas.data.map((a) => (
+                        <option key={a.label} value={a.label} />
+                      ))}
+                    </datalist>
 
                     <div className="field">
                       <label className="field__label" htmlFor="p-address">
                         Repères
-                        <span className="field__optional">facultatif</span>
                       </label>
-                      <input
-                        className="input"
-                        type="text"
+                      <textarea
+                        className="textarea"
                         id="p-address"
                         name="address_line"
                         maxLength={200}
+                        style={{ minHeight: 70 }}
                         defaultValue={profile.address_line ?? ""}
-                        placeholder="Carrefour de Nongo, immeuble beige au-dessus de la pharmacie."
                       />
-                      <p className="field__hint">Un repère vaut mieux qu’un numéro de rue.</p>
                     </div>
 
-                    <div className="cols cols--2" style={{ gap: "var(--s-5)" }}>
-                      <div className="field">
-                        <label className="field__label" htmlFor="p-phone">
-                          Téléphone public
-                        </label>
-                        <input
-                          className="input"
-                          type="tel"
-                          id="p-phone"
-                          name="public_phone_e164"
-                          pattern="\+[1-9][0-9]{7,14}"
-                          placeholder="+224622000001"
-                          defaultValue={profile.public_phone_e164 ?? ""}
-                        />
-                      </div>
-                      <div className="field">
-                        <label className="field__label" htmlFor="p-whatsapp">
-                          Téléphone WhatsApp
-                        </label>
-                        <input
-                          className="input"
-                          type="tel"
-                          id="p-whatsapp"
-                          name="whatsapp_phone_e164"
-                          pattern="\+[1-9][0-9]{7,14}"
-                          placeholder="+224622000001"
-                          defaultValue={profile.whatsapp_phone_e164 ?? ""}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="cols cols--2" style={{ gap: "var(--s-5)" }}>
-                      <div className="field">
-                        <label className="field__label" htmlFor="p-email">
-                          Courriel public
-                        </label>
-                        <input
-                          className="input"
-                          type="email"
-                          id="p-email"
-                          name="public_email"
-                          maxLength={200}
-                          defaultValue={profile.public_email ?? ""}
-                        />
-                      </div>
-                      <div className="field">
-                        <label className="field__label" htmlFor="p-timezone">
-                          Fuseau horaire
-                          <span className="field__req" aria-hidden="true">
-                            *
-                          </span>
-                        </label>
-                        <input
-                          className="input"
-                          type="text"
-                          id="p-timezone"
-                          name="timezone"
-                          required
-                          maxLength={64}
-                          defaultValue={profile.timezone}
-                        />
-                        <p className="field__hint">Toutes vos heures se lisent dedans.</p>
-                      </div>
+                    <div className="field">
+                      <label className="field__label" htmlFor="p-whatsapp">
+                        Téléphone WhatsApp
+                      </label>
+                      <input
+                        className="input"
+                        type="tel"
+                        id="p-whatsapp"
+                        name="whatsapp_phone_e164"
+                        pattern="\+[1-9][0-9]{7,14}"
+                        defaultValue={profile.whatsapp_phone_e164 ?? ""}
+                      />
                     </div>
                   </div>
                   <div className="card__foot">
                     <div className="row">
                       <span className="grow" />
-                      <ActionButton
-                        label="Enregistrer"
-                        variant="primary"
-                        type="submit"
-                        icon="check"
-                      />
+                      <button className="btn btn--primary" type="submit">
+                        <span className="btn__label--idle">Enregistrer</span>
+                        <span className="btn__icon--busy">
+                          <Icon name="loader" size={18} className="ico--spin" />
+                        </span>
+                        <span className="btn__label--busy">Enregistrement…</span>
+                        <span className="btn__icon--done">
+                          <Icon name="check" size={18} />
+                        </span>
+                        <span className="btn__label--done">Enregistré</span>
+                      </button>
                     </div>
                   </div>
                 </form>
               </div>
 
-              {/* --- The booking policy --- */}
+              {/* --- The booking policy ---
+                  The design gives this its own room. It stays here until that
+                  room carries all five fields: `PUT /v1/booking-policy`
+                  replaces the resource whole, so a screen that posts three of
+                  them wipes the other two. */}
               <div className="panel">
                 <div className="panel__head">
                   <div>
@@ -581,9 +508,7 @@ export default async function Profile({
                         </div>
                         <p className="field__hint">
                           Avant le rendez-vous. Passé ce délai, le client ne peut
-                          plus annuler seul&nbsp;: il devra vous appeler. Ne vous
-                          lie jamais&nbsp;: annuler votre propre rendez-vous,
-                          c’est tenir votre agenda.
+                          plus annuler seul&nbsp;: il devra vous appeler.
                         </p>
                       </div>
                     </div>
@@ -608,22 +533,21 @@ export default async function Profile({
                         </span>
                       </label>
                     </div>
-
-                    <p className="t-xs" style={{ marginTop: "var(--s-4)" }}>
-                      <Icon name="info" size={16} /> Ces bornes sont celles que
-                      la base accepte&nbsp;: une valeur que ce formulaire refuse
-                      est une valeur que le serveur refuserait aussi.
-                    </p>
                   </div>
                   <div className="card__foot">
                     <div className="row">
                       <span className="grow" />
-                      <ActionButton
-                        label="Enregistrer les règles"
-                        variant="primary"
-                        type="submit"
-                        icon="check"
-                      />
+                      <button className="btn btn--primary" type="submit">
+                        <span className="btn__label--idle">Enregistrer les règles</span>
+                        <span className="btn__icon--busy">
+                          <Icon name="loader" size={18} className="ico--spin" />
+                        </span>
+                        <span className="btn__label--busy">Enregistrement…</span>
+                        <span className="btn__icon--done">
+                          <Icon name="check" size={18} />
+                        </span>
+                        <span className="btn__label--done">Enregistré</span>
+                      </button>
                     </div>
                   </div>
                 </form>
@@ -635,11 +559,20 @@ export default async function Profile({
                 <div className="panel__head">
                   <div className="panel__title">Publication</div>
                   {profile.suspended_at ? (
-                    <Badge label="Retirée" tone="danger" icon="ban" />
+                    <span className="badge badge--danger">
+                      <Icon name="ban" />
+                      Retirée
+                    </span>
                   ) : profile.published ? (
-                    <Badge label="En ligne" tone="success" icon="globe" />
+                    <span className="badge badge--success">
+                      <Icon name="globe" />
+                      En ligne
+                    </span>
                   ) : (
-                    <Badge label="Brouillon" tone="warning" icon="eye-off" />
+                    <span className="badge badge--warning">
+                      <Icon name="eye-off" />
+                      Brouillon
+                    </span>
                   )}
                 </div>
                 <div className="card__body">
@@ -664,15 +597,14 @@ export default async function Profile({
                         <span className="t-sm t-strong">Page visible du public</span>
                         <span className="t-xs" style={{ display: "block" }}>
                           Désactiver la retire des recherches. Vos rendez-vous
-                          restent intacts. Le changement prend effet quand vous
-                          enregistrez les informations publiques.
+                          restent intacts.
                         </span>
                       </span>
                     </label>
                   ) : (
                     <Notice tone="warning" title="Publication indisponible">
-                      Une condition n’est pas remplie. L’interrupteur apparaîtra
-                      dès qu’elle le sera.
+                      Une condition n’est pas remplie. Le bouton apparaîtra dès
+                      qu’elle le sera.
                     </Notice>
                   )}
 
@@ -724,7 +656,9 @@ export default async function Profile({
                         data-copy={profile.public_url}
                         aria-label="Copier"
                       >
-                        <Icon name="copy" size={18} className="btn__icon--idle" />
+                        <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
+                          <Icon name="copy" size={18} />
+                        </span>
                       </button>
                     </div>
                   ) : (
@@ -746,33 +680,30 @@ export default async function Profile({
                       marginTop: "var(--s-5)",
                     }}
                   >
+                    {/* The API draws the square and this server passes it on.
+                        A plain <img>, and a plain <a> under it: the target
+                        answers with an image rather than a page, and next/link
+                        would prefetch and navigate to it as one. */}
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       className="qr"
                       src={QR_CODE}
-                      alt="QR code vers votre page"
+                      alt="QR code de votre page"
                       width={180}
                       height={180}
                     />
                     <div className="row" style={{ marginTop: "var(--s-4)", gap: "var(--s-2)" }}>
-                      {/* A plain anchor and not <Button>: the target answers
-                          with an image rather than a page, and next/link would
-                          try to prefetch and navigate to it as one. */}
                       <a
                         className="btn btn--secondary btn--sm"
                         href={QR_CODE}
-                        target="_blank"
-                        rel="noreferrer"
+                        download={`qr-${profile.slug}.svg`}
                       >
-                        <Icon name="download" size={16} className="btn__icon--idle" />
-                        <span className="btn__label--idle">Ouvrir en grand</span>
+                        <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
+                          <Icon name="download" size={18} />
+                        </span>
+                        <span className="btn__label--idle">Télécharger</span>
                       </a>
                     </div>
-                    <p className="t-xs" style={{ marginTop: "var(--s-3)" }}>
-                      À imprimer sur une carte, une vitrine, un reçu. C’est un
-                      dessin, pas une photo&nbsp;: il reste net à toutes les
-                      tailles.
-                    </p>
                   </div>
                 </div>
               </div>
@@ -815,7 +746,11 @@ function Condition({
         {label}
         <small>{done ? doneNote : todoNote}</small>
       </span>
-      {done ? null : <Button label={action} variant="secondary" size="sm" href={href} />}
+      {done ? null : (
+        <Link className="btn btn--secondary btn--sm" href={href}>
+          <span className="btn__label--idle">{action}</span>
+        </Link>
+      )}
     </li>
   );
 }

@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Fragment } from "react";
 import type { CSSProperties } from "react";
-import { Icon } from "@/components/icon";
-import { SiteFooter, SiteHeader } from "@/components/site";
+import { Icon, Scene } from "@/components/icon";
+import { SiteFooter, SiteHeader, TabBar } from "@/components/site";
 
 /**
  * The pricing page, honest about being unfinished.
@@ -15,8 +15,8 @@ import { SiteFooter, SiteHeader } from "@/components/site";
  * card is a commitment nobody made.
  *
  * <p>Buttons are plain anchors carrying the mockup's own classes, for the same
- * reason as the pitch: `ui.tsx`'s `Button` was written against the previous
- * stylesheet's variants.
+ * reason as the pitch: `ui.tsx`'s `Button` puts the icon class on the glyph
+ * where the design puts it on a wrapper.
  */
 export const metadata: Metadata = {
   title: "Tarifs",
@@ -33,6 +33,15 @@ export const metadata: Metadata = {
  * that does.
  */
 const CURRENCY = "GNF";
+
+/**
+ * Where the "ask us" button points.
+ *
+ * <p>The mockup's own number, and it is a placeholder: 224 600 000 000 is not
+ * a line anybody answers, and nothing on the contract or in the environment
+ * carries a support number for this to read instead.
+ */
+const SUPPORT_WHATSAPP = "https://wa.me/224600000000";
 
 /**
  * The two tiers, as the mockup states them.
@@ -342,10 +351,6 @@ export default function Pricing() {
                 than pushing the page sideways. */}
             <div className="table-wrap" data-reveal>
               <table className="table compare">
-                <caption className="sr-only">
-                  Ce que contient chaque palier, fonctionnalité par
-                  fonctionnalité.
-                </caption>
                 <thead>
                   <tr>
                     <th scope="col">Fonctionnalité</th>
@@ -418,11 +423,55 @@ export default function Pricing() {
                 </div>
               ))}
             </div>
+
+            <div
+              className="card card--pad"
+              style={{
+                marginTop: "var(--s-10)",
+                display: "grid",
+                gap: "var(--s-5)",
+                justifyItems: "center",
+                textAlign: "center",
+              }}
+              data-reveal
+            >
+              <Scene
+                name="storefront"
+                className="scene-ill scene-ill--sm"
+                style={{ color: "var(--p-warm-300)" }}
+              />
+              <h3 className="t-h3" style={{ maxWidth: "24ch" }}>
+                Une question qui n’est pas ici ?
+              </h3>
+              <p className="t-body" style={{ maxWidth: "46ch" }}>
+                Écrivez-nous sur WhatsApp. Nous répondons nous-mêmes, et la
+                réponse finit souvent sur cette page.
+              </p>
+              <div
+                className="row row--wrap"
+                style={{ gap: "var(--s-3)", justifyContent: "center" }}
+              >
+                {/* Off this origin, so a plain anchor rather than a Link. */}
+                <a className="btn btn--primary" href={SUPPORT_WHATSAPP}>
+                  <span
+                    className="btn__icon--idle"
+                    style={{ display: "inline-flex" }}
+                  >
+                    <Icon name="whatsapp" size={18} />
+                  </span>
+                  <span className="btn__label--idle">Poser la question</span>
+                </a>
+                <Link className="btn btn--secondary" href="/inscription">
+                  <span className="btn__label--idle">Créer ma page</span>
+                </Link>
+              </div>
+            </div>
           </div>
         </section>
       </main>
 
       <SiteFooter />
+      <TabBar />
     </>
   );
 }
@@ -449,3 +498,4 @@ function CompareCell({ value }: { value: Cell }) {
   }
   return <span className="t-sm t-strong">{value}</span>;
 }
+

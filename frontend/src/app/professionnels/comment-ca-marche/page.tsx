@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { CSSProperties } from "react";
-import { Icon, TradeIcon } from "@/components/icon";
-import { SiteFooter, SiteHeader } from "@/components/site";
+import { Icon, Scene, TradeIcon } from "@/components/icon";
+import { SiteFooter, SiteHeader, TabBar } from "@/components/site";
 
 /**
  * The four screens a customer goes through, from the search to the reference.
@@ -10,8 +10,8 @@ import { SiteFooter, SiteHeader } from "@/components/site";
  * <p>Static, like the rest of the showcase: nothing here is read from the API.
  *
  * <p>Buttons are plain anchors carrying the mockup's own classes, for the same
- * reason as the pitch: `ui.tsx`'s `Button` was written against the previous
- * stylesheet's variants.
+ * reason as the pitch: `ui.tsx`'s `Button` puts the icon class on the glyph
+ * where the design puts it on a wrapper.
  */
 export const metadata: Metadata = {
   title: "Comment ça marche",
@@ -89,7 +89,7 @@ const SUMMARY_STYLE = {
 export default function HowItWorks() {
   return (
     <>
-      <SiteHeader />
+      <SiteHeader active="comment-ca-marche" />
 
       <main id="contenu" className="has-tabbar">
         <section
@@ -176,14 +176,11 @@ export default function HowItWorks() {
                 </div>
               </div>
               <div className="stepline__art">
-                <svg
+                <Scene
+                  name="storefront"
                   className="scene-ill"
-                  viewBox="0 0 200 150"
-                  aria-hidden="true"
                   style={{ color: "var(--p-warm-300)" }}
-                >
-                  <use href="#s-storefront" />
-                </svg>
+                />
               </div>
             </div>
 
@@ -275,10 +272,11 @@ export default function HowItWorks() {
               <div className="stepline__n">04</div>
               <div>
                 <h2 className="t-h2">Vous gardez une référence</h2>
-                {/* The mockup promised eight characters a customer could
-                    dictate over the telephone. The server mints thirty-two
-                    random bytes and returns the base64url of them, so the
-                    sentence that counted them is gone. */}
+                {/* The mockup opened this with "Huit caractères, faciles à dire
+                    au téléphone". AppointmentSqlRepository.mintReference draws
+                    thirty-two random bytes and returns the base64url of them -
+                    forty-three characters nobody dictates - so the sentence
+                    that counted them is gone rather than false. */}
                 <p className="t-lead" style={{ marginTop: "var(--s-4)" }}>
                   C’est la seule chose à conserver : il n’y a pas de compte à
                   retrouver.
@@ -386,9 +384,11 @@ export default function HowItWorks() {
       </main>
 
       <SiteFooter />
+      <TabBar />
     </>
   );
 }
+
 
 /* --- The device mockups -------------------------------------------------- */
 /* Local rather than shared: the pitch shows three of the same four, but a

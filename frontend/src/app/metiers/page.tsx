@@ -4,7 +4,7 @@ import type { CSSProperties } from "react";
 import { Icon, TradeIcon } from "@/components/icon";
 import { publicApi } from "@/lib/api";
 import type { CategoryList } from "@/lib/types";
-import { SiteFooter, SiteHeader } from "@/components/site";
+import { SiteFooter, SiteHeader, TabBar } from "@/components/site";
 
 /** A trade holds nobody until somebody registers under it, and then it does. */
 export const dynamic = "force-dynamic";
@@ -25,6 +25,31 @@ type Category = CategoryList["data"][number];
  * a trade nobody can reach.
  */
 const UNGROUPED = { slug: "divers", label_fr: "Divers" };
+
+/**
+ * The band behind the closing call, glyph for glyph as the design draws it.
+ *
+ * <p>Decoration, not data - it is aria-hidden and names no count. Drawing it
+ * from the busiest trades instead would put eight identical fallback
+ * storefronts on the page the day those trades are ones the sprite has no
+ * drawing for.
+ */
+const BAND = [
+  "coiffure",
+  "couture",
+  "mecanique-auto",
+  "traiteur",
+  "photographie",
+  "plomberie",
+  "fleuriste",
+  "climatisation",
+];
+
+/** French cardinals, because the page spells its count of families out. */
+const CARDINALS = [
+  "zéro", "une", "deux", "trois", "quatre", "cinq", "six", "sept", "huit",
+  "neuf", "dix", "onze", "douze", "treize", "quatorze", "quinze", "seize",
+];
 
 type Family = { slug: string; label_fr: string; trades: Category[] };
 
@@ -75,8 +100,9 @@ export default async function Trades() {
                   style={{ marginTop: "var(--s-3)", maxWidth: "52ch" }}
                   data-enter="2"
                 >
-                  {families.length} familles. Les métiers déjà représentés apparaissent en
-                  premier&nbsp;; les autres attendent leur premier professionnel.
+                  {upperFirst(familyTally(families.length))}. Les métiers déjà représentés
+                  apparaissent en premier&nbsp;; les autres attendent leur premier
+                  professionnel.
                 </p>
               </div>
               <div data-enter="3">
@@ -115,7 +141,7 @@ export default async function Trades() {
                     href={directory(t.slug)}
                     style={{ padding: "var(--s-3) var(--s-4)" }}
                   >
-                    <TradeIcon slug={t.slug} size={18} /> {t.label_fr}
+                    <TradeIcon slug={t.slug} size={18} /> {t.label_fr}{" "}
                     <span className="count count--quiet">{t.provider_count}</span>
                   </Link>
                 ))}
@@ -134,7 +160,9 @@ export default async function Trades() {
               <aside className="show-lg">
                 <div className="sticky-aside">
                   <p className="t-overline" style={{ marginBottom: "var(--s-4)" }}>
-                    Les familles
+                    {families.length === 1
+                      ? "La famille"
+                      : `Les ${familyTally(families.length)}`}
                   </p>
                   <nav
                     className="stack"
@@ -175,70 +203,65 @@ export default async function Trades() {
                     }}
                   >
                     <p className="t-xs" style={{ color: "var(--accent-strong)" }}>
-                      <Icon name="info" size={16} /> Votre métier manque&nbsp;? La liste évolue
-                      avec les professionnels qui s’inscrivent.
+                      <Icon name="info" size={16} /> Votre métier manque&nbsp;?
+                      Écrivez-nous&nbsp;: la liste évolue avec les professionnels qui
+                      s’inscrivent.
                     </p>
                   </div>
                 </div>
               </aside>
 
               <div className="stack" style={{ "--stack-gap": "var(--s-10)" } as CSSProperties}>
-                {families.length === 0 ? (
-                  <p
-                    className="t-sm"
-                    style={{ padding: "var(--s-10) 0", textAlign: "center" }}
-                  >
-                    Aucun métier n’est publié pour le moment.
-                  </p>
-                ) : (
-                  families.map((f) => (
-                    <section key={f.slug} id={`family-${f.slug}`} data-family-block="">
-                      <div
-                        className="row row--between edge-top"
-                        style={{
-                          paddingTop: "var(--s-5)",
-                          marginBottom: "var(--s-5)",
-                          gap: "var(--s-4)",
-                          alignItems: "flex-end",
-                        }}
-                      >
-                        <div className="row" style={{ gap: "var(--s-3)" }}>
-                          <span className="choice__icon">
-                            <FamilyIcon slug={f.slug} />
-                          </span>
-                          <div>
-                            <h2 className="t-h3">{f.label_fr}</h2>
-                          </div>
-                        </div>
-                        <span
-                          className="t-xs"
-                          data-family-count=""
-                          style={{ whiteSpace: "nowrap" }}
-                        >
-                          {trades(f.trades.length)}
+                {families.map((f) => (
+                  <section key={f.slug} id={`family-${f.slug}`} data-family-block="">
+                    <div
+                      className="row row--between edge-top"
+                      style={{
+                        paddingTop: "var(--s-5)",
+                        marginBottom: "var(--s-5)",
+                        gap: "var(--s-4)",
+                        alignItems: "flex-end",
+                      }}
+                    >
+                      <div className="row" style={{ gap: "var(--s-3)" }}>
+                        <span className="choice__icon">
+                          <FamilyIcon slug={f.slug} />
                         </span>
+                        <div>
+                          <h2 className="t-h3">{f.label_fr}</h2>
+                          <p className="t-xs" style={{ marginTop: 2 }}>
+                            {blurb(f.trades)}
+                          </p>
+                        </div>
                       </div>
-                      <div className="trades trades--dense" data-reveal-group="">
-                        {f.trades.map((t) => (
-                          <Link
-                            key={t.slug}
-                            className={t.provider_count === 0 ? "trade trade--empty" : "trade"}
-                            href={directory(t.slug)}
-                            data-trade-name={`${t.label_fr} ${f.label_fr}`.toLowerCase()}
-                          >
-                            <span className="trade__icon">
-                              <TradeIcon slug={t.slug} />
-                            </span>
-                            <span className="grow">
-                              <span className="trade__name">{t.label_fr}</span>
-                              <span className="trade__count">{people(t.provider_count)}</span>
-                            </span>
-                          </Link>
-                        ))}
-                      </div>
-                    </section>
-                  ))
-                )}
+                      <span
+                        className="t-xs"
+                        data-family-count=""
+                        style={{ whiteSpace: "nowrap" }}
+                      >
+                        {trades(f.trades.length)}
+                      </span>
+                    </div>
+                    <div className="trades trades--dense" data-reveal-group="">
+                      {f.trades.map((t) => (
+                        <Link
+                          key={t.slug}
+                          className={t.provider_count === 0 ? "trade trade--empty" : "trade"}
+                          href={directory(t.slug)}
+                          data-trade-name={`${t.label_fr} ${f.label_fr}`.toLowerCase()}
+                        >
+                          <span className="trade__icon">
+                            <TradeIcon slug={t.slug} />
+                          </span>
+                          <span className="grow">
+                            <span className="trade__name">{t.label_fr}</span>
+                            <span className="trade__count">{people(t.provider_count)}</span>
+                          </span>
+                        </Link>
+                      ))}
+                    </div>
+                  </section>
+                ))}
 
                 <p
                   className="t-sm"
@@ -261,6 +284,15 @@ export default async function Trades() {
           className="section section--dark on-dark atmo grain grain--dark tex-halo tex-halo--dark"
           style={{ paddingBlock: "var(--s-12)" }}
         >
+          <div
+            className="glyph-band glyph-band--dark"
+            style={{ top: "50%", transform: "translateY(-50%)" }}
+            aria-hidden="true"
+          >
+            {BAND.map((slug) => (
+              <TradeIcon key={slug} slug={slug} />
+            ))}
+          </div>
           <div
             className="page"
             style={{
@@ -287,17 +319,20 @@ export default async function Trades() {
       </main>
 
       <SiteFooter />
-      <TabBar current="metiers" />
+      <TabBar active="metiers" />
     </>
   );
 }
 
 /**
- * The families, populated ones first, and every trade inside them the same way.
+ * The families in the order the taxonomy publishes them, each one's trades
+ * busiest first.
  *
- * <p>The contract publishes no order for either. Sorting on the count is what
- * keeps a directory of thirty-five trades from opening on the thirty that hold
- * nobody yet - which reads as an empty platform rather than a young one.
+ * <p>Two different orders on purpose, and both are the design's. A family is a
+ * heading somebody scans for, so it stays where the server put it; a trade
+ * inside one is a destination, and the page's own promise - "les métiers déjà
+ * représentés apparaissent en premier" - is that the ones holding somebody
+ * come first.
  */
 function groupByFamily(categories: Category[]): Family[] {
   const families = new Map<string, Family>();
@@ -316,11 +351,10 @@ function groupByFamily(categories: Category[]): Family[] {
       (a, b) => b.provider_count - a.provider_count || a.label_fr.localeCompare(b.label_fr, "fr"),
     );
   }
-  return [...families.values()].sort((a, b) => {
-    if (a.slug === UNGROUPED.slug) return 1;
-    if (b.slug === UNGROUPED.slug) return -1;
-    return providers(b.trades) - providers(a.trades) || a.label_fr.localeCompare(b.label_fr, "fr");
-  });
+  // The bucket last, wherever its first orphan happened to appear.
+  return [...families.values()].sort((a, b) =>
+    a.slug === UNGROUPED.slug ? 1 : b.slug === UNGROUPED.slug ? -1 : 0,
+  );
 }
 
 function providers(trades: Category[]): number {
@@ -334,6 +368,30 @@ function trades(count: number): string {
 function people(count: number): string {
   if (count === 0) return "Aucun professionnel";
   return count > 1 ? `${count} professionnels` : "1 professionnel";
+}
+
+/** "huit familles" - the count as this page words it, not as a figure. */
+function familyTally(count: number): string {
+  return count === 1 ? "une famille" : `${CARDINALS[count] ?? count} familles`;
+}
+
+function upperFirst(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/**
+ * What a family covers, in one line under its name.
+ *
+ * <p>The design writes an editorial summary there - "Coiffure, barbier,
+ * ongles, maquillage". `CategoryFamily` publishes no such sentence, so the
+ * line names the trades the family actually holds, busiest first: the same
+ * thing said with words the server produced.
+ */
+function blurb(held: Category[]): string {
+  return held
+    .slice(0, 4)
+    .map((t) => t.label_fr)
+    .join(", ");
 }
 
 /** The directory, filtered on one trade. */
@@ -354,30 +412,3 @@ function FamilyIcon({ slug, small }: { slug: string; small?: boolean }) {
   );
 }
 
-
-function TabBar({ current }: { current?: "metiers" }) {
-  return (
-    <nav className="tabbar" aria-label="Navigation mobile">
-      <Link className="tabbar__item" href="/">
-        <Icon name="home" />
-        <span>Accueil</span>
-      </Link>
-      <Link
-        className="tabbar__item"
-        href="/metiers"
-        aria-current={current === "metiers" ? "page" : undefined}
-      >
-        <Icon name="grid" />
-        <span>Métiers</span>
-      </Link>
-      <Link className="tabbar__item" href="/">
-        <Icon name="search" />
-        <span>Rechercher</span>
-      </Link>
-      <Link className="tabbar__item" href="/bookings">
-        <Icon name="calendar-check" />
-        <span>Réservation</span>
-      </Link>
-    </nav>
-  );
-}

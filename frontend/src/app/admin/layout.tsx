@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
-import { ActionButton, Button, EmptyState, Wordmark } from "@/components/ui";
+import { Button, EmptyState, Wordmark } from "@/components/ui";
 import { ApiError, api, isSignedIn } from "@/lib/api";
 import type { ProviderReportPage } from "@/lib/types";
 
@@ -22,7 +22,7 @@ export const dynamic = "force-dynamic";
  * instead of once per screen added behind it.
  *
  * <p>The operator's chrome is NOT here. The dark bar carries the switch between
- * the two queues, and which of them is open is a search parameter - which a
+ * the three screens, and which of them is open is a search parameter - which a
  * layout is never given. Drawing the bar here would mean a navigation that
  * cannot say where you are, so the queue page draws its own and this file draws
  * one only for the refusal below, where there is nothing to navigate to.
@@ -49,6 +49,25 @@ export default async function AdminLayout({ children }: { children: ReactNode })
             <div className="op__bar-in">
               <Wordmark href="/admin" size={34} tone="inverse" hideText />
               <span className="op__tag">Modération</span>
+              <div
+                style={{
+                  marginLeft: "auto",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: ".5rem",
+                }}
+              >
+                {/* POST, because a sign-out on GET is triggered by any image tag. */}
+                <form method="post" action="/api/auth/logout">
+                  <button
+                    className="t-xs"
+                    type="submit"
+                    style={{ color: "var(--text-on-dark-muted)" }}
+                  >
+                    Se déconnecter
+                  </button>
+                </form>
+              </div>
             </div>
           </div>
           <main id="contenu" className="op__main">
@@ -68,19 +87,6 @@ export default async function AdminLayout({ children }: { children: ReactNode })
                 />
               }
             />
-            <div className="row" style={{ marginTop: "var(--s-8)" }}>
-              <span className="grow"></span>
-              {/* POST, because a sign-out on GET is triggered by any image tag. */}
-              <form method="post" action="/api/auth/logout">
-                <ActionButton
-                  label="Se déconnecter"
-                  variant="ghost"
-                  size="sm"
-                  type="submit"
-                  icon="lock"
-                />
-              </form>
-            </div>
           </main>
         </div>
       );

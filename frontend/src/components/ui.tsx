@@ -1,7 +1,6 @@
 import Link from "next/link";
 import type { ComponentProps, ReactNode } from "react";
-import { Icon } from "./icon";
-import { Sketch } from "./sketch";
+import { Icon, Scene } from "./icon";
 
 /**
  * The component vocabulary, ported from the reference mockup.
@@ -21,6 +20,10 @@ import { Sketch } from "./sketch";
 /**
  * The five states an appointment can be in, as a reader sees them.
  *
+ * <p>Word, glyph and tone are the design system's own, from its gallery of
+ * appointment statuses - the green of the brand never means "success", so each
+ * state carries a glyph and a word and never the colour alone.
+ *
  * <p>Keyed by the value the API sends. The enum is closed on both sides - the
  * contract's `AppointmentStatus` and the column's own CHECK - so a status
  * arriving here that is not in this map is a contract change nobody applied,
@@ -30,11 +33,11 @@ export const STATUS: Record<
   string,
   { label: string; icon: string; tone: BadgeTone }
 > = {
-  PENDING: { label: "En attente", icon: "clock", tone: "warning" },
-  CONFIRMED: { label: "Confirmé", icon: "check", tone: "success" },
-  COMPLETED: { label: "Terminé", icon: "check-double", tone: "neutral" },
-  NO_SHOW: { label: "Absent", icon: "user-x", tone: "danger" },
-  CANCELLED: { label: "Annulé", icon: "x", tone: "neutral" },
+  PENDING: { label: "À confirmer", icon: "hourglass", tone: "warning" },
+  CONFIRMED: { label: "Confirmé", icon: "check-circle", tone: "brand" },
+  COMPLETED: { label: "Terminé", icon: "check", tone: "success" },
+  NO_SHOW: { label: "Absent", icon: "ban", tone: "danger" },
+  CANCELLED: { label: "Annulé", icon: "x-circle", tone: "neutral" },
 };
 
 /* --- Wordmark ------------------------------------------------------------ */
@@ -59,11 +62,16 @@ const MARK_CARRIES_THE_NAME = false;
  * <p>Two files, because there are two grounds. The dashboard sidebar and a
  * provider's cover are dark green, and a mark drawn for ivory disappears on
  * them. If one file works on both, make them the same file.
+ *
+ * <p>It wears `logo__mark`, the class the design system sizes and rounds - the
+ * design draws a letter B in that tile because it had no mark to put there.
+ * The tile is 34 pixels whatever `size` says; the attribute is there so the
+ * line does not jump before the stylesheet arrives.
  */
 export function Mark({
   size = 24,
   tone,
-  className = "wordmark__glyph",
+  className = "logo__mark",
 }: {
   size?: number;
   tone?: "inverse";
@@ -93,15 +101,19 @@ export function Wordmark({
   tone?: "inverse";
   hideText?: boolean;
 }) {
+  const wordless = hideText || MARK_CARRIES_THE_NAME;
   return (
     <Link
       className="logo"
       href={href}
-      aria-label="Balaaca, accueil"
+      // Only when the word is hidden. With it, the link already says
+      // "Balaaca"; a label on top would replace what a reader can see with a
+      // sentence they cannot.
+      aria-label={wordless ? "Balaaca, accueil" : undefined}
       style={tone === "inverse" ? { color: "#fff" } : undefined}
     >
       <Mark size={size} tone={tone} />
-      {hideText || MARK_CARRIES_THE_NAME ? null : (
+      {wordless ? null : (
         <span className="logo__word">
           Bala<em>a</em>ca
         </span>
@@ -171,13 +183,31 @@ function buttonClass(o: ButtonBase): string {
   return cls.join(" ");
 }
 
-function ButtonInner({ label, icon, iconEnd, size }: ButtonBase) {
-  const s = size === "sm" ? 16 : 18;
+/**
+ * The three slots the design gives a button, and their exact shapes.
+ *
+ * <p>The leading glyph is wrapped, because `btn__icon--idle` is what the busy
+ * and done states hide and the stylesheet declares no display for it - the
+ * design carries `display:inline-flex` inline, so the wrapper is the element
+ * that disappears rather than the glyph inside it.
+ *
+ * <p>The trailing glyph is bare and wears `ico--arrow`: it is the one that
+ * slides on hover, and it is never hidden - a button that has gone busy still
+ * points where it was going.
+ *
+ * <p>Both are 18 pixels whatever the button's size, as every one of them is in
+ * the design.
+ */
+function ButtonInner({ label, icon, iconEnd }: ButtonBase) {
   return (
     <>
-      {icon ? <Icon name={icon} size={s} className="btn__icon--idle" /> : null}
+      {icon ? (
+        <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
+          <Icon name={icon} size={18} />
+        </span>
+      ) : null}
       <span className="btn__label--idle">{label}</span>
-      {iconEnd ? <Icon name={iconEnd} size={s} className="btn__icon--idle" /> : null}
+      {iconEnd ? <Icon name={iconEnd} size={18} className="ico--arrow" /> : null}
     </>
   );
 }
@@ -197,9 +227,12 @@ export function Badge({
   icon?: string;
 }) {
   return (
+    // The word is the badge's own text, not a box inside it: the design lays
+    // the glyph and the word out as flex children of the pill itself, and a
+    // wrapper round the word would take the gap with it.
     <span className={`badge badge--${tone}`}>
       {icon ? <Icon name={icon} /> : null}
-      <span>{label}</span>
+      {label}
     </span>
   );
 }
@@ -259,12 +292,20 @@ export function Notice({
   children,
   icon,
   actions,
+  errorCode,
 }: {
   tone?: "info" | "success" | "warning" | "danger" | "neutral";
   title?: string;
   children?: ReactNode;
   icon?: string;
   actions?: ReactNode;
+  /**
+   * The published code this note is the translation of, when it is one. The
+   * design stamps it on the note it belongs to so that the sentence a reader
+   * gets and the code the server sent can be lined up without guessing which
+   * of the fifteen produced it.
+   */
+  errorCode?: string;
 }) {
   const fallback =
     tone === "danger" ? "alert-circle"
@@ -272,7 +313,11 @@ export function Notice({
         : tone === "success" ? "check-circle"
           : "info";
   return (
-    <div className={`alert alert--${tone}`} role={tone === "danger" ? "alert" : "status"}>
+    <div
+      className={`alert alert--${tone}`}
+      role={tone === "danger" ? "alert" : "status"}
+      data-error-code={errorCode}
+    >
       <span className="alert__icon">
         <Icon name={icon ?? fallback} />
       </span>
@@ -301,14 +346,18 @@ export function EmptyState({
   compact,
 }: {
   title: string;
-  body?: string;
+  body?: ReactNode;
   sketch?: string;
   action?: ReactNode;
   compact?: boolean;
 }) {
   return (
     <div className={compact ? "empty empty--tight" : "empty"}>
-      {sketch ? <Sketch name={sketch} level={1} width={200} /> : null}
+      {/* Sized by its class alone. The stylesheet caps a scene at 220 px and a
+          tight one at 148, and a width written here would beat both. */}
+      {sketch ? (
+        <Scene name={sketch} className={compact ? "scene-ill scene-ill--sm" : "scene-ill"} />
+      ) : null}
       {/* A div and not a heading: an empty state can appear inside a section
           that already has one, and two headings for one thing is worse than
           none. */}
@@ -322,19 +371,23 @@ export function EmptyState({
 /* --- Section head -------------------------------------------------------- */
 
 /**
- * The overline that opens every section.
+ * The overline that opens a section, and whatever sits opposite it.
  *
- * <p>One element now. It used to be two, because the old system drew the rule
- * as a standalone bar of 28 by 2 pixels; the design system draws it as the
- * overline's own left edge, so a second element is an empty box.
+ * <p>The design's own two-part head: the text hugs 46 characters on the left,
+ * the aside - a link to the full list, a filter, a count - sits at its baseline
+ * on the right and drops under it below 700 px. A section that also needs a
+ * title and a sentence writes them into the same box itself; this is the one
+ * shape that is always there.
  */
 export function SectionHead({ label, aside }: { label: string; aside?: ReactNode }) {
   return (
-    <div className="row row--between row--wrap">
-      {/* A <p> and not a heading, deliberately: the mockup made each of these
-          an <h2> at 12 px beside the real title, which gave the hub fifteen
-          headings and no hierarchy at all. */}
-      <p className="t-overline t-overline--accent">{label}</p>
+    <div className="section-head">
+      <div className="section-head__text">
+        {/* A <p> and not a heading, deliberately: the mockup made each of these
+            an <h2> at 12 px beside the real title, which gave the hub fifteen
+            headings and no hierarchy at all. */}
+        <p className="t-overline t-overline--accent">{label}</p>
+      </div>
       {aside}
     </div>
   );

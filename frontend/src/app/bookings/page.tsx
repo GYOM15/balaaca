@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Icon } from "@/components/icon";
-import { SiteFooter, SiteHeader } from "@/components/site";
+import { SiteFooter, SiteHeader, TabBar } from "@/components/site";
 
 export const metadata: Metadata = {
   title: "Retrouver ma réservation",
@@ -52,20 +53,16 @@ export default async function FindBooking({
           <div className="page page--narrow">
             <div
               style={{ textAlign: "center", maxWidth: "46ch", marginInline: "auto" }}
-              data-reveal
+              data-enter="1"
             >
               <span className="badge badge--brand">
-                <Icon name="calendar-check" />
-                Sans compte
+                <Icon name="calendar-check" /> Sans compte
               </span>
               <h1 className="t-h1" style={{ marginTop: "var(--s-4)" }}>
                 Retrouver ma réservation
               </h1>
               <p className="t-lead" style={{ marginTop: "var(--s-3)" }}>
-                Saisissez la référence reçue au moment de la réservation. Elle
-                ouvre votre rendez-vous : vous y voyez l’heure, et vous pouvez le
-                déplacer ou l’annuler tant que le délai du professionnel le
-                permet.
+                Saisissez la référence reçue au moment de la réservation.
               </p>
             </div>
 
@@ -83,7 +80,7 @@ export default async function FindBooking({
                   </span>
                 </label>
                 <input
-                  className="input t-num"
+                  className="input"
                   id="reference"
                   name="reference"
                   type="text"
@@ -98,6 +95,7 @@ export default async function FindBooking({
                   placeholder="Collez-la ici"
                   aria-describedby={invalid ? "reference-error" : "reference-hint"}
                   aria-invalid={invalid ? "true" : undefined}
+                  style={{ letterSpacing: ".14em", fontWeight: 800, fontSize: "1.15rem" }}
                 />
                 {invalid ? (
                   <p className="field__error" id="reference-error">
@@ -117,8 +115,7 @@ export default async function FindBooking({
 
               <div style={{ marginTop: "var(--s-5)" }}>
                 <button className="btn btn--primary btn--lg btn--block" type="submit">
-                  <span>Ouvrir ma réservation</span>
-                  <Icon name="arrow-right" size={18} className="ico--arrow" />
+                  <span className="btn__label--idle">Ouvrir ma réservation</span>
                 </button>
               </div>
             </form>
@@ -131,9 +128,8 @@ export default async function FindBooking({
                 <div className="grow">
                   <div className="alert__title">Référence perdue&nbsp;?</div>
                   <div className="alert__body">
-                    Elle est dans le message de confirmation reçu du prestataire,
-                    et dans l’adresse de la page ouverte après la réservation.
-                    Sinon, appelez directement l’établissement : il retrouve votre
+                    Le message WhatsApp reçu du prestataire la contient. Sinon,
+                    appelez directement l’établissement : il retrouve votre
                     rendez-vous avec votre numéro de téléphone.
                   </div>
                 </div>
@@ -144,6 +140,7 @@ export default async function FindBooking({
       </main>
 
       <SiteFooter />
+      <TabBar active={"reservation"} />
     </>
   );
 }
@@ -163,3 +160,4 @@ function normalise(value: string): string {
   const segments = path.split("/").filter(Boolean);
   return segments.length > 1 ? (segments[segments.length - 1] ?? "") : trimmed;
 }
+

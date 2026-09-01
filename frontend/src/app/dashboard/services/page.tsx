@@ -1,14 +1,14 @@
 import Link from "next/link";
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties } from "react";
 import { api } from "@/lib/api";
 import { mediaUrl, money } from "@/lib/format";
-import { Icon } from "@/components/icon";
-import { ActionButton, Badge, Button, EmptyState, Notice } from "@/components/ui";
+import { Icon, Scene } from "@/components/icon";
 import type {
   Fulfilment,
   PerformerList,
   ServiceOffering,
   ServiceOfferingPage,
+  ServicePhoto,
   ServicePhotoList,
   StaffList,
 } from "@/lib/types";
@@ -25,8 +25,8 @@ export const dynamic = "force-dynamic";
 const REFUSALS: Record<string, string> = {
   FORBIDDEN: "Seul le propriétaire modifie le catalogue.",
   VALIDATION_FAILED:
-    "Vérifiez la durée (au moins 1 minute), le prix, et le délai s'il s'agit d'une prestation à déposer (1 h à 90 jours).",
-  RESOURCE_NOT_FOUND: "Cette prestation n'existe plus.",
+    "Vérifiez la durée (au moins 1 minute), le prix, et le délai s’il s’agit d’une prestation à déposer (1 h à 90 jours).",
+  RESOURCE_NOT_FOUND: "Cette prestation n’existe plus.",
 };
 
 /**
@@ -40,8 +40,8 @@ const REFUSALS: Record<string, string> = {
 const PERFORMER_REFUSALS: Record<string, string> = {
   FORBIDDEN: "Seul le propriétaire choisit qui réalise quoi.",
   VALIDATION_FAILED:
-    "Un des noms cochés n'est plus dans votre équipe. Décochez-le, ou réactivez la personne depuis Équipe.",
-  RESOURCE_NOT_FOUND: "Cette prestation n'existe plus.",
+    "Un des noms cochés n’est plus dans votre équipe. Décochez-le, ou réactivez la personne depuis Équipe.",
+  RESOURCE_NOT_FOUND: "Cette prestation n’existe plus.",
 };
 
 /** How many photographs one service carries, which the API enforces. */
@@ -56,15 +56,15 @@ const MAX_PHOTOS = 5;
  * the code both cases share.
  */
 const PHOTO_REFUSALS: Record<string, string> = {
-  NO_FILE: "Choisissez une photo avant d'envoyer.",
+  NO_FILE: "Choisissez une photo avant d’envoyer.",
   NOT_AN_IMAGE: "Seuls le JPEG et le PNG sont acceptés.",
   TOO_LARGE:
     "Cette photo dépasse 5 Mo. Renvoyez-la en plus petit — votre téléphone sait la réduire au partage.",
   PHOTOS_FULL:
     "Cette prestation porte déjà cinq photos, et cinq est le maximum. Retirez-en une pour faire de la place.",
   FORBIDDEN: "Seul le propriétaire modifie le catalogue.",
-  VALIDATION_FAILED: "Ce fichier n'est pas une image que nous savons publier.",
-  RESOURCE_NOT_FOUND: "Cette prestation n'existe plus.",
+  VALIDATION_FAILED: "Ce fichier n’est pas une image que nous savons publier.",
+  RESOURCE_NOT_FOUND: "Cette prestation n’existe plus.",
 };
 
 /** One of the three shapes a service can take, as the page draws it. */
@@ -112,12 +112,39 @@ const SHAPES: ServiceShape[] = [
     label: "À domicile",
     icon: "mode-atcustomer",
     mode: "at-customer",
-    desc: "Vous vous déplacez chez le client. L'adresse est jointe au rendez-vous.",
+    desc: "Vous vous déplacez chez le client. L’adresse est jointe au rendez-vous.",
   },
 ];
 
-/** The gap the mockup's panel stacks are built on. */
+/** The gap the design's panel stacks are built on. */
 const PANEL_GAP = { "--stack-gap": "var(--s-6)" } as CSSProperties;
+
+/** The design writes this on every idle button icon rather than in the sheet. */
+const ICON_IDLE: CSSProperties = { display: "inline-flex" };
+
+/** The 64 px tile a catalogue row opens with. */
+const THUMB: CSSProperties = {
+  flex: "none",
+  width: 64,
+  height: 64,
+  borderRadius: "var(--r-sm)",
+  overflow: "hidden",
+  background: "var(--bg-sunken)",
+  display: "grid",
+  placeItems: "center",
+};
+
+/**
+ * The identifier the save button reaches back to.
+ *
+ * <p>The design draws the photographs and the team inside the offering's own
+ * form, which HTML forbids: each of those posts to its own route and a form
+ * cannot contain another. So the offering's form closes above them and its
+ * submit - and the visibility switch, which lives in the aside - name it by
+ * `form`, which is what that attribute is for. The panels keep the design's
+ * order and every request keeps its own endpoint.
+ */
+const SERVICE_FORM = "f-service";
 
 /**
  * The catalogue, and the one service being edited.
@@ -139,6 +166,7 @@ export default async function Services({
   searchParams: Promise<{
     error?: string;
     edit?: string;
+    created?: string;
     performers?: string;
     performer_error?: string;
     photos?: string;
@@ -168,85 +196,122 @@ export default async function Services({
   const edited = services.data.find((s) => s.service_offering_id === editedId);
   const creating = query.edit === "new";
 
-  const roster = opened ? await rosterFor(opened) : null;
-  // Sequential rather than parallel because the two are exclusive in practice:
-  // each panel's link carries its own parameter and drops the other's.
-  const album = openedPhotos
-    ? await api<ServicePhotoList>(
-        `/v1/service-offerings/${encodeURIComponent(openedPhotos)}/photos`,
-      )
-    : null;
-
-  const refusal = query.error ? (
-    <Notice tone="danger" title="L'enregistrement n'a pas abouti">
-      {REFUSALS[query.error] ?? "Réessayez, ou rechargez la page."}
-    </Notice>
-  ) : null;
-
   if (creating || edited) {
+    // Two requests for one service, and only when the editor is open: the
+    // design draws both panels filled, so neither is a click away.
+    const [roster, album] = edited
+      ? await Promise.all([
+          rosterFor(edited.service_offering_id),
+          api<ServicePhotoList>(
+            `/v1/service-offerings/${encodeURIComponent(edited.service_offering_id)}/photos`,
+          ),
+        ])
+      : [null, null];
+
     return (
       <Editor
         service={edited ?? null}
         currency={currency}
-        refusal={refusal}
-        performers={
-          edited && opened === edited.service_offering_id && roster
-            ? { roster, refusal: query.performer_error }
-            : null
+        refusal={query.error}
+        roster={roster}
+        performerRefusal={
+          edited && opened === edited.service_offering_id ? query.performer_error : undefined
         }
-        photos={
-          edited && openedPhotos === edited.service_offering_id && album
-            ? { album, refusal: query.photo_error }
-            : null
+        album={album}
+        photoRefusal={
+          edited && openedPhotos === edited.service_offering_id ? query.photo_error : undefined
         }
       />
     );
   }
 
+  const created = services.data.find((s) => s.service_offering_id === query.created);
+
   return (
     <>
       <div className="appbar">
         <div className="appbar__in">
+          <a
+            className="btn btn--ghost btn--icon btn--sm hide-lg"
+            href="#sections"
+            aria-label="Menu"
+          >
+            <Icon name="menu" />
+          </a>
           <div>
             <h1 className="appbar__title">Prestations</h1>
             <div className="appbar__sub">
-              {live.length} en ligne · {services.data.length} au total
+              {live.length} actives · {services.data.length} au total
             </div>
           </div>
           <div className="appbar__actions">
-            <Button
-              label="Nouvelle prestation"
-              variant="primary"
-              size="sm"
-              icon="plus"
-              href="/dashboard/services?edit=new"
-            />
+            <Link className="btn btn--primary btn--sm" href="/dashboard/services?edit=new">
+              <span className="btn__icon--idle" style={ICON_IDLE}>
+                <Icon name="plus" size={18} />
+              </span>
+              <span className="btn__label--idle">Nouvelle prestation</span>
+            </Link>
           </div>
         </div>
       </div>
 
       <main id="contenu" className="app__main has-tabbar">
         <div className="app__inner">
-          {refusal ? (
-            <div style={{ marginBottom: "var(--s-6)" }}>{refusal}</div>
+          {created ? (
+            <div style={{ marginBottom: "var(--s-6)" }}>
+              <div className="alert alert--success" role="status">
+                <span className="alert__icon">
+                  <Icon name="check-circle" />
+                </span>
+                <div className="grow">
+                  <div className="alert__title">Prestation créée</div>
+                  <div className="alert__body">
+                    « {created.name} » est en ligne et réservable.
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {query.error ? (
+            <div style={{ marginBottom: "var(--s-6)" }}>
+              <Refusal code={query.error} />
+            </div>
           ) : null}
 
           {services.data.length === 0 ? (
-            <EmptyState
-              sketch="notebook"
-              title="Votre catalogue est encore vide"
-              body="Ajoutez votre première prestation pour commencer à recevoir des réservations. Une seule suffit pour publier votre page."
-              action={
-                <Button
-                  label="Ajouter une prestation"
-                  variant="primary"
-                  icon="plus"
-                  href="/dashboard/services?edit=new"
-                />
-              }
-            />
+            <div className="empty">
+              <Scene name="notebook" className="scene-ill" />
+              <div className="empty__title">Votre catalogue est encore vide</div>
+              <p className="empty__body">
+                Ajoutez votre première prestation pour commencer à recevoir des
+                réservations. Une seule suffit pour publier votre page.
+              </p>
+              <div className="empty__actions">
+                <Link className="btn btn--primary" href="/dashboard/services?edit=new">
+                  <span className="btn__icon--idle" style={ICON_IDLE}>
+                    <Icon name="plus" size={18} />
+                  </span>
+                  <span className="btn__label--idle">Ajouter une prestation</span>
+                </Link>
+              </div>
+            </div>
           ) : (
             <>
+              <div className="toolbar" style={{ marginBottom: "var(--s-5)" }}>
+                <span className="segmented">
+                  <Link className="segmented__item is-active" href="/dashboard/services">
+                    Toutes ({services.data.length})
+                  </Link>
+                  <Link className="segmented__item" href="/dashboard/services">
+                    Actives ({live.length})
+                  </Link>
+                  <Link className="segmented__item" href="/dashboard/services">
+                    Masquées ({services.data.length - live.length})
+                  </Link>
+                </span>
+              </div>
+
               <div className="panel">
                 <div className="list" style={{ borderTop: 0 }}>
                   {services.data.map((service) => (
@@ -268,32 +333,72 @@ export default async function Services({
 }
 
 /**
+ * A refusal the server sent back, under the code that produced it.
+ *
+ * <p>The code travels on the element as well as in the sentence. The design
+ * marks every refusal that way, and it is the one thing that tells a bug report
+ * which branch of the server answered.
+ */
+function Refusal({
+  code,
+  title,
+  sentences,
+}: {
+  code: string;
+  title?: string;
+  sentences?: Record<string, string>;
+}) {
+  const words = sentences ?? REFUSALS;
+  return (
+    <div className="alert alert--danger" role="alert" data-error-code={code}>
+      <span className="alert__icon">
+        <Icon name="alert-circle" />
+      </span>
+      <div className="grow">
+        <div className="alert__title">
+          {title ??
+            (code === "VALIDATION_FAILED"
+              ? "Certaines informations sont incomplètes"
+              : "L’enregistrement n’a pas abouti")}
+        </div>
+        <div className="alert__body">
+          {words[code] ?? "Réessayez, ou rechargez la page."}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
  * One line of the catalogue.
  *
- * <p>No thumbnail and no photograph count, though the mockup draws both: the
- * collection carries neither, and there is one photograph list per offering -
- * so a picture per row would be a hundred requests on a page that reads a
- * hundred services in one.
+ * <p>The tile opens empty on every row and the design's two remaining facts -
+ * how many photographs, and who performs it - are not drawn at all. Both hang
+ * off their own per-offering route, and a hundred services would be two hundred
+ * requests for a list that reads in one. A count nobody counted is worse than
+ * no count.
  */
 function Row({ service }: { service: ServiceOffering }) {
   const id = service.service_offering_id;
   const shape = SHAPES.find((s) => s.value === service.fulfilment) ?? ON_SITE;
-  const buffer = service.buffer_before_minutes + service.buffer_after_minutes;
   const href = `/dashboard/services?edit=${encodeURIComponent(id)}`;
 
   return (
     <div className="list__item" style={{ alignItems: "flex-start" }}>
+      <Link href={href} style={THUMB}>
+        <Icon name="image" size={24} />
+      </Link>
       <div className="grow">
         <div className="row" style={{ gap: "var(--s-2)", flexWrap: "wrap" }}>
           <Link href={href} className="t-strong" style={{ textDecoration: "none" }}>
             {service.name}
           </Link>
           {service.active ? null : (
-            <Badge label="Masquée" tone="neutral" icon="eye-off" />
+            <span className="badge badge--neutral">
+              <Icon name="eye-off" />
+              Masquée
+            </span>
           )}
-          {service.active && !service.price_visible ? (
-            <Badge label="Prix masqué" tone="neutral" icon="eye-off" />
-          ) : null}
         </div>
         <div
           className="row row--wrap"
@@ -307,28 +412,16 @@ function Row({ service }: { service: ServiceOffering }) {
             <Icon name="clock" />
             {durationLabel(service.duration_minutes)}
           </span>
-          {service.turnaround_hours ? (
-            <span className="fact">
-              <Icon name="hourglass" />
-              Prêt sous {turnaroundLabel(service.turnaround_hours)}
-            </span>
-          ) : null}
-          {buffer > 0 ? (
-            <span className="fact">
-              <Icon name="history" />+{buffer} min de battement
-            </span>
-          ) : null}
         </div>
       </div>
       <div className="row" style={{ gap: "var(--s-3)" }}>
         <span className="t-price">{money(service.price)}</span>
-        <Button
-          label="Modifier"
-          variant="secondary"
-          size="sm"
-          icon="pencil"
-          href={href}
-        />
+        <Link className="btn btn--secondary btn--sm" href={href}>
+          <span className="btn__icon--idle" style={ICON_IDLE}>
+            <Icon name="pencil" size={18} />
+          </span>
+          <span className="btn__label--idle">Modifier</span>
+        </Link>
       </div>
     </div>
   );
@@ -342,40 +435,32 @@ function durationLabel(minutes: number): string {
   return rest === 0 ? `${hours} h` : `${hours} h ${rest}`;
 }
 
-/** The promise a drop-off carries, in the unit the customer will read it in. */
-function turnaroundLabel(hours: number): string {
-  if (hours < 24 || hours % 24 !== 0) return `${hours} h`;
-  const days = hours / 24;
-  if (days % 7 === 0) {
-    const weeks = days / 7;
-    return weeks === 1 ? "1 semaine" : `${weeks} semaines`;
-  }
-  return days === 1 ? "1 jour" : `${days} jours`;
-}
-
 /**
  * One service, whole.
  *
- * <p>Three forms and not one, because they post to three routes: the offering
- * is replaced whole, the performer list is replaced whole, and a photograph is
- * its own request carrying nothing but bytes. HTML forbids nesting them, so the
- * two panels the mockup draws inside the editor's form sit after it instead.
+ * <p>Four panels in the design's order, then the two the aside carries. The
+ * offering's own form closes after "Déroulement" so the photographs and the
+ * team can keep their own forms - see {@link SERVICE_FORM}.
  *
- * <p>The photographs and the performers only appear once the service exists:
- * both hang off an identifier a creation does not have yet.
+ * <p>The photographs and the team only appear once the service exists: both
+ * hang off an identifier a creation does not have yet.
  */
 function Editor({
   service,
   currency,
   refusal,
-  performers,
-  photos,
+  roster,
+  performerRefusal,
+  album,
+  photoRefusal,
 }: {
   service: ServiceOffering | null;
   currency: string;
-  refusal: ReactNode;
-  performers: { roster: Roster; refusal?: string } | null;
-  photos: { album: ServicePhotoList; refusal?: string } | null;
+  refusal?: string;
+  roster: Roster | null;
+  performerRefusal?: string;
+  album: ServicePhotoList | null;
+  photoRefusal?: string;
 }) {
   const id = service?.service_offering_id;
 
@@ -383,22 +468,30 @@ function Editor({
     <>
       <div className="appbar">
         <div className="appbar__in">
+          <a
+            className="btn btn--ghost btn--icon btn--sm hide-lg"
+            href="#sections"
+            aria-label="Menu"
+          >
+            <Icon name="menu" />
+          </a>
           <div>
             <h1 className="appbar__title">
               {service ? service.name : "Nouvelle prestation"}
             </h1>
             <div className="appbar__sub">
-              {service ? "Modifier cette prestation" : "Ajouter au catalogue"}
+              {service
+                ? "Modifier cette prestation"
+                : "Elle sera visible dès son enregistrement"}
             </div>
           </div>
           <div className="appbar__actions">
-            <Button
-              label="Retour"
-              variant="ghost"
-              size="sm"
-              icon="arrow-left"
-              href="/dashboard/services"
-            />
+            <Link className="btn btn--ghost btn--sm" href="/dashboard/services">
+              <span className="btn__icon--idle" style={ICON_IDLE}>
+                <Icon name="arrow-left" size={18} />
+              </span>
+              <span className="btn__label--idle">Retour</span>
+            </Link>
           </div>
         </div>
       </div>
@@ -406,50 +499,84 @@ function Editor({
       <main id="contenu" className="app__main has-tabbar">
         <div className="app__inner">
           {refusal ? (
-            <div style={{ marginBottom: "var(--s-6)" }}>{refusal}</div>
+            <div style={{ marginBottom: "var(--s-6)" }}>
+              <Refusal code={refusal} />
+            </div>
           ) : null}
 
-          <div className="stack" style={PANEL_GAP}>
-            <form
-              action={service ? replaceService : createService}
-              className="cols cols--main-aside"
-            >
-              {id ? <input type="hidden" name="id" value={id} /> : null}
-
-              <div className="stack" style={PANEL_GAP}>
-                <Essentials service={service} currency={currency} />
-                <Shape service={service} />
-                <Settings service={service} currency={currency} />
-
-                <div
-                  className="row row--wrap"
-                  style={{ gap: "var(--s-3)", paddingTop: "var(--s-2)" }}
-                >
-                  <span className="grow" />
-                  <Button label="Annuler" variant="ghost" href="/dashboard/services" />
-                  <ActionButton
-                    label={service ? "Enregistrer" : "Ajouter la prestation"}
-                    variant="primary"
-                    size="lg"
-                    type="submit"
-                  />
+          <div className="cols cols--main-aside">
+            <div className="stack" style={PANEL_GAP}>
+              {/* The panels are stacked one level in rather than by the form
+                  itself: React writes its own hidden fields as the form's first
+                  children, and `.stack > * + *` would read them as a sibling
+                  and push the first panel down by a gap nobody asked for. */}
+              <form id={SERVICE_FORM} action={service ? replaceService : createService}>
+                <div className="stack" style={PANEL_GAP}>
+                  <Essentials service={service} currency={currency} />
+                  <Shape service={service} />
                 </div>
-              </div>
 
-              <aside
-                className="sticky-aside"
-                style={{ display: "grid", gap: "var(--s-5)" }}
+                {/* The API replaces the offering whole, so a field this form
+                    leaves out is a field the next save clears. The design has
+                    no panel for these five, and they are not the provider's to
+                    lose because of that - they ride along as they stand. */}
+                {id ? <input type="hidden" name="id" value={id} /> : null}
+                <input
+                  type="hidden"
+                  name="buffer_before_minutes"
+                  value={service?.buffer_before_minutes ?? 0}
+                />
+                <input
+                  type="hidden"
+                  name="buffer_after_minutes"
+                  value={service?.buffer_after_minutes ?? 0}
+                />
+                <input
+                  type="hidden"
+                  name="currency"
+                  value={service?.price.currency ?? currency}
+                />
+                <input type="hidden" name="sort_order" value={service?.sort_order ?? 0} />
+                {(service?.price_visible ?? true) ? (
+                  <input type="hidden" name="price_visible" value="on" />
+                ) : null}
+              </form>
+
+              {id && album ? (
+                <Photos serviceId={id} album={album} refusal={photoRefusal} />
+              ) : null}
+              {id && roster ? (
+                <Performers serviceId={id} roster={roster} refusal={performerRefusal} />
+              ) : null}
+
+              <div
+                className="row row--wrap"
+                style={{ gap: "var(--s-3)", paddingTop: "var(--s-2)" }}
               >
-                <Visibility service={service} />
-              </aside>
-            </form>
+                <span className="grow" />
+                <Link className="btn btn--ghost" href="/dashboard/services">
+                  <span className="btn__label--idle">Annuler</span>
+                </Link>
+                <button className="btn btn--primary btn--lg" type="submit" form={SERVICE_FORM}>
+                  <span className="btn__label--idle">
+                    {service ? "Enregistrer" : "Créer la prestation"}
+                  </span>
+                  <span className="btn__icon--busy">
+                    <Icon name="loader" size={18} className="ico--spin" />
+                  </span>
+                  <span className="btn__label--busy">Enregistrement…</span>
+                  <span className="btn__icon--done">
+                    <Icon name="check" size={18} />
+                  </span>
+                  <span className="btn__label--done">Enregistré</span>
+                </button>
+              </div>
+            </div>
 
-            {id ? (
-              <>
-                <Photos serviceId={id} opened={photos} />
-                <Performers serviceId={id} opened={performers} />
-              </>
-            ) : null}
+            <aside className="sticky-aside" style={{ display: "grid", gap: "var(--s-5)" }}>
+              <Preview service={service} album={album} />
+              <Visibility service={service} />
+            </aside>
           </div>
         </div>
       </main>
@@ -460,7 +587,7 @@ function Editor({
 /**
  * Name, description, price and length.
  *
- * <p>The price is a number field and not the mockup's spaced "150 000": what is
+ * <p>The price is a number field and not the design's spaced "150 000": what is
  * typed is posted as `amount_minor`, and a thousands separator would arrive as
  * something that is not a number at all.
  */
@@ -474,7 +601,7 @@ function Essentials({
   return (
     <div className="panel">
       <div className="panel__head">
-        <div className="panel__title">L&rsquo;essentiel</div>
+        <div className="panel__title">L’essentiel</div>
       </div>
       <div className="card__body">
         <div className="field">
@@ -489,10 +616,10 @@ function Essentials({
             type="text"
             id="f-name"
             name="name"
+            defaultValue={service?.name ?? ""}
+            placeholder="Tresses collées (cornrows)"
             required
             maxLength={120}
-            defaultValue={service?.name ?? ""}
-            placeholder="Tresses collées, vidange, réparation d'écran…"
           />
         </div>
 
@@ -508,8 +635,8 @@ function Essentials({
             defaultValue={service?.description ?? ""}
           />
           <p className="field__hint">
-            Dites ce qui est compris et ce qui ne l&rsquo;est pas. C&rsquo;est ce
-            qui évite les malentendus.
+            Dites ce qui est compris et ce qui ne l’est pas. C’est ce qui évite
+            les malentendus.
           </p>
         </div>
 
@@ -530,14 +657,14 @@ function Essentials({
                 inputMode="numeric"
                 required
                 min={0}
-                defaultValue={service?.price.amount_minor ?? 0}
+                defaultValue={service?.price.amount_minor ?? ""}
               />
               <span className="input-group__suffix">
                 {service?.price.currency ?? currency}
               </span>
             </div>
             <p className="field__hint">
-              Modifier ce prix n&rsquo;affecte aucune réservation déjà prise.
+              Modifier ce prix n’affecte aucune réservation déjà prise.
             </p>
           </div>
 
@@ -558,7 +685,7 @@ function Essentials({
                 required
                 min={1}
                 max={720}
-                defaultValue={service?.duration_minutes ?? 30}
+                defaultValue={service?.duration_minutes ?? ""}
               />
               <span className="input-group__suffix">min</span>
             </div>
@@ -589,7 +716,7 @@ function Shape({ service }: { service: ServiceOffering | null }) {
         <div>
           <div className="panel__title">Déroulement</div>
           <div className="panel__sub">
-            Un seul mode par prestation&nbsp;: la base de données refuse toute
+            Un seul mode par prestation : la base de données refuse toute
             combinaison.
           </div>
         </div>
@@ -652,8 +779,8 @@ function Shape({ service }: { service: ServiceOffering | null }) {
                 <span className="input-group__suffix">heures</span>
               </div>
               <p className="field__hint">
-                Le client lit «&nbsp;Prêt sous 48&nbsp;h&nbsp;». La durée du
-                rendez-vous ci-dessus ne représente que la remise au comptoir.
+                Le client lit « Prêt sous 48 h ». La durée du rendez-vous
+                ci-dessus ne représente que la remise au comptoir.
               </p>
             </div>
           </div>
@@ -663,171 +790,20 @@ function Shape({ service }: { service: ServiceOffering | null }) {
             hidden={shape !== "AT_CUSTOMER"}
             style={{ marginTop: "var(--s-5)" }}
           >
-            <Notice title="Le client saisira son adresse">
-              Commune, quartier et repères écrits. Aucune coordonnée GPS
-              n&rsquo;est demandée ni conservée.
-            </Notice>
+            <div className="alert alert--info" role="status">
+              <span className="alert__icon">
+                <Icon name="info" />
+              </span>
+              <div className="grow">
+                <div className="alert__title">Le client saisira son adresse</div>
+                <div className="alert__body">
+                  Commune, quartier et repères écrits. Aucune coordonnée GPS
+                  n’est demandée ni conservée.
+                </div>
+              </div>
+            </div>
           </div>
         </fieldset>
-      </div>
-    </div>
-  );
-}
-
-/**
- * What the customer never sees.
- *
- * <p>Absent from the mockup and kept anyway: the API replaces the whole
- * offering, so a buffer, an order or a currency this form left out would not be
- * a field kept, it would be a field cleared on the next save.
- */
-function Settings({
-  service,
-  currency,
-}: {
-  service: ServiceOffering | null;
-  currency: string;
-}) {
-  return (
-    <div className="panel">
-      <div className="panel__head">
-        <div>
-          <div className="panel__title">Réglages</div>
-          <div className="panel__sub">Ce que le client ne voit pas.</div>
-        </div>
-      </div>
-      <div className="card__body">
-        <div className="cols cols--2" style={{ gap: "var(--s-5)" }}>
-          <div className="field">
-            <label className="field__label" htmlFor="f-buffer-before">
-              Battement avant
-            </label>
-            <div className="input-group input-group--suffix">
-              <input
-                className="input"
-                type="number"
-                id="f-buffer-before"
-                name="buffer_before_minutes"
-                inputMode="numeric"
-                min={0}
-                max={240}
-                defaultValue={service?.buffer_before_minutes ?? 0}
-              />
-              <span className="input-group__suffix">min</span>
-            </div>
-          </div>
-          <div className="field">
-            <label className="field__label" htmlFor="f-buffer-after">
-              Battement après
-            </label>
-            <div className="input-group input-group--suffix">
-              <input
-                className="input"
-                type="number"
-                id="f-buffer-after"
-                name="buffer_after_minutes"
-                inputMode="numeric"
-                min={0}
-                max={240}
-                defaultValue={service?.buffer_after_minutes ?? 0}
-              />
-              <span className="input-group__suffix">min</span>
-            </div>
-          </div>
-        </div>
-        <p className="field__hint">
-          Le temps de préparer et de ranger entre deux clients.
-          L&rsquo;agenda le réserve sans le facturer.
-        </p>
-
-        <div
-          className="cols cols--2"
-          style={{ gap: "var(--s-5)", marginTop: "var(--s-5)" }}
-        >
-          <div className="field">
-            <label className="field__label" htmlFor="f-currency">
-              Monnaie
-              <span className="field__req" aria-hidden="true">
-                *
-              </span>
-            </label>
-            <input
-              className="input"
-              type="text"
-              id="f-currency"
-              name="currency"
-              required
-              pattern="[A-Z]{3}"
-              maxLength={3}
-              defaultValue={service?.price.currency ?? currency}
-            />
-            <p className="field__hint">
-              Le code à trois lettres de la monnaie que vous facturez.
-            </p>
-          </div>
-          <div className="field">
-            <label className="field__label" htmlFor="f-sort">
-              Ordre d&rsquo;affichage
-            </label>
-            <input
-              className="input"
-              type="number"
-              id="f-sort"
-              name="sort_order"
-              inputMode="numeric"
-              defaultValue={service?.sort_order ?? 0}
-            />
-            <p className="field__hint">
-              Le plus petit passe en premier sur votre page.
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** Whether the service is offered at all, and whether its price is shown. */
-function Visibility({ service }: { service: ServiceOffering | null }) {
-  return (
-    <div className="panel">
-      <div className="panel__head">
-        <div className="panel__title">Visibilité</div>
-      </div>
-      <div className="card__body">
-        <div className="stack" style={{ "--stack-gap": "var(--s-4)" } as CSSProperties}>
-          <label className="switch" style={{ width: "100%" }}>
-            <input
-              type="checkbox"
-              name="active"
-              defaultChecked={service?.active ?? true}
-            />
-            <span className="switch__track" />
-            <span className="grow">
-              <span className="t-sm t-strong">Visible sur ma page</span>
-              <span className="t-xs" style={{ display: "block" }}>
-                Décocher la retire du public sans la supprimer. Les rendez-vous
-                déjà pris portent encore son prix.
-              </span>
-            </span>
-          </label>
-
-          <label className="switch" style={{ width: "100%" }}>
-            <input
-              type="checkbox"
-              name="price_visible"
-              defaultChecked={service?.price_visible ?? true}
-            />
-            <span className="switch__track" />
-            <span className="grow">
-              <span className="t-sm t-strong">Afficher le prix</span>
-              <span className="t-xs" style={{ display: "block" }}>
-                Masqué, la prestation reste réservable et le client vous demande
-                le prix.
-              </span>
-            </span>
-          </label>
-        </div>
       </div>
     </div>
   );
@@ -838,8 +814,7 @@ function Visibility({ service }: { service: ServiceOffering | null }) {
  *
  * <p>For braids, nails, a decorated hall or a buffet, the photograph IS the
  * specification: "tresses collées" names a family and not a style, and a
- * customer choosing between two of them is choosing between two pictures. A
- * service with none is a service described in words to people who came to look.
+ * customer choosing between two of them is choosing between two pictures.
  *
  * <p>The slots do not renumber. The API takes the lowest free one on upload and
  * leaves a gap on removal, so the first photograph stays the first until its
@@ -847,48 +822,6 @@ function Visibility({ service }: { service: ServiceOffering | null }) {
  * chose their opening picture should not find it changed by deleting another.
  */
 function Photos({
-  serviceId,
-  opened,
-}: {
-  serviceId: string;
-  opened: { album: ServicePhotoList; refusal?: string } | null;
-}) {
-  return (
-    <div className="panel" id={`svc-${serviceId}`}>
-      <div className="panel__head">
-        <div>
-          <div className="panel__title">Photos</div>
-          <div className="panel__sub">
-            5 au maximum · la première sert de vignette dans les listes
-          </div>
-        </div>
-      </div>
-      <div className="card__body">
-        {opened ? (
-          <Album serviceId={serviceId} album={opened.album} refusal={opened.refusal} />
-        ) : (
-          <>
-            <p className="field__hint" style={{ marginTop: 0 }}>
-              Cinq photos au maximum, et retirer l&rsquo;une d&rsquo;elles ne
-              renumérote pas les autres&nbsp;: la place libérée est celle que
-              reprendra la prochaine.
-            </p>
-            <div style={{ marginTop: "var(--s-4)" }}>
-              <Button
-                label="Voir les photos"
-                variant="secondary"
-                icon="image"
-                href={`/dashboard/services?photos=${encodeURIComponent(serviceId)}#svc-${serviceId}`}
-              />
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function Album({
   serviceId,
   album,
   refusal,
@@ -901,103 +834,156 @@ function Album({
   const full = photos.length >= MAX_PHOTOS;
 
   return (
-    <div className="stack" style={{ "--stack-gap": "var(--s-4)" } as CSSProperties}>
-      {refusal ? (
-        <Notice tone="danger" title="Les photos n'ont pas changé">
-          {PHOTO_REFUSALS[refusal] ?? "Réessayez, ou rechargez la page."}
-        </Notice>
-      ) : null}
-
-      {photos.length === 0 ? (
-        <p className="field__hint" style={{ marginTop: 0 }}>
-          Deux tresses ne se distinguent pas avec des mots. Une photo dit ce que
-          trois lignes de description n&rsquo;arrivent pas à dire.
-        </p>
-      ) : null}
-
-      <div className="photos">
-        {photos.map((photo, rank) => (
-          <div className="photo" key={photo.photo_id}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={mediaUrl(photo.url)}
-              alt={`Photo ${photo.position + 1} de la prestation`}
-            />
-            <span className="photo__tag">
-              {rank === 0 ? "Vignette" : `Place ${photo.position + 1}`}
-            </span>
-            <form action={removeServicePhoto}>
-              <input type="hidden" name="id" value={serviceId} />
-              <input type="hidden" name="photo_id" value={photo.photo_id} />
-              <button
-                className="photo__del"
-                type="submit"
-                aria-label={`Supprimer la photo ${photo.position + 1}`}
-              >
-                <Icon name="trash" size={16} />
-              </button>
-            </form>
+    <div className="panel" id={`svc-${serviceId}`}>
+      <div className="panel__head">
+        <div>
+          <div className="panel__title">Photos</div>
+          <div className="panel__sub">
+            5 maximum · la première sert de vignette dans les listes
           </div>
-        ))}
+        </div>
+      </div>
+      <div className="card__body">
+        {refusal ? (
+          <div style={{ marginBottom: "var(--s-4)" }}>
+            <Refusal
+              code={refusal}
+              title="Les photos n’ont pas changé"
+              sentences={PHOTO_REFUSALS}
+            />
+          </div>
+        ) : null}
 
-        {/* The tile labels the input in the form below rather than wrapping it,
-            which is what the mockup does: the preview replaces this tile's
-            contents, and an input living inside would be replaced by the
-            picture it produced - along with the file the upload was to send. */}
-        {full ? null : (
-          <label className="photo photo--add" id="photo-slot" htmlFor="photo-file">
-            <Icon name="upload" />
-            <span className="t-xs" style={{ fontWeight: 700 }}>
-              Ajouter une photo
-            </span>
-          </label>
+        <div className="photos">
+          {photos.map((photo, rank) => (
+            <Photo key={photo.photo_id} serviceId={serviceId} photo={photo} rank={rank} />
+          ))}
+
+          {/* The tile labels the input in the form below rather than wrapping
+              it, which is what the design does: the preview replaces this
+              tile's contents, and an input living inside would be replaced by
+              the picture it produced - along with the file it was to send. */}
+          {full ? null : (
+            <label className="photo photo--add" id="photo-slot" htmlFor="photo-file">
+              <Icon name="upload" />
+              <span className="t-xs" style={{ fontWeight: 700 }}>
+                Ajouter
+              </span>
+            </label>
+          )}
+        </div>
+
+        <p className="field__hint" style={{ marginTop: "var(--s-4)" }}>
+          JPEG ou PNG, 5 Mo maximum. Chaque photo est réduite à 1600 px sur son
+          plus grand côté et ses métadonnées sont supprimées.
+        </p>
+        <p
+          className="t-xs"
+          style={{ marginTop: "var(--s-2)", color: "var(--text-tertiary)" }}
+        >
+          <Icon name="info" size={16} /> Cinq photos au maximum. Retirer l’une
+          d’elles ne renumérote pas les autres : chacune garde sa place, et
+          celle qui se libère est la place que reprendra la prochaine.
+        </p>
+
+        {full ? (
+          <div style={{ marginTop: "var(--s-4)" }}>
+            <div className="alert alert--info" role="status">
+              <span className="alert__icon">
+                <Icon name="info" />
+              </span>
+              <div className="grow">
+                <div className="alert__title">Cinq photos, c’est le maximum</div>
+                <div className="alert__body">
+                  Retirez-en une pour en ajouter une autre.
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <form action={addServicePhoto} style={{ marginTop: "var(--s-4)" }}>
+            <input type="hidden" name="id" value={serviceId} />
+            <input
+              className="sr-only"
+              type="file"
+              id="photo-file"
+              name="image"
+              accept="image/jpeg,image/png"
+              required
+              data-preview="photo-slot"
+            />
+            <button className="btn btn--secondary" type="submit">
+              <span className="btn__icon--idle" style={ICON_IDLE}>
+                <Icon name="upload" size={18} />
+              </span>
+              <span className="btn__label--idle">Envoyer cette photo</span>
+            </button>
+          </form>
         )}
       </div>
+    </div>
+  );
+}
 
-      <p className="field__hint" style={{ marginTop: 0 }}>
-        <Icon name="info" size={16} /> Cinq photos au maximum. La première
-        représente la prestation dans les listes. Retirer une photo ne
-        renumérote pas les autres&nbsp;: la place libérée est celle que
-        reprendra la prochaine, et c&rsquo;est ainsi qu&rsquo;on change la photo
-        de tête.
-      </p>
+/**
+ * One photograph, and the question asked before it goes.
+ *
+ * <p>The button carries no `type`, so it submits: with the presentation script
+ * it opens the dialogue first, and without it the removal still happens. What
+ * it does not carry is `data-optimistic` or `data-dialog-close`, both of which
+ * call `preventDefault` - on a real submit that is a button that does nothing.
+ */
+function Photo({
+  serviceId,
+  photo,
+  rank,
+}: {
+  serviceId: string;
+  photo: ServicePhoto;
+  rank: number;
+}) {
+  const dialog = `dlg-photo-${photo.photo_id}`;
 
-      {full ? (
-        <Notice title="Cinq photos, c'est le maximum">
-          Retirez-en une pour en ajouter une autre.
-        </Notice>
-      ) : (
-        <form action={addServicePhoto}>
-          <input type="hidden" name="id" value={serviceId} />
-          {/* Visible rather than hidden behind the tile: a label is not
-              focusable, so an input clipped out of sight would leave somebody
-              on a keyboard with a control they cannot see themselves reach. */}
-          <input
-            className="input"
-            type="file"
-            id="photo-file"
-            name="image"
-            accept="image/jpeg,image/png"
-            required
-            data-preview="photo-slot"
-          />
-          <p className="field__hint">
-            JPEG ou PNG, 5&nbsp;Mo au maximum. Chaque photo est réduite à
-            1600&nbsp;px sur son plus grand côté et ses métadonnées sont
-            supprimées — y compris les coordonnées GPS qu&rsquo;un téléphone
-            écrit dans une photo sans le demander. Elle n&rsquo;est envoyée
-            qu&rsquo;au moment où vous appuyez sur le bouton.
-          </p>
-          <div style={{ marginTop: "var(--s-4)" }}>
-            <ActionButton
-              label="Envoyer cette photo"
-              variant="secondary"
-              type="submit"
-              icon="upload"
-            />
+  return (
+    <div className="photo">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={mediaUrl(photo.url)} alt={`Photo ${photo.position + 1}`} />
+      {rank === 0 ? <span className="photo__tag">Vignette</span> : null}
+      <form action={removeServicePhoto}>
+        <input type="hidden" name="id" value={serviceId} />
+        <input type="hidden" name="photo_id" value={photo.photo_id} />
+        <button
+          className="photo__del"
+          type="submit"
+          aria-label={`Supprimer la photo ${photo.position + 1}`}
+          data-dialog-open={dialog}
+        >
+          <Icon name="trash" size={16} />
+        </button>
+
+        <dialog className="dialog" id={dialog}>
+          <div className="dialog__inner">
+            <div className="dialog__head">
+              <h2 className="dialog__title">Supprimer cette photo&nbsp;?</h2>
+            </div>
+            <div className="dialog__body">
+              <p>
+                {rank === 0
+                  ? "C’est la vignette actuelle. La photo suivante prendra sa place dans les listes."
+                  : "Les autres photos gardent leur place : celle-ci se libère, et c’est elle que reprendra la prochaine."}
+              </p>
+            </div>
+            <div className="dialog__foot">
+              <button className="btn btn--secondary" type="button" data-dialog-close>
+                <span className="btn__label--idle">Garder</span>
+              </button>
+              <button className="btn btn--danger" type="submit">
+                <span className="btn__label--idle">Supprimer</span>
+              </button>
+            </div>
           </div>
-        </form>
-      )}
+        </dialog>
+      </form>
     </div>
   );
 }
@@ -1007,9 +993,9 @@ type Roster = { team: StaffList; performs: Set<string> };
 /**
  * The team, and which of them perform one service.
  *
- * <p>One service at a time, and only when asked. The contract has one performer
- * list per offering, so reading them all would be a request per row on a page
- * that loads a hundred of them.
+ * <p>One service at a time. The contract has one performer list per offering,
+ * so reading them all would be a request per row on a page that loads a hundred
+ * of them.
  */
 async function rosterFor(serviceId: string): Promise<Roster> {
   const [team, performers] = await Promise.all([
@@ -1024,18 +1010,21 @@ async function rosterFor(serviceId: string): Promise<Roster> {
 /**
  * Who may take a booking for this service.
  *
- * <p>Presented as a removal, because that is what it is. A new service is
- * granted to the whole team, and competence is strict on the server - somebody
- * unticked here cannot be booked for it at all. So the list arrives full and
- * the only move it offers is taking a name out.
+ * <p>Nobody is disabled here, though the design draws the unbookable one that
+ * way: the save sends the whole set, so a box a browser will not submit is a
+ * competence removed in silence.
  */
 function Performers({
   serviceId,
-  opened,
+  roster,
+  refusal,
 }: {
   serviceId: string;
-  opened: { roster: Roster; refusal?: string } | null;
+  roster: Roster;
+  refusal?: string;
 }) {
+  const { team, performs } = roster;
+
   return (
     <div className="panel">
       <div className="panel__head">
@@ -1047,116 +1036,175 @@ function Performers({
         </div>
       </div>
       <div className="card__body">
-        {opened ? (
-          <Roll serviceId={serviceId} roster={opened.roster} refusal={opened.refusal} />
-        ) : (
-          <>
-            <p className="field__hint" style={{ marginTop: 0 }}>
-              Toute votre équipe la réalise. Ouvrez la liste pour en retirer
-              quelqu&rsquo;un.
+        {team.data.length === 0 ? (
+          <div className="empty empty--tight">
+            <Scene name="chair" className="scene-ill" />
+            <div className="empty__title">Personne dans l’équipe</div>
+            <p className="empty__body">
+              Qui réalise quoi se décide entre des personnes. Ajoutez-en d’abord
+              une.
             </p>
-            <div style={{ marginTop: "var(--s-4)" }}>
-              <Button
-                label="Voir la liste"
-                variant="secondary"
-                icon="users"
-                href={`/dashboard/services?performers=${encodeURIComponent(serviceId)}`}
-              />
+            <div className="empty__actions">
+              <Link className="btn btn--secondary" href="/dashboard/team">
+                <span className="btn__label--idle">Composer l’équipe</span>
+                <span className="btn__icon--idle" style={ICON_IDLE}>
+                  <Icon name="arrow-right" size={18} />
+                </span>
+              </Link>
             </div>
-          </>
+          </div>
+        ) : (
+          <form action={replacePerformers}>
+            <input type="hidden" name="id" value={serviceId} />
+
+            {refusal ? (
+              <div style={{ marginBottom: "var(--s-4)" }}>
+                <Refusal
+                  code={refusal}
+                  title="La liste n’a pas été enregistrée"
+                  sentences={PERFORMER_REFUSALS}
+                />
+              </div>
+            ) : null}
+
+            {/* Everyone the team list returns, including someone who has left:
+                the save sends the whole set, so a name this list did not draw
+                is a name the save would quietly take away. */}
+            <div className="stack" style={{ "--stack-gap": "var(--s-3)" } as CSSProperties}>
+              {team.data.map((person) => (
+                <label className="check" key={person.staff_id}>
+                  <input
+                    type="checkbox"
+                    name="staff_ids"
+                    value={person.staff_id}
+                    defaultChecked={performs.has(person.staff_id)}
+                  />
+                  <span className="check__box">
+                    <Icon name="check" />
+                  </span>
+                  <span className="check__text grow">
+                    <strong>{person.display_name}</strong>
+                    <span>{person.role}</span>
+                  </span>
+                  {person.bookable ? null : (
+                    <span className="badge badge--neutral">Non réservable</span>
+                  )}
+                </label>
+              ))}
+            </div>
+
+            <div style={{ marginTop: "var(--s-5)" }}>
+              <button className="btn btn--secondary" type="submit">
+                <span className="btn__icon--idle" style={ICON_IDLE}>
+                  <Icon name="check" size={18} />
+                </span>
+                <span className="btn__label--idle">Enregistrer la liste</span>
+              </button>
+            </div>
+          </form>
         )}
       </div>
     </div>
   );
 }
 
-function Roll({
-  serviceId,
-  roster,
-  refusal,
+/**
+ * What a visitor will see.
+ *
+ * <p>The stored service and not the one being typed: this is rendered on the
+ * server, and a preview that followed the keyboard would be the one piece of
+ * this screen that needed a script.
+ */
+function Preview({
+  service,
+  album,
 }: {
-  serviceId: string;
-  roster: Roster;
-  refusal?: string;
+  service: ServiceOffering | null;
+  album: ServicePhotoList | null;
 }) {
-  const { team, performs } = roster;
-
-  if (team.data.length === 0) {
-    return (
-      <EmptyState
-        compact
-        sketch="chair"
-        title="Personne dans l'équipe"
-        body="Qui réalise quoi se décide entre des personnes. Ajoutez-en d'abord une."
-        action={
-          <Button
-            label="Composer l'équipe"
-            variant="secondary"
-            href="/dashboard/team"
-            iconEnd="arrow-right"
-          />
-        }
-      />
-    );
-  }
+  const shape = SHAPES.find((s) => s.value === service?.fulfilment) ?? ON_SITE;
+  const cover = album?.data[0];
 
   return (
-    <form
-      action={replacePerformers}
-      className="stack"
-      style={{ "--stack-gap": "var(--s-4)" } as CSSProperties}
-    >
-      <input type="hidden" name="id" value={serviceId} />
-
-      {refusal ? (
-        <Notice tone="danger" title="La liste n'a pas été enregistrée">
-          {PERFORMER_REFUSALS[refusal] ?? "Réessayez, ou rechargez la page."}
-        </Notice>
-      ) : null}
-
-      <p className="field__hint" style={{ marginTop: 0 }}>
-        <Icon name="info" size={16} /> Toute l&rsquo;équipe réalise une nouvelle
-        prestation. Décochez qui ne la fait pas&nbsp;: cette personne ne pourra
-        plus recevoir de réservation pour celle-ci. Tout décocher la rend
-        irréservable.
-      </p>
-
-      {/* Everyone the team list returns, including someone who has left: the
-          save sends the whole set, so a name this list did not draw is a name
-          the save would quietly take away. Nobody is disabled here either -
-          a box a browser will not submit is a competence removed in silence. */}
-      <div className="stack" style={{ "--stack-gap": "var(--s-3)" } as CSSProperties}>
-        {team.data.map((person) => (
-          <label className="check" key={person.staff_id}>
-            <input
-              type="checkbox"
-              name="staff_ids"
-              value={person.staff_id}
-              defaultChecked={performs.has(person.staff_id)}
+    <div className="panel">
+      <div className="panel__head">
+        <div>
+          <div className="panel__title">Aperçu client</div>
+          <div className="panel__sub">Ce que verra un visiteur</div>
+        </div>
+      </div>
+      <div className="card__body">
+        <div
+          style={{
+            border: "1px solid var(--border)",
+            borderRadius: "var(--r-sm)",
+            overflow: "hidden",
+          }}
+        >
+          {cover ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={mediaUrl(cover.url)}
+              alt=""
+              style={{ width: "100%", aspectRatio: "4 / 3", objectFit: "cover" }}
             />
-            <span className="check__box">
-              <Icon name="check" />
-            </span>
-            <span className="check__text grow">
-              <strong>{person.display_name}</strong>
-              <span>{person.role}</span>
-            </span>
-            {person.active ? null : <Badge label="A quitté" tone="neutral" />}
-            {person.active && !person.bookable ? (
-              <Badge label="Non réservable" tone="neutral" />
-            ) : null}
-          </label>
-        ))}
+          ) : null}
+          <div style={{ padding: "var(--s-4)" }}>
+            <div className="t-strong">{service ? service.name : "Nom de la prestation"}</div>
+            <div
+              className="row row--wrap"
+              style={{ gap: "var(--s-2)", marginTop: "var(--s-2)" }}
+            >
+              <span className={`mode mode--${shape.mode}`}>
+                <Icon name={shape.icon} />
+                {shape.label}
+              </span>
+              {service ? (
+                <span className="fact">
+                  <Icon name="clock" />
+                  {durationLabel(service.duration_minutes)}
+                </span>
+              ) : null}
+            </div>
+            <div className="row row--between" style={{ marginTop: "var(--s-4)" }}>
+              {/* A price the provider chose to hide is a price the visitor does
+                  not get, and this panel says what the visitor gets. */}
+              <span className="t-price">
+                {service && service.price_visible ? money(service.price) : "·"}
+              </span>
+              <span className="btn btn--primary btn--sm">Réserver</span>
+            </div>
+          </div>
+        </div>
       </div>
+    </div>
+  );
+}
 
-      <div>
-        <ActionButton
-          label="Enregistrer la liste"
-          variant="primary"
-          type="submit"
-          icon="check"
-        />
+/** Whether the service is offered at all. */
+function Visibility({ service }: { service: ServiceOffering | null }) {
+  return (
+    <div className="panel">
+      <div className="panel__head">
+        <div className="panel__title">Visibilité</div>
       </div>
-    </form>
+      <div className="card__body">
+        <label className="switch" style={{ width: "100%" }}>
+          <input
+            type="checkbox"
+            name="active"
+            form={SERVICE_FORM}
+            defaultChecked={service?.active ?? true}
+          />
+          <span className="switch__track" />
+          <span className="grow">
+            <span className="t-sm t-strong">Visible sur ma page</span>
+            <span className="t-xs" style={{ display: "block" }}>
+              Décocher la retire du public sans la supprimer.
+            </span>
+          </span>
+        </label>
+      </div>
+    </div>
   );
 }

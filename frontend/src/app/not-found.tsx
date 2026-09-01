@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
-import { SiteFooter, SiteHeader } from "@/components/site";
-import { Button, EmptyState } from "@/components/ui";
+import Link from "next/link";
+import { Icon, Scene } from "@/components/icon";
+import { SiteFooter, SiteHeader, TabBar } from "@/components/site";
+import { Button } from "@/components/ui";
 
 export const metadata: Metadata = { title: "Page introuvable" };
 
@@ -16,24 +18,32 @@ export default function NotFound() {
   return (
     <>
       <SiteHeader />
-      <main id="contenu">
+
+      <main id="contenu" className="has-tabbar">
         <section className="section section--lg">
           <div className="page page--narrow">
-            <EmptyState
-              sketch="notebook"
-              title="Cette page n’existe pas"
-              body="Le lien est peut-être incomplet, ou la page a été retirée. Repartez de l’accueil ou cherchez directement un professionnel."
-              action={
-                <>
-                  <Button href="/" label="Retour à l’accueil" />
-                  <Button href="/" label="Chercher un professionnel" variant="secondary" />
-                </>
-              }
-            />
+            {/* The mockup's own empty block rather than EmptyState: that
+                component fixes the drawing at 200 px, and the design system's
+                own cap of 220 is what this screen was drawn against. */}
+            <div className="empty">
+              <Scene name="notebook" className="scene-ill" />
+              <div className="empty__title">Cette page n’existe pas</div>
+              <p className="empty__body">
+                Le lien est peut-être incomplet, ou la page a été retirée. Repartez de
+                l’accueil ou cherchez directement un professionnel.
+              </p>
+              <div className="empty__actions">
+                <Button href="/" label="Retour à l’accueil" />
+                <Button href="/" label="Chercher un professionnel" variant="secondary" />
+              </div>
+            </div>
           </div>
         </section>
       </main>
+
       <SiteFooter />
+      <TabBar />
     </>
   );
 }
+
