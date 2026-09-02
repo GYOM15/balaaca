@@ -2059,7 +2059,15 @@ a.choice { text-decoration: none; color: inherit; }
    Consequence voulue : le cadre n'a plus de bordure du cote ou il sort. Elle
    n'est pas masquee, elle n'existe pas - le coin arrondi est coupe avec le
    reste. */
-.feat { position: relative; overflow: hidden; padding-block: clamp(3.5rem, 2rem + 7vw, 7rem); }
+.feat {
+  /* Nommee, parce que la capture s'en sert pour aller chercher le bord bas de
+     la section. Sans elle il faudrait repeter la valeur a deux endroits, et
+     l'une des deux finirait par ne plus suivre l'autre. */
+  --feat-pad: clamp(3.5rem, 2rem + 7vw, 7rem);
+  position: relative;
+  overflow: hidden;
+  padding-block: var(--feat-pad);
+}
 .feat__in { display: grid; gap: var(--s-8); align-items: center; }
 .feat__text { max-width: 34rem; position: relative; z-index: 2; }
 
@@ -2077,18 +2085,24 @@ a.choice { text-decoration: none; color: inherit; }
 }
 
 @media (min-width: 900px) {
-  /* PAS DE REMBOURRAGE EN BAS. C'est lui qui empechait la coupe : la capture
-     s'arretait au bord de sa colonne et il restait 112 px de section en
-     dessous, donc le cadre gardait son coin arrondi. Sans lui, le bord de la
-     section vient a la rencontre de la capture et la coupe. */
-  .feat { padding-bottom: 0; }
   .feat__in { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--s-16); }
-  .feat__art { height: 22rem; }
+  /* La colonne garde une hauteur pour que la rangee ne s'ecrase pas quand le
+     texte est court, et elle s'ETIRE sur toute la rangee. Centree, son bas
+     remontait au-dessus de celui de la rangee, et la capture qui s'y ancre
+     n'atteignait plus le bord de la section : elle s'arretait treize pixels
+     avant. Le texte, lui, reste centre. */
+  .feat__art { min-height: 20rem; align-self: stretch; }
 
+  /* ANCREE PAR LE BAS, et non par le haut. Ancree en haut, la seule facon de
+     faire sortir la capture etait de supprimer le rembourrage bas de la
+     section - ce qui decentrait tout le texte, qui n'avait rien demande.
+     Ancree en bas, la section garde son rembourrage des deux cotes, le texte
+     reste centre, et seule la capture depasse. */
   .shot {
-    position: absolute; z-index: 1; top: 0;
+    position: absolute; z-index: 1;
+    top: auto;
+    bottom: calc(-1 * var(--feat-pad) - 1.5rem);
     width: 44rem;      /* plus large que la colonne : sort de cote */
-                       /* et plus haute que 22 rem : sort par le bas */
   }
   /* VITRINE : ancree a gauche de sa colonne, elle grandit vers la droite et
      sort par la droite et par le bas. Ces deux bordures n'existent pas. */
@@ -2100,13 +2114,17 @@ a.choice { text-decoration: none; color: inherit; }
   /* Plus basse que l'autre : la capture du tableau de bord est moins haute que
      celle de la page publique, donc sa colonne doit l'etre aussi pour que le
      bas sorte pareil. Une hauteur commune coupait l'une et pas l'autre. */
-  .feat--flip .feat__art  { order: 1; height: 16rem; }
+  .feat--flip .feat__art  { order: 1; }
   .feat--flip .shot { left: auto; right: 0; }
 }
 
 @media (max-width: 899px) {
-  .feat__art { height: 21rem; margin-top: var(--s-8); }
-  .shot { position: absolute; top: 0; z-index: 1; width: 30rem; }
+  .feat__art { min-height: 17rem; margin-top: var(--s-8); }
+  .shot {
+    position: absolute; z-index: 1; top: auto;
+    bottom: calc(-1 * var(--feat-pad) - 1rem);
+    width: 30rem;
+  }
   .feat .shot { left: 8%; }
   .feat--flip .shot { left: auto; right: 8%; }
   /* A 390 px les deux colonnes du tableau de bord cote a cote rendent les
@@ -2157,27 +2175,15 @@ a.choice { text-decoration: none; color: inherit; }
   letter-spacing: -0.028em; line-height: 1.2; color: #fff; }
 .creed__why { color: var(--text-on-dark-muted); font-size: var(--fs-sm); line-height: 1.6; }
 
-.creed__have { margin-top: clamp(2.5rem, 1.5rem + 4vw, 4rem);
-  padding-top: var(--s-8); border-top: 1px solid rgba(255,255,255,.13); }
-.creed__have h3 { font-family: var(--font-display); font-weight: 600; font-size: var(--fs-h4);
-  letter-spacing: -0.02em; color: #fff; margin: 0 0 var(--s-5); }
-.creed__have ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-3) var(--s-8); }
-@media (min-width: 700px)  { .creed__have ul { grid-template-columns: 1fr 1fr; } }
-@media (min-width: 1040px) { .creed__have ul { grid-template-columns: repeat(3, 1fr); } }
-.creed__have li { display: grid; grid-template-columns: 12px 1fr; gap: var(--s-3);
-  align-items: start; font-size: var(--fs-sm); color: var(--text-on-dark-muted); line-height: 1.5; }
-.creed__have .rule { height: 2px; background: var(--accent); border-radius: 2px; margin-top: .62em; }
 
 .js .creed__item { opacity: 0; transform: translateY(10px); }
 .js .creed.is-in .creed__item {
   animation: creedRise 620ms var(--ease-entrance) forwards;
   animation-delay: calc(var(--i) * 110ms); }
 @keyframes creedRise { to { opacity: 1; transform: none; } }
-.js .creed__have { opacity: 0; }
-.js .creed.is-in .creed__have { animation: creedRise 620ms var(--ease-entrance) 700ms forwards; }
 
 @media (prefers-reduced-motion: reduce) {
-  .js .creed__item, .js .creed__have { opacity: 1; transform: none; animation: none !important; }
+  .js .creed__item { opacity: 1; transform: none; animation: none !important; }
   .shot, .feat__art:hover .shot { transition: none; transform: none; }
 }
 

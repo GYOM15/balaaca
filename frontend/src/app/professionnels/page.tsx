@@ -81,20 +81,6 @@ const MODES: [string, string, string, string][] = [
   ],
 ];
 
-/**
- * Ce que le produit tient, en contrepoint du manifeste.
- *
- * <p>Court et serré, sur trois colonnes : ce n'est pas ce qu'on vient lire
- * ici, et cela ne doit pas se battre avec le refus.
- */
-const BUILT = [
-  "Une page publique, un lien court et un QR code, à vie.",
-  "Un agenda jour et semaine, à plusieurs si besoin.",
-  "Un catalogue avec photos, prix et durée.",
-  "Des horaires par semaine et les fermetures exceptionnelles.",
-  "Une fiche par client, son historique et une note privée.",
-  "Des notifications WhatsApp ou par e-mail, au choix du client.",
-];
 
 /**
  * Ce que le produit refuse, et POURQUOI.
@@ -392,17 +378,6 @@ export default function ProLanding() {
               ))}
             </div>
 
-            <div className="creed__have">
-              <h3>Et ce qui est construit, disponible aujourd’hui</h3>
-              <ul>
-                {BUILT.map((line) => (
-                  <li key={line}>
-                    <span className="rule" aria-hidden="true" />
-                    <span>{line}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
           </div>
         </section>
 
