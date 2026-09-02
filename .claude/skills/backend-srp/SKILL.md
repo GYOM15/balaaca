@@ -21,24 +21,22 @@ kind of work in its own layer.
 - Reviewing a CDI bean that does more than one of: orchestrate a use
   case, hold aggregate behavior, talk to a DB/gateway, map DTOs,
   validate input, publish events.
-- Writing a state transition — the moment where "read, decide in Java,
+- Writing a state transition - the moment where "read, decide in Java,
   save" quietly becomes two responsibilities and one race.
-- Tempted to name something `*Manager`, `*Helper`, `*Util`, `*Processor`
-  — a smell unless it is a genuinely stateless pure function.
+- Tempted to name something `*Manager`, `*Helper`, `*Util`, `*Processor` - a smell unless it is a genuinely stateless pure function.
 
 ## The rules
 
-1. **One class = one reason to change.** If you describe it with "and"
-   — "computes the slot *and* checks the plan quota *and* saves the
-   appointment *and* sends the SMS" — split it. Each of those is a
+1. **One class = one reason to change.** If you describe it with "and" - "computes the slot *and* checks the plan quota *and* saves the
+   appointment *and* sends the SMS" - split it. Each of those is a
    distinct concern with a distinct reason to change.
 2. **Aggregate behavior lives in the domain, not the service.** Invariant
    checks, state transitions and the money math belong on the aggregate
    (`Appointment.confirm()`, `Appointment.cancel(reason)`,
    `Appointment.reschedule(newStartsAt, clock)`). The application service
    orchestrates; it does not re-implement the rules the domain owns.
-   Money logic — notably `customerPrice()`, frozen onto the appointment
-   at booking time — stays EXPLICIT in the domain, never smuggled into
+   Money logic - notably `customerPrice()`, frozen onto the appointment
+   at booking time - stays EXPLICIT in the domain, never smuggled into
    an interceptor or a mapper. Where the invariant is owned by
    PostgreSQL, as with the no-double-booking exclusion constraint, the
    service does not re-implement it either (see `booking-integrity`).
@@ -47,17 +45,17 @@ kind of work in its own layer.
    Hibernate dirty-check the change is two responsibilities pretending
    to be one, and it is wrong under concurrency: two requests both read
    `PENDING`, both pass the Java check, and the second write silently
-   overwrites the first. The domain check stays — it produces a precise,
-   testable error — but the AUTHORITY is a single statement whose
+   overwrites the first. The domain check stays - it produces a precise,
+   testable error - but the AUTHORITY is a single statement whose
    `WHERE` clause carries the precondition:
    `UPDATE … WHERE id = :id AND status IN (…) AND version = :expected`.
    The affected-row count is checked; zero means someone else got there
    first and raises `AppointmentConflictException` (409). Zero rows do
-   not throw on their own — under RLS a write to another tenant's row
+   not throw on their own - under RLS a write to another tenant's row
    also affects zero rows in silence (see `backend-exceptions`).
 4. **One application service per use-case family.** Do not build a
    god-service. Split by cohesive use case: `BookAppointmentService`,
-   `CancelAppointmentService`, `RescheduleAppointmentService` — each
+   `CancelAppointmentService`, `RescheduleAppointmentService` - each
    fulfils one inbound port, not five unrelated ones.
 5. **I/O plumbing is its own class at the edge.** An outbound adapter
    (`AppointmentSqlRepository`, `TwilioSmsAdapter`) shuttles bytes
@@ -130,7 +128,7 @@ kind of work in its own layer.
 Rescheduling an appointment, each class owning exactly one concern:
 
 ```java
-// domain — owns the state machine and the derived window. Framework-free.
+// domain - owns the state machine and the derived window. Framework-free.
 public final class Appointment {
 
     private final AppointmentId id;
@@ -166,7 +164,7 @@ public final class Appointment {
 ```
 
 ```java
-// outbound port — states the semantics, returns the outcome
+// outbound port - states the semantics, returns the outcome
 public interface AppointmentRepository {
 
     Appointment require(AppointmentId id);   // miss -> 404 RESOURCE_NOT_FOUND
@@ -178,7 +176,7 @@ public interface AppointmentRepository {
 ```
 
 ```java
-// application — orchestrates only; no SQL, no gateway code, no logging
+// application - orchestrates only; no SQL, no gateway code, no logging
 @ApplicationScoped
 public class RescheduleAppointmentService
         implements RescheduleAppointmentUseCase {
@@ -243,17 +241,17 @@ audit/tracing/tenant/logging are interceptors and connection hooks elsewhere.
 
 ## Sibling skills
 
-- `backend-architecture` — the four layers each responsibility lives in.
-- `backend-naming` — suffixes that make the single responsibility readable,
+- `backend-architecture` - the four layers each responsibility lives in.
+- `backend-naming` - suffixes that make the single responsibility readable,
   and why the insert port method is `insertIfAbsent`.
-- `backend-di` — injecting one collaborator per concern.
-- `backend-exceptions` — `AppointmentConflictException` for the lost update,
+- `backend-di` - injecting one collaborator per concern.
+- `backend-exceptions` - `AppointmentConflictException` for the lost update,
   and why zero affected rows never throws by itself.
-- `cdi-interceptors` — where cross-cutting effects go instead of the class.
-- `pii-masking-logging` — the interceptor that logs so the service does not.
-- `money-currency` — why the frozen `customerPrice()` stays in the domain.
-- `booking-integrity` — the invariant the database owns, not the service.
-- `outbox-messaging` — cancelling obsolete notifications and planning new
+- `cdi-interceptors` - where cross-cutting effects go instead of the class.
+- `pii-masking-logging` - the interceptor that logs so the service does not.
+- `money-currency` - why the frozen `customerPrice()` stays in the domain.
+- `booking-integrity` - the invariant the database owns, not the service.
+- `outbox-messaging` - cancelling obsolete notifications and planning new
   ones in the same transaction.
-- `temporal-modelling` — slot arithmetic belongs to the domain, with an
+- `temporal-modelling` - slot arithmetic belongs to the domain, with an
   injected clock.

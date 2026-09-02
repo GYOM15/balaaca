@@ -27,8 +27,8 @@ generated from or verified against it, never the other way round.
 - Deciding where the OpenAPI file lives, or wiring the generator.
 - Reviewing a PR that hand-writes a DTO, a resource, or an event payload
   with no corresponding spec change.
-- Reviewing a PR that adds a second `META-INF/openapi.yaml` — read rule 2.
-- Being tempted to introduce a third contract kind — read rule 3 first.
+- Reviewing a PR that adds a second `META-INF/openapi.yaml` - read rule 2.
+- Being tempted to introduce a third contract kind - read rule 3 first.
 
 ## The rules
 
@@ -42,7 +42,7 @@ generated from or verified against it, never the other way round.
 2. **There is exactly ONE OpenAPI document, and it lives in the runner/API
    module.** The published contract is
    `app/src/main/resources/META-INF/openapi.yaml` in the deployable that
-   assembles the core contexts — not one per Maven module. This is not a
+   assembles the core contexts - not one per Maven module. This is not a
    style preference: **every module's `META-INF/openapi.yaml` lands on the
    same classpath at the same path, so SmallRye silently serves whichever
    one wins the scan and drops the rest.** Under that arrangement half the
@@ -59,7 +59,7 @@ generated from or verified against it, never the other way round.
 3. **One contract kind per seam, and today there are only two.**
    client→core = REST/OpenAPI. core→satellite = a notification **event**
    payload with its own schema, written to the `notifications` table,
-   which IS the outbox — there is no broker (cross-ref
+   which IS the outbox - there is no broker (cross-ref
    `outbox-messaging`). Module→module inside the core is an in-process
    Java call through the callee's inbound port and has **no** network
    contract at all (cross-ref `backend-architecture`). **There is no
@@ -67,7 +67,7 @@ generated from or verified against it, never the other way round.
    `chatbot-service` calls the public business API over REST and never
    touches the database, and `notification-worker` reads the outbox
    table. A `.proto` seam would only ever appear if a genuinely separate
-   deployable needed a synchronous call — none does — and inventing one
+   deployable needed a synchronous call - none does - and inventing one
    for an in-process call is the mistake this rule exists to prevent.
 4. **REST resources mirror the OpenAPI resource hierarchy, under `/v1`.** A
    path is the version segment followed by English kebab-case plural nouns
@@ -88,7 +88,7 @@ generated from or verified against it, never the other way round.
    undocumented surprise.
 6. **Money, time and identifiers have contract-level types.** Money is
    always `{ amount_minor: integer, currency: string }` with the
-   currency's own scale documented — never a bare number, never a float,
+   currency's own scale documented - never a bare number, never a float,
    never an assumed "cents", and never a hardcoded currency. Instants are
    `date-time` in UTC; a recurring local time carries the provider's IANA
    zone. **No provider identifier is ever a request field**: the tenant is
@@ -100,7 +100,7 @@ generated from or verified against it, never the other way round.
    notification has a documented schema (event type, version, dedupe key,
    payload) and a stable type name. Evolve additively (new optional
    fields); a breaking change is a new versioned event type, never a
-   silent reshape — delivery is at-least-once and an older
+   silent reshape - delivery is at-least-once and an older
    `notification-worker` must keep working against rows written by a
    newer core (cross-ref `outbox-messaging`).
 8. **Version every contract; breaking changes bump the version.** REST
@@ -109,26 +109,24 @@ generated from or verified against it, never the other way round.
    Removing a field, tightening a type, renaming an error `code`, or
    making an optional parameter required is a version bump, never an edit
    in place.
-9. **Generated code is never committed, so there is no code-drift check —
-   what CI checks is the spec.** The `openapi-generator-maven-plugin`
+9. **Generated code is never committed, so there is no code-drift check - what CI checks is the spec.** The `openapi-generator-maven-plugin`
    writes the server interfaces and DTOs into `target/generated-sources`
    on every build, and they are gitignored. There is no checked-in copy to
    diverge from the spec, and therefore no drift job to write or to
    forget: the only way to change the interface is to change the spec, and
    the compiler catches a resource that no longer matches its generated
    interface. What CI **does** enforce is that the merged document is
-   sound and safe to publish — it runs spectral against it, fails on an
+   sound and safe to publish - it runs spectral against it, fails on an
    invalid OpenAPI file, and runs openapi-diff plus the event-schema
    backward-compatibility check against the previous version so a breaking
    change cannot merge unnoticed (cross-ref `ci-workflow`, which owns the
    job definitions). Generated code is never edited by hand.
 10. **This skill owns the PROCESS; `platform-api` owns the SHAPE.** Spec
     first, one document, generation, versioning and the CI gate are the
-    rules above. WHAT the public spec is allowed to contain —
-    capability-oriented operations, no internal leakage, bookable-slots-only
+    rules above. WHAT the public spec is allowed to contain - capability-oriented operations, no internal leakage, bookable-slots-only
     public availability, `Idempotency-Key` on appointment creation, the
     cursor pagination envelope, the closed error-`code` catalogue, OAuth2
-    scopes, and SDK-generatability — is governed by **`platform-api`**. A
+    scopes, and SDK-generatability - is governed by **`platform-api`**. A
     public operation must satisfy both skills before it merges.
 
 ## Anti-patterns
@@ -206,8 +204,8 @@ paths:
               schema: { $ref: '#/components/schemas/Problem' }
 components:
   schemas:
-    BookAppointmentRequest:    # no provider_id — resolved from the token
-      type: object             # no ends_at — recomputed from the offering
+    BookAppointmentRequest:    # no provider_id - resolved from the token
+      type: object             # no ends_at - recomputed from the offering
       required: [service_offering_id, starts_at, customer]
       properties:
         service_offering_id: { type: string, format: uuid }
@@ -243,7 +241,7 @@ Fragments merged into it, and scanning off, so nothing else can publish:
 mp.openapi.scan.disable=true   # the file is the contract, not the classpath
 ```
 
-The resource implements the generated interface — it never invents the
+The resource implements the generated interface - it never invents the
 shape:
 
 ```java
@@ -269,26 +267,26 @@ rejects the merged document or openapi-diff reports a breaking change.
 
 ## Sibling skills
 
-- `platform-api` — the SHAPE of the public spec and the one normative
+- `platform-api` - the SHAPE of the public spec and the one normative
   error-`code` catalogue; this skill is the PROCESS. Both must pass.
-- `backend-architecture` — which seam gets which contract; module→module
+- `backend-architecture` - which seam gets which contract; module→module
   stays an in-process port call with no network contract.
-- `backend-exceptions` — the RFC 7807 error shapes and `code`s the spec
+- `backend-exceptions` - the RFC 7807 error shapes and `code`s the spec
   documents.
-- `backend-naming` — `ServiceOffering`, `service_offerings`,
+- `backend-naming` - `ServiceOffering`, `service_offerings`,
   `service_offering_id`, and the naming the paths mirror.
-- `booking-integrity` — why the server recomputes the slot and why the
+- `booking-integrity` - why the server recomputes the slot and why the
   documented `409 SLOT_UNAVAILABLE` exists.
-- `idempotency-concurrency` — what the declared `Idempotency-Key` header
+- `idempotency-concurrency` - what the declared `Idempotency-Key` header
   and its request fingerprint must guarantee.
-- `money-currency` — the money contract type and per-currency scale.
-- `temporal-modelling` — UTC instants versus provider-local recurring
+- `money-currency` - the money contract type and per-currency scale.
+- `temporal-modelling` - UTC instants versus provider-local recurring
   times on the wire.
-- `multi-tenant-rls` — why no provider identifier appears in a request
+- `multi-tenant-rls` - why no provider identifier appears in a request
   schema.
-- `outbox-messaging` — the notifications table as the outbox, and
+- `outbox-messaging` - the notifications table as the outbox, and
   additive, versioned payload evolution.
-- `ci-workflow` — the pipeline gate that owns the spectral lint and the
+- `ci-workflow` - the pipeline gate that owns the spectral lint and the
   openapi-diff job.
-- `code-language` — URLs and schemas are English; user-facing strings are
+- `code-language` - URLs and schemas are English; user-facing strings are
   French first.

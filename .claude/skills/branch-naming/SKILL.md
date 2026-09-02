@@ -20,7 +20,7 @@ cut from `develop`, merged back into `develop` by PR, and deleted.
 > `develop` as an anti-pattern. The Balaaca owner has explicitly decided
 > otherwise: `develop` exists, it is the default branch, and it is promoted to
 > `main` at phase milestones. Where the two disagree, this file wins. There is
-> no contradiction left to resolve — the older trunk-based rule is dead here.
+> no contradiction left to resolve - the older trunk-based rule is dead here.
 
 This file owns **the** `pre-push` hook. It is written once, below; `ci-workflow`
 and `commit-style` cross-reference it rather than restating it. If you find a
@@ -42,7 +42,7 @@ second copy anywhere in the pack, delete that copy and point at this one.
 2. **`develop` is the integration branch and the GitHub default branch.** Every
    topic branch is cut from `develop` and merged back into `develop` through a
    PR. A clone of the repository lands on `develop`, and a PR opened without
-   thinking targets `develop` — that is the point of making it the default.
+   thinking targets `develop` - that is the point of making it the default.
 3. **Short-lived topic branches: `feature/<kebab-slug>`.** Branch off the latest
    `develop`, do one topic, open a PR, merge, delete. Lifetime is days, not
    weeks. Examples: `feature/appointment-exclusion-constraint`,
@@ -67,7 +67,7 @@ second copy anywhere in the pack, delete that copy and point at this one.
    are parallel integration branches, and this project has exactly one.
 9. **Merge only on a green gate.** Build, all test levels including the booking
    concurrency and tenant non-leak suites, ArchUnit, Semgrep, gitleaks,
-   OSV-Scanner, Trivy, coverage and mutation thresholds — all pass before merge
+   OSV-Scanner, Trivy, coverage and mutation thresholds - all pass before merge
    (see `ci-workflow`). A red gate never merges, not into `develop` and
    certainly not into `main`. Commits are signed as a matter of discipline
    (`commit-style`); the gate does not verify signatures, so do not lean on it
@@ -76,15 +76,15 @@ second copy anywhere in the pack, delete that copy and point at this one.
     The promotion is a PR from `develop` to `main` that runs the same gate, and
     the resulting `main` commit is what gets tagged and released. Because the
     promotion PR targets `main`, the workflow's `pull_request` trigger must
-    list **both** `develop` and `main` — a gate that only fires on PRs into
+    list **both** `develop` and `main` - a gate that only fires on PRs into
     `develop` would let the release merge through unchecked.
 11. **The `pre-push` hook guards both `main` and `develop`.** Not `main` alone:
     `develop` is where every feature integrates, so an accidental direct push
     there skips the gate on real work just as surely. The hook has exactly one
     documented override, for the milestone promotion (rule 12).
 12. **The override is explicit, deliberate, and per-command.** When a milestone
-    promotion genuinely cannot go through a PR — the merge is done locally and
-    the result must reach `main` — set the escape hatch on that single command:
+    promotion genuinely cannot go through a PR - the merge is done locally and
+    the result must reach `main` - set the escape hatch on that single command:
     `BALAACA_PROMOTE=1 git push origin main`. Never export it in a shell
     profile, never in CI, and never for a feature branch. Record the promotion
     in the release notes so the direct push is accounted for. `--no-verify` is
@@ -164,7 +164,7 @@ git config core.hooksPath .githooks
 
 ```bash
 #!/usr/bin/env bash
-# .githooks/pre-push — the single authoritative copy for this project.
+# .githooks/pre-push - the single authoritative copy for this project.
 #
 # Client-side only and bypassable (--no-verify, or a clone that never set
 # core.hooksPath). GitHub branch protection is unavailable on a private repo
@@ -176,8 +176,8 @@ git config core.hooksPath .githooks
 #
 #     BALAACA_PROMOTE=1 git push origin main
 #
-# Set it on that single command only — never exported, never in CI, never for
-# a feature branch — and note the promotion in the release notes.
+# Set it on that single command only - never exported, never in CI, never for
+# a feature branch - and note the promotion in the release notes.
 set -euo pipefail
 
 protected='refs/heads/main refs/heads/develop'
@@ -206,5 +206,5 @@ The override deliberately covers `main` only. There is no promotion into
 
 ## Sibling skills
 
-- `commit-style` — signed commit messages on these branches: capitalized present-tense imperative subject <=50 chars, body <=72, no type/scope prefix, no Co-Authored-By; enforced by local hooks only.
-- `ci-workflow` — the keyless gate every PR to `develop` and every promotion PR to `main` must pass; it cross-references the hook above rather than restating it.
+- `commit-style` - signed commit messages on these branches: capitalized present-tense imperative subject <=50 chars, body <=72, no type/scope prefix, no Co-Authored-By; enforced by local hooks only.
+- `ci-workflow` - the keyless gate every PR to `develop` and every promotion PR to `main` must pass; it cross-references the hook above rather than restating it.

@@ -16,6 +16,7 @@ import com.balaaca.sharedkernel.ids.StaffId;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.transaction.Transactional;
 import java.security.SecureRandom;
+import java.util.Base64;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -158,39 +159,25 @@ public class ManageStaffService implements ListStaffUseCase {
     }
 
     /**
-     * The digits and the upper-case letters with 0, O, 1, I and L removed: the
-     * characters a person hears wrong and reads wrong are not in it. The same
-     * thirty-one a booking reference is drawn from.
-     */
-    private static final String ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
-
-    /**
-     * Eight, where a booking reference takes six. That one authorises reading
-     * one appointment; this one authorises joining a team, and two more symbols
-     * are 961 times the work for a guesser at no cost to the person saying it.
-     */
-    private static final int CODE_LENGTH = 8;
-
-    /**
-     * A code the owner can say out loud.
+     * 256 bits. It is the whole authorisation for a seat at a business, and it
+     * is not derived from anything a guesser could know.
      *
-     * <p>It was 43 characters of base64url - 256 bits, sized as the
-     * authorisation it is. But it is also the thing an owner reads across a
-     * salon or into WhatsApp, and at that length in mixed case it cannot be.
+     * <p>V045 cut this to eight characters so an owner could say it out loud,
+     * and V046 put it back. The two codes this product mints are not the same
+     * object: a booking reference opens one appointment and may genuinely have
+     * to be read out, while this opens the diary, the clientele and the
+     * catalogue, and is pasted into WhatsApp. Length costs the person using it
+     * nothing, and the screen sends a LINK carrying it, so a colleague types
+     * nothing at all.
      *
-     * <p>What replaces it is 2^39.6, and that is only defensible because the
-     * invitation expires in seven days AND because acceptStaffInvitation spends
-     * an attempt budget before it reaches the database. Thirty tries per ten
-     * minutes over seven days is about one chance in thirty million. Remove the
-     * limiter and this becomes guessable in an afternoon - V045 says the same
-     * thing beside the SQL.
+     * <p>The attempt limiter in AcceptStaffInvitationService stays. At this
+     * length it is no longer what makes the code safe - it is what makes a
+     * code that has leaked and is being shared around cost something.
      */
-    private String mintCode() {
-        StringBuilder body = new StringBuilder(CODE_LENGTH);
-        for (int i = 0; i < CODE_LENGTH; i++) {
-            body.append(ALPHABET.charAt(RANDOM.nextInt(ALPHABET.length())));
-        }
-        return profiles.initials() + "-" + body;
+    private static String mintCode() {
+        byte[] raw = new byte[32];
+        RANDOM.nextBytes(raw);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(raw);
     }
 
     /** Active and bookable are two different things, and both are required. */

@@ -27,12 +27,4 @@ public interface ProviderProfileRepository {
 
     Optional<String> replaceCover(String name);
 
-    /**
-     * The three letters this business's codes are prefixed with.
-     *
-     * <p>Asked for rather than derived, because the database already answers it
-     * for a booking reference and two implementations of "the initials" would
-     * eventually disagree about the same name.
-     */
-    String initials();
 }

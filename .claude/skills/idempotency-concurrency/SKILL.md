@@ -20,8 +20,8 @@ and a version check does not make a retry safe.
 
 - Any command that creates or advances an `Appointment`, or that mutates a
   `ServiceOffering`, `AvailabilityRule`, `ProviderStaff` or `Subscription`.
-- Any endpoint a client may retry — a double-tapped "Confirm" button, a mobile
-  connection that drops after the request left the phone, a proxy timeout — and
+- Any endpoint a client may retry - a double-tapped "Confirm" button, a mobile
+  connection that drops after the request left the phone, a proxy timeout - and
   in particular `POST /v1/appointments`, which declares `Idempotency-Key` as a
   required header.
 - Any state transition (`PENDING -> CONFIRMED`, `CONFIRMED -> CANCELLED`) or
@@ -45,7 +45,7 @@ and a version check does not make a retry safe.
    no effect.** `Idempotency-Key` is a declared, required header on appointment
    creation. It is stored as `appointments.idempotency_key` under
    `UNIQUE (provider_id, idempotency_key)`. The first request books; a second
-   request carrying the same key returns the same appointment — the customer who
+   request carrying the same key returns the same appointment - the customer who
    double-taps gets one 10:00 haircut, not two.
 3. **The key is stored beside a fingerprint of the request, and a reused key
    with a different body is an error, not a replay.** Every appointment row
@@ -53,13 +53,13 @@ and a version check does not make a retry safe.
    canonicalised request body (`service_offering_id`, `starts_at`, `staff_id`,
    `customer_id`, in a fixed order). On a hit, compare: an **equal** hash is a
    replay and returns the stored appointment with its original `2xx` body; a
-   **different** hash is a client bug — a key recycled across two genuinely
-   different bookings — and returns `422` with the published code
+   **different** hash is a client bug - a key recycled across two genuinely
+   different bookings - and returns `422` with the published code
    `IDEMPOTENCY_KEY_REUSED`. Returning the first appointment for a second,
    different request and calling it success is how a customer ends up believing
    they booked Tuesday when the row says Monday.
 4. **Retention is the life of the appointment row.** The key and its hash live
-   on the appointment and are deleted with it — there is no sweeper, no TTL, and
+   on the appointment and are deleted with it - there is no sweeper, no TTL, and
    no 24-hour window. Say that in the contract; do not document a window nothing
    implements. A client that retries a week later against a still-existing
    appointment still gets the replay, which is the behaviour we want.
@@ -87,9 +87,8 @@ and a version check does not make a retry safe.
    `Appointment`, `ServiceOffering` and `Subscription` have a `version`. Advance
    the appointment state machine with `UPDATE … SET status = :next,
    version = version + 1 WHERE id = :id AND status = :expected AND
-   version = :v`, and check the affected-row count. The database — not an
-   app-side `if (appointment.status() == EXPECTED)` after a separate read —
-   arbitrates the race. Two staff members cancelling and completing the same
+   version = :v`, and check the affected-row count. The database - not an
+   app-side `if (appointment.status() == EXPECTED)` after a separate read - arbitrates the race. Two staff members cancelling and completing the same
    appointment at once cannot both win; the loser gets an RFC 7807 `409`, never
    a silent overwrite.
 8. **Slot exclusion is a database constraint, never a read-then-write check.**
@@ -125,9 +124,9 @@ and a version check does not make a retry safe.
     handles slots. Reach for a row lock only on a genuinely hot row where the
     retry cost under contention is worse than the lock, and say why in the PR.
 12. **Never conflate the two mechanisms.** "We have a UNIQUE idempotency key, so
-    we don't need a version" is wrong — the key stops *replays of one request*,
+    we don't need a version" is wrong - the key stops *replays of one request*,
     not two *different* legitimate edits of the same appointment. "We have
-    optimistic locking, so retries are safe" is wrong — the version stops *lost
+    optimistic locking, so retries are safe" is wrong - the version stops *lost
     updates*, but a retried request with no key books a second appointment.
     "We have the EXCLUDE constraint, so we don't need idempotency" is wrong
     twice over: a replay of a *cancel-then-rebook* flow, or a retry landing
@@ -202,7 +201,7 @@ and a version check does not make a retry safe.
 
 ## Minimal correct example
 
-**EXCERPT — idempotency columns only.** The normative `appointments` DDL, with
+**EXCERPT - idempotency columns only.** The normative `appointments` DDL, with
 `blocked_from`/`blocked_until`, the derived-buffer and non-empty CHECKs, the
 `btree_gist` extension and the exclusion constraint, is
 `V014__create_appointments.sql` in `booking-integrity`. Do not copy the table
@@ -223,7 +222,7 @@ three columns this skill owns.
 --       WHERE (status IN ('PENDING', 'CONFIRMED'))
 ```
 
-Idempotent command. `provider_id` is ambient — it is never a parameter of the
+Idempotent command. `provider_id` is ambient - it is never a parameter of the
 command, the use case or the DTO.
 
 ```java
@@ -329,7 +328,7 @@ public class BookAppointmentService implements BookAppointmentUseCase {
 `bookOnce` is the `@Transactional` method above; each attempt is a fresh unit of
 work because a `23P01` has already marked the previous one rollback-only.
 
-Atomic, version-checked transition — the database arbitrates the race:
+Atomic, version-checked transition - the database arbitrates the race:
 
 ```java
 @Transactional
@@ -367,7 +366,7 @@ int compareAndAdvance(AppointmentId id,
 }
 ```
 
-The notification worker shows the same pair once more — `dedupe_key` for the
+The notification worker shows the same pair once more - `dedupe_key` for the
 replay, `SKIP LOCKED` for the concurrent drain:
 
 ```sql
@@ -435,25 +434,25 @@ void concurrentTransitionsHaveExactlyOneWinner() throws Exception {
 
 ## Sibling skills
 
-- `booking-integrity` — owns the normative `appointments` migration, the
+- `booking-integrity` - owns the normative `appointments` migration, the
   exclusion constraint and its CHECKs, server-side slot recomputation and the
   appointment state machine; the canonical case for both guards at once.
-- `outbox-messaging` — the `notifications` table is the outbox; at-least-once
+- `outbox-messaging` - the `notifications` table is the outbox; at-least-once
   delivery means `dedupe_key` on the producing side and dedupe on the consuming
   side, drained with `FOR UPDATE SKIP LOCKED` ordered by `scheduled_at`.
-- `contract-first` — `Idempotency-Key` is a declared, required header on
+- `contract-first` - `Idempotency-Key` is a declared, required header on
   appointment creation in the hand-authored OpenAPI document, not an
   undocumented convention.
-- `platform-api` — `409` and `422` responses carry an RFC 7807 body with a
+- `platform-api` - `409` and `422` responses carry an RFC 7807 body with a
   stable code; published codes are never renamed or reused.
-- `backend-exceptions` — `SlotUnavailableException`,
+- `backend-exceptions` - `SlotUnavailableException`,
   `IdempotencyKeyReusedException` and friends all extend the single
   `DomainException` base in `com.balaaca.sharedkernel.error`.
-- `money-currency` — the frozen `customer_price_amount_minor` rides on the very
+- `money-currency` - the frozen `customer_price_amount_minor` rides on the very
   aggregate that carries the `version` column.
-- `multi-tenant-rls` — the `UNIQUE (provider_id, …)` keys, the composite foreign
+- `multi-tenant-rls` - the `UNIQUE (provider_id, …)` keys, the composite foreign
   keys and the `version` columns all live on tenant-scoped, RLS-forced tables,
   and the GUC that makes them work is bound on the connection, not by an
   interceptor.
-- `backend-tests` — the replay test and the parallel-booking tests run over HTTP
+- `backend-tests` - the replay test and the parallel-booking tests run over HTTP
   against Testcontainers PostgreSQL; the database is never mocked.

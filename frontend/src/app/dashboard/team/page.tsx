@@ -166,35 +166,33 @@ export default async function Team({
 
           {query.invited ? (
             <div style={{ marginBottom: "var(--s-5)" }}>
+              {/* Declared where the code is in scope. `code` is base64url, which
+                  uses + and / in its standard form but not in the URL-safe one
+                  the platform mints - it is still encoded, because a query
+                  value that is only safe by accident is a bug waiting for the
+                  day somebody changes the alphabet. */}
               <Notice
                 tone="success"
                 title="Le code est prêt, à vous de le transmettre"
                 icon="shield"
               >
-                Rien n’est envoyé, personne n’a été prévenu. Copiez le code et le
-                lien, et transmettez-les à {query.name ?? "cette personne"} vous-même
-                : par WhatsApp, par SMS, ou de vive voix.
+                Rien n’est envoyé, personne n’a été prévenu. Copiez ce lien et
+                envoyez-le à {query.name ?? "cette personne"} vous-même : par
+                WhatsApp, par SMS, ou de vive voix.
+                {/* One link, not a code and an address. It carries the code in
+                    its query, so the person receiving it taps once and types
+                    nothing - which is the whole reason the code stayed long.
+                    /rejoindre reads `code` and prefills the field, so a link
+                    that is retyped by hand still works. */}
                 <div className="publink" style={{ marginTop: "var(--s-3)" }}>
-                  <span className="publink__url">{query.invited}</span>
+                  <span className="publink__url">
+                    {`${JOIN}?code=${encodeURIComponent(query.invited)}`}
+                  </span>
                   <button
                     className="btn btn--ghost btn--sm btn--icon"
                     type="button"
-                    data-copy={query.invited}
-                    aria-label="Copier le code"
-                  >
-                    <Icon name="copy" size={18} className="btn__icon--idle" />
-                  </button>
-                </div>
-                {/* The address as well as the code. The code on its own is
-                    unusable by somebody who does not already know where to
-                    spend it, and it is one message either way. */}
-                <div className="publink" style={{ marginTop: "var(--s-2)" }}>
-                  <span className="publink__url">{JOIN}</span>
-                  <button
-                    className="btn btn--ghost btn--sm btn--icon"
-                    type="button"
-                    data-copy={JOIN}
-                    aria-label="Copier le lien de connexion"
+                    data-copy={`${JOIN}?code=${encodeURIComponent(query.invited)}`}
+                    aria-label="Copier le lien d’invitation"
                   >
                     <Icon name="copy" size={18} className="btn__icon--idle" />
                   </button>

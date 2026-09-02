@@ -2,16 +2,15 @@
 
 Every movement of money is recorded as a balanced, append-only, double-entry
 `JournalEntry`. The `ledger` module owns the tables; no other module ever
-writes them — everything goes through the Accounting API. A financial record
+writes them - everything goes through the Accounting API. A financial record
 is never physically deleted; you correct it with a reversing entry and a
 reason.
 
 ## When to use
 
-- Booking a sale, a delivery fee, a refund, a payout, or any commission —
-  anything that moves money between accounts.
+- Booking a sale, a delivery fee, a refund, a payout, or any commission - anything that moves money between accounts.
 - Deciding *where* a posting happens (it is always the `ledger` module,
-  reached through its inbound Accounting API — never a direct table write).
+  reached through its inbound Accounting API - never a direct table write).
 - Adding or reviewing a new account or a new kind of journal entry.
 - Reviewing a PR that touches `journal_entry` / `journal_line`, or that
   `UPDATE`s / `DELETE`s anything money-shaped.
@@ -25,7 +24,7 @@ reason.
    *and* with a DB role that grants those tables only to `ledger`.
 2. **Every entry is balanced per currency, checked at construction.** For
    each `Currency` present, `sum(debit) == sum(credit)`. An unbalanced entry
-   is rejected with a domain exception before it can be persisted — there is
+   is rejected with a domain exception before it can be persisted - there is
    no "save first, reconcile later". Never net a debit in one currency
    against a credit in another to make the totals appear to match.
 3. **Direction is a column, never a sign.** A line carries a `Money debit`
@@ -35,12 +34,12 @@ reason.
 4. **Append-only. Entries and lines are immutable once posted.** No `UPDATE`,
    no `DELETE`, no soft-delete flag flipping. A mistake or a refund is a *new*
    reversing entry that references the original and records a human-readable
-   `reason`. This is a hard review gate — a financial record is never
+   `reason`. This is a hard review gate - a financial record is never
    physically removed.
 5. **Each entry has a UNIQUE business `reference`; posting is idempotent.**
    The `reference` (e.g. `sale:<order.externalReference>`) is `UNIQUE` in the
    schema. Re-posting the same reference returns the existing entry instead
-   of double-booking — a duplicate webhook or a retried worker must not
+   of double-booking - a duplicate webhook or a retried worker must not
    create a second sale. See `idempotency-concurrency`.
 6. **The operational ledger and platform-billing are separate ledgers.**
    Customer→Restaurant money (sales, delivery, refunds) lives in the
@@ -60,7 +59,7 @@ reason.
    random line sets: balanced ones persist, unbalanced ones are rejected, a
    reversing entry always nets an original to zero. These invariant tests are
    part of Definition of Done. See `backend-tests`.
-10. **Accounts are a typed, documented chart — not free-form strings.** Post
+10. **Accounts are a typed, documented chart - not free-form strings.** Post
     to `Account` value objects / enum constants (`SALES_REVENUE`,
     `GATEWAY_CLEARING`, `DELIVERY_FEE_INCOME`, `REFUNDS`), each with a
     documented meaning. No scattered string literals as account codes.
@@ -87,7 +86,7 @@ reason.
 ## Minimal correct example
 
 ```java
-// ledger/domain — append-only, framework-free, enforces the invariant.
+// ledger/domain - append-only, framework-free, enforces the invariant.
 public record JournalLine(Account account, Money debit, Money credit) {
     public JournalLine {
         // exactly one side carries value; both sides share one currency
@@ -136,7 +135,7 @@ public final class JournalEntry {
 ```
 
 ```java
-// payments/application — books the sale AT CAPTURE, only via the Accounting API.
+// payments/application - books the sale AT CAPTURE, only via the Accounting API.
 // This is the caller; it never touches ledger tables directly.
 JournalEntry sale = JournalEntry.of(
         tenant(),                                   // from TenantContext, not a param
@@ -155,18 +154,18 @@ delete.
 
 ## Sibling skills
 
-- `money-currency` — the typed `Money`/`Currency` every debit and credit uses.
-- `payments-gateway` — verifies the charge, then triggers the sale posting at
+- `money-currency` - the typed `Money`/`Currency` every debit and credit uses.
+- `payments-gateway` - verifies the charge, then triggers the sale posting at
   capture.
-- `outbox-messaging` — the ledger write and the `OrderPaid` event commit in the
+- `outbox-messaging` - the ledger write and the `OrderPaid` event commit in the
   saga's second transaction.
-- `idempotency-concurrency` — the `UNIQUE reference` and idempotent posting that
+- `idempotency-concurrency` - the `UNIQUE reference` and idempotent posting that
   stop double-booking.
-- `multi-tenant-rls` — `tenant_id` + RLS scoping every entry and line.
-- `backend-architecture` — `ledger` as a core module; the Accounting API as its
+- `multi-tenant-rls` - `tenant_id` + RLS scoping every entry and line.
+- `backend-architecture` - `ledger` as a core module; the Accounting API as its
   inbound port.
-- `cdi-interceptors` — why ledger posting stays explicit in the application
+- `cdi-interceptors` - why ledger posting stays explicit in the application
   layer, never hidden in an interceptor.
-- `backend-exceptions` — `UnbalancedJournalEntryException` surfaced as RFC 7807.
-- `backend-tests` — the jqwik property tests that guard the balance invariant.
-- `code-language` — English identifiers for accounts, entries, and reasons.
+- `backend-exceptions` - `UnbalancedJournalEntryException` surfaced as RFC 7807.
+- `backend-tests` - the jqwik property tests that guard the balance invariant.
+- `code-language` - English identifiers for accounts, entries, and reasons.

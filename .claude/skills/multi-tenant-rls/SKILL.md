@@ -14,7 +14,7 @@ Tenant isolation as defence in depth. The tenant is the **provider**: every
 tenant-owned table carries `provider_id uuid NOT NULL`, and PostgreSQL
 Row-Level Security is the backstop under the application filter.
 `TenantContext` is filled by resolving the verified JWT `sub` against
-`provider_staff` **in the database** — never from a claim, a header, or a
+`provider_staff` **in the database** - never from a claim, a header, or a
 method argument. Fail-closed: no resolvable membership, no access.
 
 ## When to use
@@ -49,21 +49,20 @@ method argument. Fail-closed: no resolvable membership, no access.
    truth for **tenant membership**.
 3. **There is NO cache on the authorisation path.** A positive
    `subject -> provider_id` cache with a five-minute TTL is a five-minute
-   bearer token: delete a `provider_staff` row, miss the eviction — a lost
+   bearer token: delete a `provider_staff` row, miss the eviction - a lost
    Redis round-trip, a crashed pod between the commit and the evict, a
-   second application instance — and the revoked staff member keeps full
+   second application instance - and the revoked staff member keeps full
    access until the entry lapses. That is a dual write across two failure
    domains, and it reintroduces exactly the delayed-revocation defect that
    made a JWT claim unacceptable in rule 2; a design cannot reject claims
    for being slow to revoke and then cache the replacement. The resolution
    is a two-join lookup on primary-key and unique-index paths, once per
    request; at this product's volume the cache buys nothing measurable and
-   costs correctness. Do not add Caffeine either — a per-instance cache has
+   costs correctness. Do not add Caffeine either - a per-instance cache has
    the same defect and no eviction channel at all.
 4. **The membership lookup runs through a `SECURITY DEFINER` function,
    because no tenant is bound yet.** `provider_staff` is itself
-   tenant-scoped and under RLS, so the resolver cannot read it as a tenant —
-   that is the chicken-and-egg of tenant resolution. Expose exactly one
+   tenant-scoped and under RLS, so the resolver cannot read it as a tenant - that is the chicken-and-egg of tenant resolution. Expose exactly one
    locked-down function, owned by the schema owner, with a pinned
    `search_path`, returning nothing but a `provider_id`, and grant
    `EXECUTE` on it to the application role alone. It is the only sanctioned
@@ -77,12 +76,12 @@ method argument. Fail-closed: no resolvable membership, no access.
    **Known limitation, stated deliberately:** a person cannot yet be staff
    at two providers. The future mechanism is a server-side *selected
    membership*, revalidated against `provider_staff` on every request and
-   held against the BFF session — never a client-supplied provider id, which
+   held against the BFF session - never a client-supplied provider id, which
    would put the trust boundary back in the caller. Do not build it now.
 6. **The RLS GUC is bound by a CONNECTION-level hook, not by a business
    interceptor.** `TenantBoundInterceptor` runs at
    `Interceptor.Priority.PLATFORM_BEFORE + 10`, and Quarkus opens the
-   transaction at `PLATFORM_BEFORE + 200` — so the interceptor is *outside*
+   transaction at `PLATFORM_BEFORE + 200` - so the interceptor is *outside*
    the transaction and can never call a `@Transactional(MANDATORY)` binder.
    A binder invoked from there either fails or silently binds nothing, and
    every tenant query then returns zero rows. Bind instead from an Agroal
@@ -93,7 +92,7 @@ method argument. Fail-closed: no resolvable membership, no access.
    the value from `TenantContext`. `is_local = true` gives `SET LOCAL`
    semantics, so the value dies with the transaction and cannot leak to the
    next borrower of the pooled connection. A connection hook also covers
-   transactions opened without `@TenantBound` — the interceptor only
+   transactions opened without `@TenantBound` - the interceptor only
    populates `TenantContext`; the hook is what the database sees.
 7. **Every tenant-scoped table has RLS `ENABLE`d and `FORCE`d in a Flyway
    migration, and every policy predicate is written exactly one way:**
@@ -101,7 +100,7 @@ method argument. Fail-closed: no resolvable membership, no access.
    provider_id = nullif(current_setting('app.provider_id', true), '')::uuid
    ```
    `current_setting` without `missing_ok = true` raises `42704` when the GUC
-   was never set, and `''::uuid` raises `22P02` — both turn an unbound
+   was never set, and `''::uuid` raises `22P02` - both turn an unbound
    request into a `500` that leaks the mechanism. This form degrades to
    `NULL`, `provider_id = NULL` is never true, and every row is filtered:
    an unbound caller gets a deterministic empty result and a `404`. The
@@ -111,8 +110,8 @@ method argument. Fail-closed: no resolvable membership, no access.
    parameter.** Ports and services take domain arguments only; the tenant is
    ambient, read from `TenantContext`, which is `@RequestScoped`, filled
    only by `TenantBoundInterceptor`, with `require()` and the unbound-safe
-   `current()` public — `current()` exists for the connection hook, which
-   must be able to bind nothing without throwing — and `assign()`/`clear()`
+   `current()` public - `current()` exists for the connection hook, which
+   must be able to bind nothing without throwing - and `assign()`/`clear()`
    package-private. An ArchUnit rule forbids any port
    or service method declaring a `providerId` parameter, and no request
    carries a tenant identifier anywhere. The one adjacent case is the public
@@ -124,7 +123,7 @@ method argument. Fail-closed: no resolvable membership, no access.
    (1) *Routing*: no tenant id in any provider-facing URL.
    (2) *Application*: `TenantContext` plus a guard on every write path.
    (3) *ORM*: a Hibernate filter on tenant entities, enabled where the
-   session is obtained — a convenience so generated SQL carries the
+   session is obtained - a convenience so generated SQL carries the
    predicate, never the guarantee.
    (4) *PostgreSQL*: RLS `ENABLE`d **and** `FORCE`d (rule 7). A PR that adds
    a tenant-scoped table and stops at layer three does not ship.
@@ -133,7 +132,7 @@ method argument. Fail-closed: no resolvable membership, no access.
     `(provider_id, service_offering_id)`, not a bare `service_offering_id`,
     so a row from another provider cannot be attached even with every
     application check bypassed. Each referenced table must therefore declare
-    `UNIQUE (provider_id, id)` — without it PostgreSQL rejects the FK with
+    `UNIQUE (provider_id, id)` - without it PostgreSQL rejects the FK with
     `42830`. `provider_staff`, `service_offerings`, `customers` and
     `appointments` all carry it; the normative DDL lives in
     `booking-integrity`.
@@ -142,7 +141,7 @@ method argument. Fail-closed: no resolvable membership, no access.
     the two responses must be byte-identical down to the body: any
     difference turns the API into an existence oracle. There is no
     `TENANT_FORBIDDEN` and no per-resource `404` code. With RLS on this
-    falls out naturally — the row simply is not visible, so the ordinary
+    falls out naturally - the row simply is not visible, so the ordinary
     "not found" path runs.
 12. **Cross-tenant access exists only behind an explicit `admin` route
     namespace**: separate paths, a dedicated privileged global role from the
@@ -157,7 +156,7 @@ method argument. Fail-closed: no resolvable membership, no access.
     the real stack (Testcontainers PostgreSQL 18, RLS forced, two seeded
     providers), that provider A can neither `SELECT`, `UPDATE`, nor `DELETE`
     provider B's rows, and that the REST surface answers `404`. A
-    cross-tenant `UPDATE` or `DELETE` under RLS **affects zero rows — it
+    cross-tenant `UPDATE` or `DELETE` under RLS **affects zero rows - it
     does not raise**, so assert the row count, never an exception. Never H2,
     never a mocked repository: the behaviour under test is the database's.
 
@@ -221,20 +220,20 @@ method argument. Fail-closed: no resolvable membership, no access.
   `TenantBoundInterceptor`. The interceptor is outside the transaction; the
   binder can never run, and every tenant query silently returns nothing →
   bind from the connection hook (rule 6).
-- `current_setting('app.provider_id')::uuid` in a policy — `42704` when
-  unbound — or `current_setting('app.provider_id', true)::uuid`, which is
+- `current_setting('app.provider_id')::uuid` in a policy - `42704` when
+  unbound - or `current_setting('app.provider_id', true)::uuid`, which is
   `22P02` on the empty string → the `nullif(...)` form, everywhere (rule 7).
 - `SET app.provider_id = '…'` built by string concatenation: `SET` takes no
   bind placeholder, so this is an injection site → `set_config(?, ?, true)`
   (rule 6).
-- `appointmentService.findById(providerId, appointmentId)` — the tenant
+- `appointmentService.findById(providerId, appointmentId)` - the tenant
   passed as an argument puts the trust boundary in the caller →
   `findById(appointmentId)` with the tenant ambient (rule 8).
 - Choosing the tenant from an `X-Provider-Id` header or `?provider_id=`
   query parameter, both spoofable → resolve from the verified `sub`
   (rules 2, 8).
 - Application DB role with `BYPASSRLS`, or connecting as the table owner
-  without `FORCE ROW LEVEL SECURITY` — RLS is silently inert →
+  without `FORCE ROW LEVEL SECURITY` - RLS is silently inert →
   least-privilege role, forced policies (rule 7).
 - Relying on a hand-written `WHERE provider_id = ?` as the *only* guard; one
   forgotten clause leaks everything → RLS under the application filter
@@ -271,7 +270,7 @@ CREATE POLICY tenant_isolation ON appointments
 -- in booking-integrity (V014__create_appointments.sql); do not restate them.
 ```
 
-Membership resolution — one active membership, one privileged function:
+Membership resolution - one active membership, one privileged function:
 
 ```sql
 -- V031__provider_membership_resolution.sql
@@ -301,12 +300,12 @@ GRANT  EXECUTE ON FUNCTION app_resolve_provider(text) TO balaaca_app;
 ```
 
 `TenantContext` is defined ONCE, in `shared-kernel`
-(`com.balaaca.sharedkernel.tenancy`) — see `backend-di` for the canonical
+(`com.balaaca.sharedkernel.tenancy`) - see `backend-di` for the canonical
 class, `require()` public, `assign()`/`clear()` package-private. Do not
 redeclare it. What belongs here is how it gets filled, fail-closed:
 
 ```java
-// com.balaaca.sharedkernel.tenancy — same package as TenantContext, so
+// com.balaaca.sharedkernel.tenancy - same package as TenantContext, so
 // assign/clear stay closed to everyone else.
 @Interceptor @TenantBound
 @Priority(Interceptor.Priority.PLATFORM_BEFORE + 10)
@@ -382,7 +381,7 @@ public class JdbcProviderMembershipResolver
 ```
 
 The GUC binding. This runs on the connection as it is handed to the
-transaction — the only place that is both inside the transaction and ahead
+transaction - the only place that is both inside the transaction and ahead
 of the first business statement:
 
 ```java
@@ -427,7 +426,7 @@ public class TenantConnectionInterceptor implements AgroalPoolInterceptor {
 }
 ```
 
-Non-leak test through the real database — note the write assertions:
+Non-leak test through the real database - note the write assertions:
 
 ```java
 @QuarkusTest
@@ -458,21 +457,21 @@ class AppointmentTenantIsolationTest {
 
 ## Sibling skills
 
-- `booking-integrity` — owns the normative `appointments` DDL; its exclusion
+- `booking-integrity` - owns the normative `appointments` DDL; its exclusion
   constraint is keyed on `provider_id` and `staff_id`, so isolation and
   anti-double-booking share the same columns.
-- `idempotency-concurrency` — the `UNIQUE (provider_id, idempotency_key)`
+- `idempotency-concurrency` - the `UNIQUE (provider_id, idempotency_key)`
   index and the replay path on these same tables.
-- `outbox-messaging` — `notifications` rows carry `provider_id`, but the
+- `outbox-messaging` - `notifications` rows carry `provider_id`, but the
   worker connects under its own database role with its own policy; it never
   binds `TenantContext` and never reads as a tenant.
-- `cdi-interceptors` — `@TenantBound`, its priority, and why the GUC binding
+- `cdi-interceptors` - `@TenantBound`, its priority, and why the GUC binding
   is a connection hook rather than another interceptor.
-- `backend-architecture` — why the tenant is ambient rather than threaded
+- `backend-architecture` - why the tenant is ambient rather than threaded
   through ports, and where `providers` sits as tenant root.
-- `platform-api` — no tenant identifier in any request, and the single
+- `platform-api` - no tenant identifier in any request, and the single
   `RESOURCE_NOT_FOUND` code behind rule 11.
-- `backend-tests` — Testcontainers PostgreSQL 18 is mandatory for the
+- `backend-tests` - Testcontainers PostgreSQL 18 is mandatory for the
   non-leak and IDOR/BOLA suites; the database is never mocked.
-- `backend-exceptions` — `NoProviderMembershipException` and its RFC 7807
+- `backend-exceptions` - `NoProviderMembershipException` and its RFC 7807
   mapping.

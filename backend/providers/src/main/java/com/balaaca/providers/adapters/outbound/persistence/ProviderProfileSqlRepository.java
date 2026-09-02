@@ -139,22 +139,6 @@ public class ProviderProfileSqlRepository implements ProviderProfileRepository {
         return swapImage("cover_url", name);
     }
 
-    /**
-     * The three letters, from the database that already computes them.
-     *
-     * <p>STRICT on the SQL side, so a provider that has somehow gone missing
-     * returns null rather than an empty string that would silently mint a code
-     * with no prefix at all.
-     */
-    @Override
-    public String initials() {
-        // app_current_provider(), like every other read here: the tenant is
-        // bound on the connection and never passed as an argument.
-        Object value = em.createNativeQuery(
-                        "SELECT app_provider_initials(app_current_provider())")
-                .getSingleResult();
-        return String.valueOf(value);
-    }
 
     /**
      * One statement, returning what it replaced. A read-then-write would leave a

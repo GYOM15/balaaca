@@ -10,8 +10,7 @@ description: Use when introducing, computing with, persisting or wiring a moneta
 > and interceptor priorities are declared there once. Where this file and
 > CANONICAL.md disagree, CANONICAL.md wins and this file is a bug.
 
-Money is a typed value object — `Money(long amountMinor, Currency currency)` —
-where the `Currency` carries its own scale. Never a `double`, never a `float`,
+Money is a typed value object - `Money(long amountMinor, Currency currency)` - where the `Currency` carries its own scale. Never a `double`, never a `float`,
 never a bare number, and never an assumption that the minor unit is "cents".
 The service price is frozen server-side onto the appointment at booking time.
 The same discipline applies to the other market-shaped value object,
@@ -26,7 +25,7 @@ The same discipline applies to the other market-shaped value object,
   applying a discount).
 - Persisting an amount or putting one on a REST/OpenAPI contract.
 - Freezing a price onto an `Appointment` when a booking is created.
-- Adding or validating a `PhoneNumber` — the primary customer identifier.
+- Adding or validating a `PhoneNumber` - the primary customer identifier.
 - Reviewing a PR that has a `double`/`float`/bare-`long` amount, a `× 100`,
   a hardcoded `GNF`, a hardcoded `+224`, or a client-supplied price trusted
   as-is.
@@ -36,36 +35,36 @@ The same discipline applies to the other market-shaped value object,
 1. **Every monetary amount is a `Money(long amountMinor, Currency currency)`
    value object.** No `double`, no `float`, no `BigDecimal`-as-ambient-money,
    no naked `long price`. If it is money, its Java type is `Money`. The pair is
-   inseparable — an amount without its currency is meaningless. `Money` lives
+   inseparable - an amount without its currency is meaningless. `Money` lives
    in `com.balaaca.sharedkernel.money` and is framework-free.
 2. **`amountMinor` is an integer count of the currency's *minor* unit, and the
    scale comes from the `Currency`, never from a hard-coded constant.** GNF has
-   scale `0` (1 GNF = 1 minor unit — there are no centimes); another currency
+   scale `0` (1 GNF = 1 minor unit - there are no centimes); another currency
    may have scale `2` or `3`. Never write `/ 100` or `* 100`, never assume
    "cents", never assume two decimals.
 3. **GNF is never hardcoded, and a new market costs one enum constant.**
    Guinea is the launch market, not the product. The currency of an amount
    comes from the provider (its country/market configuration) or from the row
-   it was read from — never from a literal `Currency.GNF` buried in a service,
+   it was read from - never from a literal `Currency.GNF` buried in a service,
    a mapper, a default parameter, or a migration `DEFAULT`. Fixtures and tests
    may name a currency explicitly; production code paths resolve it.
    Be honest about the cost of a second market: it adds a constant and its
-   scale to the `Currency` enum, and nothing else — which currency a given
+   scale to the `Currency` enum, and nothing else - which currency a given
    provider prices in stays configuration, and no service, mapper, contract or
    migration changes. "Configuration only" would be a lie; "one enum constant
    and then configuration" is the truth, and it is only true because rules 1-2
    keep the scale out of the call sites.
-4. **No floating-point value ever touches money — parse, compute, persist, or
+4. **No floating-point value ever touches money - parse, compute, persist, or
    wire.** A price read from a contract is parsed into `amountMinor` as an
    integer. `0.1 + 0.2 != 0.3`; a rounding drift of one minor unit on a stored
    price is a defect, not a rounding "quirk".
 5. **Arithmetic is currency-checked.** `add`/`subtract` require the operands to
    share the same `Currency` or throw `CurrencyMismatchException`; you never
-   silently coerce. You **multiply `Money` by a scalar quantity** — you never
+   silently coerce. You **multiply `Money` by a scalar quantity** - you never
    multiply two `Money` together (money² is nonsense).
 6. **Splitting is an explicit `allocate` that loses nothing.** A proportional
    discount or any future division goes through `allocate` on `Money`, with a
-   defined remainder policy so `sum(parts) == whole` exactly — the leftover
+   defined remainder policy so `sum(parts) == whole` exactly - the leftover
    minor units are handed to the leading shares, deterministically, never
    dropped and never duplicated. `allocate` is a real method on `Money`, not a
    helper somewhere: division is where money silently leaks, so it has exactly
@@ -75,7 +74,7 @@ The same discipline applies to the other market-shaped value object,
    sends a `service_offering_id` and a start instant. The domain reads the
    current server-side `ServiceOffering` price and snapshots it, together with
    the service name, onto the appointment row. A later catalogue price change
-   never mutates a past booking — the frozen amount is the record.
+   never mutates a past booking - the frozen amount is the record.
    The columns are `customer_price_amount_minor` / `customer_price_currency`,
    read back through the accessor `customerPrice()`: they mean **what the
    customer owes for this appointment**, not "the total", not "the amount", not
@@ -93,19 +92,19 @@ The same discipline applies to the other market-shaped value object,
    currency beside a non-null amount is a broken row.
 9. **Tax is not modelled, but nothing may preclude it.** The launch market
    charges no VAT on these services, so there is **no tax line and no tax rate
-   today** — do not build a tax engine nobody uses. The one decision that is
+   today** - do not build a tax engine nobody uses. The one decision that is
    expensive to retrofit is **the semantics of a listed price**, because it
    changes what every stored amount MEANS. It is therefore recorded here
    explicitly: **a `ServiceOffering` price is what the customer pays, with no
    tax component.** A market with VAT requires an explicit per-provider
-   decision, never an assumption inherited from Guinea. Everything else — a
-   `taxLines[]`, a tax-inclusive flag — can be added additively precisely
+   decision, never an assumption inherited from Guinea. Everything else - a
+   `taxLines[]`, a tax-inclusive flag - can be added additively precisely
    because rule 7 named the frozen columns for their meaning.
 10. **Money invariants are covered by jqwik property tests, and the
     amount/currency pair by a persistence round-trip test.** Commutativity and
     associativity of `add` over operands **sharing a currency**, `add`/
     `subtract` as inverses, `allocate` summing back to the whole, and
-    currency-mixing always throwing — proven over generated amounts, not a
+    currency-mixing always throwing - proven over generated amounts, not a
     handful of examples. Separately, a Testcontainers PostgreSQL test writes a
     `Money` to an appointment row and reads it back identical, for a scale-0
     and a scale-2 currency, so the column pair and its mapping are locked.
@@ -237,7 +236,7 @@ public record Money(long amountMinor, Currency currency) {
 ```
 
 Freeze the server price onto the appointment at booking time. The client sends
-no price, no currency, and no end time — the slot and the amount are both
+no price, no currency, and no end time - the slot and the amount are both
 recomputed server-side:
 
 ```java
@@ -256,8 +255,8 @@ Appointment appointment = Appointment.book(
 ```
 
 Persist as an amount/currency pair, named for what the amount means. The one
-normative `appointments` DDL — block columns, `CHECK` constraints, the
-`EXCLUDE USING gist` constraint — lives in `booking-integrity` as
+normative `appointments` DDL - block columns, `CHECK` constraints, the
+`EXCLUDE USING gist` constraint - lives in `booking-integrity` as
 `V014__create_appointments.sql`; this is an **excerpt** showing only the
 frozen-price columns and the composite foreign key that keeps the offering and
 its snapshot in the same tenant:
@@ -294,7 +293,7 @@ ALTER TABLE service_offerings ADD CONSTRAINT service_offerings_tenant_key
 ```
 
 jqwik proves the algebra rather than a few examples. Note that the
-commutativity property generates **one** currency and two amounts — generating
+commutativity property generates **one** currency and two amounts - generating
 two independent `Money` values would make the property vacuous, since mixed
 currencies throw before commutativity is ever exercised:
 
@@ -354,13 +353,13 @@ class AppointmentPriceRoundTripTest {   // Testcontainers PostgreSQL 18
 
 The phone number is the **primary customer identifier**; email is optional and
 nullable. It is a typed value object in `shared-kernel`, alongside `Money` and
-under the same market-neutrality rule — not a `String` passed around.
+under the same market-neutrality rule - not a `String` passed around.
 
-1. **Stored and compared in E.164** — `+224622000000`, digits only after the
+1. **Stored and compared in E.164** - `+224622000000`, digits only after the
    `+`, no spaces, no local `0` prefix, one canonical form per subscriber. The
    raw input the customer typed is never what gets stored or matched.
 2. **Validation is general E.164 with a default region derived from the
-   provider's country** — never a hardcoded `+224`, and never a Guinea-shaped
+   provider's country** - never a hardcoded `+224`, and never a Guinea-shaped
    regex. A national-format input is parsed against the provider's region; an
    input already in international format is accepted whatever its country.
    This is the phone-number equivalent of rule 3: the launch market supplies a
@@ -372,7 +371,7 @@ under the same market-neutrality rule — not a `String` passed around.
    `String.valueOf`, every template interpolation, and above all the
    `notifications` row that carries the recipient would receive `+*******23`
    instead of a number, and every reminder would fail delivery with an
-   unroutable address — a failure that shows up days later, in the channel
+   unroutable address - a failure that shows up days later, in the channel
    gateway, far from the cause. `toString()` returns the E.164 value.
 4. **Masking happens at the log boundary, once** (see `pii-masking-logging`).
    A phone number is PII; it reaches a log only through
@@ -411,22 +410,22 @@ CREATE TABLE customers (
 
 ## Sibling skills
 
-- `booking-integrity` — owns the normative `appointments` DDL; the frozen price
+- `booking-integrity` - owns the normative `appointments` DDL; the frozen price
   is snapshotted on the same insert the exclusion constraint guards, and the
   slot is recomputed server-side too.
-- `idempotency-concurrency` — the frozen price lives on the aggregate created
+- `idempotency-concurrency` - the frozen price lives on the aggregate created
   under the `Idempotency-Key` contract, so a replay never re-freezes.
-- `contract-first` — how a `Money` is shaped on a REST/OpenAPI schema (an
+- `contract-first` - how a `Money` is shaped on a REST/OpenAPI schema (an
   integer `amount_minor` plus a currency code, never a float).
-- `backend-tests` — jqwik property tests on money invariants and the
+- `backend-tests` - jqwik property tests on money invariants and the
   Testcontainers round-trip test that locks the column pair.
-- `multi-tenant-rls` — priced tables carry `provider_id` and RLS like every
+- `multi-tenant-rls` - priced tables carry `provider_id` and RLS like every
   tenant-scoped table; composite foreign keys keep the offering and its frozen
   price in the same tenant.
-- `pii-masking-logging` — `PhoneNumber` never reaches a log unmasked, and never
+- `pii-masking-logging` - `PhoneNumber` never reaches a log unmasked, and never
   masks itself to get there.
-- `backend-exceptions` — `CurrencyMismatchException` and
+- `backend-exceptions` - `CurrencyMismatchException` and
   `UnknownCurrencyException` extend the single `DomainException` base, never a
   generic `IllegalStateException`.
-- `backend-naming` — `ServiceOffering` / `service_offerings` /
+- `backend-naming` - `ServiceOffering` / `service_offerings` /
   `service_offering_id` is one term in three spellings, fixed everywhere.

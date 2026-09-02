@@ -12,8 +12,8 @@ description: Governs the shape of the public REST surface. Use when adding or ch
 
 The public surface of the platform. It is designed around **business
 capabilities**, versioned, and shaped so a client SDK could be generated from
-the spec as-is. Internals — module split, aggregates, tables, the tenant
-resolution chain, tomorrow's service topology — never appear in it. We do not
+the spec as-is. Internals - module split, aggregates, tables, the tenant
+resolution chain, tomorrow's service topology - never appear in it. We do not
 publish SDKs yet; we keep the contract permanently worthy of one, because
 retrofitting an SDK onto an accidental API is a rewrite, not a build step.
 
@@ -77,12 +77,12 @@ code that is not here.
    operations (`POST /v1/appointments/{id}/cancellation`), and the outbox row
    is written in-process in the same transaction as the business change (see
    `outbox-messaging`), never by an API client.
-3. **Public availability returns ONLY bookable slots — no `available` flag,
+3. **Public availability returns ONLY bookable slots - no `available` flag,
    no busy ranges.** The unauthenticated response to
    `GET /v1/providers/{slug}/available-slots` is a list of slots a stranger
    could actually book right now, each carrying `starts_at` and `ends_at` and
    nothing else. It carries no `available: false` entries, no busy intervals,
-   no gaps annotated as taken. **The reason is not a timing oracle — it is
+   no gaps annotated as taken. **The reason is not a timing oracle - it is
    that a uniform grid with an `available` flag is a minute-by-minute
    occupancy map of a named person at a named address, served to
    unauthenticated callers and trivially scraped on a schedule.** Publishing
@@ -94,7 +94,7 @@ code that is not here.
    (`GET /v1/providers/{slug}/opening-hours`) because a shop's hours are
    already public. Everything a public projection returns is a separate named
    schema (`PublicProviderView`, `AvailableSlot`), never the dashboard schema
-   with fields filtered at runtime — a projection enforced by shape cannot be
+   with fields filtered at runtime - a projection enforced by shape cannot be
    leaked by a forgotten `if`.
 4. **Appointment creation takes an `Idempotency-Key` header, and it is
    declared in the spec.** A booking is a scarce, non-fungible resource: a
@@ -107,14 +107,14 @@ code that is not here.
    body beside the key: replaying the **same key with the same body** returns
    the first result, and the **same key with a different body** is `422
    IDEMPOTENCY_KEY_REUSED` (see `idempotency-concurrency`). Document the
-   retention truthfully — **the key lives for the life of the appointment**,
+   retention truthfully - **the key lives for the life of the appointment**,
    not for an invented 24-hour window. A key that is not in the published
    contract cannot be used by a generated SDK, so an undeclared header is a
    contract bug, not an implementation detail.
 5. **One pagination convention across the whole API: cursor-based.** Every
    collection returns `{ data: [...], next_cursor: string|null }` and accepts
    `?cursor=&limit=`. No offset/page mixing, no endpoint inventing its own
-   envelope. Cursors are opaque strings — never a leaked primary key, never a
+   envelope. Cursors are opaque strings - never a leaked primary key, never a
    decodable row offset. `limit` has a documented default and maximum.
 6. **Error `code`s are a published, closed, stable catalogue, and this is
    it.** Every RFC 7807 response carries a machine-readable `code` drawn from
@@ -148,7 +148,7 @@ code that is not here.
 
    Two entries carry a deliberate design decision. **`RESOURCE_NOT_FOUND` is
    one code for both a genuine miss and a cross-tenant read**, and the two
-   responses must be byte-identical — same status, same `code`, same `title`,
+   responses must be byte-identical - same status, same `code`, same `title`,
    same `detail`, no distinguishing header or timing. Any second code for "it
    exists but is not yours" is precisely the existence oracle the 404 rule
    exists to prevent, and it also leaks the word *tenant*, an internal
@@ -161,14 +161,14 @@ code that is not here.
    the response carries, and never into the body. **`PLAN_LIMIT_REACHED` is 403, never 402**:
    `402 Payment Required` asserts a payment path this product does not have.
    Codes are `SCREAMING_SNAKE_CASE` and **never renamed or reused** once
-   published — a client branches on them. `title`/`detail` are human text and
+   published - a client branches on them. `title`/`detail` are human text and
    may change; the `code` may not.
 7. **Authorization is part of the contract.** Each operation declares the
    OAuth2 scope(s) it requires (`appointments:write`, `catalog:write`,
    `schedule:write`, `dashboard:read`, `admin:providers:read`), and the spec
    documents them. Scopes are coarse capability grants, checked at the service
    layer as well (see `multi-tenant-rls`). **No provider identifier ever
-   appears in a request** — not as a path segment, a query parameter, a body
+   appears in a request** - not as a path segment, a query parameter, a body
    field, or a header. The tenant is resolved server-side from the verified
    JWT subject through `users` and `provider_staff`, so a scope grants access
    within the caller's own provider, never across providers. The public
@@ -182,7 +182,7 @@ code that is not here.
    money is always `{ amount_minor, currency }`; instants are `date-time` in
    UTC and local recurring times carry the provider's IANA zone (see
    `temporal-modelling`). If a generator would emit an unusable client, the
-   spec is wrong — fix the spec, not the generator.
+   spec is wrong - fix the spec, not the generator.
 9. **The wire is snake_case, everywhere, without exception.** Every JSON
    property and every query parameter is snake_case: `next_cursor`,
    `service_offering_id`, `starts_at`, `ends_at`, `staff_id`, `amount_minor`,
@@ -190,7 +190,7 @@ code that is not here.
    adapter, once. A single camelCase property on the wire means clients must
    remember which convention each endpoint uses, and that is a permanent tax.
    The catalogue aggregate is published as `/v1/service-offerings`, and the
-   field naming one is `service_offering_id` — never `service_id`, on any
+   field naming one is `service_offering_id` - never `service_id`, on any
    path or in any body.
 10. **Version the surface in the path, and promise compatibility inside a
     version.** Every published path carries the version segment:
@@ -208,7 +208,7 @@ code that is not here.
     Limited operations document their quota, return `429 RATE_LIMITED` with
     `Retry-After`, and say which errors are safe to retry. A `5xx` on an
     idempotent operation is retryable with the same `Idempotency-Key`; a `4xx`
-    never is. A `409 SLOT_UNAVAILABLE` means the slot is gone — the client
+    never is. A `409 SLOT_UNAVAILABLE` means the slot is gone - the client
     re-fetches availability, it does not retry the same body.
 
 ## Anti-patterns
@@ -288,7 +288,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/AppointmentView' }
         '409':
-          description: SLOT_UNAVAILABLE — taken between read and write.
+          description: SLOT_UNAVAILABLE - taken between read and write.
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
@@ -400,28 +400,28 @@ components:
 No provider identifier anywhere in a request, no internal type, no module
 name, no camelCase, no version-less path; busy time is not published at all;
 the idempotency header, the scopes, the cursor envelope and the closed error
-catalogue are all part of the contract — so a generated SDK is complete on
+catalogue are all part of the contract - so a generated SDK is complete on
 day one.
 
 ## Sibling skills
 
-- `contract-first` — the workflow: one OpenAPI document in the runner module,
+- `contract-first` - the workflow: one OpenAPI document in the runner module,
   spec first, spectral and openapi-diff in CI. This skill governs the SHAPE
   of that spec; `contract-first` governs the PROCESS.
-- `backend-exceptions` — the RFC 7807 `Problem` body and the exception that
+- `backend-exceptions` - the RFC 7807 `Problem` body and the exception that
   maps to each `code` in rule 6.
-- `idempotency-concurrency` — what `Idempotency-Key` and the request
+- `idempotency-concurrency` - what `Idempotency-Key` and the request
   fingerprint must actually guarantee.
-- `booking-integrity` — why `409 SLOT_UNAVAILABLE` exists, and why the server
+- `booking-integrity` - why `409 SLOT_UNAVAILABLE` exists, and why the server
   recomputes the slot from the service offering's own duration and buffers.
-- `multi-tenant-rls` — why no provider identifier is ever a request field,
+- `multi-tenant-rls` - why no provider identifier is ever a request field,
   and why a cross-tenant read returns an identical `RESOURCE_NOT_FOUND`.
-- `pii-masking-logging` — the customer phone and name the public projection
+- `pii-masking-logging` - the customer phone and name the public projection
   must never carry.
-- `temporal-modelling` — UTC instants on the wire, provider-local recurring
+- `temporal-modelling` - UTC instants on the wire, provider-local recurring
   rules and the availability the public endpoint projects.
-- `money-currency` — the `{ amount_minor, currency }` shape on the wire.
-- `backend-naming` — `ServiceOffering`, `service_offerings`,
+- `money-currency` - the `{ amount_minor, currency }` shape on the wire.
+- `backend-naming` - `ServiceOffering`, `service_offerings`,
   `service_offering_id`, and the naming the public paths mirror.
-- `backend-architecture` — the internal topology the public API must not
+- `backend-architecture` - the internal topology the public API must not
   leak.

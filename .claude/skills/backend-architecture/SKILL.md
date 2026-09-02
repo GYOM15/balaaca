@@ -18,7 +18,7 @@ strict.
 ## When to use
 
 - Creating a new bounded context (a new Maven module).
-- Placing a new class — deciding which of the four layers it belongs in.
+- Placing a new class - deciding which of the four layers it belongs in.
 - Wiring one core module to another, or a core module to a satellite.
 - Deciding where a cross-cutting port belongs.
 - Reviewing a PR for a layer violation or a forbidden call path.
@@ -32,28 +32,27 @@ deployment target is a VPS; a Raspberry Pi is a transitional first step
 only, so images are multi-arch, but nothing in the design is sized for a
 Pi.
 
-Core bounded contexts, one Maven module each. **This list is closed** —
-adding a module is an architectural decision, not a refactor:
+Core bounded contexts, one Maven module each. **This list is closed** - adding a module is an architectural decision, not a refactor:
 
 | module | owns |
 | --- | --- |
 | `shared-kernel` | `Money`, `Currency`, `PhoneNumber`, `TenantContext`, clock/time support, RFC 7807 problem types, `LogMasking`, `DomainException`, and the cross-cutting ports named below |
 | `identity` | `users`, the link between a Keycloak subject and a local business user, global roles |
 | `providers` | THE TENANT ROOT: `providers`, `provider_staff`, `provider_categories`, slug, public profile, booking policy |
-| `catalog` | `service_offerings` — the provider's sellable services: name, duration, price, buffers, visibility |
+| `catalog` | `service_offerings` - the provider's sellable services: name, duration, price, buffers, visibility |
 | `scheduling` | `availability_rules`, `availability_overrides`, the pure slot-calculation domain service |
 | `booking` | `appointments`, `customers` (the provider's address book), the appointment state machine, anti-double-booking |
 | `billing` | `subscriptions` and plan ENTITLEMENTS (quotas). No payment collection, no PSP, no invoicing |
 
 Satellites, each its own deployable:
 
-- `notification-worker` — drains the `notifications` table and sends
+- `notification-worker` - drains the `notifications` table and sends
   messages.
-- `chatbot-service` — skeleton; calls the business API, NEVER the database.
+- `chatbot-service` - skeleton; calls the business API, NEVER the database.
 
 `shared-kernel` holds only stable types with no dependency on another
-module. It holds no business RULES — no pricing policy, no state machine,
-no availability logic — but it MAY declare cross-cutting **ports**: an
+module. It holds no business RULES - no pricing policy, no state machine,
+no availability logic - but it MAY declare cross-cutting **ports**: an
 interface whose contract is needed by the platform plumbing and whose
 implementation belongs to exactly one context. `ProviderMembershipResolver`
 is the canonical case: declared in `com.balaaca.sharedkernel.tenancy`
@@ -65,18 +64,18 @@ could not compile without depending on a context, which rule 1 forbids.
 
 Under `com.balaaca.<context>.*`:
 
-1. **`domain/`** — aggregates, entities, value objects, domain services,
+1. **`domain/`** - aggregates, entities, value objects, domain services,
    domain events, domain exceptions, invariants. Framework-free: ZERO
    imports of Quarkus, CDI, Hibernate, JAX-RS. May reference only
    `domain/` itself and `shared-kernel` types.
-2. **`ports/`** — interfaces only. `ports/inbound/` = `*UseCase`
+2. **`ports/`** - interfaces only. `ports/inbound/` = `*UseCase`
    interfaces the module exposes (its published API). `ports/outbound/` =
    `*Repository` (persistence) and `*Port` (gateways) the core needs.
    Ports reference domain types, nothing from `adapters/`.
-3. **`application/`** — `*Service` CDI beans implementing an inbound port.
+3. **`application/`** - `*Service` CDI beans implementing an inbound port.
    Orchestration only: transaction boundaries, `TenantContext` reads,
    idempotency guards, entitlement checks. NEVER `*ServiceImpl`.
-4. **`adapters/`** — the edges. `adapters/inbound/{rest}` drives the
+4. **`adapters/`** - the edges. `adapters/inbound/{rest}` drives the
    application through inbound ports; `adapters/outbound/{persistence,
    gateway,messaging}` implements outbound ports. Adapters are named for
    their technology: `AppointmentSqlRepository`, never `*Impl`.
@@ -86,7 +85,7 @@ is not a bounded context and has no aggregates to protect; it is laid out
 by concern instead, as
 `com.balaaca.sharedkernel.{money,time,logging,tenancy,error}`. Do not
 create `shared-kernel/domain/` or `shared-kernel/adapters/`, and do not
-write `com.balaaca.shared.*` — that package does not exist.
+write `com.balaaca.shared.*` - that package does not exist.
 
 ## The rules
 
@@ -114,7 +113,7 @@ write `com.balaaca.shared.*` — that package does not exist.
    modules. Only `ports/inbound/` types and the domain types they expose
    may be referenced across contexts.
 4. **The ports-only boundary is enforced by ArchUnit, not by the
-   compiler — say so, and stop trying to fake it.** Depending on a
+   compiler - say so, and stop trying to fake it.** Depending on a
    context's Maven artifact puts its `domain/`, `application/` and
    `adapters/` on the classpath; Maven has no way to publish a subset of
    packages. Keep ONE Maven module per context and enforce the boundary
@@ -150,7 +149,7 @@ write `com.balaaca.shared.*` — that package does not exist.
 8. **ArchUnit enforces every boundary in CI.** There MUST be tests that
    assert: `domain` has no framework imports; layers only depend inward; no
    core module imports another core module's `..domain..`, `..application..`
-   or `..adapters..` — an explicit allowlist names the published types a
+   or `..adapters..` - an explicit allowlist names the published types a
    cross-context call may touch (the inbound port, its command and result
    records, and the ids they carry); the closed context list holds, with the
    satellite deployables admitted alongside the seven core contexts; and no
@@ -158,17 +157,15 @@ write `com.balaaca.shared.*` — that package does not exist.
    `backend-tests`.
 9. **Do not over-architect.** No full event sourcing, no full CQRS, no K8s,
    no service mesh, no broker, no gRPC inside or outside the monolith. Every
-   one of those is added only when a concrete, written-down need forces it —
-   never because it is the modern shape.
+   one of those is added only when a concrete, written-down need forces it - never because it is the modern shape.
 10. **Extract a service only against a NAMED driver, and never split the
     booking transaction.** A module leaves the monolith when one of these is
     true and written down in an ADR: independent scaling, fault isolation,
     an independent deployment cadence, separate ownership, a technology the
     monolith cannot host, or a regulatory/security boundary. "It feels
     cleaner" and "microservices are modern" are not drivers.
-    **The booking write path — the appointment insert, the availability
-    check behind it, the customer upsert and the `notifications` rows —
-    commits as ONE transaction and stays together**: splitting it replaces
+    **The booking write path - the appointment insert, the availability
+    check behind it, the customer upsert and the `notifications` rows - commits as ONE transaction and stays together**: splitting it replaces
     one ACID transaction (whose exclusion constraint is what makes
     double-booking impossible) with a saga plus compensations, which is
     precisely where booking systems break. Plan ENTITLEMENT checks stay
@@ -176,13 +173,13 @@ write `com.balaaca.shared.*` — that package does not exist.
     must not depend on a network hop to decide whether it is allowed.
     Extraction changes the DEPLOYMENT boundary; the business boundary (the
     port) does not move, which is why extraction is cheap here.
-11. **No synchronous chains — the distributed-monolith test.** A single
+11. **No synchronous chains - the distributed-monolith test.** A single
     inbound request must not depend on a chain of synchronous cross-module
     calls that must all succeed. Before adding a synchronous hop, ask:
     *does the caller need this result to answer, right now?* If yes, it is
     an in-process port call (rule 3). If no, it is an outbox row (rule 5).
     A request whose success depends on three or more deployables being up at
-    once is a distributed monolith wearing a microservice costume — it has
+    once is a distributed monolith wearing a microservice costume - it has
     the coupling of the former and the failure modes of the latter.
 
 
@@ -253,7 +250,7 @@ write `com.balaaca.shared.*` — that package does not exist.
 
 `booking` prices an appointment using `catalog` and validates the slot using
 `scheduling`, both in-process, persists it under the PostgreSQL exclusion
-constraint, and notifies the satellite through the outbox — all in one
+constraint, and notifies the satellite through the outbox - all in one
 transaction.
 
 ```
@@ -345,21 +342,21 @@ public class BookAppointmentService implements BookAppointmentUseCase {
 
 No network call between `booking`, `catalog` and `scheduling`; the domain
 holds the invariants; the database holds the exclusion guarantee; the
-adapter — not the service — knows Hibernate; and nothing here logs, because
+adapter - not the service - knows Hibernate; and nothing here logs, because
 observability is an interceptor's job.
 
 ## Sibling skills
 
-- `backend-srp` — one responsibility per class within these layers.
-- `backend-naming` — suffix conventions per layer, and the table names.
-- `backend-di` — how CDI wires ports to adapters, constructor injection only.
-- `backend-exceptions` — the single `DomainException` base in
+- `backend-srp` - one responsibility per class within these layers.
+- `backend-naming` - suffix conventions per layer, and the table names.
+- `backend-di` - how CDI wires ports to adapters, constructor injection only.
+- `backend-exceptions` - the single `DomainException` base in
   `sharedkernel.error` and its RFC 7807 mapping.
-- `contract-first` — the one OpenAPI document at the REST edge.
-- `cdi-interceptors` — the only place cross-cutting AOP lives.
-- `outbox-messaging` — the core → satellite path through `notifications`.
-- `booking-integrity` — the exclusion constraint this layout protects, and
+- `contract-first` - the one OpenAPI document at the REST edge.
+- `cdi-interceptors` - the only place cross-cutting AOP lives.
+- `outbox-messaging` - the core → satellite path through `notifications`.
+- `booking-integrity` - the exclusion constraint this layout protects, and
   the normative version of the service shown above.
-- `multi-tenant-rls` — `TenantContext`, the connection-level GUC binding,
+- `multi-tenant-rls` - `TenantContext`, the connection-level GUC binding,
   and RLS across these layers.
-- `backend-tests` — the ArchUnit rules that enforce this layout.
+- `backend-tests` - the ArchUnit rules that enforce this layout.
