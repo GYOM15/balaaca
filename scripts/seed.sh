@@ -19,7 +19,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 if [ ! -f .env ]; then
-    echo "Il manque .env. Copiez-le : cp .env.example .env" >&2
+    echo ".env is missing. Copy it: cp .env.example .env" >&2
     exit 1
 fi
 # shellcheck source=/dev/null
@@ -28,7 +28,7 @@ set -a; . ./.env; set +a
 CONTAINER="${COMPOSE_PROJECT_NAME:-balaaca}-postgres-1"
 
 if ! docker inspect "$CONTAINER" >/dev/null 2>&1; then
-    echo "PostgreSQL ne tourne pas. Lancez scripts/dev.sh d'abord." >&2
+    echo "PostgreSQL is not running. Run scripts/dev.sh first." >&2
     exit 1
 fi
 
@@ -37,7 +37,7 @@ fi
 # database would overwrite real data with fixtures. The check is the database
 # name, because that is the only thing a mistyped host cannot fake.
 if [ "${POSTGRES_DB:-balaaca}" != "balaaca" ]; then
-    echo "POSTGRES_DB vaut ${POSTGRES_DB}. Ce script n'ecrit que dans 'balaaca'." >&2
+    echo "POSTGRES_DB is ${POSTGRES_DB}. This script only writes to 'balaaca'." >&2
     exit 1
 fi
 
@@ -47,21 +47,21 @@ run() {
         -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-balaaca}" < "scripts/seed/$1"
 }
 
-echo "Remplissage de la base de developpement"
+echo "Filling the development database"
 run dev-data.sql
 run dev-bookings.sql
 
 docker exec -i "$CONTAINER" psql -tA -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-balaaca}" <<'SQL'
-SELECT '  ' || count(*) || ' etablissements, '
-       || (SELECT count(*) FROM provider_staff WHERE provider_id::text LIKE '5eed%') || ' personnes, '
-       || (SELECT count(*) FROM service_offerings WHERE provider_id::text LIKE '5eed%') || ' prestations, '
-       || (SELECT count(*) FROM appointments WHERE id::text LIKE '5eed%') || ' rendez-vous, '
-       || (SELECT count(*) FROM customers WHERE id::text LIKE '5eed%') || ' clients'
+SELECT '  ' || count(*) || ' businesses, '
+       || (SELECT count(*) FROM provider_staff WHERE provider_id::text LIKE '5eed%') || ' people, '
+       || (SELECT count(*) FROM service_offerings WHERE provider_id::text LIKE '5eed%') || ' service offerings, '
+       || (SELECT count(*) FROM appointments WHERE id::text LIKE '5eed%') || ' appointments, '
+       || (SELECT count(*) FROM customers WHERE id::text LIKE '5eed%') || ' customers'
 FROM providers WHERE id::text LIKE '5eed%';
 SQL
 
 echo
-echo "  Le site     http://localhost:3000"
-echo "  Une page    http://localhost:3000/p/salon-fatou"
-echo "  Un depot    http://localhost:3000/p/atelier-mariama"
-echo "  A domicile  http://localhost:3000/p/sylla-plomberie"
+echo "  The site     http://localhost:3000"
+echo "  A page       http://localhost:3000/p/salon-fatou"
+echo "  A drop-off   http://localhost:3000/p/atelier-mariama"
+echo "  At home      http://localhost:3000/p/sylla-plomberie"

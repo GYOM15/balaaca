@@ -38,3 +38,36 @@ export async function saveNotes(formData: FormData): Promise<void> {
   }
   revalidatePath(path);
 }
+
+/**
+ * Refuse this person a booking on the public page, or let them back.
+ *
+ * <p>The provider's one lever against somebody who never turns up. It binds the
+ * public page and nothing else: the salon can still write them into its own
+ * diary at the counter, and what they have already booked stands.
+ *
+ * <p>The next state travels in the form rather than being read from the card
+ * and inverted here. A card read a minute ago is not what is true now, and a
+ * toggle that flips whatever it last saw would unblock somebody on a stale page.
+ */
+export async function setBlocking(formData: FormData): Promise<void> {
+  const id = String(formData.get("id"));
+  const blocked = formData.get("blocked") === "true";
+  const q = String(formData.get("q") ?? "");
+  const path = `/dashboard/customers/${encodeURIComponent(id)}`;
+
+  try {
+    await api(`/v1/customers/${encodeURIComponent(id)}/blocking`, {
+      method: "PUT",
+      body: { blocked },
+    });
+  } catch (error) {
+    if (error instanceof ApiError) {
+      const back = new URLSearchParams({ error: error.code ?? "UNKNOWN", for: "blocage" });
+      if (q) back.set("q", q);
+      redirect(`${path}?${back.toString()}`);
+    }
+    throw error;
+  }
+  revalidatePath(path);
+}

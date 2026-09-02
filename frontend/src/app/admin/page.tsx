@@ -4,6 +4,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { Icon, Scene } from "@/components/icon";
 import { Badge, Button, Notice, Wordmark, initials } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
+import type { components } from "@/generated/api";
 import { dateTime, day } from "@/lib/format";
 import type {
   ContestationPage,
@@ -17,6 +18,15 @@ import {
   reviewReport,
   suspendProvider,
 } from "./actions";
+
+/**
+ * The listing, taken straight from the generated contract.
+ *
+ * <p>Named here rather than in `@/lib/types` only because this screen is its
+ * one caller. If a second one appears it belongs beside every other alias
+ * there, and the import above is what makes moving it a one-line change.
+ */
+type ModeratedProviderPage = components["schemas"]["ModeratedProviderPage"];
 
 /** A complaints queue. Cached, it would show one already answered. */
 export const dynamic = "force-dynamic";
@@ -112,30 +122,22 @@ const SUSPENSION_EFFECTS: string[] = [
  */
 const OPERATOR_ZONE = "Africa/Conakry";
 
-/** One page of a queue, and how much of it the table below is built from. */
+/** One page of whichever list is open. */
 const PAGE = 50;
-const SWEEP = 200;
+
+/** The establishments table's two filters, as the contract accepts them. */
+const BUSINESS_STATES: [string, string][] = [
+  ["", "Tous les états"],
+  ["ACTIVE", "En ligne"],
+  ["SUSPENDED", "Suspendus"],
+];
 
 type Query = {
   queue?: string;
   status?: string;
   cursor?: string;
   q?: string;
-  etat?: string;
   error?: string;
-};
-
-/**
- * One line of the establishments table.
- *
- * <p>Local because `@/lib/types` mirrors the contract and the contract has no
- * such projection: there is no operation that lists establishments, so this is
- * assembled from the two queues rather than read.
- */
-type Establishment = {
-  slug: string;
-  name: string;
-  status?: ProviderReportView["provider_status"];
 };
 
 /**
@@ -148,7 +150,7 @@ type Establishment = {
 type Loaded =
   | { kind: "REPORTS"; page: ProviderReportPage }
   | { kind: "CONTESTATIONS"; page: ContestationPage }
-  | { kind: "BUSINESSES"; rows: Establishment[] };
+  | { kind: "BUSINESSES"; page: ModeratedProviderPage };
 
 /**
  * Moderation, as a screen instead of four curl commands.
@@ -166,10 +168,14 @@ export default async function Moderation({
   const query = await searchParams;
 
   const queue = QUEUES.find(([value]) => value === query.queue)?.[0] ?? "REPORTS";
-  // A status belonging to another screen arrives whenever somebody switches
-  // lists with a filter already applied. It falls back rather than being sent
-  // on: `REVIEWED` is not a value the contestations endpoint's enum has.
+  // One `status` key for three screens, and each reads it against its own
+  // list. A value belonging to another arrives whenever somebody switches
+  // lists with a filter already applied, and it falls back rather than being
+  // sent on: `REVIEWED` is not a value the contestations endpoint's enum has,
+  // and `SUSPENDED` is not one the reports endpoint has.
   const view = REPORT_VIEWS.find(([value]) => value === query.status)?.[0] ?? "PENDING";
+  const state = BUSINESS_STATES.find(([value]) => value === query.status)?.[0] ?? "";
+  const search = (query.q ?? "").trim();
 
   // A provider who finds this address gets a plain sentence rather than a
   // stack trace. The scope is held by the operator alone, so 403 here is the
@@ -177,7 +183,7 @@ export default async function Moderation({
   // complaints against them, so it must not half-render on the way to failing.
   let loaded: Loaded;
   try {
-    loaded = await load(queue, view, query.cursor);
+    loaded = await load(queue, queue === "BUSINESSES" ? state : view, search, query.cursor);
   } catch (error) {
     if (error instanceof ApiError && error.status === 403) {
       return (
@@ -196,7 +202,7 @@ export default async function Moderation({
 
   // Carried through every lever so an action pressed on page two of the
   // reviewed list comes back to page two of the reviewed list.
-  const back = carry(queue, view, query.cursor);
+  const back = carry(queue, queue === "BUSINESSES" ? state : view, query.cursor);
 
   return (
     <Shell queue={queue}>
@@ -206,9 +212,9 @@ export default async function Moderation({
         <Contestations page={loaded.page} back={back} error={query.error} />
       ) : (
         <Businesses
-          rows={loaded.rows}
-          q={query.q ?? ""}
-          etat={query.etat ?? ""}
+          page={loaded.page}
+          q={search}
+          state={state}
           back={back}
           error={query.error}
         />
@@ -670,42 +676,38 @@ function Contestation({
 /* --- Établissements ------------------------------------------------------ */
 
 /**
- * The establishments moderation has jurisdiction over, and the lever detached
- * from any one complaint.
+ * Every business on the platform, and the lever detached from any one
+ * complaint.
  *
- * <p>Assembled from the two queues, because no operation lists businesses: the
- * only public one, `GET /v1/providers`, is served by a database role that
- * cannot see an unpublished or suspended page - which is precisely the half
- * this table is for. So the rows are the establishments a report or a
- * contestation has named, and the footnote says so rather than letting the
- * table read as the whole directory.
+ * <p>Read from `listAllProviders`, which is the operation this screen was
+ * missing. The two queues are inboxes and an inbox cannot answer "who is on
+ * this platform": before it existed the table showed only the establishments a
+ * report or a contestation had already named, so an operator could act on a
+ * salon nobody had complained about only by typing a handle he had no way to
+ * look up.
  *
- * <p>The search and the state filter run over those rows, which is exactly what
- * the design's toolbar promises: neither endpoint takes a `q`.
+ * <p>The public directory could not have served it either. `GET /v1/providers`
+ * is answered by a database role that cannot see an unpublished or a suspended
+ * page, which is precisely the half this table is for.
+ *
+ * <p>The search and the state filter are the endpoint's own, not a pass over
+ * the page: filtering client-side under a cursor would search one page and
+ * report the result as if it were the whole platform.
  */
 function Businesses({
-  rows,
+  page,
   q,
-  etat,
+  state,
   back,
   error,
 }: {
-  rows: Establishment[];
+  page: ModeratedProviderPage;
   q: string;
-  etat: string;
+  state: string;
   back: string;
   error?: string;
 }) {
-  const needle = q.trim().toLowerCase();
-  const state = etat === "ACTIVE" || etat === "SUSPENDED" ? etat : "";
-  const matching = rows.filter((row) => {
-    if (state && row.status !== state) return false;
-    if (!needle) return true;
-    return (
-      row.name.toLowerCase().includes(needle) ||
-      `balaaca.gn/p/${row.slug}`.includes(needle)
-    );
-  });
+  const rows = page.data;
 
   return (
     <>
@@ -720,7 +722,9 @@ function Businesses({
 
       {/* A GET form: the filter lives in the URL, so it survives the back
           button and can be handed to a colleague. Both controls are applied by
-          the same submission. */}
+          the same submission, and the cursor is deliberately absent - it
+          belongs to the result set being left, and carrying it would open the
+          next one halfway through a sequence it does not describe. */}
       <form
         className="toolbar"
         style={{ marginBottom: "var(--s-5)" }}
@@ -743,29 +747,40 @@ function Businesses({
           />
         </div>
         <span className="toolbar__spacer"></span>
-        {/* The design offers a fourth state, "Brouillons". Nothing on either
-            queue says whether a page was ever published, so the option is not
-            drawn rather than drawn and unable to filter. */}
+        {/* The design offers a fourth state, "Brouillons". Whether a page is
+            published is now on every row, but no operation filters on it, so
+            the option is not drawn rather than drawn and unable to filter the
+            pages it cannot see. */}
         <select
           className="select"
-          name="etat"
+          name="status"
           defaultValue={state}
           style={{ width: "auto", minHeight: 40, fontSize: "var(--fs-sm)" }}
           aria-label="Filtrer par état"
         >
-          <option value="">Tous les états</option>
-          <option value="ACTIVE">En ligne</option>
-          <option value="SUSPENDED">Suspendus</option>
+          {BUSINESS_STATES.map(([value, label]) => (
+            <option key={value || "ALL"} value={value}>
+              {label}
+            </option>
+          ))}
         </select>
+        {/* The filter is the server's now, so choosing a state has to send the
+            form. Without this the select only applied when somebody happened to
+            press Enter in the search box, which is a control that looks like it
+            works. A button rather than a script: this screen has none. */}
+        <button className="btn btn--secondary btn--sm" type="submit">
+          <span className="btn__label--idle">Filtrer</span>
+        </button>
       </form>
 
-      {matching.length === 0 ? (
+      {rows.length === 0 ? (
         <div className="empty">
           <Scene name="notebook" className="scene-ill" />
           <div className="empty__title">Aucun établissement à afficher</div>
           <p className="empty__body">
-            Cette liste réunit les établissements qu’un signalement ou une
-            contestation a nommés.
+            {q || state
+              ? "Aucun établissement ne correspond à cette recherche."
+              : "Aucun professionnel n’est encore inscrit sur la plateforme."}
           </p>
         </div>
       ) : (
@@ -774,35 +789,60 @@ function Businesses({
             <thead>
               <tr>
                 <th>Établissement</th>
+                <th>Lieu</th>
                 <th>État</th>
+                <th>Rendez-vous</th>
+                <th>Inscrit</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {matching.map((row) => (
+              {rows.map((row) => (
                 <tr key={row.slug}>
                   <td>
                     <div className="row" style={{ gap: "var(--s-3)" }}>
                       <span className="avatar avatar--sm" aria-hidden="true">
-                        {initials(row.name)}
+                        {initials(row.business_name)}
                       </span>
                       <div>
                         <div className="t-strong" style={{ fontSize: "var(--fs-sm)" }}>
-                          {row.name}
+                          {row.business_name}
                         </div>
                         <div className="t-xs">balaaca.gn/p/{row.slug}</div>
+                        {/* A registration with no trade is one of the things an
+                            operator is looking for, so the absence is written
+                            rather than left as an empty cell. */}
+                        <div className="t-xs">{row.trade ?? "Métier non renseigné"}</div>
                       </div>
                     </div>
                   </td>
                   <td>
+                    <div className="t-sm">{row.locality?.label_fr ?? "Non renseigné"}</div>
+                    {row.area ? <div className="t-xs">{row.area}</div> : null}
+                  </td>
+                  <td>
                     {row.status === "SUSPENDED" ? (
                       <Badge label="Suspendu" tone="danger" icon="ban" />
-                    ) : row.status === "ACTIVE" ? (
+                    ) : row.published ? (
                       <Badge label="En ligne" tone="success" icon="globe" />
                     ) : (
-                      <span className="t-xs">·</span>
+                      /* Not suspended and not published: the business never put
+                         its own page live. A different fact from a suspension
+                         and never drawn as one - one is the platform's decision
+                         and the other is theirs. */
+                      <Badge label="Non publié" tone="neutral" icon="eye-off" />
                     )}
+                    {row.suspension_reason ? (
+                      <div className="t-xs" style={{ marginTop: 4, maxWidth: "24ch" }}>
+                        {row.suspension_reason}
+                      </div>
+                    ) : null}
                   </td>
+                  {/* What the lever costs, beside the lever. A suspension
+                      cancels none of these, so this is how many customers are
+                      still expected at the door afterwards. */}
+                  <td className="t-sm">{row.appointment_count}</td>
+                  <td className="t-xs">{day(row.registered_at, OPERATOR_ZONE)}</td>
                   <td>
                     <details className="menu">
                       <summary className="btn btn--ghost btn--icon btn--sm" aria-label="Actions">
@@ -816,22 +856,21 @@ function Businesses({
                           <Icon name="flag" size={18} /> Signalements
                         </Link>
                         <span className="menu__sep"></span>
-                        {row.status === "SUSPENDED" ? null : (
-                          <button
-                            className="menu__item menu__item--danger"
-                            type="button"
-                            data-dialog-open={`susp-b-${row.slug}`}
-                          >
-                            <Icon name="ban" size={18} /> Suspendre
-                          </button>
-                        )}
-                        {row.status === "ACTIVE" ? null : (
+                        {row.status === "SUSPENDED" ? (
                           <button
                             className="menu__item"
                             type="submit"
                             form={`reinst-b-${row.slug}`}
                           >
                             <Icon name="refresh" size={18} /> Rétablir
+                          </button>
+                        ) : (
+                          <button
+                            className="menu__item menu__item--danger"
+                            type="button"
+                            data-dialog-open={`susp-b-${row.slug}`}
+                          >
+                            <Icon name="ban" size={18} /> Suspendre
                           </button>
                         )}
                       </div>
@@ -844,24 +883,34 @@ function Businesses({
         </div>
       )}
 
+      {page.next_cursor ? (
+        <div className="row" style={{ marginTop: "var(--s-6)" }}>
+          <Button
+            label="Voir la suite"
+            variant="secondary"
+            size="sm"
+            iconEnd="arrow-right"
+            href={nextPage("BUSINESSES", state, page.next_cursor, q)}
+          />
+        </div>
+      ) : null}
+
       <p className="t-xs" style={{ marginTop: "var(--s-4)" }}>
         Un établissement suspendu conserve son agenda et ses rendez-vous. La
-        suspension retire la page publique, elle n’annule rien. Cette liste
-        réunit les établissements qu’un signalement ou une contestation a nommés.
+        suspension retire la page publique, elle n’annule rien.
       </p>
 
       {/* Outside the table: a menu panel is positioned, and a form wrapped
           around one of its rows would be a box in the middle of the list. The
           `form` attribute binds the button to it natively, with no script. */}
-      {matching.map((row) => (
+      {rows.map((row) => (
         <Fragment key={row.slug}>
-          {row.status === "ACTIVE" ? null : (
+          {row.status === "SUSPENDED" ? (
             <form action={reinstateProvider} id={`reinst-b-${row.slug}`}>
               <input type="hidden" name="slug" value={row.slug} />
               <input type="hidden" name="back" value={back} />
             </form>
-          )}
-          {row.status === "SUSPENDED" ? null : (
+          ) : (
             <SuspendDialogShort id={`susp-b-${row.slug}`} slug={row.slug} back={back} />
           )}
         </Fragment>
@@ -1057,11 +1106,22 @@ function Refusal({ code, answers }: { code?: string; answers?: boolean }) {
 /**
  * One page of whichever screen is open.
  *
- * <p>`ALL` is the absence of the parameter rather than a value, because that is
- * what both endpoints publish: their enums have no such member, and sending it
- * would be a 400 on a filter the operator chose from a list this page drew.
+ * <p>`ALL` and the empty state are the ABSENCE of the parameter rather than a
+ * value, because that is what the three endpoints publish: their enums have no
+ * such member, and sending it would be a 400 on a filter the operator chose
+ * from a list this page drew.
+ *
+ * <p>The search and the filter are sent to the server, never applied to the
+ * page that comes back. Under a cursor those are different answers: filtering
+ * here would search fifty establishments and present the result as if it were
+ * the platform.
  */
-async function load(queue: string, view: string, cursor: string | undefined): Promise<Loaded> {
+async function load(
+  queue: string,
+  view: string,
+  search: string,
+  cursor: string | undefined,
+): Promise<Loaded> {
   if (queue === "CONTESTATIONS") {
     return {
       kind: "CONTESTATIONS",
@@ -1072,11 +1132,17 @@ async function load(queue: string, view: string, cursor: string | undefined): Pr
   }
 
   if (queue === "BUSINESSES") {
-    const [reports, contestations] = await Promise.all([
-      api<ProviderReportPage>("/v1/admin/reports", { query: { limit: SWEEP } }),
-      api<ContestationPage>("/v1/admin/contestations", { query: { limit: SWEEP } }),
-    ]);
-    return { kind: "BUSINESSES", rows: establishments(reports, contestations) };
+    return {
+      kind: "BUSINESSES",
+      page: await api<ModeratedProviderPage>("/v1/admin/providers", {
+        query: {
+          q: search || undefined,
+          status: view || undefined,
+          cursor: cursor || undefined,
+          limit: PAGE,
+        },
+      }),
+    };
   }
 
   return {
@@ -1089,42 +1155,6 @@ async function load(queue: string, view: string, cursor: string | undefined): Pr
       },
     }),
   };
-}
-
-/**
- * Every establishment the two queues name, once each.
- *
- * <p>A contestation's `provider_status` is required and a report's is optional,
- * so the contestation wins where both speak. Where neither does, the row
- * carries no state at all rather than a guessed one - and both levers stay
- * offered, because hiding one on a guess is how an establishment becomes
- * impossible to put back.
- */
-function establishments(
-  reports: ProviderReportPage,
-  contestations: ContestationPage,
-): Establishment[] {
-  const rows = new Map<string, Establishment>();
-
-  for (const report of reports.data) {
-    const row = rows.get(report.provider_slug) ?? {
-      slug: report.provider_slug,
-      name: report.provider_name,
-    };
-    row.status = row.status ?? report.provider_status;
-    rows.set(row.slug, row);
-  }
-
-  for (const contestation of contestations.data) {
-    const row = rows.get(contestation.provider_slug) ?? {
-      slug: contestation.provider_slug,
-      name: contestation.provider_name,
-    };
-    row.status = contestation.provider_status;
-    rows.set(row.slug, row);
-  }
-
-  return [...rows.values()].sort((a, b) => a.name.localeCompare(b.name, "fr"));
 }
 
 /* --- Addresses ----------------------------------------------------------- */
@@ -1142,21 +1172,26 @@ function viewHref(view: string): string {
 /**
  * The view a lever was pressed from, so the redirect comes back to it.
  *
- * <p>The search and the state filter are deliberately absent: `actions.ts`
- * rebuilds the address from a known list of keys, and a lever pressed from a
- * filtered table returns to the whole one rather than to a URL this file and
- * that one disagree about.
+ * <p>The search is deliberately absent: `actions.ts` rebuilds the address from
+ * a known list of keys, and a lever pressed from a searched table returns to
+ * the whole one rather than to a URL this file and that one disagree about.
+ * The state filter travels because it shares that list's `status` key - the
+ * one an establishment is most likely to have just left.
  */
 function carry(queue: string, view: string, cursor: string | undefined): string {
   const params = new URLSearchParams({ queue });
-  if (queue === "REPORTS") params.set("status", view);
+  if (view && queue !== "CONTESTATIONS") params.set("status", view);
   if (cursor) params.set("cursor", cursor);
   return params.toString();
 }
 
 /** The next page is this view plus the cursor the last one handed back. */
-function nextPage(queue: string, view: string, cursor: string): string {
+function nextPage(queue: string, view: string, cursor: string, search?: string): string {
   const params = new URLSearchParams({ queue, cursor });
-  if (queue === "REPORTS") params.set("status", view);
+  if (view && queue !== "CONTESTATIONS") params.set("status", view);
+  // Unlike `carry`, which hands its value to a server action: this address is
+  // followed by the reader, so page two of a search has to still be that
+  // search rather than page two of the platform.
+  if (search) params.set("q", search);
   return `/admin?${params.toString()}`;
 }

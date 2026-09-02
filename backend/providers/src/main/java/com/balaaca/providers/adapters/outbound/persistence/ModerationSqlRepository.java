@@ -1,7 +1,9 @@
 package com.balaaca.providers.adapters.outbound.persistence;
 
+import com.balaaca.providers.ports.inbound.ModerateProvidersUseCase.ModeratedProvider;
 import com.balaaca.providers.ports.inbound.ModerateProvidersUseCase.Moderation;
 import com.balaaca.providers.ports.inbound.ModerateProvidersUseCase.Report;
+import com.balaaca.providers.ports.inbound.SearchProvidersUseCase.Position;
 import com.balaaca.providers.ports.outbound.ModerationRepository;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.persistence.EntityManager;
@@ -42,6 +44,26 @@ public class ModerationSqlRepository implements ModerationRepository {
 
     public ModerationSqlRepository(EntityManager em) {
         this.em = em;
+    }
+
+    @Override
+    public List<ModeratedProvider> providers(Optional<String> search, Optional<String> status,
+                                             Optional<Position> after, int limit) {
+        return rows("""
+                SELECT * FROM app_list_all_providers(CAST(:search AS varchar),
+                                                     CAST(:status AS varchar),
+                                                     CAST(:afterName AS varchar),
+                                                     CAST(:afterSlug AS varchar),
+                                                     CAST(:limit AS int))
+                """,
+                q -> q.setParameter("search", search.orElse(null))
+                      .setParameter("status", status.orElse(null))
+                      .setParameter("afterName", after.map(Position::businessName).orElse(null))
+                      .setParameter("afterSlug", after.map(Position::slug).orElse(null))
+                      // One more than asked, so the caller can tell a full page
+                      // from the last one without a second query.
+                      .setParameter("limit", limit + 1))
+                .stream().map(r -> toProvider((Object[]) r)).toList();
     }
 
     @Override
@@ -101,6 +123,21 @@ public class ModerationSqlRepository implements ModerationRepository {
                                           .map(ModerationSqlRepository::instant),
                                   Optional.ofNullable((String) c[3]));
         });
+    }
+
+    private static ModeratedProvider toProvider(Object[] r) {
+        String slug = (String) r[0];
+        String businessName = (String) r[1];
+        return new ModeratedProvider(
+                slug, businessName,
+                Optional.ofNullable((String) r[2]),
+                Optional.ofNullable((String) r[3]),
+                Optional.ofNullable((String) r[4]),
+                Optional.ofNullable((String) r[5]),
+                (Boolean) r[6], (String) r[7], instant(r[8]),
+                ((Number) r[9]).longValue(),
+                Optional.ofNullable((String) r[10]),
+                new Position(businessName, slug));
     }
 
     private static Report toReport(Object[] r) {

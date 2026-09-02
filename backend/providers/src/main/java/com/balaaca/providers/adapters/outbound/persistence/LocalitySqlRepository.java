@@ -34,10 +34,44 @@ public class LocalitySqlRepository implements LocalityRepository {
     public List<Locality> all() {
         // Parents before children, so a client builds the tree in one pass
         // instead of sorting fifty-one rows itself.
+        //
+        // The count beside each place is counted DOWN THE TREE, because the
+        // number labels a filter and `listProviders?locality=` matches down the
+        // tree. Counting only the businesses filed at exactly this level would
+        // put a zero on Conakry - almost nobody files against the region - while
+        // the list behind that tile held every salon in the capital.
+        //
+        // Which businesses are countable is left entirely to
+        // `providers_public_read`: no tenant is bound on this read, so the
+        // policy admits published, active rows and nothing else. Restating that
+        // predicate here would be a second place to say what is public, and the
+        // second place is the one that gets forgotten - after which a tile and
+        // the list it opens disagree.
+        //
+        // Fifty-one nodes, three levels deep. The recursion is written rather
+        // than the depth assumed, because a map that grows a level would
+        // otherwise start undercounting silently.
         List<Object[]> rows = em.createNativeQuery("""
-                SELECT l.slug, l.label_fr, l.kind, p.slug, l.iso_3166_2
+                WITH RECURSIVE descendants AS (
+                    SELECT l.id AS root_id, l.id AS node_id
+                      FROM localities l WHERE l.active
+                    UNION ALL
+                    SELECT d.root_id, child.id
+                      FROM localities child
+                      JOIN descendants d ON child.parent_id = d.node_id
+                     WHERE child.active
+                ),
+                counted AS (
+                    SELECT d.root_id, count(pr.id)::int AS providers
+                      FROM descendants d
+                      LEFT JOIN providers pr ON pr.locality_id = d.node_id
+                     GROUP BY d.root_id
+                )
+                SELECT l.slug, l.label_fr, l.kind, p.slug, l.iso_3166_2,
+                       coalesce(counted.providers, 0)
                   FROM localities l
                   LEFT JOIN localities p ON p.id = l.parent_id
+                  LEFT JOIN counted ON counted.root_id = l.id
                  WHERE l.active
                  ORDER BY CASE l.kind WHEN 'REGION' THEN 1 WHEN 'PREFECTURE' THEN 2 ELSE 3 END,
                           l.sort_order, l.label_fr
@@ -109,7 +143,8 @@ public class LocalitySqlRepository implements LocalityRepository {
     private static Locality toLocality(Object[] r) {
         return new Locality((String) r[0], (String) r[1], (String) r[2],
                             Optional.ofNullable((String) r[3]),
-                            Optional.ofNullable((String) r[4]));
+                            Optional.ofNullable((String) r[4]),
+                            ((Number) r[5]).intValue());
     }
 
     /**

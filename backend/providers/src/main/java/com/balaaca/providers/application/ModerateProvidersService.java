@@ -10,6 +10,7 @@ import com.balaaca.providers.domain.ReportNotFoundException;
 import com.balaaca.providers.domain.UnknownBookingReferenceException;
 import com.balaaca.providers.ports.inbound.ModerateProvidersUseCase;
 import com.balaaca.providers.ports.inbound.ReportProviderUseCase;
+import com.balaaca.providers.ports.inbound.SearchProvidersUseCase.Position;
 import com.balaaca.providers.ports.outbound.ContestationRepository;
 import com.balaaca.providers.ports.outbound.ModerationRepository;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -42,6 +43,25 @@ public class ModerateProvidersService implements ModerateProvidersUseCase, Repor
         this.moderation = moderation;
         this.contestations = contestations;
         this.audit = audit;
+    }
+
+    /**
+     * Not audited, and the omission is the same one the report path makes: the
+     * trail records what the platform DECIDED, and looking at a list is not a
+     * decision. Auditing every page of a listing would bury the suspensions in
+     * it, which is the one thing the trail exists to make findable.
+     */
+    @Override
+    @Transactional(Transactional.TxType.REQUIRED)
+    public ModeratedProviderPage providers(Optional<String> search, Optional<String> status,
+                                           Optional<Position> after, int limit) {
+        List<ModeratedProvider> fetched = moderation.providers(search, status, after, limit);
+
+        boolean more = fetched.size() > limit;
+        List<ModeratedProvider> entries = more ? fetched.subList(0, limit) : fetched;
+
+        return new ModeratedProviderPage(List.copyOf(entries),
+                more ? Optional.of(entries.get(entries.size() - 1).position()) : Optional.empty());
     }
 
     @Override

@@ -17,34 +17,34 @@ LOGS="$ROOT/.dev-logs"
 mkdir -p "$LOGS"
 
 if [ ! -f .env ]; then
-    echo "Il manque .env. Copiez-le : cp .env.example .env" >&2
+    echo ".env is missing. Copy it: cp .env.example .env" >&2
     exit 1
 fi
 # shellcheck source=/dev/null
 set -a; . ./.env; set +a
 
-# --- Ce qui n'est vrai qu'en local ------------------------------------------
-# .env decrit le reseau des conteneurs, ou l'API s'appelle "postgres". Lancee
-# ici, elle passe par le port publie sur la machine.
+# --- What is only true locally ----------------------------------------------
+# .env describes the container network, where the API calls itself "postgres".
+# Started here, it goes through the port published on this machine.
 export POSTGRES_HOST=localhost
 export POSTGRES_HOST_PORT="${POSTGRES_HOST_PORT:-55432}"
-# Meme chose pour Redis, et il se manifeste plus mal : rien de ce que le
-# produit fait aujourd'hui ne passe par lui, donc l'API repond a tout et
-# declare seulement /q/health/ready DOWN. Une attente de readiness tourne alors
-# deux minutes dans le vide avant d'abandonner sans rien expliquer.
+# Same for Redis, and it shows up worse: nothing the product does today goes
+# through it, so the API answers everything and only reports /q/health/ready
+# DOWN. A readiness wait then spins for two minutes and gives up explaining
+# nothing.
 export REDIS_HOST=localhost
 export REDIS_HOST_PORT="${REDIS_HOST_PORT:-56379}"
 export QUARKUS_OIDC_AUTH_SERVER_URL="${KEYCLOAK_ISSUER_URL}"
 export QUARKUS_HTTP_PORT="${BACKEND_PORT:-8080}"
-# Le defaut de production est /var/lib/balaaca/media, ou un developpeur n'ecrit
-# pas. Sans cette ligne, le premier envoi de logo repond 500 sans dire pourquoi.
+# The production default is /var/lib/balaaca/media, where a developer cannot
+# write. Without this line, the first logo upload answers 500 saying nothing.
 export BALAACA_MEDIA_ROOT="${BALAACA_MEDIA_ROOT_LOCAL:-$ROOT/.dev-media}"
 mkdir -p "$BALAACA_MEDIA_ROOT"
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 
-# --- 1. L'infrastructure ----------------------------------------------------
-say "1/4  PostgreSQL, Keycloak et Redis"
+# --- 1. The infrastructure --------------------------------------------------
+say "1/4  PostgreSQL, Keycloak and Redis"
 docker compose up -d postgres keycloak redis
 
 printf '     keycloak '
@@ -53,15 +53,15 @@ for _ in $(seq 1 60); do
     [ "$state" = healthy ] && break
     printf '.'; sleep 5
 done
-echo " pret"
+echo " ready"
 
-# --- 2. L'API ---------------------------------------------------------------
+# --- 2. The API -------------------------------------------------------------
 JAR="$ROOT/backend/app/target/quarkus-app/quarkus-run.jar"
 if [ ! -f "$JAR" ]; then
-    say "2/4  L'API n'est pas construite, je la construis (une fois)"
+    say "2/4  The API is not built yet, building it (once)"
     (cd backend && mvn -q -pl app -am -DskipTests -Djacoco.skip=true package)
 else
-    say "2/4  L'API"
+    say "2/4  The API"
 fi
 
 pkill -f quarkus-run.jar 2>/dev/null || true
@@ -75,19 +75,19 @@ for _ in $(seq 1 45); do
     printf '.'; sleep 2
 done
 if [ "$ready" = yes ]; then
-    echo " prete"
+    echo " ready"
 else
-    # Dire QUOI est tombe, et pas seulement que l'attente a expire : la sortie
-    # de /q/health/ready nomme le controle en cause.
-    echo " pas prete"
+    # Say WHAT went down, not merely that the wait expired: the body of
+    # /q/health/ready names the check at fault.
+    echo " not ready"
     curl -s "http://localhost:$QUARKUS_HTTP_PORT/q/health/ready" || true
     echo
-    echo "     Le detail est dans $LOGS/api.log" >&2
+    echo "     The detail is in $LOGS/api.log" >&2
     exit 1
 fi
 
-# --- 3. Le front ------------------------------------------------------------
-say "3/4  Le front"
+# --- 3. The front -----------------------------------------------------------
+say "3/4  The front"
 if [ ! -d frontend/node_modules ]; then
     (cd frontend && npm ci)
 fi
@@ -102,17 +102,17 @@ for _ in $(seq 1 40); do
     [ "$code" = 200 ] && break
     printf '.'; sleep 2
 done
-echo " pret"
+echo " ready"
 
-say "4/4  Tout tourne"
+say "4/4  Everything is up"
 cat <<EOF
-     Le site        http://localhost:3000
-     Une page       http://localhost:3000/p/salon-fatou
-     Le carnet      http://localhost:3000/dashboard
-     L'API          http://localhost:$QUARKUS_HTTP_PORT/q/health/ready
+     The site       http://localhost:3000
+     A page         http://localhost:3000/p/salon-fatou
+     The diary      http://localhost:3000/dashboard
+     The API        http://localhost:$QUARKUS_HTTP_PORT/q/health/ready
      Keycloak       ${KEYCLOAK_ISSUER_URL%/realms/*}
 
-     Les journaux   $LOGS/api.log  et  $LOGS/front.log
-     Pour arreter   scripts/dev-stop.sh
-     Des donnees    scripts/seed.sh
+     The logs       $LOGS/api.log  and  $LOGS/front.log
+     To stop        scripts/dev-stop.sh
+     Some data      scripts/seed.sh
 EOF

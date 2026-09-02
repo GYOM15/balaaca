@@ -13,7 +13,7 @@ export const metadata: Metadata = { title: "Rejoindre une équipe" };
 type Search = { error?: string; code?: string };
 
 /**
- * Rejoindre une équipe.
+ * Joining a team.
  *
  * <p>The other way onto this platform, and the one nobody arrives at by
  * browsing: an owner created a chair in their team, the server issued a code

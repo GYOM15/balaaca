@@ -1,43 +1,41 @@
-# Deploiement
+# Deployment
 
-Ce fichier est celui que `infrastructure/postgres/bootstrap.sh` et la migration
-`V014` citent nommement. Il n'existait pas, et son absence etait la moitie du
-probleme qu'il decrit.
+This is the file `infrastructure/postgres/bootstrap.sh` and migration `V014` name
+explicitly. It did not exist, and its absence was half the problem it describes.
 
-## Le piege, une fois pour toutes
+## The trap, once and for all
 
-Les roles PostgreSQL ne peuvent pas etre crees par une migration. `balaaca_migrator`
-est `NOCREATEROLE`, deliberement : un role qui peut fabriquer des roles peut
-fabriquer un role sans RLS. Les roles viennent donc de `bootstrap.sh`, execute en
-superutilisateur.
+PostgreSQL roles cannot be created by a migration. `balaaca_migrator` is
+`NOCREATEROLE`, deliberately: a role that can make roles can make a role without
+RLS. The roles therefore come from `bootstrap.sh`, run as superuser.
 
-Or ce script est monte dans `/docker-entrypoint-initdb.d`, et l'image PostgreSQL
-ne l'execute **que sur un repertoire de donnees vide**. Sur une base qui contient
-deja des donnees, il ne tourne jamais.
+But that script is mounted in `/docker-entrypoint-initdb.d`, and the PostgreSQL
+image runs it **only against an empty data directory**. On a database that
+already holds data, it never runs.
 
-Consequence : toute migration qui a besoin d'un role nouveau echoue, et avec
-`quarkus.flyway.migrate-at-start=true`, **l'application ne demarre pas du tout**.
+Consequence: any migration that needs a new role fails, and with
+`quarkus.flyway.migrate-at-start=true`, **the application does not start at
+all**.
 
-## La regle
+## The rule
 
-> Avant chaque deploiement, rejouer `bootstrap.sh` en superutilisateur.
+> Before every deployment, replay `bootstrap.sh` as superuser.
 
-Il est idempotent : chaque role est cree seulement s'il est absent, et le mot de
-passe d'un role existant n'est jamais reapplique. Le rejouer sur une base a jour
-ne fait rien.
+It is idempotent: each role is created only if absent, and an existing role's
+password is never reapplied. Replaying it against an up-to-date database does
+nothing.
 
 ```bash
 docker compose exec -T postgres bash /docker-entrypoint-initdb.d/bootstrap.sh
 ```
 
-Les variables dont il a besoin sont deja dans l'environnement du conteneur,
-posees par compose. Les **noms** de roles n'en font pas partie : ils sont fixes,
-parce que les migrations accordent leurs droits a ces identifiants litteralement.
-Une variable qui pretendait les configurer produisait un bootstrap reussi suivi
-d'un Flyway qui echoue sur `role "balaaca_app" does not exist` ; elle a ete
-supprimee.
+The variables it needs are already in the container's environment, set by
+compose. The role **names** are not among them: they are fixed, because the
+migrations grant their privileges to those identifiers literally. A variable that
+claimed to configure them produced a successful bootstrap followed by a Flyway
+run failing on `role "balaaca_app" does not exist`; it has been removed.
 
-Si vous l'oubliez, la migration ne vous laisse pas deviner :
+If you forget, the migration does not leave you guessing:
 
 ```
 ERROR: role balaaca_registrar does not exist
@@ -46,55 +44,53 @@ HINT:  This migration adds a role the cluster predates. Re-run
        then start the application again. See docs/DEPLOYMENT.md.
 ```
 
-## Les roles, et pourquoi il y en a cinq
+## The roles, and why there are five
 
-| Role | Ce qu'il peut | Pourquoi separe |
+| Role | What it can do | Why it is separate |
 |---|---|---|
-| `balaaca_migrator` | proprietaire du schema, execute Flyway | jamais utilise a l'execution |
-| `balaaca_app` | la connexion applicative | ni proprietaire ni `BYPASSRLS`, sinon le RLS est inerte |
-| `balaaca_resolver` | `NOLOGIN`, proprietaire des fonctions de resolution, **lecture seule** | resoudre un tenant avant qu'un tenant soit lie |
-| `balaaca_registrar` | `NOLOGIN`, proprietaire de la seule fonction qui cree un prestataire | « qui peut faire naitre un salon » a une seule reponse |
-| `balaaca_notification_worker` | `SELECT`/`UPDATE` sur `notifications`, rien d'autre | un bug de drain ne devient pas une fuite entre tenants |
+| `balaaca_migrator` | owns the schema, runs Flyway | never used at runtime |
+| `balaaca_app` | the application connection | neither owner nor `BYPASSRLS`, otherwise RLS is inert |
+| `balaaca_resolver` | `NOLOGIN`, owns the resolution functions, **read only** | resolving a tenant before a tenant is bound |
+| `balaaca_registrar` | `NOLOGIN`, owns the only function that creates a provider | "what can bring a salon into being" has a single answer |
+| `balaaca_notification_worker` | `SELECT`/`UPDATE` on `notifications`, nothing else | a drain bug does not become a cross-tenant leak |
 
-## Ordre d'un deploiement
+## The order of a deployment
 
-1. `git pull` sur la machine cible.
-2. **`bootstrap.sh`** (ci-dessus). Toujours, meme si rien ne semble avoir change.
-3. Reconstruire et redemarrer : Flyway applique les migrations au demarrage.
-4. `infrastructure/keycloak/smoke.sh` - verifie qu'un vrai jeton porte un `sub`,
-   la bonne audience et les scopes attendus. Un realm qui demarre n'est pas un
-   realm qui fonctionne.
+1. `git pull` on the target machine.
+2. **`bootstrap.sh`** (above). Always, even if nothing seems to have changed.
+3. Rebuild and restart: Flyway applies the migrations at startup.
+4. `infrastructure/keycloak/smoke.sh` - checks that a real token carries a `sub`,
+   the right audience and the expected scopes. A realm that starts is not a realm
+   that works.
 
-## Les images publiees
+## The published images
 
-Elles vivent dans un repertoire monte, designe par `BALAACA_MEDIA_ROOT`
-(defaut `/var/lib/balaaca/media`). C'est honnete plutot qu'ideal, et il vaut
-mieux le dire :
+They live in a mounted directory, named by `BALAACA_MEDIA_ROOT` (default
+`/var/lib/balaaca/media`). That is honest rather than ideal, and it is better
+said out loud:
 
-- **une seule instance.** Une deuxieme instance ne verrait pas les fichiers de
-  la premiere ;
-- **rien devant.** L'application sert ses propres octets, ce qui appartient a un
-  CDN ;
-- **a sauvegarder separement.** Le repertoire ne fait pas partie du dump
-  PostgreSQL, et une base restauree sans lui pointe vers des images absentes.
+- **a single instance.** A second instance would not see the first one's files;
+- **nothing in front.** The application serves its own bytes, which is a CDN's
+  job;
+- **back it up separately.** The directory is not part of the PostgreSQL dump,
+  and a database restored without it points at images that are not there.
 
-La base stocke un **nom**, jamais une URL, et l'acces passe par un port. Le jour
-ou cela devient un stockage objet, c'est un adaptateur qui change - ni le schema,
-ni les lignes deja ecrites.
+The database stores a **name**, never a URL, and access goes through a port. The
+day this becomes object storage, it is an adapter that changes, not the schema
+and not the rows already written.
 
-## Ce qui n'existe pas encore
+## What does not exist yet
 
-Enonce ici plutot que decouvert un dimanche :
+Stated here rather than discovered on a Sunday:
 
-- **aucun pipeline de deploiement.** La CI construit, teste et verifie le
-  contrat ; rien ne pousse quoi que ce soit sur le VPS. Le deploiement est
-  manuel.
-- **aucune sauvegarde documentee.** Il n'y a ni `pg_dump` planifie, ni
-  restauration testee.
-- **aucune alerte** sur les notifications passees en `DEAD` - au sens d'un
-  systeme d'alerte. Le worker journalise desormais chaque mort en `ERROR`, avec
-  le `provider_id`, le type et la cle de deduplication (jamais le destinataire),
-  ce qui suffit a une recherche mais pas a reveiller quelqu'un :
+- **no deployment pipeline.** CI builds, tests and checks the contract; nothing
+  pushes anything to the VPS. Deployment is manual.
+- **no documented backup.** There is no scheduled `pg_dump` and no tested
+  restore.
+- **no alerting** on notifications that turned `DEAD`, in the sense of an alerting
+  system. The worker now logs every death at `ERROR`, with the `provider_id`, the
+  kind and the dedupe key (never the recipient), which is enough for a search but
+  not enough to wake anybody:
 
   ```
   notification.dead id=... provider_id=... kind=BOOKING_CONFIRMATION

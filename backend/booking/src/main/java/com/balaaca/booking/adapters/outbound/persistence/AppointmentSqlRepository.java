@@ -13,6 +13,7 @@ import com.balaaca.sharedkernel.ids.AppointmentId;
 import com.balaaca.sharedkernel.ids.CustomerId;
 import com.balaaca.sharedkernel.ids.ServiceOfferingId;
 import com.balaaca.sharedkernel.ids.StaffId;
+import com.balaaca.sharedkernel.phone.PhoneNumber;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceException;
@@ -403,6 +404,19 @@ public class AppointmentSqlRepository implements AppointmentRepository {
                 .setParameter("email", contact.email().orElse(null))
                 .getSingleResult();
         return CustomerId.of(id);
+    }
+
+    @Override
+    public boolean isBlocked(PhoneNumber phone) {
+        // No provider predicate: RLS supplies it, and the unique index the
+        // upsert arbitrates on is the one this read uses. A number blocked at
+        // one salon is nothing at all at the next, which is what makes this a
+        // provider's own address book rather than a platform blacklist.
+        return !em.createNativeQuery("""
+                SELECT 1 FROM customers WHERE phone_e164 = :phone AND blocked
+                """)
+                .setParameter("phone", phone.e164())
+                .getResultList().isEmpty();
     }
     /**
      * Which unique index fired, read out of the driver's own message.

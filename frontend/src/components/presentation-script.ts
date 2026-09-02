@@ -37,7 +37,7 @@ export function boot(teardown) {
     teardown.push(() => target.removeEventListener(type, handler, options));
   };
 
-  /* ---------- 2. Copie --------------------------------------------------- */
+  /* ---------- 2. Copy ---------------------------------------------------- */
     on(document, 'click', function (e: any) {
       var b = (e.target as Element).closest<HTMLElement>('[data-copy]');
       if (!b) return;
@@ -47,7 +47,7 @@ export function boot(teardown) {
       }, function () { toast({ tone: 'info', title: 'Copie indisponible', body: text }); });
     });
   
-    /* ---------- 3. Dialogue ------------------------------------------------ */
+    /* ---------- 3. Dialog -------------------------------------------------- */
     on(document, 'click', function (e: any) {
       var open = (e.target as Element).closest<HTMLElement>('[data-dialog-open]');
       if (open) { var d = document.getElementById(open.getAttribute('data-dialog-open') ?? ''); if (d && (d as HTMLDialogElement).showModal) { e.preventDefault(); (d as HTMLDialogElement).showModal(); } return; }
@@ -55,7 +55,7 @@ export function boot(teardown) {
       if (close) { var dd = close.closest('dialog'); if (dd) { e.preventDefault(); (dd as HTMLDialogElement).close(); } }
     });
   
-    /* ---------- 4. Bouton optimiste --------------------------------------- */
+    /* ---------- 4. Optimistic button -------------------------------------- */
     on(document, 'click', function (e: any) {
       var found = (e.target as Element).closest<HTMLElement>('[data-optimistic]');
       if (!found) return;
@@ -88,7 +88,7 @@ export function boot(teardown) {
     }
     (window as any).balToast = toast;
   
-    /* ---------- 6. Aperçu de fichier -------------------------------------- */
+    /* ---------- 6. File preview ------------------------------------------- */
     on(document, 'change', function (e: any) {
       var input = (e.target as Element).closest<HTMLElement>('input[type=file][data-preview]');
       if (!input || !input.files || !input.files[0]) return;
@@ -106,7 +106,7 @@ export function boot(teardown) {
       }, 220);
     });
   
-    /* ---------- 7. Champs conditionnels ----------------------------------- */
+    /* ---------- 7. Conditional fields ------------------------------------- */
     function syncReveals(scope) {
       (scope || document).querySelectorAll('[data-reveal-group]').forEach(function (group) {
         var name = group.getAttribute('data-reveal-group');
@@ -120,7 +120,7 @@ export function boot(teardown) {
     }
     on(document, 'change', function (e: any) { if (e.target.matches('input[type=radio]')) syncReveals(); });
   
-    /* ---------- 9. Apparition au défilement -------------------------------- */
+    /* ---------- 9. Reveal on scroll ---------------------------------------- */
     var io = null;
     if ('IntersectionObserver' in window) {
       io = new IntersectionObserver(function (entries) {
@@ -139,7 +139,7 @@ export function boot(teardown) {
       });
     }
   
-    /* ---------- 10. État de défilement ------------------------------------- */
+    /* ---------- 10. Scroll state ------------------------------------------- */
     var ticking = false;
     function onScroll() {
       if (ticking) return;
@@ -150,7 +150,7 @@ export function boot(teardown) {
       });
     }
   
-    /* ---------- 11. Filtre du catalogue des métiers ------------------------ */
+    /* ---------- 11. Trade catalogue filter --------------------------------- */
     on(document, 'input', function (e: any) {
       var input = (e.target as Element).closest<HTMLElement>('[data-trade-filter]');
       if (!input) return;
@@ -172,14 +172,14 @@ export function boot(teardown) {
       });
       var none = scope.querySelector('[data-trade-empty]');
       if (none) none.hidden = shown > 0;
-      /* On cherche par attribut, jamais par identifiant : dans le fichier unique,
-         les identifiants sont préfixés par route. */
+      /* Looked up by attribute, never by id: in the single-file prototype the
+         identifiers were prefixed per route. */
       var count = (input.closest('.route') || document).querySelector('[data-trade-count-label]');
       if (count) count.textContent = shown === 0 ? 'Aucun métier ne correspond.'
         : shown + (shown > 1 ? ' métiers affichés.' : ' métier affiché.');
     });
   
-  /* ---------- Amorçage --------------------------------------------------- */
+  /* ---------- Boot ------------------------------------------------------- */
   // No collect() and no hashchange: those belonged to the prototype router.
   // Everything else the original boot() did is below, unchanged - including
   // the scope it observed, which resolves to the one .route the layout draws.

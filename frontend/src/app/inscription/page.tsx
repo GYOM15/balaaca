@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Créer ma page" };
 
 /**
- * Le lien public, tel que la personne le lira.
+ * The public link, exactly as the person will read it.
  *
  * <p>Built from the origin this server is reached at rather than written down:
  * the design prints `balaaca.gn/p/` because a static mock has one environment,
@@ -32,15 +32,15 @@ type Search = {
 };
 
 /**
- * Inscrire une activité.
+ * Registering an activity.
  *
  * <p>Not "inscrire mon salon". The hub carries a whole taxonomy of trades -
- * photographes, traiteurs, couturières, loueurs de salle - and a word that
- * names one of them tells the others this is not for them.
+ * photographers, caterers, dressmakers, hall renters - and a word that names
+ * one of them tells the others this is not for them.
  *
  * <p>One screen and three fields. The readiness thread the design draws after
- * it - activité, prestation, disponibilités, publier - lives on the dashboard,
- * which is where those four answers are actually saved.
+ * it - "activité, prestation, disponibilités, publier" - lives on the
+ * dashboard, which is where those four answers are actually saved.
  */
 export default async function Register({
   searchParams,
@@ -377,7 +377,7 @@ const KNOWN = new Set([
 type CategoryGroup = { label: string; items: CategoryList["data"] };
 
 /**
- * Les métiers, rangés par famille.
+ * The trades, grouped by family.
  *
  * <p>Thirty-five trades in one flat list is thirty-four to scroll past to
  * reach yours. The families come from the contract, which calls them optional -
@@ -401,7 +401,7 @@ function groupByFamily(categories: CategoryList["data"]): CategoryGroup[] {
 }
 
 /**
- * Une adresse voisine, à essayer.
+ * A neighbouring address, to try.
  *
  * <p>A numbered variant and nothing cleverer, because only the server knows
  * what is free: this is a starting point, not a promise. `salon-awa` becomes

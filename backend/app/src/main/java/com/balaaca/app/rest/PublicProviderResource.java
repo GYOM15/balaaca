@@ -126,7 +126,8 @@ public class PublicProviderResource implements DiscoveryApi {
                     LocalityView view = new LocalityView()
                             .slug(l.slug())
                             .labelFr(l.labelFr())
-                            .kind(LocalityView.KindEnum.fromString(l.kind()));
+                            .kind(LocalityView.KindEnum.fromString(l.kind()))
+                            .providerCount(l.providerCount());
                     l.parentSlug().ifPresent(view::setParentSlug);
                     l.iso31662().ifPresent(view::setIso31662);
                     return view;

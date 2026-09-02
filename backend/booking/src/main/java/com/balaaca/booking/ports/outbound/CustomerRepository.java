@@ -15,4 +15,16 @@ public interface CustomerRepository {
 
     /** @return false when the customer is not this provider's, or does not exist */
     boolean replaceNotes(CustomerId id, Optional<String> notes);
+
+    /**
+     * Refuses this person a booking on the public page, or lets them back.
+     *
+     * <p>An unconditional write rather than a read-modify-write: blocking
+     * somebody already blocked is the switch staying where the provider put it,
+     * and a guard that made that a failure would answer an error to a provider
+     * who pressed the button twice.
+     *
+     * @return false when the customer is not this provider's, or does not exist
+     */
+    boolean setBlocked(CustomerId id, boolean blocked);
 }

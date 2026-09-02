@@ -61,7 +61,8 @@ public class ProvidersResource implements ProvidersApi {
      */
     @Override
     public Response listProviders(String q, List<String> categorySlug, String locality,
-                                  String area, String city, String cursor, Integer limit) {
+                                  String area, List<Fulfilment> fulfilment, String city,
+                                  String cursor, Integer limit) {
         var found = directory.search(new Query(
                 trimmed(q),
                 categorySlug == null ? List.of()
@@ -69,12 +70,14 @@ public class ProvidersResource implements ProvidersApi {
                 trimmed(city),
                 trimmed(locality),
                 trimmed(area),
+                asked(fulfilment),
                 Cursors.directoryPosition(cursor),
                 limit == null ? Cursors.DEFAULT_LIMIT : limit));
 
         return Response.ok(new ProviderSummaryPage()
                 .data(found.cards().stream().map(ProvidersResource::card).toList())
-                .nextCursor(found.next().map(Cursors::encodeDirectory).orElse(null)))
+                .nextCursor(found.next().map(Cursors::encodeDirectory).orElse(null))
+                .total(found.total()))
                 .header("Cache-Control", PublicCaching.DIRECTORY)
                 .build();
     }
@@ -150,6 +153,23 @@ public class ProvidersResource implements ProvidersApi {
             modes.add(Fulfilment.AT_CUSTOMER);
         }
         return modes;
+    }
+
+    /**
+     * The modes asked for, in the shape the directory already speaks.
+     *
+     * <p>The same triple the card publishes, read the other way round, so there
+     * is one definition of what a business offers rather than one for the badge
+     * and another for the filter. Nothing asked for means no filter: a caller
+     * ticking no box wants the whole directory, not the businesses that offer
+     * nothing.
+     */
+    private static SearchProvidersUseCase.Fulfilments asked(List<Fulfilment> modes) {
+        List<Fulfilment> wanted = modes == null ? List.of() : modes;
+        return new SearchProvidersUseCase.Fulfilments(
+                wanted.contains(Fulfilment.ON_SITE),
+                wanted.contains(Fulfilment.DROP_OFF),
+                wanted.contains(Fulfilment.AT_CUSTOMER));
     }
 
     /** A blank query parameter is an absent one, not a value to match on. */

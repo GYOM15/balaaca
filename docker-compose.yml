@@ -180,8 +180,104 @@ services:
       start_period: 40s
     networks: [balaaca]
 
+  # --- Observability ---------------------------------------------------------
+  # The useful floor: metrics, a scraper, one provisioned dashboard. No
+  # Alertmanager and no rules - on a Raspberry Pi in beta an alert nobody
+  # receives is noise, and the person who would receive it is reading the
+  # dashboard instead. See infrastructure/observability/README.md.
+
+  prometheus:
+    image: prom/prometheus:v3.14.0
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      # A fortnight, not the default fifteen days' worth of everything: this
+      # lands on a Pi's SD card, and nobody debugs a beta from a month-old graph.
+      - --storage.tsdb.retention.time=15d
+    volumes:
+      - ./infrastructure/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    # The API and the worker are jars on the HOST: this file carries
+    # infrastructure only. On Linux this mapping is the only thing that makes the
+    # host reachable from the bridge. Docker Desktop already provides the name
+    # and repeating it here is harmless.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:${PROMETHEUS_HOST_PORT:-9090}:9090"
+    networks: [balaaca]
+
+  grafana:
+    image: grafana/grafana:13.2.1
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      # Nobody signs up for a beta's dashboard, and nobody reads it without
+      # signing in either.
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      # No call home, no news feed. This runs on a domestic connection.
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+    volumes:
+      # The datasource and the dashboard are files, reviewed and versioned,
+      # rather than clicks in a browser: a dashboard nobody can recreate is the
+      # same problem as a schema with no migrations.
+      #
+      # The dashboards live under /etc and NOT under /var/lib/grafana, which is
+      # the named volume holding Grafana's own database. Bind-mounting a
+      # read-only directory inside a volume works, and then somebody wonders why.
+      - ./infrastructure/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infrastructure/observability/grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      # 3001, because the front end owns 3000.
+      - "127.0.0.1:${GRAFANA_HOST_PORT:-3001}:3000"
+    depends_on:
+      - prometheus
+    networks: [balaaca]
+
+  # The outbox depth, read from the database rather than from the worker. A
+  # gauge the worker publishes disappears when the worker does, so the one
+  # moment the queue depth matters is the one moment it is not there.
+  #
+  # Pinned to 0.15.0: --extend.query-path is deprecated upstream in favour of
+  # compiled-in collectors, which cannot express a query about this product's own
+  # table. queries.yaml names the replacement path if the flag ever goes.
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.15.0
+    restart: unless-stopped
+    command:
+      # Only the queries in the file below. No pg_stat_*, no bloat estimates,
+      # no connection counts: none of it is on the dashboard, and a metric
+      # nobody reads is a metric that costs a Pi memory for nothing.
+      - --disable-default-metrics
+      - --extend.query-path=/etc/postgres-exporter/queries.yaml
+    environment:
+      # balaaca_notification_worker, whose RLS policy on notifications is
+      # USING (true), so it sees every tenant's rows. It also carries UPDATE,
+      # which a reader does not need: a read-only sixth role would be better and
+      # would have to be added in three places (see docs/DEPLOYMENT.md).
+      #
+      # A password containing @ : / or ? must be percent-encoded here, because
+      # this is a URI and not a key=value connection string.
+      DATA_SOURCE_NAME: postgresql://balaaca_notification_worker:${BALAACA_DB_WORKER_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+    volumes:
+      - ./infrastructure/observability/postgres-exporter/queries.yaml:/etc/postgres-exporter/queries.yaml:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # No published port. Prometheus reaches it by name on this network, and
+    # nothing else has any business reading it.
+    networks: [balaaca]
+
 volumes:
   postgres-data:
+  prometheus-data:
+  grafana-data:
 
 networks:
   balaaca:

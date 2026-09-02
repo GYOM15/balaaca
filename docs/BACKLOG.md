@@ -1,71 +1,67 @@
 # Backlog
 
-Ce qui est decide mais pas fait, avec la raison d'attendre. Un element sans
-raison n'est pas un backlog, c'est un oubli.
+What is decided but not done, with the reason for waiting. An item with no
+reason is not a backlog, it is an oversight.
 
-## En attente de toi
+## Waiting on you
 
-### Credentials WhatsApp
-**Bloque : toutes les notifications.** Le canal est ecrit contre le contrat
-publie de la Graph API et teste contre un serveur factice qui parle le meme
-protocole ; il ne manque que le compte. Sans lui, un salon decouvre ses
-rendez-vous en rafraichissant une page.
+### WhatsApp credentials
+**Blocks: every notification.** The channel is written against the published
+Graph API contract and tested against a fake server that speaks the same
+protocol; only the account is missing. Without it, a salon discovers its
+appointments by refreshing a page.
 
-Il faudra : `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN` (utilisateur
-systeme), `WHATSAPP_BUSINESS_ACCOUNT_ID`, quatre modeles approuves avec l'ordre
-de leurs parametres, et la decision **numero Balaaca ou numero du salon**
-(recommandation : Balaaca - un seul compte a verifier, un seul quota a
-surveiller, et un salon qui part n'emporte pas le numero).
+It will take: `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN` (system user),
+`WHATSAPP_BUSINESS_ACCOUNT_ID`, four approved templates with the order of their
+parameters, and the decision **Balaaca number or salon number**
+(recommendation: Balaaca - one account to verify, one quota to watch, and a
+salon that leaves does not take the number with it).
 
-Prendre le temps qu'il faut : c'est un abonnement payant et une verification
-d'entreprise, et rien d'autre n'attend apres.
+Take the time it needs: it is a paid subscription and a business verification,
+and nothing else is waiting behind it.
 
-### Facturation et quotas de plan
-`billing` a un fichier et `subscriptions` n'a aucune ligne de Java.
+### Billing and plan quotas
+`billing` has one file and `subscriptions` has not a line of Java.
 
-Ce n'est pas du code en attente, ce sont **quatre decisions** : quels paliers ;
-ce que chaque palier limite (membres ? rendez-vous par mois ? services ?) ; le
-prix en GNF ; et s'il y a un palier gratuit. Les inventer serait le pire des
-deux mondes.
+This is not code waiting to be written, it is **four decisions**: which tiers;
+what each tier limits (members? appointments per month? services?); the price in
+GNF; and whether there is a free tier. Inventing them would be the worst of both
+worlds.
 
-`PLAN_LIMIT_REACHED` **est sorti du catalogue d'erreurs**. Il y etait publie
-alors qu'aucun chemin ne pouvait le lever : un client qui branchait dessus
-branchait sur quelque chose qui ne pouvait pas arriver. Il reviendra le jour ou
-les paliers existent. `ErrorCatalogueTest` verifie desormais les deux sens, donc
-un code publie sans producteur casse la construction.
+`PLAN_LIMIT_REACHED` **has been removed from the error catalogue**. It was
+published there while no path could raise it: a client that branched on it
+branched on something that could not happen. It comes back the day the tiers
+exist. `ErrorCatalogueTest` now checks both directions, so a published code with
+no producer breaks the build.
 
-## Decide, chiffre, pas encore fait
+## Decided, scoped, not yet done
 
-### ~~Limiter le rythme des inscriptions~~ (fait)
-`V020` a ferme l'oracle pour tout compte qui a deja un salon. Il reste qu'un
-compte **sans** salon peut sonder les poignees, exactement comme n'importe quel
-formulaire d'inscription qui repond « ce nom est pris ».
+### ~~Rate-limit registrations~~ (done)
+`V020` closed the oracle for any account that already has a salon. What remains
+is that an account **without** a salon can probe the handles, exactly like any
+sign-up form that answers "that name is taken".
 
-Le fermer demande une limite de debit, pas une erreur differente. `RATE_LIMITED`
-(429) est deja publie et deja leve - mais pour la **contention** de reservation
-(`BookingContendedException`), ce qui est un autre sujet : une limite
-d'inscription aurait besoin d'un compteur, et Redis est deja dans la compose
-pour cela.
+Closing it takes a rate limit, not a different error. `RATE_LIMITED` (429) is
+already published and already raised, but for booking **contention**
+(`BookingContendedException`), which is another subject: a registration limit
+would need a counter, and Redis is already in the compose file for that.
 
-A faire quand il y aura assez de salons pour que la liste vaille la peine d'etre
-enumeree.
+To be done when there are enough salons for the list to be worth enumerating.
 
-### ~~Un vrai systeme d'alerte~~ (fait)
-Un port `Alerter`, deux canaux - le journal par defaut, un webhook si
-`balaaca.alerts.channel=webhook`. La destination reste ton choix : un bot
-Telegram, un hook Discord, un sujet ntfy, un webhook Slack acceptent tous la
-meme forme.
+### ~~A real alerting system~~ (done)
+An `Alerter` port, two channels: the log by default, a webhook if
+`balaaca.alerts.channel=webhook`. The destination stays your choice: a Telegram
+bot, a Discord hook, an ntfy topic and a Slack webhook all accept the same shape.
 
-Le point difficile n'etait pas d'envoyer un message mais de ne pas en envoyer
-quatre cents : une panne de canal produit une notification morte par message, et
-un canal qui en recoit quatre cents est un canal qu'on coupe - apres quoi plus
-rien n'alerte. Une alerte par type et par fenetre, et la suivante dit combien
-elle represente.
+The hard part was not sending a message but not sending four hundred: a channel
+outage produces one dead notification per message, and a channel that receives
+four hundred is a channel people mute, after which nothing alerts at all. One
+alert per kind per window, and the next one says how many it stands for.
 
-### Deploiement, sauvegardes
-La CI construit, teste et verifie le contrat. **Rien ne pousse sur le VPS**, il
-n'y a pas de `pg_dump` planifie, et le repertoire des images n'est dans aucune
-sauvegarde. Voir `DEPLOYMENT.md`.
+### Deployment, backups
+CI builds, tests and checks the contract. **Nothing pushes to the VPS**, there is
+no scheduled `pg_dump`, and the image directory is in no backup. See
+`DEPLOYMENT.md`.
 
 ## Translate the repository to English
 
@@ -89,99 +85,110 @@ What a **customer** reads is untouched by this. User-facing copy stays French
 first for the launch market, from an i18n catalogue. The rule is that the
 repository is English, not that the product is.
 
-## Ce que le design montre et que le contrat ne sert pas
+## What the design shows and the contract does not serve
 
-Releve en reproduisant le prototype ecran par ecran, le 2026-09-01. Chaque
-ligne est un element du design rendu sans cette donnee, ou retire. **Rien n'a
-ete invente et rien n'a ete ajoute au backend.** A decider une par une.
+Recorded while reproducing the prototype screen by screen, on 2026-09-01. Each
+line is an element of the design rendered without that data, or removed.
+**Nothing was invented and nothing was added to the backend.** To be decided one
+by one.
 
-### L'annuaire, la ou ca se voit le plus
+### The directory, where it shows most
 
-- ~~**`ProviderSummary` n'a ni les modes ni un prix a partir de.**~~ (fait)
-  V044 et l'agregat de carte les publient : `fulfilments` et `price_from` sont
-  derives des prestations actives. Le pied de la carte de l'annuaire est revenu.
+- ~~**`ProviderSummary` has neither the fulfilment modes nor a price from.**~~
+  (done) V044 and the card aggregate publish them: `fulfilments` and
+  `price_from` are derived from the active service offerings. The foot of the
+  directory card is back.
 
-- **`GET /v1/providers` n'accepte pas de parametre de mode.** Le groupe de
-  cases `Mode` des filtres est retire plutot que d'expedier trois cases qui ne
-  filtrent rien. Un parametre `fulfilment` repetable le rendrait.
-- **`LocalityView` n'a pas de `provider_count`.** La bande Lieux de l'accueil
-  compte huit tuiles chiffrees ; seule `/v1/areas` publie un lieu avec un
-  compte, donc la bande montre les quartiers les plus fournis au lieu des
-  communes du design.
-- **Pas de total.** `ProviderSummaryPage` publie la page et `next_cursor`, donc
-  la barre dit "N sur cette page" et non "23 professionnels".
+- **`GET /v1/providers` accepts no fulfilment parameter.** The `Mode` checkbox
+  group in the filters is removed rather than shipping three boxes that filter
+  nothing. A repeatable `fulfilment` parameter would give it back.
+- **`LocalityView` has no `provider_count`.** The home page's Places band counts
+  eight tiles with figures; only `/v1/areas` publishes a place with a count, so
+  the band shows the best-supplied quartiers instead of the design's communes.
+- **No total.** `ProviderSummaryPage` publishes the page and `next_cursor`, so
+  the toolbar says "N on this page" and not "23 professionals".
 
-### Le reste, par ecran
+### The rest, screen by screen
 
-- `CategoryFamily` n'a pas de description : le sous-titre sous chaque famille
-  sur /metiers. `CategoryView` n'a pas d'alias de recherche : taper
-  "barbiers" ne trouve plus rien.
-- `PublicProviderView` n'a pas d'annee de creation (`depuis 2016`).
-  `PublicStaffMember` n'a pas de `bookable` : la pastille `Non reservable`.
-- `CustomerBookingView` n'a ni `fulfilment` ni `turnaround_hours` : la ligne
-  Deroulement et la note de mode sont deduites de la prestation nommee.
-  `available-slots` ne distingue pas un jour ferme d'un jour complet.
-- `GET /v1/appointments` n'a pas de filtre de mode : la file des depots est
-  filtree cote client sur +/-90 jours, limite 200. Elle tronque pour un salon
-  charge, et le compteur Agenda de la barre laterale est un plancher.
-- `ServiceOfferingView` n'a pas de photo : une vignette par ligne coute une
-  requete par prestation.
-- `CustomerSummaryView` n'a ni `has_notes` ni `no_show_count` ;
-  `CustomerVisitView` ne porte aucun montant : le prix de chaque visite de
-  l'historique.
-- **Moderation : aucune operation ne liste les etablissements.** L'ecran
-  `moderation/businesses` du design n'a aucune source. `ProviderProfileView`
-  n'a pas de `report_count`, `ProviderReportView` n'a pas la reference de
-  reservation, et rien ne renvoie l'identite de l'operateur.
-- **Compte et Reglages** : ni verification d'e-mail ni changement de mot de
-  passe cote contrat - c'est Keycloak. Les commandes sont dessinees et
-  desactivees, avec la phrase qui le dit.
-- `409 SLUG_UNAVAILABLE` ne porte aucune suggestion d'adresse : l'ecran du
-  design en propose une.
-- **`design.html` montre SIX statuts de rendez-vous, l'API en a cinq.** Le
-  sixieme est `Pret`, qui existe deja comme `ready_at` sur un depot sans etre
-  un statut.
+- `CategoryFamily` has no description: the subtitle under each family on
+  /metiers. `CategoryView` has no search aliases: typing "barbiers" finds
+  nothing any more.
+- `PublicProviderView` has no founding year (`depuis 2016`). `PublicStaffMember`
+  has no `bookable`: the `Non reservable` pill.
+- `CustomerBookingView` has neither `fulfilment` nor `turnaround_hours`: the
+  Deroulement line and the fulfilment note are inferred from the named service
+  offering. `available-slots` does not distinguish a closed day from a full one.
+- `GET /v1/appointments` has no fulfilment filter: the drop-off queue is filtered
+  client-side over +/-90 days, limit 200. It truncates for a busy salon, and the
+  sidebar's Agenda counter is a floor.
+- `ServiceOfferingView` has no photo: one thumbnail per line costs one request
+  per service offering.
+- `CustomerSummaryView` has neither `has_notes` nor `no_show_count`;
+  `CustomerVisitView` carries no amount: the price of each visit in the history.
+- **Moderation: no operation lists the businesses.** The design's
+  `moderation/businesses` screen has no source. `ProviderProfileView` has no
+  `report_count`, `ProviderReportView` does not carry the booking reference, and
+  nothing returns the operator's identity.
+- **Compte and Reglages**: neither e-mail verification nor password change on the
+  contract side, that is Keycloak. The controls are drawn and disabled, with the
+  sentence that says so.
+- `409 SLUG_UNAVAILABLE` carries no address suggestion: the design's screen
+  offers one.
+- **`design.html` shows SIX appointment statuses, the API has five.** The sixth
+  is `Pret`, which already exists as `ready_at` on a drop-off without being a
+  status.
 
-## Trous fonctionnels connus
+## Known functional gaps
 
-- **`customers.blocked`.** La colonne existe, rien ne l'ecrit, et
-  `SchemaCoverageTest` ne s'en apercoit pas : sa recherche est une sous-chaine,
-  et `blockedFrom` contient `blocked`. **Deux choses a faire** : resserrer la
-  barriere sur des limites de mot, puis decider ce que bloquer un client veut
-  dire au moment de reserver. La premiere revelera probablement d'autres
-  colonnes, chacune demandant une decision.
-- **Tout le vocabulaire francais du produit est sans accents.** Les 35 metiers
-  (`Esthetique`, `Video`, `Patisserie`, `Electricite`, `Demenagement`), les 8
-  familles (`Beaute`, `Evenementiel`) et les 51 localites (`Boke`, `Labe`,
-  `Nzerekore`, `Gueckedou`, `Telimele`) sont semes sans accents par V016, V025
-  et la carte des localites. C'est du texte client, affiche sur la page
-  d'accueil, dans chaque carte et dans la recherche.
-  **Le piege** : `ProviderDirectorySqlRepository` fait
-  `c.label_fr ILIKE '%' || :name || '%'` sans `unaccent`. Accentuer les
-  libelles seuls **casse la recherche** pour qui tape « esthetique » au clavier,
-  ce que fera tout le monde. Les deux vont ensemble : une migration qui
-  accentue, et une colonne generee `translate(lower(label_fr), 'aeiou accentues',
-  'aeiou')` indexee en trigramme sur laquelle le `ILIKE` porte - `translate` et
-  `lower` sont IMMUTABLE, `unaccent()` ne l'est pas et ne s'indexe donc pas
-  directement. Compter une demi-journee. Trouve en faisant tourner la pile.
-- **`chatbot-service`** : hors perimetre. Ce sera un service Python
-  completement detache, et pas maintenant.
+- ~~**`customers.blocked`.**~~ (done) Blocking means something now:
+  `PUT /v1/customers/{id}/blocking` sets the switch, and a booking coming from
+  the public page with that number answers `403 FORBIDDEN` - a code from the
+  closed catalogue, not a new one. The block binds the page only: the counter
+  still writes the person into the diary, and what is already booked stays. The
+  refusal does not say why, because the route is anonymous and a sentence naming
+  the reason would let anybody read a salon's list of blocked numbers, one number
+  at a time.
 
-## Fait
+  **The gate itself was not looking for a substring**: `\b` was already there and
+  revealed nothing. `customers.blocked` passed because of `InstantRange blocked`,
+  a local variable in the slot calculator. The corpus is now the **string
+  literals** of the main sources, which is to say the SQL the application runs,
+  per ADR-0008. A variable, a record component, a Javadoc paragraph or a log
+  message no longer stand in for a reader. That flushed out `audit_logs.actor_ip`,
+  left NULL deliberately and now justified in the waiver file rather than in a
+  comment alone.
+- **The product's whole French vocabulary is unaccented.** The 35 trades
+  (`Esthetique`, `Video`, `Patisserie`, `Electricite`, `Demenagement`), the 8
+  families (`Beaute`, `Evenementiel`) and the 51 localities (`Boke`, `Labe`,
+  `Nzerekore`, `Gueckedou`, `Telimele`) are seeded unaccented by V016, V025 and
+  the locality map. This is customer text, shown on the home page, in every card
+  and in the search.
+  **The trap**: `ProviderDirectorySqlRepository` does
+  `c.label_fr ILIKE '%' || :name || '%'` with no `unaccent`. Accenting the labels
+  alone **breaks the search** for anyone typing "esthetique" on a keyboard, which
+  everybody will. The two go together: a migration that accents, and a generated
+  column `translate(lower(label_fr), 'accented aeiou', 'aeiou')` with a trigram
+  index, which the `ILIKE` then reads. `translate` and `lower` are IMMUTABLE,
+  `unaccent()` is not and therefore does not index directly. Budget half a day.
+  Found by running the stack.
+- **`chatbot-service`**: out of scope. It will be a completely detached Python
+  service, and not now.
 
-Le recours : un prestataire suspendu repond a la plateforme, relit son message,
-et l'exploitant le lit dans une file a cote des signalements. Les photos par
-prestation, cinq au plus, avec redimensionnement a 1600 px qui regle le poids et
-ferme la steganographie dans les bits de poids faible. Le fil d'onboarding :
-`GET /v1/provider-profile/readiness` dit ce qui manque AVANT le refus, avec les
-memes predicats que la barriere.
+## Done
 
-Transfert de propriete, la clientele (trois routes plus les ecrans),
-`latitude`/`longitude` retires et remplaces par la commune et le quartier sur la
-page publique, QR code et lien public, limite de debit sur les inscriptions, et
-le texte mort `PENDING` dans les quatre objets qui le citaient encore. Verifie
-en base : plus aucune fonction, vue ou politique ne nomme un statut de
-prestataire inatteignable. Les deux occurrences restantes parlent du statut d'un
-rendez-vous et du statut d'un signalement, tous deux bien reels.
+The appeal: a suspended provider answers the platform, rereads their message, and
+the operator reads it in a queue beside the reports. Photos per service offering,
+five at most, resized to 1600 px, which settles the weight and closes
+steganography in the low-order bits. The onboarding thread:
+`GET /v1/provider-profile/readiness` says what is missing BEFORE the refusal, with
+the same predicates as the gate.
 
-Cote front, les cinquante-cinq operations publiees sont toutes appelees.
+Ownership transfer, the clientele (three routes plus the screens),
+`latitude`/`longitude` removed and replaced by the commune and the quartier on
+the public page, the QR code and the public link, a rate limit on registrations,
+and the dead `PENDING` text in the four objects that still cited it. Verified in
+the database: no function, view or policy names an unreachable provider status any
+more. The two remaining occurrences speak of an appointment's status and of a
+report's status, both of them real.
+
+On the front, all fifty-five published operations are called.

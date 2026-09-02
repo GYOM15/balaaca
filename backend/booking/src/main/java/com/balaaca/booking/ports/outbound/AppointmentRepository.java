@@ -11,6 +11,7 @@ import com.balaaca.sharedkernel.ids.AppointmentId;
 import com.balaaca.sharedkernel.ids.CustomerId;
 import com.balaaca.sharedkernel.ids.ServiceOfferingId;
 import com.balaaca.sharedkernel.ids.StaffId;
+import com.balaaca.sharedkernel.phone.PhoneNumber;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -100,6 +101,20 @@ public interface AppointmentRepository {
 
     /** Upserts on (provider_id, phone_e164) without overwriting the provider's own edits. */
     CustomerId upsertCustomer(CustomerContact contact);
+
+    /**
+     * Whether this provider has refused this number.
+     *
+     * <p>By number rather than by customer id, because at booking time there is
+     * no id yet: the caller is a stranger holding a telephone, and the row is
+     * upserted on the number a moment later. Asked BEFORE that upsert, so a
+     * refused attempt writes nothing at all.
+     *
+     * <p>False for a number the provider has never seen, which is the same
+     * answer as for one they have and have not blocked. There is nothing to tell
+     * apart: neither is refused.
+     */
+    boolean isBlocked(PhoneNumber phone);
 
     record NewAppointment(
             AppointmentId id,

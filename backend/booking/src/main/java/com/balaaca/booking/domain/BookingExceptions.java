@@ -183,6 +183,36 @@ public final class BookingExceptions {
         }
     }
 
+    /**
+     * The provider will not take a booking from this number on their page.
+     *
+     * <p>{@code customers.blocked} existed from V007 and nothing ever wrote it,
+     * so a salon losing an hour a week to the same no-show had no lever at all.
+     * This is the lever, and it is deliberately narrow: it refuses a NEW public
+     * booking, it leaves appointments already in the book alone, and it does
+     * not restrain the provider entering the same person at the counter.
+     *
+     * <p>{@code FORBIDDEN} rather than a code of its own. The catalogue is
+     * closed and this is what a 403 means - the server understood, refuses, and
+     * nothing the caller can send changes the answer. A new code would also have
+     * to be published, and publishing one whose only job is to say "you are
+     * blocked" hands the fact to every client that never needed it.
+     *
+     * <p>Nothing identifying is carried. The message reaches the caller verbatim
+     * and says only that the booking cannot be taken online: this route is
+     * unauthenticated, and a message that named the reason would let anybody who
+     * can spell the slug read a salon's blocklist one telephone number at a
+     * time. The details map is empty for the same reason - it is the audit
+     * trail's, and a refused stranger's number is more personal data than the
+     * action needs to be reconstructible.
+     */
+    public static final class CustomerBlockedException extends DomainException {
+        public CustomerBlockedException() {
+            super("FORBIDDEN", 403,
+                  "This booking cannot be taken online", Map.of());
+        }
+    }
+
     /** A commune the published map does not hold. */
     public static final class UnknownServiceLocalityException extends DomainException {
         public UnknownServiceLocalityException(String slug) {

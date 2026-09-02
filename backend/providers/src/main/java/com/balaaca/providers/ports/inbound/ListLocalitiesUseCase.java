@@ -42,9 +42,21 @@ public interface ListLocalitiesUseCase {
      */
     List<Area> areas(Optional<String> contains, Optional<String> within);
 
-    /** @param parentSlug empty on a region, which is a root */
+    /**
+     * @param parentSlug empty on a region, which is a root
+     * @param providerCount how many businesses the directory returns for this
+     *                      slug, counted DOWN THE TREE exactly as the filter
+     *                      matches: a commune counts its own, a prefecture
+     *                      counts its own plus its communes. The number labels
+     *                      a filter, so it has to be the size of what the
+     *                      filter returns - counting only rows filed at this
+     *                      exact level would make every prefecture read as
+     *                      empty while the list behind it held dozens. These
+     *                      therefore OVERLAP and must never be summed
+     */
     record Locality(String slug, String labelFr, String kind,
-                    Optional<String> parentSlug, Optional<String> iso31662) {
+                    Optional<String> parentSlug, Optional<String> iso31662,
+                    int providerCount) {
     }
 
     record Area(String label, int providerCount) {

@@ -10,9 +10,20 @@
 #   - a column that should not have been created before its reader existed,
 #     in which case the answer is to write the reader, not the waiver.
 
+# The corpus this gate searches is the STRING LITERALS of the main sources, not
+# the sources. A local variable, a record component, a Javadoc paragraph or a
+# log message that happens to spell a column name is no longer cover for it -
+# customers.blocked passed for six months on the strength of a local called
+# `blocked` in the slot calculator. So a column whose only justification is
+# written in a comment now needs its reason written down HERE, where the gate
+# can see it.
+
 # --- Filled by the database, read by nobody, and that is correct -------------
 users.created_at:        DEFAULT now(). Nothing has needed to read it, and a reader that only existed to satisfy this gate would be worse than the waiver.
 audit_logs.occurred_at:  DEFAULT now(). The trail is written by the application and read by an operator in SQL.
+
+# --- Deliberately never filled ----------------------------------------------
+audit_logs.actor_ip:     Left NULL on purpose, and the reason is on AuditTrailSqlRepository: filling it would give the tenancy kernel a dependency on the HTTP layer in order to store a piece of personal data the reverse proxy already logs, against a column comment that says never more personal data than the action needs to be reconstructible. The account identifies the actor; the address adds a subject and no answer. It surfaced when this gate stopped counting comments as cover, which is the gate working.
 
 # --- Encapsulated by a SECURITY DEFINER function ----------------------------
 users.keycloak_user_id:  Named only inside app_resolve_membership and app_register_provider. Java passes a subject and never the column - which is the point of the function.
@@ -25,8 +36,7 @@ subscriptions.expires_at:   Billing, as above.
 
 # --- Capabilities nobody has asked for yet ----------------------------------
 appointments.provider_note:    A provider cannot annotate an appointment.
-appointments.booked_by_user_id: Which staff member took a booking on a customer's behalf. There is no such path yet - every booking comes from the public page.
-customers.notes:               A provider's own notes on a client. Waits for the clientele screens.
+appointments.booked_by_user_id: WHICH staff member entered a walk-in. The path exists now - bookWalkIn - and it records the appointment without recording who typed it, so a salon reading its own diary back cannot tell one colleague's entry from another's. Attribution needs the acting user threaded from the resource into the insert; the row is correct without it, and nothing today asks the question.
 
 # --- Tables the application role may write, and what writes them ------------
 # Waived as <table>.* when the write is legitimate but not an INSERT in Java.

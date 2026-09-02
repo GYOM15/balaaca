@@ -1749,6 +1749,27 @@ paths:
                 $ref: '#/components/schemas/AppointmentCreatedView'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '403':
+          description: |
+            `FORBIDDEN` - this provider does not take a booking from this
+            telephone number on the public page. The number is one the provider
+            blocked in their own address book, and no other request can lift it:
+            the caller's recourse is the salon itself.
+
+            `FORBIDDEN` rather than a code of its own. The catalogue is closed,
+            and this is what it means - the server understood, refuses, and
+            nothing the caller can send changes the answer.
+
+            The `title` deliberately does not say the number is blocked, and
+            nothing else in the body does either. This route is
+            unauthenticated, so a response that named the reason would let
+            anybody who can spell the slug read a salon's blocklist one
+            telephone number at a time, which is somebody else's business twice
+            over.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -2148,6 +2169,74 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /v1/admin/providers:
+    get:
+      operationId: listAllProviders
+      tags: [moderation]
+      summary: Every business on the platform
+      description: |
+        The listing the lever always needed. `suspendProvider` is keyed on a
+        slug and nothing published one, so the operator could only act on a
+        business a customer had already named in a complaint - and suspending
+        meant typing a handle he had no way to look up.
+
+        It crosses every provider, which is the whole reason the
+        `admin:moderation` scope exists. It is also the only operation here that
+        shows a business NOBODY has complained about: `listProviderReports` and
+        `listContestations` are inboxes, and an inbox cannot answer "who is on
+        this platform".
+
+        What it shows is what a suspension is decided from, and nothing more.
+        `appointment_count` is the one that changes decisions: suspending does
+        not cancel a single booking already taken, so a salon holding forty of
+        them is forty customers still expected at the door, and the number has
+        to be visible before the lever is pulled rather than after.
+
+        It is not `listProviders` with a wider filter. That operation serves the
+        public, shows only published and active businesses, and carries a card's
+        worth of marketing. This one shows the unpublished and the suspended -
+        precisely the rows the public path hides - and carries no contact
+        details at all.
+
+        Ordered by name, always, for the reason `listProviders` is: a cursor
+        over an ordered sequence is only meaningful while the order holds still.
+
+        Customers are not in it. The operator sees that a business holds
+        appointments, never who is in them; a moderation console that hands out
+        every complainant's name and telephone number is a marketing list with a
+        grievance attached.
+      security: [{ oauth2: [admin:moderation] }]
+      parameters:
+        - name: q
+          in: query
+          required: false
+          description: Part of a business name, or part of its handle. The
+            operator arrives holding one or the other - a name from a telephone
+            call, a slug from a link somebody sent him.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 120
+        - name: status
+          in: query
+          required: false
+          description: Omit for every business, whatever its standing.
+          schema:
+            $ref: '#/components/schemas/ProviderStatus'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: The businesses, by name.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModeratedProviderPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
   /v1/admin/providers/{slug}/suspension:
     post:
       operationId: suspendProvider
@@ -2394,6 +2483,57 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /v1/customers/{id}/blocking:
+    put:
+      operationId: replaceCustomerBlocking
+      tags: [clientele]
+      summary: Refuse this person a booking on the public page
+      description: |
+        The one lever a provider has against somebody who does not turn up.
+        `blocked` has been on the row since the table was created and nothing
+        ever wrote it, so every customer was welcome for ever and a salon
+        losing an hour a week to the same person could do nothing but answer
+        the telephone.
+
+        It binds the PUBLIC page, and only it. A provider writing a walk-in
+        into their own diary is not restrained by their own refusal: somebody
+        is standing at the counter, the argument was settled, and a diary that
+        refuses to record what is happening is a diary the salon keeps on
+        paper. That is the same line `bookWalkIn` already draws through the
+        booking policy and the published availability.
+
+        It is not retroactive. Appointments already in the book stand, exactly
+        as suspending a business does not cancel the customers who are still
+        coming on Thursday - the block says who may take a NEW slot, and
+        cancelling what was promised is a separate decision with its own
+        operation.
+
+        Blocking somebody who is already blocked, or unblocking somebody who
+        was never blocked, succeeds and changes nothing. The provider pressed
+        a switch and the switch is where they left it.
+      security: [{ oauth2: [dashboard:read] }]
+      parameters:
+        - $ref: '#/components/parameters/CustomerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerBlockingRequest'
+      responses:
+        '200':
+          description: The customer, as they now stand.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerDetailView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /v1/localities:
     get:
       operationId: listLocalities
@@ -2552,6 +2692,36 @@ paths:
           schema:
             type: string
             maxLength: 80
+        - name: fulfilment
+          in: query
+          required: false
+          explode: true
+          description: |
+            Repeat it to ask for several ways of being served at once.
+
+            A business matches when ANY of its currently ACTIVE services offers
+            ANY of the modes asked for - the same source, read the same way,
+            that fills `fulfilments` on the card. Every provider returned
+            therefore carries at least one of the modes asked for, so the filter
+            and the badge can never disagree.
+
+            ANY and not ALL. A customer ticking "a domicile" wants somebody who
+            travels for something, not somebody who travels for everything, and
+            a shop that also has a counter is not a worse answer for having one.
+
+            A service that has been retired offers nothing. It is `active` that
+            decides, exactly as it decides the badge, so a business whose only
+            house-call service was withdrawn stops appearing under
+            `AT_CUSTOMER` on the same day it stops offering it.
+
+            Omitted is no filter, which is not the same as asking for none: a
+            business with no active service publishes no mode at all and is only
+            ever excluded by naming one.
+          schema:
+            type: array
+            maxItems: 3
+            items:
+              $ref: '#/components/schemas/Fulfilment'
         - name: city
           in: query
           required: false
@@ -2781,10 +2951,11 @@ components:
         `admin:moderation` is the single exception, and it is deliberately
         shaped so the exception is obvious. It grants no ordinary provider
         operation at all - it cannot read an agenda, a customer or a catalogue.
-        It grants exactly four things: take a business off the hub, put it back,
-        read what customers have reported, and mark a report seen. It is held by
-        the platform operator and by nobody else, and every use of it writes an
-        audit row.
+        What it grants is the whole of the `/v1/admin` namespace and nothing
+        outside it: list the businesses, take one off the hub, put it back, read
+        what customers reported and what businesses answered, and mark either
+        seen. It is held by the platform operator and by nobody else, and every
+        decision taken with it writes an audit row.
       flows:
         authorizationCode:
           authorizationUrl: /realms/balaaca/protocol/openid-connect/auth
@@ -2797,9 +2968,9 @@ components:
             profile:write: Change the caller's own public page, and publish it.
             staff:write: Add and change the caller's own people.
             admin:moderation: >
-              Suspend and reinstate any business, and read the reports customers
-              have filed. The platform operator's scope, and the only one that
-              crosses providers.
+              List every business, suspend and reinstate any of them, and read
+              what customers reported and what businesses answered. The platform
+              operator's scope, and the only one that crosses providers.
 
   parameters:
     AppointmentId:
@@ -3253,11 +3424,17 @@ components:
       allOf:
         - $ref: '#/components/schemas/CustomerSummaryView'
         - type: object
-          required: [history]
+          required: [history, blocked]
           properties:
             notes:
               type: string
               description: The provider's own. Never shown to the customer.
+            blocked:
+              type: boolean
+              description: Whether this person is refused a booking on the
+                public page. False for everybody until a provider says
+                otherwise, and never true of somebody the provider has not
+                blocked themselves.
             history:
               type: array
               items:
@@ -3286,6 +3463,17 @@ components:
           type: string
           maxLength: 2000
           description: Omit or send empty to clear it.
+
+    CustomerBlockingRequest:
+      type: object
+      required: [blocked]
+      properties:
+        blocked:
+          type: boolean
+          description: True refuses this person a booking on the public page;
+            false lets them book again. Required, because a body that omitted
+            it would have to mean one of the two and either reading is a
+            provider's decision taken for them.
 
     CustomerPage:
       type: object
@@ -3374,6 +3562,90 @@ components:
         next_cursor:
           type: string
           nullable: true
+
+    ModeratedProviderView:
+      type: object
+      description: |
+        A business as the platform operator sees it, which is a different thing
+        from `ProviderSummary`. That one draws a card for a customer and is kept
+        deliberately small because a directory is easy to scrape. This one is
+        behind `admin:moderation`, shows what the public path hides - the
+        unpublished and the suspended - and carries no way to contact anybody:
+        not the business, and above all not its customers.
+      required: [slug, business_name, published, status, registered_at,
+                 appointment_count]
+      properties:
+        slug:
+          type: string
+          description: The handle every other moderation operation is keyed on.
+            It is here so the operator can stop typing one he never saw.
+        business_name:
+          type: string
+        trade:
+          type: string
+          description: |
+            The trade's own label, as the taxonomy publishes it. A label rather
+            than a slug: this is a column an operator reads once and acts on, so
+            a second request to turn thirty-five slugs into words would buy
+            nothing.
+
+            Absent when the business has chosen no trade, which is a real state
+            and one of the things worth looking for.
+        locality:
+          allOf:
+            - $ref: '#/components/schemas/LocalityRef'
+          description: Where the business is filed, at the finest level the
+            published map has. Absent when it has never been placed.
+        area:
+          type: string
+          description: The quartier, as the provider wrote it. Absent when they
+            wrote none.
+        published:
+          type: boolean
+          description: |
+            Whether the provider has put their own page live. Not the same
+            question as `status` and never conflated with it: `published` is the
+            business's decision and it can undo it, `status` is the platform's
+            and it cannot. A suspended business keeps `published: true` and
+            still disappears from every public path.
+        status:
+          $ref: '#/components/schemas/ProviderStatus'
+        registered_at:
+          type: string
+          format: date-time
+          description: When the business first appeared. A salon that registered
+            this morning and a salon that has been here two years are not the
+            same complaint.
+        appointment_count:
+          type: integer
+          format: int64
+          description: |
+            How many appointments the business holds, in total and whatever
+            their state.
+
+            The number that changes the decision. Suspending takes the page off
+            the hub and does NOT cancel a single booking already taken, so this
+            is how many customers are still expected at the door after the lever
+            is pulled. It counts appointments and says nothing whatsoever about
+            who is in them.
+        suspension_reason:
+          type: string
+          description: What the operator wrote when they suspended, and what the
+            provider reads on their own dashboard. Absent unless `status` is
+            `SUSPENDED` - a reinstated business stops carrying the accusation.
+
+    ModeratedProviderPage:
+      type: object
+      required: [data, next_cursor]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModeratedProviderView'
+        next_cursor:
+          type: string
+          nullable: true
+          description: Opaque; null on the last page.
 
     ServicePhotoView:
       type: object
@@ -4555,7 +4827,7 @@ components:
 
     LocalityView:
       type: object
-      required: [slug, label_fr, kind]
+      required: [slug, label_fr, kind, provider_count]
       properties:
         slug:
           type: string
@@ -4581,6 +4853,35 @@ components:
             codes to fill a column nothing reads yet would be inventing data
             that looks authoritative. They can be added by an update the day
             something needs them.
+        provider_count:
+          type: integer
+          format: int32
+          description: |
+            How many providers `listProviders` returns for this slug. The
+            number a place tile shows, and the reason it is here: a tile that
+            says 8 has to lead to 8 results.
+
+            So it is counted DOWN THE TREE, exactly as the `locality` filter
+            matches. A commune counts the businesses filed against it; a
+            prefecture counts its own plus every commune beneath it; a region
+            counts everything under it. Conakry is the sum of its ten communes
+            rather than zero, even though almost nobody files a business
+            against the region itself.
+
+            The alternative - counting only rows filed at exactly this level -
+            was rejected because it makes every level above the commune read as
+            empty while the filter behind it returns dozens, which is the
+            number contradicting the list it labels.
+
+            The consequence, and a client must not get it wrong: THESE DO NOT
+            SUM. A region already contains its prefectures and a prefecture its
+            communes, so adding the column up counts one business as many as
+            three times. This is not a breakdown of a total and there is no
+            total of the country here.
+
+            Counted over published, active providers, which is the same set
+            every public operation can see. A business that has not published,
+            or that the platform has suspended, is in nobody's tile.
 
     AreaList:
       type: object
@@ -4678,7 +4979,7 @@ components:
 
     ProviderSummaryPage:
       type: object
-      required: [data, next_cursor]
+      required: [data, next_cursor, total]
       properties:
         data:
           type: array
@@ -4688,6 +4989,25 @@ components:
           type: string
           nullable: true
           description: Opaque; null on the last page.
+        total:
+          type: integer
+          format: int32
+          description: |
+            How many providers match, across every page - what a toolbar means
+            by "23 professionnels" rather than "6 sur cette page".
+
+            It counts the same filters the page does and IGNORES the cursor, so
+            it is the size of the answer and not what is left of it. Paging
+            forward does not make it shrink.
+
+            EXACT, never capped or rounded. That is a cost and a deliberate
+            one: it is a second aggregate over the matching set on every page,
+            where `next_cursor` costs only the one extra row the page already
+            reads. A capped total makes every client render one number two ways
+            and turns "23" into a promise nobody checks; the directory of one
+            country is not large enough to be worth that. The day it is, cap it
+            and publish the ceiling beside it rather than letting the number
+            quietly stop being true.
 
     StaffRequest:
       type: object

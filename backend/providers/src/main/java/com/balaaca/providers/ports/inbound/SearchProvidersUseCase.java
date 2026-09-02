@@ -33,12 +33,19 @@ public interface SearchProvidersUseCase {
      * @param area     the quartier the provider wrote for themselves. Folded
      *                 before it is compared, which is what makes "Ratoma",
      *                 "ratoma" and "RATOMA" one value rather than three
+     * @param modes    the same triple a card publishes, read the other way
+     *                 round: each true is a way of being served the caller ASKED
+     *                 for, and a business matches on ANY of them. All three
+     *                 false is no filter at all - nobody asks for a business
+     *                 that offers nothing, so the value is free to mean the
+     *                 absence of the question
      */
     record Query(Optional<String> nameContains,
                  List<String> categorySlugs,
                  Optional<String> city,
                  Optional<String> locality,
                  Optional<String> area,
+                 Fulfilments modes,
                  Optional<Position> after,
                  int limit) {
 
@@ -74,8 +81,17 @@ public interface SearchProvidersUseCase {
      * <p>All three false is a real answer and not a missing one - a business
      * that has published nothing yet has nothing to offer, and a card that
      * invented a mode for it would be advertising something nobody said.
+     *
+     * <p>The same shape carries the QUESTION on {@link Query}, deliberately.
+     * One definition of what a business offers is what keeps a filter from
+     * returning a card whose own badges contradict it.
      */
     record Fulfilments(boolean onSite, boolean dropOff, boolean atCustomer) {
+
+        /** Whether anything at all was asked for, on the query side. */
+        public boolean any() {
+            return onSite || dropOff || atCustomer;
+        }
     }
 
     /**
@@ -104,6 +120,13 @@ public interface SearchProvidersUseCase {
                         Position position) {
     }
 
-    record Directory(List<ProviderCard> cards, Optional<Position> next) {
+    /**
+     * @param total how many businesses the query matches in all, not how many
+     *              are on this page and not how many are left. It ignores the
+     *              cursor, so it is the same number on the first page and the
+     *              last, and it is exact rather than capped - see the contract,
+     *              which owns that decision and its cost
+     */
+    record Directory(List<ProviderCard> cards, Optional<Position> next, int total) {
     }
 }

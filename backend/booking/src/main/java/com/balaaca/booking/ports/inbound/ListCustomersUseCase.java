@@ -40,6 +40,18 @@ public interface ListCustomersUseCase {
     CustomerDetail replaceNotes(CustomerId id, Optional<String> notes);
 
     /**
+     * Refuses this person a booking on the public page, or lets them back.
+     *
+     * <p>The one lever a provider has against somebody who does not turn up, and
+     * it binds the page rather than the counter. It is not retroactive: what is
+     * already in the book stands, exactly as suspending a business leaves the
+     * customers who are still coming on Thursday alone.
+     *
+     * @throws com.balaaca.booking.domain.BookingExceptions.CustomerNotFoundException
+     */
+    CustomerDetail setBlocked(CustomerId id, boolean blocked);
+
+    /**
      * @param visits how many appointments this person has, in any state. A
      *               count that hid cancellations would make a serial canceller
      *               look like a new customer
@@ -51,8 +63,15 @@ public interface ListCustomersUseCase {
                            int visits, Optional<Instant> lastVisit) {
     }
 
+    /**
+     * @param blocked whether the provider refuses this person a booking on their
+     *                public page. On the detail and not on the summary because
+     *                it is the card that carries the switch, and a flag the
+     *                address book listed but nothing could change would be the
+     *                column's own defect a layer higher up
+     */
     record CustomerDetail(CustomerId id, CustomerContact contact,
-                          Optional<String> notes, int visits,
+                          Optional<String> notes, boolean blocked, int visits,
                           Optional<Instant> lastVisit,
                           List<Visit> history) {
     }

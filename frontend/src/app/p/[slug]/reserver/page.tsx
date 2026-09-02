@@ -58,6 +58,12 @@ const REFUSALS: Record<string, string> = {
     "Plusieurs personnes ont demandé ce créneau en même temps. Patientez quelques secondes et confirmez à nouveau.",
   RESOURCE_NOT_FOUND:
     "Cette prestation n'est plus proposée. Revenez à la première étape pour en choisir une autre.",
+  // The provider has refused this number in their own address book. The
+  // sentence says what to do and not why, because this page is public: one
+  // that named the reason would let anybody read a salon's blocklist a
+  // telephone number at a time, and the number belongs to somebody else.
+  FORBIDDEN:
+    "Ce professionnel ne peut pas enregistrer ce rendez-vous en ligne. Appelez-le directement pour convenir d'un horaire.",
 };
 
 /**

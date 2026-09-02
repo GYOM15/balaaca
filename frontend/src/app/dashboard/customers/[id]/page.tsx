@@ -4,7 +4,7 @@ import { Icon } from "@/components/icon";
 import { EmptyState, Notice, STATUS, StatusBadge } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 import type { CustomerDetail, CustomerVisit, ProviderProfile } from "@/lib/types";
-import { saveNotes } from "./actions";
+import { saveNotes, setBlocking } from "./actions";
 
 /** A card that changes every time this person books. Cached, it would lie. */
 export const dynamic = "force-dynamic";
@@ -19,8 +19,24 @@ const REFUSALS: Record<string, string> = {
   RATE_LIMITED: "Trop de demandes en même temps. Réessayez dans un instant.",
 };
 
+/**
+ * Which of the two things on this card failed, so the note says so.
+ *
+ * <p>The card has two commands and they share one banner. A blocage that failed
+ * under the heading "La note n’a pas été enregistrée" would send the provider
+ * to the wrong field, and `VALIDATION_FAILED` does not mean the same thing on
+ * both.
+ */
+const SUBJECTS: Record<string, { title: string; refusals: Record<string, string> }> = {
+  blocage: {
+    title: "Le blocage n’a pas été enregistré",
+    refusals: { VALIDATION_FAILED: "Cette demande a été refusée. Rechargez la page." },
+  },
+};
+
 type Query = {
   error?: string;
+  for?: string;
 };
 
 /**
@@ -87,8 +103,26 @@ export default async function CustomerCard({
         <div className="app__inner">
           {query.error ? (
             <div style={{ marginBottom: "var(--s-5)" }}>
-              <Notice tone="danger" title="La note n’a pas été enregistrée">
-                {REFUSALS[query.error] ?? "Réessayez, ou rechargez la page."}
+              <Notice
+                tone="danger"
+                errorCode={query.error}
+                title={
+                  SUBJECTS[query.for ?? ""]?.title ?? "La note n’a pas été enregistrée"
+                }
+              >
+                {SUBJECTS[query.for ?? ""]?.refusals[query.error] ??
+                  REFUSALS[query.error] ??
+                  "Réessayez, ou rechargez la page."}
+              </Notice>
+            </div>
+          ) : null}
+
+          {customer.blocked ? (
+            <div style={{ marginBottom: "var(--s-5)" }}>
+              <Notice tone="warning" icon="ban" title="Cette personne est bloquée">
+                Elle ne peut plus prendre de rendez-vous sur votre page publique.
+                Vous pouvez toujours l’inscrire vous-même au comptoir, et les
+                rendez-vous déjà pris restent dans votre agenda.
               </Notice>
             </div>
           ) : null}
@@ -182,6 +216,56 @@ export default async function CustomerCard({
                         <span className="btn__label--done">Enregistrée</span>
                       </button>
                     </div>
+                  </form>
+                </div>
+              </div>
+
+              {/* The one lever a salon has against somebody who never turns up.
+                  Last on the card, under the note, because it is the thing a
+                  provider reaches for least and undoes most. */}
+              <div className="panel">
+                <div className="panel__head">
+                  <div>
+                    <div className="panel__title">Réservation en ligne</div>
+                    <div className="panel__sub">
+                      {customer.blocked ? "Bloquée" : "Autorisée"}
+                    </div>
+                  </div>
+                </div>
+                <div className="card__body">
+                  <p className="t-xs" style={{ marginTop: 0 }}>
+                    {customer.blocked
+                      ? "Cette personne ne peut pas réserver sur votre page publique. La débloquer lui rend cette possibilité."
+                      : "Bloquer cette personne l’empêche de réserver sur votre page publique. Vous pourrez toujours l’inscrire vous-même, et ses rendez-vous déjà pris ne bougent pas."}
+                  </p>
+                  <form action={setBlocking} style={{ marginTop: "var(--s-4)" }}>
+                    <input type="hidden" name="id" value={customer.customer_id} />
+                    {/* The next state, not a flip of what this page last saw: a
+                        card read a minute ago is not what is true now. */}
+                    <input
+                      type="hidden"
+                      name="blocked"
+                      value={customer.blocked ? "false" : "true"}
+                    />
+                    <button
+                      className={`btn btn--block ${customer.blocked ? "btn--secondary" : "btn--danger"}`}
+                      type="submit"
+                    >
+                      <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
+                        <Icon name={customer.blocked ? "user-check" : "ban"} size={18} />
+                      </span>
+                      <span className="btn__label--idle">
+                        {customer.blocked ? "Débloquer" : "Bloquer la réservation en ligne"}
+                      </span>
+                      <span className="btn__icon--busy">
+                        <Icon name="loader" size={18} className="ico--spin" />
+                      </span>
+                      <span className="btn__label--busy">Enregistrement…</span>
+                      <span className="btn__icon--done">
+                        <Icon name="check" size={18} />
+                      </span>
+                      <span className="btn__label--done">Enregistré</span>
+                    </button>
                   </form>
                 </div>
               </div>

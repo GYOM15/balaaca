@@ -117,19 +117,19 @@ const SPRITE = String.raw`<svg xmlns="http://www.w3.org/2000/svg" aria-hidden="t
   <symbol id="i-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7.6 4.9 19 12 7.6 19.1Z"/></symbol>
   <symbol id="i-scan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.6 8.6V6.2a2.6 2.6 0 0 1 2.6-2.6h2.4M15.4 3.6h2.4A2.6 2.6 0 0 1 20.4 6.2v2.4M20.4 15.4v2.4a2.6 2.6 0 0 1-2.6 2.6h-2.4M8.6 20.4H6.2a2.6 2.6 0 0 1-2.6-2.6v-2.4"/><path d="M7 12h10"/></symbol>
 
-  <!-- ================= MODES DE SERVICE ================= -->
-  <!-- Trois glyphes construits en famille : même socle, même lecture. -->
+  <!-- ================= FULFILMENT MODES ================= -->
+  <!-- Three glyphs built as one family: same base, same reading. -->
   <symbol id="i-mode-onsite" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.4 20.4V9.8L12 4l7.6 5.8v10.6"/><path d="M3 20.4h18"/><circle cx="12" cy="12.6" r="1.9"/><path d="M8.9 18.1c.35-1.6 1.6-2.6 3.1-2.6s2.75 1 3.1 2.6"/></symbol>
   <symbol id="i-mode-dropoff" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.4 20.2 7v6.2c0 .6-.3 1.1-.8 1.4l-6.6 3.8c-.5.3-1.1.3-1.6 0l-6.6-3.8a1.6 1.6 0 0 1-.8-1.4V7Z"/><path d="M3.8 7 12 11.4 20.2 7M12 11.4v7.6"/><path d="M15.5 18.8a4 4 0 1 0 4 4 4 4 0 0 0-4-4Z" style="display:none"/><path d="M8.4 20.6h2.2M17.4 4.6l-2.6 1.2"/></symbol>
   <symbol id="i-mode-atcustomer" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.2 18.4V11l6.6-5 6.6 5v7.4"/><path d="M2 18.4h15.6"/><path d="M7.6 18.4v-4.2h4.4v4.2"/><path d="M18.6 6.6c1.8 0 3.2 1.4 3.2 3.2 0 2.2-3.2 5.2-3.2 5.2s-3.2-3-3.2-5.2c0-1.8 1.4-3.2 3.2-3.2Z"/><circle fill="currentColor" stroke="none" cx="18.6" cy="9.8" r="1.1"/></symbol>
 
-  <!-- ================= GLYPHES MÉTIERS =================
-       35 métiers, 8 familles. Identifiant = slug du métier côté API.
-       Les 17 métiers qui n'avaient pas de glyphe en ont un, construit dans
-       exactement le même langage : grille 24, trait 1.6, angles arrondis,
-       currentColor. Aucun glyphe n'est emprunté à une autre bibliothèque. -->
+  <!-- ================= TRADE GLYPHS ===================
+       35 trades, 8 families. The id is the trade's slug on the API side.
+       The 17 trades that had no glyph now have one, drawn in exactly the
+       same language: a 24 grid, a 1.6 stroke, rounded corners, currentColor.
+       No glyph is borrowed from another library. -->
 
-  <!-- famille : beaute -->
+  <!-- family: beaute -->
   <symbol id="t-coiffure" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7.6 3.6c-1.6 2.6-1.9 5.4-.9 8.4M16.4 3.6c1.6 2.6 1.9 5.4.9 8.4"/><path d="M12 3.2c-1 3.2-1 5.8 0 8.8 1-3 1-5.6 0-8.8Z"/><circle cx="6.4" cy="17.4" r="3"/><circle cx="17.6" cy="17.4" r="3"/><path d="M9.2 16.4h5.6"/></symbol>
   <symbol id="t-barbier" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="6.6" cy="17.6" r="2.8"/><circle cx="17.4" cy="17.6" r="2.8"/><path d="M8.6 15.6 17.6 4.4M15.4 15.6 6.4 4.4"/><path d="M11 11.9 12.6 10"/></symbol>
   <symbol id="t-tresses" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8.4 3.4c2.4 2.2-2.4 4.2 0 6.4s-2.4 4.2 0 6.4-2.4 3-.6 4.4M12 3.4c2.4 2.2-2.4 4.2 0 6.4s-2.4 4.2 0 6.4-2.4 3-.6 4.4M15.6 3.4c2.4 2.2-2.4 4.2 0 6.4s-2.4 4.2 0 6.4-2.4 3-.6 4.4"/></symbol>
@@ -137,14 +137,14 @@ const SPRITE = String.raw`<svg xmlns="http://www.w3.org/2000/svg" aria-hidden="t
   <symbol id="t-maquillage" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14.4 3.6h3.2l1.4 5.4c.15.6-.3 1.2-.9 1.2h-4.2c-.6 0-1.05-.6-.9-1.2Z"/><path d="M13.6 10.2v8.4c0 1-.8 1.8-1.8 1.8h-.4c-1 0-1.8-.8-1.8-1.8v-8.4"/><path d="M9.6 14.4h4M4.6 7.2h4M6.6 5.2v4"/></symbol>
   <symbol id="t-onglerie" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 20.4V9.6c0-3.4 1.2-6.2 3-6.2s3 2.8 3 6.2v10.8Z"/><path d="M9.1 8.6h5.8"/><path d="M4.8 20.4h14.4"/></symbol>
 
-  <!-- famille : bien-etre -->
+  <!-- family: bien-etre -->
   <symbol id="t-spa-massage" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20.4c0-4.6-2.6-8-7.4-9 .6 5 3.2 8.2 7.4 9Z"/><path d="M12 20.4c0-4.6 2.6-8 7.4-9-.6 5-3.2 8.2-7.4 9Z"/><path d="M12 20.4c-1.8-3.4-1.8-7 0-10.6 1.8 3.6 1.8 7.2 0 10.6Z"/><circle cx="12" cy="5" r="1.8"/></symbol>
   <symbol id="t-coach-sportif" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.6 10.4v3.2M5.4 8v8M18.6 8v8M21.4 10.4v3.2"/><rect x="5.4" y="8.6" width="3" height="6.8" rx="1.1"/><rect x="15.6" y="8.6" width="3" height="6.8" rx="1.1"/><path d="M8.4 12h7.2"/></symbol>
 
-  <!-- famille : atelier -->
+  <!-- family: atelier -->
   <symbol id="t-couture" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20.4 3.6 8.6 15.4l-2.2 4.4 4.4-2.2L20.4 3.6Z"/><path d="M17 7 9.4 14.6"/><circle cx="18.9" cy="5.1" r="1.5"/><path d="M6.4 4.6c-2 1.4-2.4 3.6-1 5.4"/></symbol>
 
-  <!-- famille : evenement -->
+  <!-- family: evenement -->
   <symbol id="t-photographie" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.6 9c0-1.2 1-2.2 2.2-2.2h1.6c.6 0 1.1-.3 1.4-.8l.8-1.2c.3-.5.8-.8 1.4-.8h2c.6 0 1.1.3 1.4.8l.8 1.2c.3.5.8.8 1.4.8h1.6c1.2 0 2.2 1 2.2 2.2v8.2c0 1.2-1 2.2-2.2 2.2H5.8c-1.2 0-2.2-1-2.2-2.2Z"/><circle cx="12" cy="12.6" r="3.6"/><circle fill="currentColor" stroke="none" cx="17.4" cy="9.6" r="0.9"/></symbol>
   <symbol id="t-video" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6.6" width="12.4" height="10.8" rx="2.2"/><path d="M15.4 11.2 21 8.2v7.6l-5.6-3Z"/><path d="M6.4 6.6v10.8"/></symbol>
   <symbol id="t-dj-animation" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13.6" r="7"/><circle cx="12" cy="13.6" r="2.2"/><path d="M12 3.4a10 10 0 0 1 8 4"/><path d="M17.4 9.4 20.6 6"/></symbol>
@@ -153,18 +153,18 @@ const SPRITE = String.raw`<svg xmlns="http://www.w3.org/2000/svg" aria-hidden="t
   <symbol id="t-fleuriste" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7.4" r="2.4"/><path d="M12 5c0-1.6-1.1-2.9-2.4-2.9S7.2 3.4 7.2 5s1.1 2.4 2.4 2.4M12 5c0-1.6 1.1-2.9 2.4-2.9S16.8 3.4 16.8 5s-1.1 2.4-2.4 2.4M9.6 7.4c-1.6 0-2.9 1.1-2.9 2.4s1.3 2.4 2.9 2.4M14.4 7.4c1.6 0 2.9 1.1 2.9 2.4s-1.3 2.4-2.9 2.4"/><path d="M12 12.2v8.4M12 16.6c-1.8-.4-2.8-1.6-3-3.4 1.8-.2 2.8.8 3 3.4ZM12 18.6c1.8-.4 2.8-1.6 3-3.4-1.8-.2-2.8.8-3 3.4Z"/></symbol>
   <symbol id="t-location-salle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.6 20.4h18.8"/><path d="M4.6 20.4V8.6l7.4-4.8 7.4 4.8v11.8"/><rect x="8.4" y="12.4" width="7.2" height="8"/><path d="M12 12.4v8"/></symbol>
 
-  <!-- famille : table -->
+  <!-- family: table -->
   <symbol id="t-traiteur" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.4 15.6h17.2c0-4.8-3.85-8.2-8.6-8.2S3.4 10.8 3.4 15.6Z"/><path d="M2.4 18.6h19.2"/><path d="M12 7.4V4.6"/><circle fill="currentColor" stroke="none" cx="12" cy="3.4" r="1"/></symbol>
   <symbol id="t-patisserie" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5.6 11.4h12.8l-1.3 8.2c-.1.6-.6 1-1.2 1H8.1c-.6 0-1.1-.4-1.2-1Z"/><path d="M5.6 11.4c0-3.5 2.9-6.2 6.4-6.2s6.4 2.7 6.4 6.2"/><path d="M12 5.2V3.2M8.4 11.4c0-1.4 1.6-2.4 3.6-2.4s3.6 1 3.6 2.4"/></symbol>
 
-  <!-- famille : auto -->
+  <!-- family: auto -->
   <symbol id="t-mecanique-auto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15.8 3.8a4.8 4.8 0 0 0-4.5 6.4L4 17.4a2 2 0 0 0 2.8 2.8l7.2-7.2a4.8 4.8 0 0 0 6.1-6.3l-2.6 2.6-2.5-.6-.6-2.5Z"/><circle fill="currentColor" stroke="none" cx="5.4" cy="18.6" r="0.9"/></symbol>
   <symbol id="t-mecanique-moto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="16.4" r="3.4"/><circle cx="19" cy="16.4" r="3.4"/><path d="M5 16.4h4.2l4-6.4h3.4l2.4 6.4"/><path d="M9.4 10h4.6M12.2 10 10 16.4"/><path d="M14.6 6.4h2.6l1.2 3.6"/></symbol>
   <symbol id="t-location-vehicule" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.6 16.4v-3.2l2-4.6c.3-.7 1-1.2 1.8-1.2h9.2c.8 0 1.5.5 1.8 1.2l2 4.6v3.2"/><path d="M3.6 13.4h16.8"/><circle cx="7.4" cy="17.4" r="1.9"/><circle cx="16.6" cy="17.4" r="1.9"/><path d="M9.4 17.4h5.2"/></symbol>
   <symbol id="t-auto-ecole" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.4"/><circle cx="12" cy="12" r="3"/><path d="M12 3.6v5.4M4.4 15.4l5.1-1.9M19.6 15.4l-5.1-1.9"/></symbol>
   <symbol id="t-lavage-auto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.4 17.4v-2.6l1.7-3.9c.25-.6.85-1 1.5-1h7.8c.65 0 1.25.4 1.5 1l1.7 3.9v2.6"/><path d="M4.4 14.8h15.2"/><circle cx="7.8" cy="18.2" r="1.6"/><circle cx="16.2" cy="18.2" r="1.6"/><path d="M6.6 8.2c0-1.2-1.4-2-1.4-3.4a1.4 1.4 0 0 1 2.8 0c0 1.4-1.4 2.2-1.4 3.4ZM17.4 8.2c0-1.2-1.4-2-1.4-3.4a1.4 1.4 0 0 1 2.8 0c0 1.4-1.4 2.2-1.4 3.4ZM12 6.6c0-1.2-1.4-2-1.4-3.4a1.4 1.4 0 0 1 2.8 0c0 1.4-1.4 2.2-1.4 3.4Z"/></symbol>
 
-  <!-- famille : maison -->
+  <!-- family: maison -->
   <symbol id="t-plomberie" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.4 6.4h4.2v4.2c0 2.6 2.1 4.8 4.8 4.8h1.8"/><rect x="2.6" y="4.2" width="3.6" height="4.4" rx="1"/><rect x="15" y="13" width="4.4" height="4.4" rx="1"/><path d="M19.4 15.2h2M8.6 4.4v4M11.4 15.2v4.4"/></symbol>
   <symbol id="t-electricite" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13.4 2.6 6.2 13.4h5l-1.6 8 8.2-11.4h-5.2Z"/></symbol>
   <symbol id="t-climatisation" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5.4" width="18" height="7.2" rx="2"/><path d="M6.4 9h11.2"/><path d="M7.4 15.4c0 1.4-.8 2-.8 3.2M12 15.4c0 1.8-1 2.4-1 4M16.6 15.4c0 1.4-.8 2-.8 3.2"/></symbol>
@@ -175,14 +175,14 @@ const SPRITE = String.raw`<svg xmlns="http://www.w3.org/2000/svg" aria-hidden="t
   <symbol id="t-reparation-telephone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5.6" y="2.6" width="9.6" height="18.8" rx="2.4"/><path d="M9.2 5.4h2.4"/><path d="M17.4 11.6a2.9 2.9 0 0 0-3.9 3.7l-1.1 1.1 2.4 2.4 1.1-1.1a2.9 2.9 0 0 0 3.7-3.9l-1.5 1.5-1.7-.4-.4-1.7Z"/></symbol>
   <symbol id="t-securite-electronique" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.2 4.8 6v5.4c0 4.3 2.9 7.7 7.2 9.4 4.3-1.7 7.2-5.1 7.2-9.4V6Z"/><circle cx="12" cy="10.6" r="2"/><path d="M8.8 16.6c.4-1.8 1.7-2.8 3.2-2.8s2.8 1 3.2 2.8"/></symbol>
 
-  <!-- famille : savoir -->
+  <!-- family: savoir -->
   <symbol id="t-cours-particuliers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4 2.8 8.4 12 12.8l9.2-4.4Z"/><path d="M6.4 10.4v5c0 1.8 2.5 3.2 5.6 3.2s5.6-1.4 5.6-3.2v-5M21.2 8.4v5.4"/></symbol>
   <symbol id="t-cours-langues" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.4 5.6a1.8 1.8 0 0 1 1.8-1.8h6.6a1.8 1.8 0 0 1 1.8 1.8v4.6a1.8 1.8 0 0 1-1.8 1.8H8.2L5 14.8v-2.8a1.8 1.8 0 0 1-1.6-1.8Z"/><path d="M10.4 12v2.2a1.8 1.8 0 0 0 1.8 1.8h3.6l3.2 2.8V16a1.8 1.8 0 0 0 1.6-1.8V9.6a1.8 1.8 0 0 0-1.8-1.8h-4.4"/><path d="M6 7.6h4.4M6.8 9.8h2.8"/></symbol>
   <symbol id="t-formation-professionnelle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3.6" width="18" height="12.4" rx="2"/><path d="M8 20.4h8M12 16v4.4"/><path d="M8.2 11.6 10.6 9l1.8 1.8L16 6.8"/></symbol>
 
   <symbol id="t-default" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3.6" y="6.6" width="16.8" height="13.8" rx="2.2"/><path d="M8.6 6.6V5.4c0-1 .8-1.8 1.8-1.8h3.2c1 0 1.8.8 1.8 1.8v1.2M3.6 12.4c2.6 1.2 5.4 1.8 8.4 1.8s5.8-.6 8.4-1.8"/></symbol>
 
-  <!-- ================= FAMILLES ================= -->
+  <!-- ================= FAMILIES ================= -->
   <symbol id="f-beaute" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.4c3 3.4 4.6 6.2 4.6 8.8a4.6 4.6 0 0 1-9.2 0c0-2.6 1.6-5.4 4.6-8.8Z"/><path d="M9.8 12.6a2.4 2.4 0 0 0 2.4 2.4"/><path d="M6 19.4c1.8 1 3.8 1.5 6 1.5s4.2-.5 6-1.5"/></symbol>
   <symbol id="f-bien-etre" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20.4c0-4.6-2.6-8-7.4-9 .6 5 3.2 8.2 7.4 9Z"/><path d="M12 20.4c0-4.6 2.6-8 7.4-9-.6 5-3.2 8.2-7.4 9Z"/><circle cx="12" cy="5" r="1.8"/><path d="M12 20.4c-1.8-3.4-1.8-7 0-10.6 1.8 3.6 1.8 7.2 0 10.6Z"/></symbol>
   <symbol id="f-atelier" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20.4 3.6 8.6 15.4l-2.2 4.4 4.4-2.2L20.4 3.6Z"/><path d="M17 7 9.4 14.6"/><circle cx="18.9" cy="5.1" r="1.5"/></symbol>
@@ -192,9 +192,9 @@ const SPRITE = String.raw`<svg xmlns="http://www.w3.org/2000/svg" aria-hidden="t
   <symbol id="f-maison" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.8 10.4 12 3.8l8.2 6.6"/><path d="M5.6 11.9v7c0 .8.6 1.4 1.4 1.4h10c.8 0 1.4-.6 1.4-1.4v-7"/><path d="M9.8 20.3v-5h4.4v5"/></symbol>
   <symbol id="f-savoir" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4 2.8 8.4 12 12.8l9.2-4.4Z"/><path d="M6.4 10.4v5c0 1.8 2.5 3.2 5.6 3.2s5.6-1.4 5.6-3.2v-5M21.2 8.4v5.4"/></symbol>
 
-  <!-- ================= SCÈNES =================
-       Croquis au trait, monochromes, currentColor. Servent d'états vides et
-       de respiration éditoriale. Jamais de remplissage décoratif. -->
+  <!-- ================= SCENES ==================
+       Line sketches, monochrome, currentColor. They serve as empty states and
+       as editorial breathing room. Never decorative filler. -->
   <symbol id="s-storefront" viewBox="0 0 200 150" class="scene" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round">
     <path vector-effect="non-scaling-stroke" d="M28 62v66h144V62"/><path vector-effect="non-scaling-stroke" d="M16 62l14-30h140l14 30Z"/>
     <path vector-effect="non-scaling-stroke" d="M16 62c0 8 7 14 16 14s16-6 16-14c0 8 7 14 16 14s16-6 16-14c0 8 7 14 16 14s16-6 16-14c0 8 7 14 16 14s16-6 16-14c0 8 7 14 16 14s16-6 16-14"/>

@@ -35,6 +35,22 @@ public enum BookingSource {
     }
 
     /**
+     * Whether a refusal the provider recorded against a customer applies.
+     *
+     * <p>A block is the provider saying "not this person, not on my page". It
+     * binds the page and not the counter: the same somebody may still be
+     * standing in the salon with the argument settled, and a diary that refuses
+     * to record what is happening is a diary the salon keeps on paper.
+     *
+     * <p>The same partition as the two questions above today, and a third
+     * question. They are stated apart because the day a source moves on one
+     * axis it will not move on all three.
+     */
+    public boolean honoursCustomerBlocking() {
+        return this == PUBLIC || this == CHATBOT;
+    }
+
+    /**
      * Whether entering it was already the acceptance.
      *
      * <p>A provider's auto_confirm answers "do I want to look at each request

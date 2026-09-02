@@ -1,4 +1,4 @@
-# --- Secrets : rien de tout cela ne doit jamais être commité ---
+# --- Secrets: none of this is ever committed ---
 .env
 .env.*
 !.env.example
@@ -51,6 +51,6 @@ jacoco.exec
 backend/**/target/
 .jqwik-database
 
-# Ce que scripts/dev.sh ecrit en local. Rien de tout cela ne se commite.
+# What scripts/dev.sh writes locally. None of it is ever committed.
 .dev-logs/
 .dev-media/

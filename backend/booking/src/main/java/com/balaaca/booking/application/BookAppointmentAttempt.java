@@ -1,6 +1,7 @@
 package com.balaaca.booking.application;
 
 import com.balaaca.booking.domain.BookedSlot;
+import com.balaaca.booking.domain.BookingExceptions.CustomerBlockedException;
 import com.balaaca.booking.domain.BookingExceptions.FulfilmentNotChosenException;
 import com.balaaca.booking.domain.BookingExceptions.FulfilmentNotOfferedException;
 import com.balaaca.booking.domain.BookingExceptions.ServiceAddressMismatchException;
@@ -82,6 +83,26 @@ public class BookAppointmentAttempt {
                 .flatMap(i -> appointments.replayOf(i.key(), i.requestHash()));
         if (replay.isPresent()) {
             return replay.get();
+        }
+
+        // Before anything is computed about the slot, and before the customer
+        // row is touched. Asked of the page and not of the counter: a provider
+        // entering the same person at the till has settled it with them, and
+        // their own refusal is not something to enforce against them.
+        //
+        // Ahead of every rule below on purpose. Each of those answers something
+        // about the diary - what is open, who is free, which modes are offered -
+        // and a caller this provider will not serve has no business being told
+        // any of it.
+        //
+        // After the replay check, though, and for the same reason availability
+        // is: a retry is not a new request. A booking that was accepted before
+        // the provider blocked the number stands, and its retry must be handed
+        // the appointment rather than a refusal that leaves the caller believing
+        // nothing was booked.
+        if (command.source().honoursCustomerBlocking()
+                && appointments.isBlocked(command.customer().phone())) {
+            throw new CustomerBlockedException();
         }
 
         // Checked inside the transaction, against the same calculation that
