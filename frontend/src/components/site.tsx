@@ -39,11 +39,34 @@ function LogoWord() {
  * offer, and it stands down below 700 px, where the bar has room for the mark
  * and one entry: the footer's Professionnels column carries it there.
  */
+/**
+ * The way back in, for somebody who already has an account.
+ *
+ * <p>Two shapes because the bar cannot hold three items of text: measured
+ * across eleven widths, the mark, the three nav links and two actions fit and a
+ * third wraps. So above 700 px it is a word, and below it is the glyph alone -
+ * 36 px, which costs the row almost nothing and is still a comfortable target
+ * for a thumb.
+ *
+ * <p>It was words-only at first, hidden below 700 px, and the owner found what
+ * that means on a 564 px window: no way back to the sign-in page at all. A
+ * door a phone cannot see is not a door.
+ */
 function SignIn() {
   return (
-    <Link className="hdr__link hide-sm" href="/dashboard">
-      Se connecter
-    </Link>
+    <>
+      <Link className="hdr__link hide-sm" href="/dashboard">
+        Se connecter
+      </Link>
+      <Link
+        className="btn btn--secondary btn--sm btn--icon show-sm-only"
+        href="/dashboard"
+        aria-label="Se connecter"
+        title="Se connecter"
+      >
+        <Icon name="user" />
+      </Link>
+    </>
   );
 }
 
