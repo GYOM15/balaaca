@@ -157,6 +157,7 @@ public class BookAppointmentAttempt {
                 fulfilment,
                 address,
                 command.source(),
+                command.preferredChannel(),
                 command.customerNote(),
                 command.idempotency().map(i -> i.key()),
                 command.idempotency().map(i -> i.requestHash())));
@@ -167,7 +168,8 @@ public class BookAppointmentAttempt {
         // already there, and their dedupe keys would absorb them anyway.
         if (!outcome.replayed()) {
             notifications.planFor(outcome.appointmentId(), outcome.reference(),
-                                  command.startsAt(), offering, command.customer());
+                                  command.startsAt(), offering, command.customer(),
+                                  command.preferredChannel());
         }
         return outcome;
     }

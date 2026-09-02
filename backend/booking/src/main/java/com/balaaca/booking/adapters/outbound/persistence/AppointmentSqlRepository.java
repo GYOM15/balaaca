@@ -85,7 +85,7 @@ public class AppointmentSqlRepository implements AppointmentRepository {
                         duration_minutes, source, idempotency_key, idempotency_request_hash,
                         public_reference, customer_note, turnaround_hours, ready_by,
                         service_fulfilment, service_locality_id, service_area,
-                        service_directions, status)
+                        service_directions, preferred_channel, status)
                     VALUES (
                         :id, :providerId, :staffId, :offeringId, :customerId,
                         :startsAt, :endsAt, :bufferBefore, :bufferAfter,
@@ -154,6 +154,12 @@ public class AppointmentSqlRepository implements AppointmentRepository {
                           WHERE slug = CAST(:serviceLocality AS varchar)),
                         CAST(:serviceArea AS varchar),
                         CAST(:serviceDirections AS varchar),
+                        -- Frozen for the same reason the fulfilment above is:
+                        -- this booking owes messages days later, and the only
+                        -- other place the answer could live is the customer
+                        -- row, which holds one entry per telephone number and
+                        -- is upserted by every later booking.
+                        :preferredChannel,
                         (SELECT CASE WHEN auto_confirm OR CAST(:accepted AS boolean)
                                      THEN 'CONFIRMED' ELSE 'PENDING' END
                            FROM providers WHERE id = :providerId))
@@ -172,6 +178,7 @@ public class AppointmentSqlRepository implements AppointmentRepository {
                     .setParameter("bufferBefore", a.slot().bufferBeforeMinutes())
                     .setParameter("bufferAfter", a.slot().bufferAfterMinutes())
                     .setParameter("fulfilment", a.fulfilment().name())
+                    .setParameter("preferredChannel", a.preferredChannel().name())
                     .setParameter("serviceLocality", a.serviceAddress()
                             .flatMap(ServiceAddress::localitySlug).orElse(null))
                     .setParameter("serviceArea", a.serviceAddress()
@@ -387,14 +394,23 @@ public class AppointmentSqlRepository implements AppointmentRepository {
     @Override
     public CustomerId upsertCustomer(CustomerContact contact) {
         UUID providerId = tenantContext.require().value();
-        // DO UPDATE on a column nobody reads, rather than DO NOTHING, so that
-        // RETURNING yields the id on both paths. The name is not overwritten:
-        // the provider may have corrected it in their own address book.
+        // DO UPDATE rather than DO NOTHING, so that RETURNING yields the id on
+        // both paths. The name is not overwritten: the provider may have
+        // corrected it in their own address book.
+        //
+        // The email is FILLED IN and never replaced. A returning customer who
+        // has now given one must have it stored, because the choice of email as
+        // their channel is frozen on the appointment and the messages it owes
+        // are addressed from this row weeks later: leaving the column NULL
+        // would make a cancellation notice unsendable for a booking the server
+        // had already accepted. coalesce keeps the provider's own correction
+        // winning, which is the rule the name already follows.
         UUID id = (UUID) em.createNativeQuery("""
                 INSERT INTO customers (id, provider_id, full_name, phone_e164, email)
                 VALUES (:id, :providerId, :fullName, :phone, :email)
                 ON CONFLICT (provider_id, phone_e164)
-                DO UPDATE SET updated_at = now()
+                DO UPDATE SET email = coalesce(customers.email, EXCLUDED.email),
+                              updated_at = now()
                 RETURNING id
                 """)
                 .setParameter("id", UUID.randomUUID())

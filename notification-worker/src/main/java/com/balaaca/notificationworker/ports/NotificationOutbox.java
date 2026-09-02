@@ -30,6 +30,21 @@ public interface NotificationOutbox {
     boolean scheduleRetry(java.util.UUID id, Instant nextAttemptAt, String failureCode);
 
     /**
+     * Terminal at once, without spending the attempt budget first.
+     *
+     * <p>{@link #scheduleRetry} reaches DEAD by exhausting attempts, which is
+     * right for a gateway that might answer next time. It is wrong for a row
+     * that no transport could ever address: retrying that sixteen times over
+     * an hour changes nothing, delays the alert, and fills the log with a
+     * failure that was already final on the first read of the row.
+     *
+     * <p>The attempt is still counted. A DEAD row showing zero attempts reads
+     * as one nothing ever touched, which invites somebody to put it back to
+     * PENDING and watch it die again.
+     */
+    void markDead(java.util.UUID id, String failureCode);
+
+    /**
      * Returns rows a worker claimed and never finished to PENDING.
      *
      * <p>A process killed mid-send leaves a row SENDING for ever otherwise.

@@ -2,6 +2,7 @@ package com.balaaca.booking.ports.inbound;
 
 import com.balaaca.booking.domain.AppointmentStatus;
 import com.balaaca.booking.domain.BookingSource;
+import com.balaaca.booking.domain.ContactChannel;
 import com.balaaca.booking.domain.CustomerContact;
 import com.balaaca.sharedkernel.ids.AppointmentId;
 import com.balaaca.booking.domain.ServiceAddress;
@@ -48,6 +49,17 @@ public interface BookAppointmentUseCase {
              * be the one to decide whether an address is owed.
              */
             Optional<ServiceAddress> serviceAddress,
+            /**
+             * How the customer asked to be reached about this booking.
+             *
+             * <p>Resolved, not optional: the edge has already turned an absent
+             * field into WHATSAPP and refused EMAIL with no address, so nothing
+             * inward has a second answer to invent. It travels beside the
+             * contact rather than inside it because it belongs to the BOOKING -
+             * the same person may want e-mail today and WhatsApp next month,
+             * and the address book holds one row for them either way.
+             */
+            ContactChannel preferredChannel,
             Optional<String> customerNote,
             Optional<Idempotency> idempotency,
             BookingSource source) {

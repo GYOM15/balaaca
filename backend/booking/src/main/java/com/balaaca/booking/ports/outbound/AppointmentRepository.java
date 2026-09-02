@@ -3,6 +3,7 @@ package com.balaaca.booking.ports.outbound;
 import com.balaaca.booking.domain.AppointmentStatus;
 import com.balaaca.booking.domain.BookedSlot;
 import com.balaaca.booking.domain.BookingSource;
+import com.balaaca.booking.domain.ContactChannel;
 import com.balaaca.booking.domain.CustomerContact;
 import com.balaaca.booking.domain.ServiceAddress;
 import com.balaaca.catalog.ports.inbound.BookableOffering;
@@ -136,6 +137,14 @@ public interface AppointmentRepository {
              */
             Optional<ServiceAddress> serviceAddress,
             BookingSource source,
+            /**
+             * The customer's own answer to "how shall we reach you about
+             * this", frozen onto the row for the same reason the fulfilment
+             * is: the messages it governs fall due days later, and the place
+             * it could otherwise be re-derived from holds one row per
+             * telephone number and moves with every later booking.
+             */
+            ContactChannel preferredChannel,
             Optional<String> customerNote,
             Optional<String> idempotencyKey,
             Optional<String> idempotencyRequestHash) {

@@ -3,12 +3,12 @@ package com.balaaca.notificationworker.adapters.outbound.channel;
 import com.balaaca.notificationworker.domain.Channel;
 import com.balaaca.notificationworker.domain.ClaimedNotification;
 import com.balaaca.notificationworker.domain.WhatsAppTemplate;
+import com.balaaca.notificationworker.ports.ChannelNamed;
 import com.balaaca.notificationworker.ports.NotificationChannel;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
-import io.quarkus.arc.lookup.LookupIfProperty;
 import jakarta.enterprise.context.ApplicationScoped;
 import java.io.IOException;
 import java.io.StringWriter;
@@ -17,10 +17,10 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 /**
@@ -40,7 +40,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
  * being sent twice. The window is the width of one UPDATE.
  */
 @ApplicationScoped
-@LookupIfProperty(name = "balaaca.notification.channel", stringValue = "whatsapp")
+@ChannelNamed("whatsapp")
 public class WhatsAppNotificationChannel implements NotificationChannel {
 
     private static final JsonFactory JSON = new JsonFactory();
@@ -87,13 +87,19 @@ public class WhatsAppNotificationChannel implements NotificationChannel {
     }
 
     @Override
+    public Set<Channel> transports() {
+        return Set.of(Channel.WHATSAPP);
+    }
+
+    @Override
     public Channel send(ClaimedNotification n, String idempotencyKey) throws ChannelException {
         String recipient = n.toPhoneE164()
                 .orElseThrow(() -> new ChannelException("NO_PHONE_NUMBER", null));
         WhatsAppTemplate template = WhatsAppTemplate.forKind(n.kind())
                 .orElseThrow(() -> new ChannelException("NO_TEMPLATE_FOR_KIND", null));
 
-        String body = requestBody(recipient, template, parse(n.payload()), n.locale());
+        String body = requestBody(recipient, template,
+                                  NotificationPayload.of(n.payload()), n.locale());
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create("%s/%s/%s/messages".formatted(baseUrl, apiVersion, phoneNumberId)))
@@ -163,25 +169,6 @@ public class WhatsAppNotificationChannel implements NotificationChannel {
             return Optional.empty();
         }
         return Optional.empty();
-    }
-
-    private static Map<String, String> parse(String payload) {
-        Map<String, String> values = new HashMap<>();
-        try (JsonParser p = JSON.createParser(payload)) {
-            while (p.nextToken() != null) {
-                if (p.currentToken() == JsonToken.FIELD_NAME) {
-                    String key = p.currentName();
-                    p.nextToken();
-                    values.put(key, p.getValueAsString(""));
-                }
-            }
-        } catch (IOException e) {
-            // The row's own payload is unreadable. Nothing downstream can fix
-            // that, and an empty map produces empty parameters rather than a
-            // message about a null.
-            return Map.of();
-        }
-        return values;
     }
 
     /**

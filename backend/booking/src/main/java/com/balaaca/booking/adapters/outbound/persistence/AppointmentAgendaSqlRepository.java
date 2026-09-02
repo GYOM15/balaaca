@@ -1,6 +1,7 @@
 package com.balaaca.booking.adapters.outbound.persistence;
 
 import com.balaaca.booking.domain.AppointmentStatus;
+import com.balaaca.booking.domain.ContactChannel;
 import com.balaaca.booking.domain.CustomerContact;
 import com.balaaca.booking.domain.ServiceAddress;
 import com.balaaca.booking.ports.inbound.ListAppointmentsUseCase.AgendaEntry;
@@ -54,7 +55,7 @@ public class AppointmentAgendaSqlRepository implements AppointmentAgendaReposito
                        c.full_name, c.phone_e164, c.email, a.customer_note,
                        a.staff_id, s.display_name, a.ready_by, a.ready_at,
                        l.slug, a.service_area, a.service_directions,
-                       a.service_fulfilment
+                       a.service_fulfilment, a.preferred_channel
                   FROM appointments a
                   JOIN customers c ON c.id = a.customer_id
                   JOIN provider_staff s
@@ -106,12 +107,16 @@ public class AppointmentAgendaSqlRepository implements AppointmentAgendaReposito
                 StaffId.of((UUID) r[11]),
                 (String) r[12],
                 new CustomerContact((String) r[7], new PhoneNumber((String) r[8]),
-                                    Optional.ofNullable((String) r[9])),
+                                    Optional.ofNullable(text(r[9]))),
                 Fulfilment.valueOf((String) r[18]),
                 Optional.ofNullable((String) r[10]).filter(n -> !n.isBlank()),
                 Optional.ofNullable(r[13]).map(AppointmentAgendaSqlRepository::instant),
                 Optional.ofNullable(r[14]).map(AppointmentAgendaSqlRepository::instant),
-                address((String) r[15], (String) r[16], (String) r[17]));
+                address((String) r[15], (String) r[16], (String) r[17]),
+                // Off the appointment, not off the joined customer row: that
+                // one holds a single entry per telephone number, so it answers
+                // with whatever the person's most recent booking said.
+                ContactChannel.valueOf((String) r[19]));
     }
 
     /**
@@ -123,6 +128,15 @@ public class AppointmentAgendaSqlRepository implements AppointmentAgendaReposito
         return directions == null ? Optional.empty()
                 : Optional.of(new ServiceAddress(Optional.ofNullable(locality),
                                                  Optional.ofNullable(area), directions));
+    }
+
+    /**
+     * A citext column, which the driver hands back as its own object rather
+     * than as a String. {@code customers.email} is the only one here, and a
+     * cast to String stood in its place until a customer actually had one.
+     */
+    private static String text(Object value) {
+        return value == null ? null : value.toString();
     }
 
     /**

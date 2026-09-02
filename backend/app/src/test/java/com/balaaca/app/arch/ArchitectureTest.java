@@ -67,8 +67,14 @@ class ArchitectureTest {
             // record of three strings the edge has to build from what a
             // customer typed. Not an id and not behaviour - the same category
             // as CustomerContact beside it.
+            // ContactChannel: the booking command carries it, because the
+            // customer answers "how shall we reach you" at the moment of
+            // booking and the edge is where an absent answer becomes WHATSAPP
+            // and an unreachable one becomes a refusal. The same category as
+            // AvailabilityOverride$Kind below - a choice with no defensible
+            // default that the wire has to state and the edge has to name.
             "com\\.balaaca\\.(booking\\.domain\\.(BookingSource|CustomerContact"
-            + "|AppointmentStatus|ServiceAddress)"
+            + "|AppointmentStatus|ServiceAddress|ContactChannel)"
             // AvailabilityOverride$Kind: the Closure command carries it, since
             // the day the third kind arrived. Two kinds could be inferred from
             // whether a window was present; three cannot - TIME_OFF carries one

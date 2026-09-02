@@ -194,14 +194,22 @@ public class BookingFixtures {
         return rows;
     }
 
-    /** One outbox row, as the worker would read it. */
+    /**
+     * One outbox row, as the worker would read it.
+     *
+     * <p>Both addresses and the channel are here because that is exactly what
+     * the worker gets: its role holds this one table, so anything missing from
+     * the row is a fact it can never go and look up.
+     */
     public record NotificationRow(String kind, String recipientKind, String toPhone,
+                                  String toEmail, String preferredChannel,
                                   String dedupeKey, String status, String payload) {
     }
 
     public List<NotificationRow> notifications(UUID providerId) {
         String sql = """
-                SELECT kind, recipient_kind, coalesce(to_phone_e164,''), dedupe_key,
+                SELECT kind, recipient_kind, coalesce(to_phone_e164,''),
+                       coalesce(to_email,''), preferred_channel, dedupe_key,
                        status, payload::text
                   FROM notifications WHERE provider_id = '%s'
                  ORDER BY scheduled_at, kind
@@ -210,7 +218,8 @@ public class BookingFixtures {
         try (Connection c = admin(); Statement s = c.createStatement(); ResultSet rs = s.executeQuery(sql)) {
             while (rs.next()) {
                 rows.add(new NotificationRow(rs.getString(1), rs.getString(2), rs.getString(3),
-                                             rs.getString(4), rs.getString(5), rs.getString(6)));
+                                             rs.getString(4), rs.getString(5), rs.getString(6),
+                                             rs.getString(7), rs.getString(8)));
             }
         } catch (SQLException e) {
             throw new IllegalStateException(e);
@@ -265,6 +274,30 @@ public class BookingFixtures {
                          '%s', now() + interval '7 days')
             """.formatted(SALON, code));
         grantEveryCompetence();
+    }
+
+    /**
+     * How each of this provider's appointments asked to be reached, oldest
+     * first.
+     *
+     * <p>Read off the appointment rather than off the customer, because that is
+     * the claim under test: the same telephone number books twice and the two
+     * bookings must keep their own answers.
+     */
+    public List<String> appointmentChannels(UUID providerId) {
+        List<String> channels = new ArrayList<>();
+        String sql = """
+                SELECT preferred_channel FROM appointments
+                 WHERE provider_id = '%s' ORDER BY starts_at
+                """.formatted(providerId);
+        try (Connection c = admin(); Statement s = c.createStatement(); ResultSet rs = s.executeQuery(sql)) {
+            while (rs.next()) {
+                channels.add(rs.getString(1));
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+        return channels;
     }
 
     /** Every customer phone this provider has stored, as E.164. */

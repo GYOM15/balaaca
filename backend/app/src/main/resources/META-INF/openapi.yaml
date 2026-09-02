@@ -174,6 +174,12 @@ paths:
 
         The appointment is created `CONFIRMED`: the provider entering it is the
         acceptance, and there is nobody left to accept it afterwards.
+
+        `customer.preferred_channel` works exactly as it does on the public
+        route, and it is the counter's job to ask: the person standing there
+        is the one who knows whether they read e-mail. Omitting it means
+        `WHATSAPP`; choosing `EMAIL` without `customer.email` is `400
+        VALIDATION_FAILED`.
       security:
         - oauth2: [appointments:write]
       parameters:
@@ -1706,6 +1712,13 @@ paths:
         The server recomputes the window from the offering's own duration and
         buffers, and freezes the price from the offering. Neither is accepted
         from the client.
+
+        The customer says how they want to hear back, through
+        `customer.preferred_channel`. Omitting it means `WHATSAPP`, so nothing
+        sent before that field existed changes meaning. Choosing `EMAIL`
+        without `customer.email` is `400 VALIDATION_FAILED` and is refused
+        here, at the edge, rather than surfacing hours later as a message
+        addressed to nowhere.
 
         Retry semantics: a `409` means the slot is gone, so re-read
         availability rather than retrying the same body. A `429` and a `5xx`
@@ -3246,6 +3259,51 @@ components:
         email:
           type: string
           maxLength: 255
+          description: |
+            Required when `preferred_channel` is `EMAIL`, optional otherwise.
+        preferred_channel:
+          allOf:
+            - $ref: '#/components/schemas/ContactChannel'
+          description: |
+            Which way this customer wants to hear about THIS booking. The
+            person in front of a pharmacy counter is the one who knows what
+            they actually read, so they are asked rather than the business.
+
+            OMIT IT for `WHATSAPP`, which is what every request sent before
+            this field existed means and why it is not required.
+
+            Choosing `EMAIL` with no `email` is `400 VALIDATION_FAILED`,
+            refused here rather than hours later when the message is due: a
+            row addressed to nowhere is a confirmation that never arrives and
+            a customer standing outside a closed salon.
+
+            The choice is FROZEN onto the appointment, not remembered against
+            the telephone number. Every message this booking owes - the
+            confirmation, both reminders, a cancellation days later - carries
+            the answer given when it was made, so booking again another way
+            never rewrites what an earlier booking does.
+
+    ContactChannel:
+      type: string
+      description: |
+        A way to reach a customer.
+
+        `WHATSAPP`: the number they booked with. The default, and what every
+        booking taken before this field existed used.
+        `EMAIL`: the address on the same contact, which then becomes required.
+
+        Only what can actually be delivered is published here. SMS exists in
+        the platform's internal vocabulary and has no adapter and no account
+        behind it, so offering it would be a promise nothing keeps.
+
+        It is a preference and not a guarantee. The platform freezes both
+        addresses it holds onto the message it writes, so one the preferred
+        channel cannot carry is sent by the other where an address for it
+        exists rather than being dropped. What IS guaranteed is the refusal
+        above: `EMAIL` is never accepted without an address to send to.
+
+        A client that does not know a value should treat it as `WHATSAPP`.
+      enum: [WHATSAPP, EMAIL]
 
     PerformerRequest:
       type: object

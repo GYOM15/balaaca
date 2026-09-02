@@ -64,6 +64,38 @@ public class OutboxFixtures {
         return id;
     }
 
+    /**
+     * A row due now, addressed exactly as the arguments say.
+     *
+     * <p>A blank address is not the same as a missing one and both are seeded
+     * here on purpose. ck_notifications_destination only demands that one of
+     * the two columns be NOT NULL, and the empty string satisfies it - so a row
+     * addressed to '' is a row the schema accepts and no transport can deliver,
+     * which is exactly the case the worker has to recognise.
+     */
+    public UUID addressed(UUID providerId, String dedupeKey, String kind,
+                          String preferredChannel, String phone, String email) {
+        UUID id = UUID.randomUUID();
+        run("""
+            INSERT INTO notifications (
+                id, provider_id, recipient_kind, kind, dedupe_key, to_phone_e164, to_email,
+                preferred_channel, locale, payload, scheduled_at, retry_after_at,
+                attempts, max_attempts)
+            VALUES ('%s','%s','CUSTOMER','%s','%s',%s,%s,'%s','fr',
+                    '{"business_name":"Salon Fatou","customer_name":"Mariama B.",
+                      "service_name":"Tresses","duration_minutes":"45",
+                      "starts_at_local":"04/09/2026 10:00",
+                      "booking_reference":"BAL-7C4K-2M9X"}'::jsonb,
+                    now(), now(), 0, 6)
+            """.formatted(id, providerId, kind, dedupeKey, literal(phone), literal(email),
+                          preferredChannel));
+        return id;
+    }
+
+    private static String literal(String value) {
+        return value == null ? "null" : "'" + value + "'";
+    }
+
     private UUID insert(UUID providerId, String dedupeKey, String scheduledAt,
                         String retryAfterAt, int attempts, int maxAttempts) {
         UUID id = UUID.randomUUID();

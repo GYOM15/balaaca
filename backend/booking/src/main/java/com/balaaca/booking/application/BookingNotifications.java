@@ -1,5 +1,6 @@
 package com.balaaca.booking.application;
 
+import com.balaaca.booking.domain.ContactChannel;
 import com.balaaca.booking.domain.CustomerContact;
 import com.balaaca.booking.domain.NotificationKind;
 import com.balaaca.booking.domain.NotificationRecipient;
@@ -61,12 +62,23 @@ public class BookingNotifications {
         this.clock = clock;
     }
 
-    /** Called inside the booking transaction, so these rows commit with it or not at all. */
+    /**
+     * Called inside the booking transaction, so these rows commit with it or
+     * not at all.
+     *
+     * @param customerChannel the customer's own answer, already resolved and
+     *                        already checked against the address it needs. It
+     *                        governs the four CUSTOMER rows and none of the
+     *                        provider's: a salon that published only a mailbox
+     *                        is not reachable on WhatsApp because its customer
+     *                        chose it
+     */
     public void planFor(AppointmentId appointmentId,
                         String bookingReference,
                         Instant startsAt,
                         BookableOffering offering,
-                        CustomerContact customer) {
+                        CustomerContact customer,
+                        ContactChannel customerChannel) {
 
         NoticeProfile provider = providers.currentNoticeProfile();
         Instant now = clock.instant();
@@ -83,16 +95,17 @@ public class BookingNotifications {
         Map<String, String> forProvider = providerPayload(offering, customer, provider, startsAt);
 
         List<PlannedNotification> planned = new ArrayList<>();
-        planned.add(confirmation(appointmentId, startsAt, now, customer, withReference));
+        planned.add(confirmation(appointmentId, startsAt, now, customer, customerChannel,
+                                 withReference));
         provider.noticeDestination()
                 .map(to -> notice(appointmentId, startsAt, now, to, forProvider))
                 .ifPresent(planned::add);
         // A booking taken an hour beforehand owes no day-before reminder. Writing
         // one anyway would make the worker send it the moment it drains, which
         // is a reminder about an appointment the customer is already walking to.
-        reminder(appointmentId, startsAt, DAY_BEFORE, now, customer, forCustomer)
+        reminder(appointmentId, startsAt, DAY_BEFORE, now, customer, customerChannel, forCustomer)
                 .ifPresent(planned::add);
-        reminder(appointmentId, startsAt, HOURS_BEFORE, now, customer, forCustomer)
+        reminder(appointmentId, startsAt, HOURS_BEFORE, now, customer, customerChannel, forCustomer)
                 .ifPresent(planned::add);
 
         outbox.plan(planned);
@@ -125,7 +138,11 @@ public class BookingNotifications {
         provider.noticeDestination().ifPresent(to -> outbox.plan(List.of(
                 new PlannedNotification(changed.id(), kind,
                         NotificationRecipient.PROVIDER,
-                        to.phoneE164(), to.email(), LOCALE,
+                        to.phoneE164(), to.email(),
+                        // The BUSINESS's channel, not the customer's. A salon
+                        // that published only a mailbox is reached there
+                        // whatever its customer asked for.
+                        ContactChannel.reachableAt(to.phoneE164()), LOCALE,
                         // The provider's payload: whose appointment it is, not
                         // whose business. Their own name would tell them
                         // nothing, and the customer's number stays the row's
@@ -153,6 +170,10 @@ public class BookingNotifications {
                 cancelled.id(), kind,
                 NotificationRecipient.CUSTOMER,
                 Optional.of(cancelled.customer().phone().e164()), cancelled.customer().email(),
+                // The appointment's own answer, given when it was booked. This
+                // message is owed days or weeks later, and the address book
+                // has one row per number that every later booking moves.
+                cancelled.preferredChannel(),
                 LOCALE, payload, cancelled.startsAt(), clock.instant())));
     }
 
@@ -175,6 +196,7 @@ public class BookingNotifications {
 
     private static PlannedNotification confirmation(AppointmentId id, Instant startsAt,
                                                     Instant now, CustomerContact customer,
+                                                    ContactChannel channel,
                                                     Map<String, String> payload) {
         // Owed for the appointment's own start, not for now: the key has to be
         // recomputable, and a clock read is the one thing that is not. A
@@ -182,7 +204,7 @@ public class BookingNotifications {
         return new PlannedNotification(id, NotificationKind.BOOKING_CONFIRMATION,
                 NotificationRecipient.CUSTOMER,
                 Optional.of(customer.phone().e164()), customer.email(),
-                LOCALE, payload, startsAt, now);
+                channel, LOCALE, payload, startsAt, now);
     }
 
     private static PlannedNotification notice(AppointmentId id, Instant startsAt, Instant now,
@@ -191,12 +213,14 @@ public class BookingNotifications {
         return new PlannedNotification(id, NotificationKind.BOOKING_NOTICE,
                 NotificationRecipient.PROVIDER,
                 to.phoneE164(), to.email(),
+                ContactChannel.reachableAt(to.phoneE164()),
                 LOCALE, payload, startsAt, now);
     }
 
     private static Optional<PlannedNotification> reminder(AppointmentId id, Instant startsAt,
                                                           Duration before, Instant now,
                                                           CustomerContact customer,
+                                                          ContactChannel channel,
                                                           Map<String, String> payload) {
         Instant owedFor = startsAt.minus(before);
         if (!owedFor.isAfter(now)) {
@@ -205,7 +229,7 @@ public class BookingNotifications {
         return Optional.of(new PlannedNotification(id, NotificationKind.REMINDER,
                 NotificationRecipient.CUSTOMER,
                 Optional.of(customer.phone().e164()), customer.email(),
-                LOCALE, payload, owedFor, owedFor));
+                channel, LOCALE, payload, owedFor, owedFor));
     }
 
     /**

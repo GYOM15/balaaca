@@ -53,7 +53,7 @@ const REFUSALS: Record<string, string> = {
   SLOT_OUTSIDE_AVAILABILITY:
     "Ce créneau n'est plus proposé par le professionnel. Choisissez-en un dans la liste ci-dessous, qui vient d'être rechargée.",
   VALIDATION_FAILED:
-    "Vérifiez le nom et le numéro de téléphone : le professionnel a besoin des deux pour vous accueillir.",
+    "Vérifiez le nom, le numéro de téléphone et, si vous avez demandé l'e-mail, l'adresse : le professionnel a besoin d'un moyen de vous joindre.",
   RATE_LIMITED:
     "Plusieurs personnes ont demandé ce créneau en même temps. Patientez quelques secondes et confirmez à nouveau.",
   RESOURCE_NOT_FOUND:
@@ -73,10 +73,16 @@ const REFUSALS: Record<string, string> = {
  * the same code a missing telephone answers: the catalogue is closed and has no
  * entry that separates them. The offering is what tells them apart here,
  * because only a call-out was ever asked for an address in the first place.
+ *
+ * <p>An e-mail asked for and not given answers the same code again, and this
+ * page cannot tell it from the other two - the refusal arrives carrying a code
+ * and nothing else, and the form that would have said which box was empty is
+ * behind the customer. So both sentences name it as a possibility rather than
+ * a fact.
  */
 function refusalText(code: string, service: PublicServiceOffering | undefined): string {
   if (code === "VALIDATION_FAILED" && service?.fulfilment === "AT_CUSTOMER") {
-    return "Vérifiez le nom, le numéro de téléphone et les indications pour vous trouver : le professionnel a besoin des trois pour se déplacer.";
+    return "Vérifiez le nom, le numéro de téléphone, les indications pour vous trouver et, si vous avez demandé l'e-mail, l'adresse : le professionnel a besoin de tout cela pour se déplacer.";
   }
   return (
     REFUSALS[code] ??
@@ -940,8 +946,11 @@ function DetailsStep({
                 autoComplete="tel"
                 aria-describedby="bk-phone-hint"
               />
+              {/* No longer "par WhatsApp": the sentence below this one is now
+                  the customer's to answer, and a hint that decided it for them
+                  would contradict the choice two panels down. */}
               <p className="field__hint" id="bk-phone-hint">
-                Le prestataire vous joindra par WhatsApp sur ce numéro.
+                Le prestataire vous joindra sur ce numéro.
               </p>
             </div>
 
@@ -960,6 +969,8 @@ function DetailsStep({
             </div>
           </div>
         </div>
+
+        <ChannelChoice />
 
         {/* Where the provider is going, or what happens where they already are.
             The contract refuses an address on anything but a call-out, so the
@@ -1028,6 +1039,127 @@ function DetailsStep({
         ) : null}
       </form>
     </>
+  );
+}
+
+/**
+ * Which way this customer wants to hear about this booking.
+ *
+ * <p>The customer answers, not the business. The provider knows what they
+ * prefer to send; the person at the counter is the only one who knows what
+ * they actually open, and a pharmacy may have somebody in front of it who
+ * reads nothing but WhatsApp.
+ *
+ * <p>WhatsApp is preselected because the contract reads an absent
+ * `preferred_channel` as WhatsApp: the default has to be what every booking
+ * made before this question existed already meant.
+ *
+ * <p>The address is revealed by the vendored island, not by a rule of this
+ * page: section 7 keys off `input[name=…]:checked` inside `data-reveal-group`,
+ * which is exactly what two radios are, so the `:has()` the services screen
+ * had to write for its checkboxes is not needed here.
+ *
+ * <p>It is not `required`, for the same reason the delay on the services
+ * screen is not: with the island running the field is `hidden` when WhatsApp
+ * is chosen, and a browser refuses to submit a form holding an invalid control
+ * it cannot bring into view - which would make booking by WhatsApp impossible
+ * and say nothing on screen about why. An empty box arrives as the
+ * `VALIDATION_FAILED` the contract promises, and that refusal is a sentence
+ * this page already prints. With no JavaScript at all the island never runs,
+ * the field is simply visible, and the star and the hint below it are what
+ * say it is owed.
+ */
+function ChannelChoice() {
+  return (
+    <div className="panel">
+      <div className="panel__head">
+        <div>
+          <div className="panel__title">Comment vous prévenir</div>
+          <div className="panel__sub">
+            La confirmation, le rappel de la veille et tout changement d’horaire
+            partent par le moyen que vous choisissez ici.
+          </div>
+        </div>
+      </div>
+      <div className="card__body">
+        <fieldset
+          style={{ border: 0, padding: 0, margin: 0 }}
+          data-reveal-group="preferred_channel"
+        >
+          <legend className="sr-only">Comment vous prévenir</legend>
+
+          <div className="choice-grid choice-grid--2">
+            <label className="choice">
+              <input
+                type="radio"
+                name="preferred_channel"
+                value="WHATSAPP"
+                defaultChecked
+              />
+              <span className="choice__mark">
+                <Icon name="check-circle" />
+              </span>
+              <span className="choice__head">
+                <span className="choice__icon">
+                  <Icon name="whatsapp" />
+                </span>
+                <span>
+                  <span className="choice__title">WhatsApp</span>
+                  <span className="choice__desc">
+                    Sur le numéro que vous venez d’écrire.
+                  </span>
+                </span>
+              </span>
+            </label>
+
+            <label className="choice">
+              <input type="radio" name="preferred_channel" value="EMAIL" />
+              <span className="choice__mark">
+                <Icon name="check-circle" />
+              </span>
+              <span className="choice__head">
+                <span className="choice__icon">
+                  <Icon name="inbox" />
+                </span>
+                <span>
+                  <span className="choice__title">E-mail</span>
+                  <span className="choice__desc">
+                    Dans votre boîte, et alors rien sur WhatsApp.
+                  </span>
+                </span>
+              </span>
+            </label>
+          </div>
+
+          <div data-reveal-when="EMAIL" style={{ marginTop: "var(--s-5)" }}>
+            <div className="field">
+              <label className="field__label" htmlFor="bk-email">
+                Adresse e-mail{" "}
+                <span className="field__req" aria-hidden="true">
+                  *
+                </span>
+              </label>
+              <input
+                className="input"
+                type="email"
+                id="bk-email"
+                name="email"
+                placeholder="aminata.diallo@exemple.com"
+                maxLength={255}
+                inputMode="email"
+                autoComplete="email"
+                spellCheck={false}
+                aria-describedby="bk-email-hint"
+              />
+              <p className="field__hint" id="bk-email-hint">
+                Obligatoire pour être prévenu par e-mail : sans elle, la
+                réservation est refusée.
+              </p>
+            </div>
+          </div>
+        </fieldset>
+      </div>
+    </div>
   );
 }
 

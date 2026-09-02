@@ -25,12 +25,18 @@ import java.util.Optional;
  *                    stays out of the key
  * @param payload    template variables under stable English keys. No secret,
  *                   and no more of the customer than the message needs
+ * @param preferredChannel how the recipient asked to be reached about this
+ *                   appointment, frozen here with everything else. Both
+ *                   addresses still travel where they exist, so the worker can
+ *                   fall back rather than drop a message it cannot send the
+ *                   preferred way
  */
 public record PlannedNotification(AppointmentId appointmentId,
                                   NotificationKind kind,
                                   NotificationRecipient recipient,
                                   Optional<String> toPhoneE164,
                                   Optional<String> toEmail,
+                                  ContactChannel preferredChannel,
                                   String locale,
                                   Map<String, String> payload,
                                   Instant owedFor,
@@ -40,10 +46,21 @@ public record PlannedNotification(AppointmentId appointmentId,
         Objects.requireNonNull(appointmentId, "appointmentId");
         Objects.requireNonNull(kind, "kind");
         Objects.requireNonNull(recipient, "recipient");
+        Objects.requireNonNull(preferredChannel, "preferredChannel");
         if (toPhoneE164.isEmpty() && toEmail.isEmpty()) {
             // ck_notifications_destination refuses this row anyway. Failing here
             // names the reason; failing there names a constraint.
             throw new IllegalArgumentException("a notification needs a phone or an email");
+        }
+        // And the subtler one ck_notifications_reachable closes: a row whose
+        // preferred channel has no address, which the check above accepts
+        // because the OTHER address is present. Planning that row hands the
+        // worker a decision it was never given the means to make.
+        if (preferredChannel == ContactChannel.WHATSAPP && toPhoneE164.isEmpty()) {
+            throw new IllegalArgumentException("a WhatsApp notification needs a phone");
+        }
+        if (preferredChannel == ContactChannel.EMAIL && toEmail.isEmpty()) {
+            throw new IllegalArgumentException("an email notification needs an email");
         }
         payload = Map.copyOf(payload);
     }
@@ -55,7 +72,9 @@ public record PlannedNotification(AppointmentId appointmentId,
      * while the obsolete one is cancelled in the same transaction.
      *
      * <p>No version and no counter: anything that has to be incremented is
-     * state two racing transactions can disagree about.
+     * state two racing transactions can disagree about. And no channel either:
+     * how a message travels is delivery, not identity, so a key that moved with
+     * it would let one appointment send the same confirmation twice.
      */
     public String dedupeKey() {
         return "appointment:" + appointmentId.value()

@@ -41,7 +41,7 @@ class WhatsAppNotificationChannelTest {
     private static ClaimedNotification notification(String kind) {
         return new ClaimedNotification(
                 UUID.randomUUID(), UUID.randomUUID(), kind,
-                Optional.of("+224622000001"), Optional.empty(), "fr",
+                Optional.of("+224622000001"), Optional.empty(), Channel.WHATSAPP, "fr",
                 """
                 {"business_name":"Salon Fatou","service_name":"Tresses",
                  "starts_at_local":"04/09/2026 10:00","customer_name":"Mariama B."}""",

@@ -55,8 +55,8 @@ public class NotificationOutboxSqlRepository implements NotificationOutbox {
                         ORDER BY scheduled_at
                         LIMIT ?
                         FOR UPDATE SKIP LOCKED)
-                RETURNING id, provider_id, kind, to_phone_e164, to_email, locale,
-                          payload::text, dedupe_key, attempts
+                RETURNING id, provider_id, kind, to_phone_e164, to_email,
+                          preferred_channel, locale, payload::text, dedupe_key, attempts
                 """;
         List<ClaimedNotification> claimed = new ArrayList<>();
         try (Connection c = dataSource.getConnection();
@@ -70,10 +70,16 @@ public class NotificationOutboxSqlRepository implements NotificationOutbox {
                             rs.getString(3),
                             Optional.ofNullable(rs.getString(4)),
                             Optional.ofNullable(rs.getString(5)),
-                            rs.getString(6),
+                            // The column's CHECK admits WHATSAPP and EMAIL, and
+                            // the enum holds SMS as well because channel_used
+                            // does. A value neither knows is a schema this
+                            // build has not seen, and failing here is better
+                            // than defaulting a customer's choice away.
+                            Channel.valueOf(rs.getString(6)),
                             rs.getString(7),
                             rs.getString(8),
-                            rs.getInt(9)));
+                            rs.getString(9),
+                            rs.getInt(10)));
                 }
             }
         } catch (SQLException e) {
@@ -93,6 +99,23 @@ public class NotificationOutboxSqlRepository implements NotificationOutbox {
             s.setString(2, channel.name());
             s.setObject(3, id);
         }, "markSent");
+    }
+
+    @Override
+    public void markDead(UUID id, String failureCode) {
+        // No retry_after_at: the row is not coming back, and leaving the column
+        // where it was keeps a record of when it would next have been tried.
+        update("""
+                UPDATE notifications
+                   SET status     = 'DEAD',
+                       attempts   = attempts + 1,
+                       last_error = ?,
+                       updated_at = now()
+                 WHERE id = ?
+                """, s -> {
+            s.setString(1, failureCode);
+            s.setObject(2, id);
+        }, "markDead");
     }
 
     @Override

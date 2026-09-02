@@ -1,6 +1,7 @@
 package com.balaaca.booking.ports.inbound;
 
 import com.balaaca.booking.domain.AppointmentStatus;
+import com.balaaca.booking.domain.ContactChannel;
 import com.balaaca.booking.domain.CustomerContact;
 import com.balaaca.booking.domain.ServiceAddress;
 import com.balaaca.sharedkernel.ids.AppointmentId;
@@ -81,7 +82,18 @@ public interface ListAppointmentsUseCase {
                         * that happens at the shop - and empty rather than blank,
                         * because a shop appointment carries no address at all.
                         */
-                       java.util.Optional<ServiceAddress> serviceAddress) {
+                       java.util.Optional<ServiceAddress> serviceAddress,
+                       /**
+                        * How the customer asked to be reached about THIS
+                        * appointment, as frozen when it was booked.
+                        *
+                        * <p>Read off the appointment and never off the customer
+                        * row, which holds one entry per telephone number and
+                        * would answer with whatever the person's most recent
+                        * booking said. A cancellation notice owed for a
+                        * September appointment goes the way September agreed.
+                        */
+                       ContactChannel preferredChannel) {
     }
 
     /** @param next empty on the last page */

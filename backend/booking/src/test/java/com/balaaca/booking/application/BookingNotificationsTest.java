@@ -2,6 +2,7 @@ package com.balaaca.booking.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.balaaca.booking.domain.ContactChannel;
 import com.balaaca.booking.domain.CustomerContact;
 import com.balaaca.booking.domain.NotificationKind;
 import com.balaaca.booking.domain.NotificationRecipient;
@@ -78,6 +79,12 @@ class BookingNotificationsTest {
         return new CustomerContact("Mariama B.", new PhoneNumber("+224622000001"), Optional.empty());
     }
 
+    /** The pharmacist's customer: a number and an address, and a preference. */
+    private static CustomerContact reachableByEmail() {
+        return new CustomerContact("Mariama B.", new PhoneNumber("+224622000001"),
+                                   Optional.of("mariama@example.gn"));
+    }
+
     private BookingNotifications plannerFor(NoticeProfile profile) {
         LookupNoticeProfileUseCase providers = () -> profile;
         return new BookingNotifications(providers, outbox,
@@ -94,8 +101,21 @@ class BookingNotificationsTest {
                                  Optional.empty());
     }
 
+    /** A pharmacy that published a mailbox and no number. */
+    private static NoticeProfile reachableByEmailOnly() {
+        return new NoticeProfile("Pharmacie du Port", ZoneId.of("Africa/Conakry"), "GN",
+                Optional.of(new NoticeDestination(Optional.empty(),
+                                                  Optional.of("contact@example.gn"))));
+    }
+
     private List<PlannedNotification> planFor(NoticeProfile profile, Instant startsAt) {
-        plannerFor(profile).planFor(APPOINTMENT, REFERENCE, startsAt, offering(), customer());
+        return planFor(profile, startsAt, customer(), ContactChannel.WHATSAPP);
+    }
+
+    private List<PlannedNotification> planFor(NoticeProfile profile, Instant startsAt,
+                                              CustomerContact customer, ContactChannel channel) {
+        plannerFor(profile).planFor(APPOINTMENT, REFERENCE, startsAt, offering(), customer,
+                                    channel);
         return outbox.planned;
     }
 
@@ -223,6 +243,52 @@ class BookingNotificationsTest {
                     .containsExactly(NotificationKind.BOOKING_CONFIRMATION,
                                      NotificationKind.BOOKING_NOTICE);
         }
+    }
+
+    @Test
+    @DisplayName("The customer's choice governs every message they are owed, and none of the salon's")
+    void theChoiceReachesEveryCustomerRow() {
+        List<PlannedNotification> planned = planFor(reachable(),
+                Instant.parse("2026-09-04T10:00:00Z"), reachableByEmail(), ContactChannel.EMAIL);
+
+        // Confirmation and both reminders. A reminder that arrived by WhatsApp
+        // for a booking confirmed by e-mail would be the platform overruling
+        // the only person who knows what they read.
+        assertThat(planned).filteredOn(n -> n.recipient() == NotificationRecipient.CUSTOMER)
+                .hasSize(3)
+                .allSatisfy(n -> {
+                    assertThat(n.preferredChannel()).isEqualTo(ContactChannel.EMAIL);
+                    // Both addresses still travel: the worker cannot read the
+                    // appointment, so this row is all it has to fall back on.
+                    assertThat(n.toEmail()).contains("mariama@example.gn");
+                    assertThat(n.toPhoneE164()).contains("+224622000001");
+                });
+
+        // The salon published a number and did not ask for anything.
+        assertThat(planned).filteredOn(n -> n.recipient() == NotificationRecipient.PROVIDER)
+                .singleElement()
+                .satisfies(n -> assertThat(n.preferredChannel())
+                        .isEqualTo(ContactChannel.WHATSAPP));
+    }
+
+    @Test
+    @DisplayName("A salon that published only a mailbox is written to at its mailbox")
+    void theNoticeFollowsWhatTheBusinessPublished() {
+        assertThat(planFor(reachableByEmailOnly(), Instant.parse("2026-09-04T10:00:00Z")))
+                .filteredOn(n -> n.recipient() == NotificationRecipient.PROVIDER)
+                .singleElement()
+                .satisfies(n -> {
+                    assertThat(n.preferredChannel()).isEqualTo(ContactChannel.EMAIL);
+                    assertThat(n.toPhoneE164()).isEmpty();
+                });
+    }
+
+    @Test
+    @DisplayName("A booking that asked for nothing is planned on WhatsApp, as every earlier one was")
+    void theDefaultIsWhatsApp() {
+        assertThat(planFor(reachable(), Instant.parse("2026-09-04T10:00:00Z")))
+                .extracting(PlannedNotification::preferredChannel)
+                .containsOnly(ContactChannel.WHATSAPP);
     }
 
     @Test

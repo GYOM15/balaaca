@@ -157,8 +157,12 @@ public class CustomerSqlRepository implements CustomerRepository {
     }
 
     private static CustomerContact contact(Object name, Object phone, Object email) {
+        // email is citext, which the driver hands back as its own object and
+        // not as a String. The cast that used to stand here held only because
+        // the column was always null: every address book entry for a customer
+        // who had given an address would have answered 500.
         return new CustomerContact((String) name, new PhoneNumber((String) phone),
-                                   Optional.ofNullable((String) email));
+                                   Optional.ofNullable(email).map(Object::toString));
     }
 
     private static Instant instant(Object value) {

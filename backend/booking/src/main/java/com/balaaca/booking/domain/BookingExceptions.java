@@ -213,6 +213,32 @@ public final class BookingExceptions {
         }
     }
 
+    /**
+     * E-mail was chosen and no address was given.
+     *
+     * <p>400 and at the edge, because the alternative is the failure this is
+     * here to prevent: the booking succeeds, four notification rows are written
+     * with nothing in {@code to_email}, and the worker discovers it hours later
+     * on a scheduled thread with nobody to answer. What the customer sees is a
+     * confirmation that never arrives.
+     *
+     * <p>{@code VALIDATION_FAILED} rather than a code of its own. The catalogue
+     * is closed, and this is what it means: the body is internally inconsistent
+     * and the caller can fix it by sending an address or by not asking for
+     * e-mail.
+     *
+     * <p>Nothing identifying is carried. The refusal is about a field that is
+     * missing, and naming the address that is not there would be repeating a
+     * personal datum for no diagnostic gain.
+     */
+    public static final class EmailChannelWithoutAddressException extends DomainException {
+        public EmailChannelWithoutAddressException() {
+            super("VALIDATION_FAILED", 400,
+                  "An email address is required to be contacted by email",
+                  Map.of("preferred_channel", "EMAIL"));
+        }
+    }
+
     /** A commune the published map does not hold. */
     public static final class UnknownServiceLocalityException extends DomainException {
         public UnknownServiceLocalityException(String slug) {
