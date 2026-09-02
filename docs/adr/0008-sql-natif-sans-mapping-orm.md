@@ -1,4 +1,4 @@
-# ADR-0008 — SQL natif dans les adaptateurs, sans mapping ORM
+# ADR-0008 - SQL natif dans les adaptateurs, sans mapping ORM
 
 Statut : Accepte
 Amende la regle 9 du skill `backend-naming`, qui decrivait des types `@Entity`
@@ -36,8 +36,8 @@ Un ORM ne simplifierait aucun de ces cinq points. Il se battrait contre les cinq
 (`quarkus.hibernate-orm.schema-management.strategy=none`).
 
 Hibernate ORM reste une dependance, pour trois choses et pas une de plus :
-fournir l'`EntityManager`, prendre la connexion Agroal — sur laquelle
-`TenantGucPoolInterceptor` pose le GUC de tenant — et porter la frontiere
+fournir l'`EntityManager`, prendre la connexion Agroal - sur laquelle
+`TenantGucPoolInterceptor` pose le GUC de tenant - et porter la frontiere
 transactionnelle JTA. `quarkus-hibernate-orm-panache` est remplace par
 `quarkus-hibernate-orm` : l'API Panache n'etait utilisee nulle part.
 
@@ -57,8 +57,7 @@ ligne. Un `*SqlRepository` reste le seul endroit qui sait qu'une colonne existe.
 
 ## Consequences
 
-Positives : les invariants restent la ou ils sont verifiables — dans la base —
-et le code qui les appelle les nomme explicitement. Aucune couche ne reecrit une
+Positives : les invariants restent la ou ils sont verifiables - dans la base - et le code qui les appelle les nomme explicitement. Aucune couche ne reecrit une
 requete dont la forme est le point. Un `EXPLAIN` porte sur ce qui est reellement
 envoye. Une extension de moins a demarrer.
 
@@ -79,7 +78,7 @@ Negatives, et elles sont reelles :
 ## A revisiter quand
 
 Un contexte apparait dont les regles tiennent entierement dans du CRUD portable,
-sans contrainte d'exclusion, sans RLS et sans `ON CONFLICT` — `identity` ou
+sans contrainte d'exclusion, sans RLS et sans `ON CONFLICT` - `identity` ou
 `billing` sont les candidats plausibles. L'ADR ne serait alors pas contourne
 pour une table : il serait remplace par un ADR qui delimite explicitement ou le
 mapping s'applique et ou il ne s'applique pas.

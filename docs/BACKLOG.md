@@ -14,7 +14,7 @@ rendez-vous en rafraichissant une page.
 Il faudra : `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN` (utilisateur
 systeme), `WHATSAPP_BUSINESS_ACCOUNT_ID`, quatre modeles approuves avec l'ordre
 de leurs parametres, et la decision **numero Balaaca ou numero du salon**
-(recommandation : Balaaca — un seul compte a verifier, un seul quota a
+(recommandation : Balaaca - un seul compte a verifier, un seul quota a
 surveiller, et un salon qui part n'emporte pas le numero).
 
 Prendre le temps qu'il faut : c'est un abonnement payant et une verification
@@ -42,7 +42,7 @@ compte **sans** salon peut sonder les poignees, exactement comme n'importe quel
 formulaire d'inscription qui repond « ce nom est pris ».
 
 Le fermer demande une limite de debit, pas une erreur differente. `RATE_LIMITED`
-(429) est deja publie et deja leve — mais pour la **contention** de reservation
+(429) est deja publie et deja leve - mais pour la **contention** de reservation
 (`BookingContendedException`), ce qui est un autre sujet : une limite
 d'inscription aurait besoin d'un compteur, et Redis est deja dans la compose
 pour cela.

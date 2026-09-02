@@ -701,7 +701,7 @@ function Reference({ reference }: { reference: string }) {
       <div className="card__body">
         <p className="t-sm" style={{ maxWidth: "52ch" }}>
           Gardez-la : sans compte, c’est elle qui rouvre ce rendez-vous. Vous
-          pouvez la dicter telle quelle — majuscules ou minuscules, avec ou sans
+          pouvez la dicter telle quelle : majuscules ou minuscules, avec ou sans
           le tiret, c’est la même référence.
         </p>
       </div>

@@ -7,7 +7,7 @@ the whole procedure: no code names them any other way than by this path.
 |---|---|---|
 | `logo.png` | ivory | header, footer |
 | `logo-inverse.png` | deep green | dashboard sidebar, a provider's cover band |
-| `favicon-512.png` | — | browser tab, a phone's home screen |
+| `favicon-512.png` | - | browser tab, a phone's home screen |
 
 ## Where these came from, and what they cannot do
 

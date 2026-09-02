@@ -41,7 +41,7 @@ const REFUSALS: Record<string, string> = {
   SLOT_UNAVAILABLE:
     "Cette chaise est déjà prise à cette heure-là. Choisissez une autre heure, ou une autre personne.",
   INVALID_STATE_TRANSITION:
-    "Ce rendez-vous a changé entre-temps — quelqu’un l’a confirmé, terminé ou annulé pendant que vous lisiez. Rechargez la page pour voir où il en est.",
+    "Ce rendez-vous a changé entre-temps : quelqu’un l’a confirmé, terminé ou annulé pendant que vous lisiez. Rechargez la page pour voir où il en est.",
   // Moving obeys the published hours; the counter does not. Saying which is
   // the difference between a rule and a bug.
   SLOT_OUTSIDE_AVAILABILITY:
@@ -625,11 +625,11 @@ export default async function Agenda({
                     </div>
                     <div className="row row--between">
                       <span className="t-sm">Première arrivée</span>
-                      <span className="t-h4">{hours ? time(hours.first, zone) : "—"}</span>
+                      <span className="t-h4">{hours ? time(hours.first, zone) : "·"}</span>
                     </div>
                     <div className="row row--between">
                       <span className="t-sm">Dernier départ</span>
-                      <span className="t-h4">{hours ? time(hours.last, zone) : "—"}</span>
+                      <span className="t-h4">{hours ? time(hours.last, zone) : "·"}</span>
                     </div>
                   </div>
                 </div>

@@ -1,4 +1,4 @@
-# ADR-0009 — Inscription autonome : creer un tenant avant qu'un tenant existe
+# ADR-0009 - Inscription autonome : creer un tenant avant qu'un tenant existe
 
 Statut : Accepte
 Complete l'ADR-0002, qui a resolu la lecture du tenant et laisse l'ecriture
@@ -13,7 +13,7 @@ a travers `users` et `provider_staff`. Il a casse la circularite de la
 Il reste que rien ne cree ces lignes. La politique du tenant sur `providers`
 porte `WITH CHECK (id = app_current_provider())` : sans GUC lie, le predicat
 vaut `NULL` et n'admet aucune ligne. Le resultat est une impasse complete et
-silencieuse — verifiee sur PostgreSQL 18.6 :
+silencieuse - verifiee sur PostgreSQL 18.6 :
 
 1. un salon s'inscrit dans Keycloak, l'auto-inscription etant ouverte ;
 2. il obtient un jeton parfaitement valide ;
@@ -21,8 +21,8 @@ silencieuse — verifiee sur PostgreSQL 18.6 :
    repond 403 ;
 4. aucun role ne peut executer l'`INSERT` qui le sortirait de la.
 
-Toute la surface authentifiee — agenda, catalogue, horaires, annulation,
-report — etait donc inatteignable par quiconque de nouveau. Ce n'etait pas une
+Toute la surface authentifiee - agenda, catalogue, horaires, annulation,
+report - etait donc inatteignable par quiconque de nouveau. Ce n'etait pas une
 fonctionnalite manquante mais un mur devant le produit.
 
 Trois options ont ete pesees.
@@ -67,7 +67,7 @@ Trois points portent la securite, et aucun n'est une preference de style.
    deviennent `Z0002`. Tout le reste est re-leve tel quel.
 
 `POST /v1/providers` est en consequence `@Authenticated` et **pas**
-`@TenantBound` — la seule route de la plateforme dans ce cas — et ne declare
+`@TenantBound` - la seule route de la plateforme dans ce cas - et ne declare
 aucun scope : un scope dit ce qu'un appelant peut faire *dans son propre
 prestataire*, et il n'en a pas encore.
 

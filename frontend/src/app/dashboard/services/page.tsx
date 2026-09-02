@@ -59,7 +59,7 @@ const PHOTO_REFUSALS: Record<string, string> = {
   NO_FILE: "Choisissez une photo avant d’envoyer.",
   NOT_AN_IMAGE: "Seuls le JPEG et le PNG sont acceptés.",
   TOO_LARGE:
-    "Cette photo dépasse 5 Mo. Renvoyez-la en plus petit — votre téléphone sait la réduire au partage.",
+    "Cette photo dépasse 5 Mo. Renvoyez-la en plus petit : votre téléphone sait la réduire au partage.",
   PHOTOS_FULL:
     "Cette prestation porte déjà cinq photos, et cinq est le maximum. Retirez-en une pour faire de la place.",
   FORBIDDEN: "Seul le propriétaire modifie le catalogue.",
@@ -468,7 +468,7 @@ function Row({ service }: { service: ServiceOffering }) {
   );
 }
 
-/** "3 h", "2 h 30", "45 min" — a length as a provider says it out loud. */
+/** "3 h", "2 h 30", "45 min": a length as a provider says it out loud. */
 function durationLabel(minutes: number): string {
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;

@@ -1,4 +1,4 @@
-# ADR-0006 — `main` + `develop` + branches de feature
+# ADR-0006 - `main` + `develop` + branches de feature
 
 Statut : Accepte
 Renverse la regle 5 du skill herite `branch-naming`.
@@ -15,8 +15,7 @@ branche de developpement sur laquelle pousser en continu.
 ## Decision
 
 - `main` : branche de release, toujours livrable.
-- `develop` : branche d'integration, et branche par defaut du depot GitHub —
-  de sorte qu'une pull request cible `develop` sans action particuliere.
+- `develop` : branche d'integration, et branche par defaut du depot GitHub - de sorte qu'une pull request cible `develop` sans action particuliere.
 - `feature/<kebab-slug>`, plus `fix/`, `chore/`, `docs/`, `ci/`.
 - Une branche est coupee depuis `develop` et y retourne par pull request.
 - `develop` est promue vers `main` aux jalons de phase.

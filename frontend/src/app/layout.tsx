@@ -42,7 +42,7 @@ export const metadata: Metadata = {
     apple: "/brand/favicon-512.png",
   },
   title: {
-    default: "Balaaca — trouver un professionnel",
+    default: "Balaaca, trouver un professionnel",
     // Every page says what it is; the tab of a provider's page must read the
     // salon's name, not "Balaaca". A link shared on WhatsApp is often the
     // first thing anyone sees of this product.

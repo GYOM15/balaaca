@@ -1,4 +1,4 @@
-# ADR-0005 — Aucun paiement construit maintenant, coutures preparees
+# ADR-0005 - Aucun paiement construit maintenant, coutures preparees
 
 Statut : Accepte
 
@@ -32,8 +32,8 @@ relancer, traiter les webhooks), a faible frequence et a I/O externe.
 Les **droits restent in-process** dans le contexte `billing` du monolithe. Les
 externaliser transformerait chaque `POST /services` en appel reseau synchrone :
 une panne du module le moins critique bloquerait la creation de prestations,
-ou ouvrirait les quotas. Le contournement habituel — mettre le plan en cache
-dans le core — revient exactement a le garder dans le core, avec en plus la
+ou ouvrirait les quotas. Le contournement habituel - mettre le plan en cache
+dans le core - revient exactement a le garder dans le core, avec en plus la
 machinerie de synchronisation.
 
 L'**encaissement** pourra devenir un deployable separe. Mais alors la couture
@@ -48,7 +48,7 @@ fait de Balaaca un intermediaire de paiement : agrement BCRG, KYC/LCB-FT,
 comptes clients segregues. Le chemin realiste est un PSP qui gere lui-meme la
 capture differee ou le paiement fractionne, la plateforme orchestrant sans etre
 depositaire. Si les fonds ne sont jamais detenus, aucun grand livre de soldes
-clients n'est necessaire — ce qui supprime le principal argument en faveur d'un
+clients n'est necessaire - ce qui supprime le principal argument en faveur d'un
 service separe.
 
 ## Ce qui est fait des maintenant
@@ -72,8 +72,7 @@ Uniquement ce qui coute zero aujourd'hui et cher plus tard :
 Positives : aucune architecture fantome. La decision de topologie est reportee
 au moment ou les faits seront connus.
 
-Negatives : la faisabilite du sequestre depend de capacites PSP non verifiees —
-notamment de savoir si un rail mobile money guineen autorise une autorisation
+Negatives : la faisabilite du sequestre depend de capacites PSP non verifiees - notamment de savoir si un rail mobile money guineen autorise une autorisation
 sans debit immediat. Cette investigation est deliberement reportee au moment de
 l'implementation.
 

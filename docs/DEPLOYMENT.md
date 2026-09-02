@@ -61,7 +61,7 @@ HINT:  This migration adds a role the cluster predates. Re-run
 1. `git pull` sur la machine cible.
 2. **`bootstrap.sh`** (ci-dessus). Toujours, meme si rien ne semble avoir change.
 3. Reconstruire et redemarrer : Flyway applique les migrations au demarrage.
-4. `infrastructure/keycloak/smoke.sh` — verifie qu'un vrai jeton porte un `sub`,
+4. `infrastructure/keycloak/smoke.sh` - verifie qu'un vrai jeton porte un `sub`,
    la bonne audience et les scopes attendus. Un realm qui demarre n'est pas un
    realm qui fonctionne.
 
@@ -91,7 +91,7 @@ Enonce ici plutot que decouvert un dimanche :
   manuel.
 - **aucune sauvegarde documentee.** Il n'y a ni `pg_dump` planifie, ni
   restauration testee.
-- **aucune alerte** sur les notifications passees en `DEAD` — au sens d'un
+- **aucune alerte** sur les notifications passees en `DEAD` - au sens d'un
   systeme d'alerte. Le worker journalise desormais chaque mort en `ERROR`, avec
   le `provider_id`, le type et la cle de deduplication (jamais le destinataire),
   ce qui suffit a une recherche mais pas a reveiller quelqu'un :

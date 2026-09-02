@@ -23,7 +23,7 @@ nulle part une devise, un indicatif telephonique ou un fuseau unique.
 |---|---|
 | Backend | Java 21, Quarkus, monolithe modulaire hexagonal, Maven |
 | Base de donnees | PostgreSQL 16, migrations Flyway, Row-Level Security forcee |
-| Identite | Keycloak (OIDC) — aucun mot de passe n'est stocke par l'application |
+| Identite | Keycloak (OIDC) - aucun mot de passe n'est stocke par l'application |
 | Cache / limites | Redis (cache, rate limiting, idempotence) |
 | Frontend | Next.js (App Router), TypeScript, BFF a cookie httpOnly |
 | Asynchrone | `notification-worker`, deployable separe |
@@ -33,10 +33,10 @@ nulle part une devise, un indicatif telephonique ou un fuseau unique.
 
 ```
 balaaca/
-├── backend/              # Quarkus — monolithe modulaire (source de verite metier)
-├── frontend/             # Next.js — pages publiques, tableau de bord, back-office
+├── backend/              # Quarkus - monolithe modulaire (source de verite metier)
+├── frontend/             # Next.js - pages publiques, tableau de bord, back-office
 ├── notification-worker/  # draine la table notifications et envoie
-├── chatbot-service/      # squelette, appelle l'API metier — jamais la base
+├── chatbot-service/      # squelette, appelle l'API metier - jamais la base
 ├── infrastructure/       # docker, nginx, keycloak, postgres
 ├── docs/                 # architecture, base de donnees, securite, ADR
 └── .claude/skills/       # conventions d'ingenierie appliquees au projet
@@ -75,7 +75,7 @@ l'initialisation du volume, et cree quatre roles de moindre privilege :
 | Role | Usage | Attributs |
 |---|---|---|
 | `balaaca_migrator` | proprietaire du schema, execute Flyway | jamais utilise a l'execution |
-| `balaaca_app` | la connexion applicative | ni proprietaire, ni `BYPASSRLS` — sinon le RLS serait inerte |
+| `balaaca_app` | la connexion applicative | ni proprietaire, ni `BYPASSRLS` - sinon le RLS serait inerte |
 | `balaaca_resolver` | proprietaire des fonctions `SECURITY DEFINER` de resolution de tenant | `NOLOGIN` : jamais connecte, seulement incarne |
 | `balaaca_registrar` | proprietaire de la seule fonction qui cree un prestataire | `NOLOGIN`, et distinct du resolver : « qui peut faire naitre un salon » a une seule reponse |
 | `balaaca_notification_worker` | le worker de notifications | restreint a sa table |
@@ -83,7 +83,7 @@ l'initialisation du volume, et cree quatre roles de moindre privilege :
 Le script est **idempotent** : chaque role n'est cree que s'il est absent, et le
 mot de passe d'un role existant n'est jamais reapplique. Sur un VPS,
 l'initialisation du conteneur ne s'execute que sur un repertoire de donnees
-vide, donc **il faut le rejouer a la main avant chaque deploiement** — une
+vide, donc **il faut le rejouer a la main avant chaque deploiement** - une
 migration qui a besoin d'un role nouveau echoue sinon, et l'application ne
 demarre pas. Voir
 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
@@ -139,7 +139,7 @@ balaaca.notification.channel=console
 Il n'y a pas de valeur par defaut, et c'est voulu. Le seul canal existant
 aujourd'hui ecrit dans le log et n'envoie rien : un worker qui marquerait des
 lignes `SENT` que personne n'a recues serait pire qu'un worker qui refuse de
-demarrer. Aucune passerelle reelle n'est branchee — WhatsApp Business ou
+demarrer. Aucune passerelle reelle n'est branchee - WhatsApp Business ou
 agregateur SMS est une decision commerciale, pas un detail de code.
 
 Sur **macOS avec Docker Desktop**, Testcontainers reste bloque a la decouverte
@@ -226,16 +226,16 @@ importe par compose au demarrage. Une configuration d'identite que personne ne
 peut recreer pose le meme probleme qu'un schema sans migrations.
 
 Trois clients : `balaaca-backend` (serveur de ressources, ne connecte personne),
-`balaaca-frontend` (confidentiel, pilote par le BFF Next.js — le code n'est
+`balaaca-frontend` (confidentiel, pilote par le BFF Next.js - le code n'est
 jamais echange dans le navigateur), et `balaaca-dev-cli` (public, password
-grant, **developpement local uniquement** — un realm de production est
+grant, **developpement local uniquement** - un realm de production est
 provisionne separement et ne le porte pas).
 
 Le fichier est un **template** : `balaaca-frontend` est confidentiel, et un
 secret dans un fichier committe est un secret. `init-realm.sh` remplit les
 marqueurs `__VARIABLE__` depuis l'environnement au demarrage, echoue si une
 variable requise manque, et refuse de demarrer s'il reste un marqueur non
-resolu — sans quoi le realm importerait le marqueur litteral comme secret.
+resolu - sans quoi le realm importerait le marqueur litteral comme secret.
 
 Le meme script fait ensuite ce que `--import-realm` ne sait pas faire :
 
@@ -249,7 +249,7 @@ Le meme script fait ensuite ce que `--import-realm` ne sait pas faire :
 
 La sonde du conteneur attend un sentinelle ecrit en toute fin de configuration,
 pas seulement `/health/ready` : celui-ci passe au vert des le demarrage du
-serveur, quelques secondes avant que les scopes existent — assez pour qu'un
+serveur, quelques secondes avant que les scopes existent - assez pour qu'un
 service dependant obtienne un jeton sans scope et le garde en cache pendant
 toute sa duree de vie.
 
@@ -263,7 +263,7 @@ jeton que l'API peut reellement utiliser :
 Elle existe parce qu'un import de realm peut reussir en etant faux. Declarer
 `clientScopes` dans un fichier de realm **remplace** l'ensemble integre de
 Keycloak au lieu de s'y ajouter, et le scope integre `basic` est celui qui porte
-le claim `sub`. Sans lui, chaque jeton est valide, bien signe — et sans sujet,
+le claim `sub`. Sans lui, chaque jeton est valide, bien signe - et sans sujet,
 donc la resolution du tenant ne trouve personne et tout appel authentifie repond
 403. C'est exactement ce qui s'est passe a la premiere ecriture de ce realm.
 
@@ -294,7 +294,7 @@ job ne demarre pas si le precedent est rouge.
 
 | Job | Verifie |
 |---|---|
-| `secrets` | `gitleaks` sur l'**historique complet** — un secret retire dans un commit ulterieur reste compromis |
+| `secrets` | `gitleaks` sur l'**historique complet** - un secret retire dans un commit ulterieur reste compromis |
 | `lint` | `shellcheck` sur les hooks et le bootstrap ; validite du `docker-compose.yml` ; **toute variable referencee par compose est presente dans `.env.example`** ; et le hook `commit-msg` applique toujours la convention |
 | `dependencies` | OSV-Scanner, sans cle d'API |
 
@@ -315,7 +315,7 @@ request egalement**.
 
 Les deux branches sont protegees cote serveur : pull request obligatoire, les
 trois checks de CI exiges, force-push et suppression refuses, et
-`enforce_admins` actif — le proprietaire du depot y est soumis comme tout le
+`enforce_admins` actif - le proprietaire du depot y est soumis comme tout le
 monde. Un push direct est rejete avec `GH006`, meme avec `--no-verify`.
 
 ## Documentation

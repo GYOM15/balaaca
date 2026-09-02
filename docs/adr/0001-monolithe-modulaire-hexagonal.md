@@ -1,4 +1,4 @@
-# ADR-0001 — Monolithe modulaire hexagonal plutot que microservices
+# ADR-0001 - Monolithe modulaire hexagonal plutot que microservices
 
 Statut : Accepte
 

@@ -1,4 +1,4 @@
-# ADR-0007 — Instants en UTC, regles recurrentes en heure locale
+# ADR-0007 - Instants en UTC, regles recurrentes en heure locale
 
 Statut : Accepte
 
@@ -33,7 +33,7 @@ manipulee comme une `String`.
 `providers.timezone` a `Africa/Conakry` par defaut mais n'est jamais suppose :
 le produit vise d'autres marches.
 
-Le calcul de creneaux est une **fonction pure** — regles, exceptions,
+Le calcul de creneaux est une **fonction pure** - regles, exceptions,
 rendez-vous existants, duree et tampons de la prestation, politique, plage,
 fuseau, instant courant en entree ; liste de creneaux en sortie. Aucune
 dependance JPA, aucun acces reseau, donc testable exhaustivement.

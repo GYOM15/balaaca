@@ -158,7 +158,7 @@ export default async function Team({
             <div style={{ marginBottom: "var(--s-5)" }}>
               <Notice tone="success" title="Le salon a changé de propriétaire">
                 {query.given} est désormais propriétaire. Vous gardez votre chaise, vos
-                horaires et vos rendez-vous — mais seul {query.given} peut vous rendre le
+                horaires et vos rendez-vous, mais seul {query.given} peut vous rendre le
                 salon.
               </Notice>
             </div>
@@ -168,7 +168,7 @@ export default async function Team({
             <div style={{ marginBottom: "var(--s-5)" }}>
               <Notice
                 tone="success"
-                title="Le code est prêt — à vous de le transmettre"
+                title="Le code est prêt, à vous de le transmettre"
                 icon="shield"
               >
                 Rien n’est envoyé, personne n’a été prévenu. Copiez le code et le
@@ -202,7 +202,7 @@ export default async function Team({
                 <div className="t-xs" style={{ marginTop: "var(--s-3)" }}>
                   Affiché une seule fois
                   {until ? `, et valable jusqu’au ${until}` : ""}. En créer un autre
-                  remplace celui-ci — c’est aussi comme ça qu’on le révoque.
+                  remplace celui-ci : c’est aussi comme ça qu’on le révoque.
                 </div>
               </Notice>
             </div>
@@ -345,7 +345,7 @@ export default async function Team({
                   <p>
                     <strong className="t-strong">Rien ne lui sera envoyé.</strong> Vous
                     l’ajoutez ici, puis vous créez son code depuis sa ligne et vous le
-                    lui transmettez vous-même — WhatsApp, SMS, de vive voix. Elle le
+                    lui transmettez vous-même : WhatsApp, SMS, de vive voix. Elle le
                     saisira sur {JOIN}.
                   </p>
                   <div style={{ marginTop: "var(--s-5)" }}>

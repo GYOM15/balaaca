@@ -60,7 +60,14 @@ class StaffInvitationIT {
     void mintsACode() {
         String code = inviteANewChair("Mariama");
 
-        assertThat(code).isNotBlank().hasSize(43);
+        // Three initials, a hyphen, eight characters of the thirty-one a person
+        // does not mishear. Asserted as a SHAPE and not a length: the point of
+        // V045 is that the owner can say this down a telephone, and a bare
+        // hasSize() would still pass for 43 characters of base64url.
+        assertThat(code).isNotBlank()
+                .matches("^[A-Z0-9]{3}-[2-9A-HJKMNP-Z]{8}$");
+        // SALON is "Salon Fatou" in the fixtures.
+        assertThat(code).startsWith("SFA-");
     }
 
     @Test

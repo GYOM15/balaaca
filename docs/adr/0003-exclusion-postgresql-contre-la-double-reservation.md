@@ -1,4 +1,4 @@
-# ADR-0003 — Contrainte d'exclusion PostgreSQL contre la double reservation
+# ADR-0003 - Contrainte d'exclusion PostgreSQL contre la double reservation
 
 Statut : Accepte
 Verifie empiriquement sur PostgreSQL 18.6 le 2026-08-29.
@@ -13,7 +13,7 @@ plus critique du produit : le violer detruit la confiance du prestataire, et
 aucune compensation ne repare un client qui se presente pour rien.
 
 Les protections envisageables etaient : une verification applicative avant
-insertion (inoperante — deux requetes concurrentes la passent toutes les deux),
+insertion (inoperante - deux requetes concurrentes la passent toutes les deux),
 un verrou Redis (Redlock n'est pas un algorithme de verrou sur), un
 `SELECT ... FOR UPDATE` sur une ligne de creneau (impose de materialiser tous
 les creneaux), ou une contrainte de base.
@@ -88,7 +88,7 @@ Interdits : aucun verrou Redis, aucun verrou consultatif, aucun
 `SELECT ... FOR UPDATE` pour l'exclusion de creneau. La violation `23P01` est
 traduite en `409 SLOT_UNAVAILABLE`, jamais en trace d'exception.
 
-### Correction 1 — la plage vide neutralisait la contrainte
+### Correction 1 - la plage vide neutralisait la contrainte
 
 Verifie : avec `blocked_from = blocked_until`, `tstzrange` produit la plage
 **vide**, et en PostgreSQL l'operateur `&&` est **faux** contre tout. Un nombre
@@ -100,12 +100,12 @@ n'importe quel bug de calcul de creneau. `ck_appointments_block_nonempty` et
 initiale s'en protegeait seulement par transitivite ; la transitivite ne survit
 pas a la premiere modification de schema.
 
-### Correction 2 — la plage bloquee doit etre derivable, pas declarative
+### Correction 2 - la plage bloquee doit etre derivable, pas declarative
 
 La faille la plus grave. `blocked_from` et `blocked_until` sont ecrits par
 l'application : rien ne les reliait a `starts_at`, `ends_at` ni aux tampons. Un
-appelant declarant une plage etroite — `blocked_from = starts_at`,
-`blocked_until = starts_at + 1 minute` pour une coupe d'une heure — obtenait un
+appelant declarant une plage etroite - `blocked_from = starts_at`,
+`blocked_until = starts_at + 1 minute` pour une coupe d'une heure - obtenait un
 succes et laissait 59 minutes non protegees. La promesse « la garantie tient
 pour tout chemin de code » etait donc fausse : elle ne tenait que contre la
 plage que l'ecrivain voulait bien declarer.
@@ -119,19 +119,19 @@ s'appuie sur une asymetrie de PostgreSQL, verifiee dans les deux sens :
 
 C'est precisement pourquoi `blocked_from` et `blocked_until` sont des colonnes
 ordinaires calculees par l'application, tandis que seul `blocked_range` est
-genere — et pourquoi la derivation peut malgre tout etre imposee par une
+genere - et pourquoi la derivation peut malgre tout etre imposee par une
 `CHECK`.
 
-### Correction 3 — les FK composites exigent un UNIQUE sur la cible
+### Correction 3 - les FK composites exigent un UNIQUE sur la cible
 
 Verifie : sans `UNIQUE (provider_id, id)` sur la table referencee, la migration
 echoue avec `42830`. `provider_staff`, `service_offerings`, `customers` et
 `appointments` elle-meme le declarent donc.
 
-### Correction 4 — « n'importe quel employe » ne doit pas renvoyer 409
+### Correction 4 - « n'importe quel employe » ne doit pas renvoyer 409
 
-Bug produit, pas bug technique. Le serveur choisit un employe concret — par
-exemple le moins charge — avant d'inserer. Sous concurrence, **tous les
+Bug produit, pas bug technique. Le serveur choisit un employe concret - par
+exemple le moins charge - avant d'inserer. Sous concurrence, **tous les
 concurrents calculent le meme candidat**. Cinq demandes simultanees dans un
 salon a cinq fauteuils libres : une reussit, quatre s'entendent dire que le
 creneau est pris.
@@ -145,18 +145,18 @@ La reponse depend de qui a choisi l'employe :
   tous sont pris.
 
 Le test de concurrence initial ne pouvait pas voir ce defaut : il n'utilisait
-qu'un seul employe. Un second test est obligatoire — N employes, N demandes
+qu'un seul employe. Un second test est obligatoire - N employes, N demandes
 « n'importe qui » simultanees, N succes sur N employes distincts.
 
-### Correction 5 — la justification de la cle d'exclusion etait fausse
+### Correction 5 - la justification de la cle d'exclusion etait fausse
 
 La version initiale affirmait que `provider_id` devait figurer dans la cle pour
 empecher une comparaison entre tenants. C'est inexact : `staff_id` est un uuid
 globalement unique, rattache a son prestataire par une FK composite, donc
 `staff_id WITH =` seul ne peut deja pas correspondre a un autre tenant.
 
-`provider_id` reste dans la cle — pour la selectivite de l'index et par defense
-en profondeur — mais pour **cette** raison. En revanche l'observation connexe
+`provider_id` reste dans la cle - pour la selectivite de l'index et par defense
+en profondeur - mais pour **cette** raison. En revanche l'observation connexe
 demeure exacte : la contrainte est evaluee sur toutes les lignes, RLS ou non, et
 elle ne peut rien reveler d'un autre prestataire parce qu'un conflit entre
 tenants est impossible par construction.
@@ -184,19 +184,19 @@ supplementaires sur le schema corrige :
 
 ## Consequences
 
-Positives : la garantie tient pour tout chemin de code — API publique, tableau
-de bord, back-office, worker, futur chatbot, correctif SQL manuel — et pour
+Positives : la garantie tient pour tout chemin de code - API publique, tableau
+de bord, back-office, worker, futur chatbot, correctif SQL manuel - et pour
 n'importe quel nombre d'instances. Elle fonctionne en isolation
 `READ COMMITTED`, sans gestion d'echec de serialisation. Cout nul en lecture.
 
 Negatives : le projet est lie a PostgreSQL, ce qui etait deja le cas. Les tests
-touchant cette contrainte exigent un vrai PostgreSQL — jamais H2. Le message
+touchant cette contrainte exigent un vrai PostgreSQL - jamais H2. Le message
 d'erreur brut nomme la contrainte et ne doit jamais atteindre le client. La
 reprise sur candidat suivant (correction 4) ajoute un chemin dont la
 terminaison doit etre bornee et testee.
 
 ## A revisiter quand
 
-Une ressource autre que l'employe devient reservable — une salle, un
+Une ressource autre que l'employe devient reservable - une salle, un
 equipement, un vehicule. La cle de la contrainte doit alors la designer, et
 l'analyse d'absence de fuite doit etre refaite.

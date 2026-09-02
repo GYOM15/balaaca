@@ -1,4 +1,4 @@
-# ADR-0004 — Outbox en table drainee par un worker, sans broker
+# ADR-0004 - Outbox en table drainee par un worker, sans broker
 
 Statut : Accepte
 Remplace la regle de transport du skill herite `outbox-messaging`.
@@ -7,7 +7,7 @@ Remplace la regle de transport du skill herite `outbox-messaging`.
 
 Une reservation doit declencher des effets que sa transaction ne peut pas
 posseder : une confirmation immediate, un rappel a 24 h, un rappel a 2 h, un
-avis au prestataire. Ces envois passent par WhatsApp, SMS ou email — des appels
+avis au prestataire. Ces envois passent par WhatsApp, SMS ou email - des appels
 reseau lents et faillibles.
 
 Deux pieges classiques :
