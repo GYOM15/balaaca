@@ -2117,15 +2117,22 @@ a.choice { text-decoration: none; color: inherit; }
      section - ce qui decentrait tout le texte, qui n'avait rien demande.
      Ancree en bas, la section garde son rembourrage des deux cotes, le texte
      reste centre, et seule la capture depasse. */
-  .shot {
+  .feat__art > .shot,
+  .feat__art > .shot-stack {
     position: absolute; z-index: 1;
     top: auto;
     bottom: calc(-1 * var(--feat-pad) - 1.5rem);
-    width: 44rem;      /* plus large que la colonne : sort de cote */
   }
+  /* La meme largeur pour les deux formes : a 34 rem la pile s'arretait
+     soixante-quatre pixels avant le bord, donc elle ne debordait pas du tout.
+     Ce qui sort est la carte de confirmation, a droite ; l'affiche, qui porte
+     le QR code et le message, reste entiere. */
+  .feat__art > .shot,
+  .feat__art > .shot-stack { width: 44rem; }
   /* VITRINE : ancree a gauche de sa colonne, elle grandit vers la droite et
      sort par la droite et par le bas. Ces deux bordures n'existent pas. */
-  .feat .shot { left: 0; }
+  .feat .feat__art > .shot,
+  .feat .feat__art > .shot-stack { left: 0; }
   /* ATELIER : ancree a DROITE de sa colonne, elle grandit vers la gauche et
      sort par la gauche et par le bas. Ancree a droite, elle ne peut pas
      atteindre le texte : c'est ce qui garantit qu'elle ne le chevauche plus. */
@@ -2134,7 +2141,8 @@ a.choice { text-decoration: none; color: inherit; }
      celle de la page publique, donc sa colonne doit l'etre aussi pour que le
      bas sorte pareil. Une hauteur commune coupait l'une et pas l'autre. */
   .feat--flip .feat__art  { order: 1; }
-  .feat--flip .shot { left: auto; right: 0; }
+  .feat--flip .feat__art > .shot,
+  .feat--flip .feat__art > .shot-stack { left: auto; right: 0; }
 }
 
 @media (max-width: 1099px) {
@@ -2142,12 +2150,24 @@ a.choice { text-decoration: none; color: inherit; }
      pour le grand ecran ; en pile cela mettrait la capture avant la phrase qui
      l'explique, et le lecteur verrait une image sans savoir de quoi elle parle. */
   .feat__text { order: 1; }
-  .feat__art  { order: 2; min-height: 21rem; margin-top: var(--s-8); }
-  .shot {
-    position: absolute; z-index: 1; top: auto;
-    bottom: calc(-1 * var(--feat-pad) - 1rem);
-    width: 30rem;
+  /* EN FLUX, pas en absolu. Empilee, la capture n'a plus de colonne a fuir sur
+     le cote : elle ne sort que par le bas, et une marge negative suffit - la
+     section la rogne comme avant.
+
+     Ancree en absolu au bas d'une colonne de hauteur fixe, l'ecart sous le
+     texte etait ce qui restait apres la capture : 102 px sous la vitrine et
+     194 sous l'atelier, dont la capture est plus courte. L'ecart est une
+     valeur maintenant, la meme pour les deux, et la colonne epouse l'image. */
+  .feat__art  { order: 2; min-height: 0; margin-top: var(--s-10); }
+  .feat__art > .shot,
+  .feat__art > .shot-stack {
+    position: relative; z-index: 1;
+    top: auto; bottom: auto; left: auto; right: auto;
+    margin-inline: auto;
+    margin-bottom: calc(-1 * var(--feat-pad) - 1rem);
   }
+  .feat__art > .shot { width: min(30rem, 108%); }
+  .feat__art > .shot-stack { width: min(26rem, 100%); }
   .feat .shot { left: 8%; }
   .feat--flip .shot { left: auto; right: 8%; }
   /* A 390 px les deux colonnes du tableau de bord cote a cote rendent les

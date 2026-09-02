@@ -251,46 +251,44 @@ export default function ProLanding() {
           </div>
         </section>
 
-        <section className="section atmo tex-rules">
-          <div className="page">
-            <div className="feature feature--wide-right">
-              <div className="feature__art" data-reveal="scale">
-                <div className="shot-stack">
-                  <PosterShot />
-                  <ConfirmationShot />
+        <section className="feat atmo tex-rules">
+          <div className="page feat__in">
+            {/* Le texte a gauche, l'image a droite : la rangee precedente a
+                l'image a gauche, et deux rangees de suite du meme cote donnent
+                la monotonie que la revue de design avait relevee. */}
+            <div className="feat__text" data-reveal="left">
+              <p className="t-overline t-overline--accent">Votre adresse, à vie</p>
+              <h2 className="t-h2 hair" style={{ marginTop: "var(--s-5)" }}>
+                Un lien court, un QR code, et c’est tout
+              </h2>
+              <p className="t-lead" style={{ marginTop: "var(--s-4)" }}>
+                Collez l’affiche sur votre vitrine, mettez le lien dans votre
+                statut WhatsApp. L’adresse de votre page ne changera jamais&nbsp;:
+                ce que vous imprimez aujourd’hui fonctionnera dans cinq ans.
+              </p>
+              <div className="dl dl--lined" style={{ marginTop: "var(--s-7)" }}>
+                <div className="dl__row">
+                  <span className="dl__key">Votre lien</span>
+                  <span className="dl__val">balaaca.com/p/votre-nom</span>
+                </div>
+                {/* Redevenue vraie avec V043. Elle avait été retirée parce que
+                    la référence faisait quarante-trois caractères de base64url
+                    que personne ne dicte ; elle en fait dix, dont les trois
+                    initiales de l’établissement. */}
+                <div className="dl__row">
+                  <span className="dl__key">Référence d’un rendez-vous</span>
+                  <span className="dl__val">Dix caractères, dictables</span>
+                </div>
+                <div className="dl__row">
+                  <span className="dl__key">Compte client à créer</span>
+                  <span className="dl__val">Aucun</span>
                 </div>
               </div>
-              <div data-reveal="right">
-                <p className="t-overline t-overline--accent">
-                  Votre adresse, à vie
-                </p>
-                <h2 className="t-h2 hair" style={{ marginTop: "var(--s-5)" }}>
-                  Un lien court, un QR code, et c’est tout
-                </h2>
-                <p className="t-lead" style={{ marginTop: "var(--s-4)" }}>
-                  Collez l’affiche sur votre vitrine, mettez le lien dans votre
-                  statut WhatsApp. L’adresse de votre page ne changera jamais :
-                  ce que vous imprimez aujourd’hui fonctionnera dans cinq ans.
-                </p>
-                {/* The mockup's third row promised a reference of eight
-                    dictable characters. AppointmentSqlRepository.mintReference
-                    draws thirty-two random bytes and returns the base64url of
-                    them - forty-three characters nobody reads down a telephone
-                    - so the row states nothing true and is gone rather than
-                    wrong. */}
-                <div
-                  className="dl dl--lined"
-                  style={{ marginTop: "var(--s-7)" }}
-                >
-                  <div className="dl__row">
-                    <span className="dl__key">Votre lien</span>
-                    <span className="dl__val">balaaca.com/p/votre-nom</span>
-                  </div>
-                  <div className="dl__row">
-                    <span className="dl__key">Compte client à créer</span>
-                    <span className="dl__val">Aucun</span>
-                  </div>
-                </div>
+            </div>
+            <div className="feat__art" data-reveal="scale">
+              <div className="shot-stack">
+                <PosterShot />
+                <ConfirmationShot />
               </div>
             </div>
           </div>
