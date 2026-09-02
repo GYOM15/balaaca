@@ -1,7 +1,9 @@
 package com.balaaca.app.rest;
 
 import com.balaaca.app.api.ProvidersApi;
+import com.balaaca.app.api.model.Fulfilment;
 import com.balaaca.app.api.model.LocalityRef;
+import com.balaaca.app.api.model.Money;
 import com.balaaca.app.api.model.ProviderRegisteredView;
 import com.balaaca.app.api.model.ProviderSummary;
 import com.balaaca.app.api.model.ProviderSummaryPage;
@@ -16,6 +18,7 @@ import com.balaaca.providers.ports.inbound.SearchProvidersUseCase.Query;
 import io.quarkus.security.Authenticated;
 import jakarta.ws.rs.core.Response;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -111,6 +114,13 @@ public class ProvidersResource implements ProvidersApi {
         found.city().ifPresent(summary::setCity);
         found.area().ifPresent(summary::setArea);
         found.logoUrl().ifPresent(summary::setLogoUrl);
+        summary.setFulfilments(fulfilmentsOf(found));
+
+        // A floor, and the copy on the card says so. Absent when no active
+        // service shows a price - not zero, which reads as free.
+        found.priceFrom().ifPresent(price -> summary.setPriceFrom(new Money()
+                .amountMinor(price.amountMinor())
+                .currency(price.currency().name())));
 
         // Both halves or neither: a slug with no label draws an empty chip, and
         // a label with no slug is a filter the client cannot then apply.
@@ -118,6 +128,28 @@ public class ProvidersResource implements ProvidersApi {
                         .map(label -> new LocalityRef().slug(slug).labelFr(label)))
                 .ifPresent(summary::setLocality);
         return summary;
+    }
+
+    /**
+     * The set, in the order the contract calls canonical.
+     *
+     * <p>Empty when the business has published no service yet, and the contract
+     * says to draw nothing rather than a badge announcing it offers nothing -
+     * a salon registered this morning is not a salon that refuses to serve
+     * anybody.
+     */
+    private static List<Fulfilment> fulfilmentsOf(ProviderCard found) {
+        var modes = new ArrayList<Fulfilment>(3);
+        if (found.fulfilments().onSite()) {
+            modes.add(Fulfilment.ON_SITE);
+        }
+        if (found.fulfilments().dropOff()) {
+            modes.add(Fulfilment.DROP_OFF);
+        }
+        if (found.fulfilments().atCustomer()) {
+            modes.add(Fulfilment.AT_CUSTOMER);
+        }
+        return modes;
     }
 
     /** A blank query parameter is an absent one, not a value to match on. */

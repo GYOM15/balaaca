@@ -58,6 +58,8 @@ class SchemaCoverageTest {
             + "|jsonb|numeric|smallint|citext|inet|bigserial)\\b");
     private static final Pattern ADD_COLUMN = Pattern.compile(
             "^ *ADD COLUMN ([a-z_]+) ", Pattern.MULTILINE);
+    private static final Pattern DROP_COLUMN = Pattern.compile(
+            "DROP COLUMN\\s+(?:IF EXISTS\\s+)?([a-z_]+)");
 
     @Test
     @DisplayName("Every column the schema declares is named by some code, or waived with a reason")
@@ -201,6 +203,16 @@ class SchemaCoverageTest {
             Matcher more = ADD_COLUMN.matcher(sql);
             while (more.find()) {
                 declared.putIfAbsent(more.group(1), lastTableAltered(sql, more.start()));
+            }
+
+            // A dropped column is not declared any more, and demanding a reader
+            // for one would ask the code to name something the database no
+            // longer has. Applied per migration, in order, so a column dropped
+            // and later added back is declared again. Removed only when the
+            // recorded table matches the one being altered.
+            Matcher dropped = DROP_COLUMN.matcher(sql);
+            while (dropped.find()) {
+                declared.remove(dropped.group(1), lastTableAltered(sql, dropped.start()));
             }
         }
         declared.values().removeIf(java.util.Objects::isNull);

@@ -3,8 +3,36 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { ApiError, api } from "@/lib/api";
+import { type SuccessCode, succeed } from "@/lib/feedback";
 
 const DAYS = [1, 2, 3, 4, 5, 6, 7];
+
+/**
+ * What each kind of exception is worth saying.
+ *
+ * <p>One sentence per kind rather than one for all three. "L'exception est
+ * enregistrée" would be as true of a Thursday closed all day as of one hour
+ * taken out of it, and those are not the same news to somebody who has just
+ * declared one of them.
+ */
+const ADDED: Record<string, SuccessCode> = {
+  TIME_OFF: "TIME_OFF_ADDED",
+  CUSTOM_HOURS: "CUSTOM_HOURS_ADDED",
+  CLOSED: "DAY_CLOSED",
+};
+
+/**
+ * Where a verb on this screen comes back to.
+ *
+ * <p>Opening hours belong to a person, so landing on `/dashboard/hours` bare
+ * would answer with the caller's own week - an owner who has just saved a
+ * colleague's Saturday would be told it worked while looking at their own.
+ */
+function week(staffId: string, error?: string): string {
+  const params = new URLSearchParams({ staff: staffId });
+  if (error) params.set("error", error);
+  return `/dashboard/hours?${params.toString()}`;
+}
 
 /**
  * The whole week, replaced.
@@ -30,11 +58,12 @@ export async function replaceHours(formData: FormData): Promise<void> {
     });
   } catch (error) {
     if (error instanceof ApiError) {
-      redirect(`/dashboard/hours?staff=${staffId}&error=${error.code ?? "UNKNOWN"}`);
+      redirect(week(staffId, error.code ?? "UNKNOWN"));
     }
     throw error;
   }
   revalidatePath("/dashboard/hours");
+  succeed(week(staffId), "HOURS_SAVED");
 }
 
 /** A closed day, different hours, or an hour taken out of an ordinary day. */
@@ -43,6 +72,12 @@ export async function addClosure(formData: FormData): Promise<void> {
   const kind = String(formData.get("kind"));
   const start = String(formData.get("start_time") ?? "");
   const end = String(formData.get("end_time") ?? "");
+
+  // Narrowed here so the confirmation can name what was declared. The dialog's
+  // three radios are the only kinds this screen offers, and anything else is
+  // the same refusal the API would answer with.
+  const done = ADDED[kind];
+  if (!done) return redirect(week(staffId, "VALIDATION_FAILED"));
 
   try {
     await api("/v1/closures", {
@@ -60,16 +95,34 @@ export async function addClosure(formData: FormData): Promise<void> {
     });
   } catch (error) {
     if (error instanceof ApiError) {
-      redirect(`/dashboard/hours?staff=${staffId}&error=${error.code ?? "UNKNOWN"}`);
+      redirect(week(staffId, error.code ?? "UNKNOWN"));
     }
     throw error;
   }
   revalidatePath("/dashboard/hours");
+  succeed(week(staffId), done);
 }
 
+/**
+ * An exception, taken back off the calendar.
+ *
+ * <p>The only verb on these screens that had no `catch` at all: a colleague's
+ * closure refused with FORBIDDEN, or one a second tab had already deleted, came
+ * out of here as an unhandled throw and the provider read the crash page. The
+ * hours screen has had the sentences for both codes the whole time.
+ */
 export async function removeClosure(formData: FormData): Promise<void> {
-  await api(`/v1/closures/${encodeURIComponent(String(formData.get("id")))}`, {
-    method: "DELETE",
-  });
+  const staffId = String(formData.get("staff_id"));
+  try {
+    await api(`/v1/closures/${encodeURIComponent(String(formData.get("id")))}`, {
+      method: "DELETE",
+    });
+  } catch (error) {
+    if (error instanceof ApiError) {
+      redirect(week(staffId, error.code ?? "UNKNOWN"));
+    }
+    throw error;
+  }
   revalidatePath("/dashboard/hours");
+  succeed(week(staffId), "CLOSURE_REMOVED");
 }

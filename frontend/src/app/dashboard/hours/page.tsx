@@ -274,6 +274,9 @@ export default async function Hours({
                           </div>
                           <form action={removeClosure}>
                             <input type="hidden" name="id" value={c.closure_id} />
+                            {/* Whose week this is, so the refusal and the
+                                confirmation both land back on it. */}
+                            <input type="hidden" name="staff_id" value={staffId} />
                             <button
                               className="btn btn--ghost btn--sm btn--icon"
                               type="submit"

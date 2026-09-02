@@ -43,6 +43,22 @@ public class BookingFixtures {
 
     public static final String CATEGORY = "coiffure";
 
+    /**
+     * The instant the application believes it is, written so SQL can say it too.
+     *
+     * <p>`%test.balaaca.clock.pinned-to` freezes the injected Clock, which is
+     * what stopped this suite expiring - its dates are chosen for their day of
+     * week and it began failing on 2026-09-02. But PostgreSQL's `now()` is not
+     * pinned by anything, so a fixture that moves an appointment to
+     * `now() + interval '1 hour'` puts it a year and a day into the
+     * application's future, and a test about a deadline then measures nothing.
+     *
+     * <p>Use this wherever a row's time has to be read back BY THE APPLICATION.
+     * Plain `now()` is still right for a column only the database compares -
+     * an invitation's expiry, a suspension's timestamp.
+     */
+    public static final String APPLICATION_NOW = "timestamptz '2026-08-31T08:00:00Z'";
+
     public static final UUID SALON_OFFERING = UUID.fromString("5e111111-0000-0000-0000-000000000001");
     public static final UUID HIDDEN_OFFERING = UUID.fromString("5e222222-0000-0000-0000-000000000001");
     public static final UUID SOLO_OFFERING = UUID.fromString("50103333-0000-0000-0000-000000000001");
@@ -122,10 +138,15 @@ public class BookingFixtures {
         run("""
             INSERT INTO service_offerings
               (id, provider_id, name, duration_minutes, buffer_before_minutes,
-               buffer_after_minutes, price_amount_minor, price_currency) VALUES
-              ('%s','%s','Tresses',60,15,10,150000,'GNF'),
-              ('%s','%s','Coupe',30,0,0,50000,'GNF'),
-              ('%s','%s','Coupe',60,0,0,80000,'GNF')
+               buffer_after_minutes, price_amount_minor, price_currency,
+               -- Named, not defaulted: V044 defaults all three modes to false
+               -- so that an INSERT choosing none is refused rather than quietly
+               -- filed as on-site, and this decor is written straight to the
+               -- table with no create path to fill it in.
+               offers_on_site) VALUES
+              ('%s','%s','Tresses',60,15,10,150000,'GNF',true),
+              ('%s','%s','Coupe',30,0,0,50000,'GNF',true),
+              ('%s','%s','Coupe',60,0,0,80000,'GNF',true)
             """.formatted(SALON_OFFERING, SALON, HIDDEN_OFFERING, HIDDEN, SOLO_OFFERING, SOLO));
         grantEveryCompetence();
     }

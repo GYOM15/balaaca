@@ -12,12 +12,12 @@ export const dynamic = "force-dynamic";
 const REFUSALS: Record<string, string> = {
   FORBIDDEN: "Seul le propriétaire compose l’équipe.",
   // One sentence for both, because the API sends one code for both: a member
-  // who cannot be invited and a team that would be left with nobody bookable
-  // are the same INVALID_STATE_TRANSITION. Branching on codes the catalogue
-  // does not publish is how these refusals used to read "la demande n'a pas
-  // abouti" while the server knew exactly what was wrong.
+  // who can have no code minted for them and a team that would be left with
+  // nobody bookable are the same INVALID_STATE_TRANSITION. Branching on codes
+  // the catalogue does not publish is how these refusals used to read "la
+  // demande n'a pas abouti" while the server knew exactly what was wrong.
   INVALID_STATE_TRANSITION:
-    "Cette personne ne peut pas être invitée, ou votre page resterait sans personne de réservable.",
+    "Cette personne a déjà un compte, ou votre page resterait sans personne de réservable.",
   RESOURCE_NOT_FOUND: "Cette personne n’existe plus.",
   VALIDATION_FAILED: "Il faut un nom.",
 };
@@ -32,8 +32,11 @@ const REFUSALS: Record<string, string> = {
 const TRANSFER_REFUSALS: Record<string, string> = {
   FORBIDDEN: "Seul le propriétaire peut céder le salon.",
   VALIDATION_FAILED:
-    "Cette personne n’a pas encore de compte, ou ne travaille plus ici. Créez-lui un code d’invitation, laissez-la se connecter, puis revenez.",
+    "Cette personne n’a pas encore de compte, ou ne travaille plus ici. Créez-lui un code de connexion, transmettez-le-lui, laissez-la se connecter, puis revenez.",
 };
+
+/** The dialog the appbar button opens. */
+const ADD_DIALOG = "dlg-add-member";
 
 /** The consequence list of a transfer, which the design spaces by hand. */
 const CONSEQUENCES = {
@@ -44,6 +47,14 @@ const CONSEQUENCES = {
 const CONSEQUENCE_ROW: CSSProperties = { alignItems: "flex-start", gap: "var(--s-3)" };
 
 const CONSEQUENCE_ICON: CSSProperties = { color: "var(--danger)", marginTop: "2px" };
+
+/**
+ * Where a code is spent.
+ *
+ * <p>Written once because the owner sends it as often as he sends the code -
+ * the code alone is unusable by somebody who does not know what to do with it.
+ */
+const JOIN = `${env.publicOrigin}/rejoindre`;
 
 /**
  * The people who work here.
@@ -59,6 +70,7 @@ export default async function Team({
     error?: string;
     invited?: string;
     name?: string;
+    until?: string;
     transfer?: string;
     given?: string;
   }>;
@@ -72,6 +84,10 @@ export default async function Team({
     api<StaffList>("/v1/staff"),
     api<ProviderProfile>("/v1/provider-profile"),
   ]);
+
+  // The zone is the business's, because the seven days a code lasts are counted
+  // in the days the owner works, not in the browser's.
+  const until = readDay(query.until, provider.timezone);
 
   const bookable = team.data.filter((p) => p.active && p.bookable).length;
   const size = team.data.length;
@@ -109,12 +125,12 @@ export default async function Team({
             <button
               className="btn btn--primary btn--sm"
               type="button"
-              data-dialog-open="dlg-invite"
+              data-dialog-open={ADD_DIALOG}
             >
               <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
                 <Icon name="user-plus" size={18} />
               </span>
-              <span className="btn__label--idle">Inviter quelqu’un</span>
+              <span className="btn__label--idle">Ajouter quelqu’un</span>
             </button>
           </div>
         </div>
@@ -150,23 +166,43 @@ export default async function Team({
 
           {query.invited ? (
             <div style={{ marginBottom: "var(--s-5)" }}>
-              <Notice tone="success" title="Code d’invitation créé" icon="shield">
-                Transmettez ce code à {query.name ?? "cette personne"}, avec le lien{" "}
-                <strong>{env.publicOrigin}/rejoindre</strong>.
+              <Notice
+                tone="success"
+                title="Le code est prêt — à vous de le transmettre"
+                icon="shield"
+              >
+                Rien n’est envoyé, personne n’a été prévenu. Copiez le code et le
+                lien, et transmettez-les à {query.name ?? "cette personne"} vous-même
+                : par WhatsApp, par SMS, ou de vive voix.
                 <div className="publink" style={{ marginTop: "var(--s-3)" }}>
                   <span className="publink__url">{query.invited}</span>
                   <button
                     className="btn btn--ghost btn--sm btn--icon"
                     type="button"
                     data-copy={query.invited}
-                    aria-label="Copier le code d’invitation"
+                    aria-label="Copier le code"
+                  >
+                    <Icon name="copy" size={18} className="btn__icon--idle" />
+                  </button>
+                </div>
+                {/* The address as well as the code. The code on its own is
+                    unusable by somebody who does not already know where to
+                    spend it, and it is one message either way. */}
+                <div className="publink" style={{ marginTop: "var(--s-2)" }}>
+                  <span className="publink__url">{JOIN}</span>
+                  <button
+                    className="btn btn--ghost btn--sm btn--icon"
+                    type="button"
+                    data-copy={JOIN}
+                    aria-label="Copier le lien de connexion"
                   >
                     <Icon name="copy" size={18} className="btn__icon--idle" />
                   </button>
                 </div>
                 <div className="t-xs" style={{ marginTop: "var(--s-3)" }}>
-                  Il n’est affiché qu’une fois. En créer un autre remplace celui-ci —
-                  c’est aussi comme ça qu’on le révoque.
+                  Affiché une seule fois
+                  {until ? `, et valable jusqu’au ${until}` : ""}. En créer un autre
+                  remplace celui-ci — c’est aussi comme ça qu’on le révoque.
                 </div>
               </Notice>
             </div>
@@ -233,12 +269,24 @@ export default async function Team({
                         <Icon name="calendar" size={18} /> Horaires de cette personne
                       </Link>
 
+                      {/* The diary has filtered by person the whole time and the
+                          owner could not find it. The question is asked from
+                          here - looking at Fanta, wondering what Fanta has
+                          today - so the answer is offered from here. */}
+                      <Link
+                        className="menu__item"
+                        href={`/dashboard?staff=${encodeURIComponent(person.staff_id)}`}
+                      >
+                        <Icon name="calendar-check" size={18} /> Rendez-vous de cette
+                        personne
+                      </Link>
+
                       {person.role === "OWNER" ? null : (
                         <form action={invite}>
                           <input type="hidden" name="id" value={person.staff_id} />
                           <input type="hidden" name="name" value={person.display_name} />
                           <button className="menu__item" type="submit">
-                            <Icon name="refresh" size={18} /> Créer un code d’invitation
+                            <Icon name="lock" size={18} /> Créer son code de connexion
                           </button>
                         </form>
                       )}
@@ -283,10 +331,10 @@ export default async function Team({
             </Notice>
           </div>
 
-          <dialog className="dialog" id="dlg-invite">
+          <dialog className="dialog" id={ADD_DIALOG}>
             <div className="dialog__inner">
               <div className="dialog__head">
-                <h2 className="dialog__title">Inviter quelqu’un</h2>
+                <h2 className="dialog__title">Ajouter quelqu’un</h2>
               </div>
               <form action={addMember}>
                 {/* The chair is created active. The design's dialog has no
@@ -295,13 +343,14 @@ export default async function Team({
                 <input type="hidden" name="active" value="on" />
                 <div className="dialog__body">
                   <p>
-                    Un code d’invitation sera généré depuis sa ligne, une fois la
-                    personne ajoutée. Transmettez-le-lui&nbsp;: elle le saisira sur{" "}
-                    {env.publicOrigin}/rejoindre.
+                    <strong className="t-strong">Rien ne lui sera envoyé.</strong> Vous
+                    l’ajoutez ici, puis vous créez son code depuis sa ligne et vous le
+                    lui transmettez vous-même — WhatsApp, SMS, de vive voix. Elle le
+                    saisira sur {JOIN}.
                   </p>
                   <div style={{ marginTop: "var(--s-5)" }}>
                     <div className="field">
-                      <label className="field__label" htmlFor="invite-name">
+                      <label className="field__label" htmlFor="add-name">
                         Nom
                         <span className="field__req" aria-hidden="true">
                           *
@@ -310,12 +359,16 @@ export default async function Team({
                       <input
                         className="input"
                         type="text"
-                        id="invite-name"
+                        id="add-name"
                         name="display_name"
                         placeholder="Fanta Diallo"
                         maxLength={120}
                         required
                       />
+                      <p className="field__hint">
+                        C’est ce nom que vos clientes verront au moment de choisir
+                        une personne.
+                      </p>
                     </div>
                     <label className="check" style={{ marginTop: "var(--s-4)" }}>
                       <input type="checkbox" name="bookable" defaultChecked />
@@ -531,6 +584,10 @@ export default async function Team({
                 <form action={replaceMember}>
                   <input type="hidden" name="id" value={person.staff_id} />
                   <input type="hidden" name="display_name" value={person.display_name} />
+                  {/* The same PUT as the edit dialog, and not the same news.
+                      Said here rather than guessed from `active`, which the
+                      edit dialog can switch off too. */}
+                  <input type="hidden" name="intent" value="deactivate" />
                   {/* The PUT replaces the whole row, so what is not meant to change
                       travels with it. `active` is left out on purpose: absent is
                       false, and false is the whole point of this form. */}
@@ -572,4 +629,19 @@ export default async function Team({
  */
 function canDeactivate(person: StaffView): boolean {
   return person.active && person.role !== "OWNER";
+}
+
+/**
+ * The day a code stops working, or nothing at all.
+ *
+ * <p>The instant comes off the URL, so it is whatever the browser sent, and an
+ * unparseable one throws out of Intl - taking down the one screen whose whole
+ * job at that moment is to show a code that is shown once.
+ */
+function readDay(instant: string | undefined, timeZone: string): string | null {
+  if (!instant) return null;
+  const at = new Date(instant);
+  return Number.isNaN(at.getTime())
+    ? null
+    : new Intl.DateTimeFormat("fr", { dateStyle: "long", timeZone }).format(at);
 }

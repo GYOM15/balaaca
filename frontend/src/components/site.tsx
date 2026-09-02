@@ -30,6 +30,23 @@ function LogoWord() {
   );
 }
 
+/**
+ * The way back in, drawn the same on both bars.
+ *
+ * <p>/dashboard answers a reader it does not recognise with a redirect to the
+ * sign-in server, so there is no route to invent - this link is the door. It is
+ * quiet rather than a button because the header spends its one button on the
+ * offer, and it stands down below 700 px, where the bar has room for the mark
+ * and one entry: the footer's Professionnels column carries it there.
+ */
+function SignIn() {
+  return (
+    <Link className="hdr__link hide-sm" href="/dashboard">
+      Se connecter
+    </Link>
+  );
+}
+
 export function SiteHeader({ kind = "hub" }: { kind?: "hub" | "pro" }) {
   return (
     <header className="hdr">
@@ -56,21 +73,28 @@ export function SiteHeader({ kind = "hub" }: { kind?: "hub" | "pro" }) {
         <div className="hdr__actions">
           {kind === "pro" ? (
             <>
-              <Link className="hdr__link hide-sm" href="/">
-                Trouver un professionnel
-              </Link>
+              {/* The way back for a provider who already has an account, in
+                  place of the customer's door rather than beside it: measured
+                  in the browser, a third entry here wraps onto a second line
+                  below 1005 px and leaves nineteen pixels at 1024. The mark,
+                  the navigation to its left and the footer all still lead to
+                  the directory; sign in led nowhere at all. */}
+              <SignIn />
               <Link className="btn btn--primary btn--sm" href="/inscription">
                 <span className="btn__label--idle">Créer ma page</span>
               </Link>
             </>
           ) : (
             <>
-              {/* Below 700 px the header keeps the professional door and drops
-                  this one: a customer who has a booking has its link in their
-                  messages, and the footer carries it on every page. */}
-              <Link className="hdr__link" href="/bookings" style={{ display: "none" }} data-show-md>
+              {/* Two entries fit beside the navigation and a third does not -
+                  measured, it wraps between 900 and 1000 px. This is the one
+                  that yields: the tab bar under a thumb carries it below 900,
+                  the footer carries it on every page, and a customer who has
+                  a booking has its link in their messages. */}
+              <Link className="hdr__link show-lg" href="/bookings">
                 Ma réservation
               </Link>
+              <SignIn />
               <Link className="btn btn--secondary btn--sm hide-sm" href="/professionnels">
                 <span className="btn__label--idle">Espace professionnel</span>
               </Link>
@@ -124,6 +148,10 @@ export function SiteFooter(_props: { kind?: "hub" | "pro" } = {}) {
               ["Pourquoi Balaaca", "/professionnels"],
               ["Tarifs", "/professionnels/tarifs"],
               ["Créer ma page", "/inscription"],
+              // Under the page that creates one, because the pair answers the
+              // question a provider arrives with. The only door to an existing
+              // account that survives every width.
+              ["Se connecter", "/dashboard"],
               ["Rejoindre une équipe", "/rejoindre"],
             ]}
           />

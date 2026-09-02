@@ -1,6 +1,5 @@
 package com.balaaca.catalog.adapters.outbound.persistence;
 
-import com.balaaca.catalog.ports.inbound.ServiceLocation;
 import com.balaaca.catalog.ports.inbound.PublishedCatalogueUseCase;
 import com.balaaca.sharedkernel.ids.ServiceOfferingId;
 import com.balaaca.sharedkernel.money.Currency;
@@ -72,7 +71,8 @@ public class PublishedCatalogueSqlRepository implements PublishedCatalogueUseCas
                 SELECT id, name, description, duration_minutes,
                        CASE WHEN price_visible THEN price_amount_minor END,
                        CASE WHEN price_visible THEN price_currency END,
-                       turnaround_hours, location_kind,
+                       turnaround_hours,
+                       offers_on_site, offers_drop_off, offers_at_customer,
                        -- One statement rather than one query per service: a
                        -- catalogue of twelve would otherwise be thirteen round
                        -- trips to draw one page.
@@ -91,8 +91,8 @@ public class PublishedCatalogueSqlRepository implements PublishedCatalogueUseCas
                 Optional.ofNullable((String) r[2]),
                 Duration.ofMinutes(((Number) r[3]).longValue()),
                 Optional.ofNullable((Number) r[6]).map(h -> Duration.ofHours(h.longValue())),
-                ServiceLocation.valueOf((String) r[7]),
-                photos(r[8]),
+                OfferedModes.of((Boolean) r[7], (Boolean) r[8], (Boolean) r[9]),
+                photos(r[10]),
                 Optional.ofNullable(r[4]).map(amount -> Money.ofMinor(
                         ((Number) amount).longValue(),
                         Currency.of((String) r[5]))))).toList();

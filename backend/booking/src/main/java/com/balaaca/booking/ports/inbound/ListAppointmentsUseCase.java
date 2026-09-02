@@ -60,6 +60,14 @@ public interface ListAppointmentsUseCase {
                        StaffId staffId,
                        String staffName,
                        CustomerContact customer,
+                       /**
+                        * How this booking is fulfilled, as the customer chose
+                        * it. It cannot be inferred from the presence of
+                        * readyBy or serviceAddress any more: the service it was
+                        * booked from may publish all three modes, and this
+                        * appointment is only one of them.
+                        */
+                       com.balaaca.catalog.ports.inbound.Fulfilment fulfilment,
                        java.util.Optional<String> customerNote,
                        /**
                         * Both empty on an on-site appointment: the customer sat

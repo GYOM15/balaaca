@@ -45,6 +45,11 @@ public class BookAppointmentRequestMapper {
                 // place the two meet.
                 request.getStartsAt().toInstant(),
                 toContact(request, defaultRegion),
+                // Parsed, not judged. Whether this is one of the modes the
+                // service publishes - and whether omitting it is an answer at
+                // all - depends on the offering, which this class does not read.
+                Optional.ofNullable(request.getFulfilment())
+                        .map(f -> com.balaaca.catalog.ports.inbound.Fulfilment.valueOf(f.name())),
                 toAddress(request),
                 // Published since the contract was written and dropped here
                 // ever since: the box said "Message for the salon" and the

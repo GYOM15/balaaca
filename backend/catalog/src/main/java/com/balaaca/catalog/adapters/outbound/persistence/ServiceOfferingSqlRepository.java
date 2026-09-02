@@ -1,7 +1,6 @@
 package com.balaaca.catalog.adapters.outbound.persistence;
 
 import com.balaaca.catalog.domain.ServiceOfferingNotFoundException;
-import com.balaaca.catalog.ports.inbound.ServiceLocation;
 import com.balaaca.catalog.ports.inbound.BookableOffering;
 import com.balaaca.sharedkernel.ids.ServiceOfferingId;
 import com.balaaca.catalog.ports.inbound.LookupServiceOfferingUseCase;
@@ -42,7 +41,7 @@ public class ServiceOfferingSqlRepository implements LookupServiceOfferingUseCas
         List<Object[]> rows = em.createNativeQuery("""
                 SELECT name, duration_minutes, buffer_before_minutes, buffer_after_minutes,
                        price_amount_minor, price_currency, active, turnaround_hours,
-                       location_kind
+                       offers_on_site, offers_drop_off, offers_at_customer
                   FROM service_offerings
                  WHERE id = :id AND active
                 """).setParameter("id", id.value()).getResultList();
@@ -57,10 +56,11 @@ public class ServiceOfferingSqlRepository implements LookupServiceOfferingUseCas
                 Duration.ofMinutes(((Number) r[1]).longValue()),
                 Duration.ofMinutes(((Number) r[2]).longValue()),
                 Duration.ofMinutes(((Number) r[3]).longValue()),
-                // NULL is the whole discriminant: no delay announced means the
-                // customer waits for the work.
+                // The promise attached to DROP_OFF, and NULL for a service not
+                // offered that way. It no longer says which shape this is -
+                // since V044 the modes do, and there may be three of them.
                 Optional.ofNullable((Number) r[7]).map(h -> Duration.ofHours(h.longValue())),
-                ServiceLocation.valueOf((String) r[8]),
+                OfferedModes.of((Boolean) r[8], (Boolean) r[9], (Boolean) r[10]),
                 Money.ofMinor(((Number) r[4]).longValue(), Currency.of((String) r[5])));
     }
 }

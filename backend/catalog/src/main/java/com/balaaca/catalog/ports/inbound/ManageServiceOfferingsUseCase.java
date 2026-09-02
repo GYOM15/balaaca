@@ -4,8 +4,11 @@ import com.balaaca.catalog.domain.IncompatibleServiceShapeException;
 import com.balaaca.sharedkernel.ids.ServiceOfferingId;
 import com.balaaca.sharedkernel.money.Money;
 import java.time.Duration;
+import java.util.Collections;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * The provider's own catalogue.
@@ -29,16 +32,17 @@ public interface ManageServiceOfferingsUseCase {
      *                 is the HANDOVER at the counter, not the work - the work
      *                 does not occupy anybody
      * @param bufferBefore the quiet either side of it - a chair to be swept
-     * @param turnaround empty for a service performed while the customer waits;
-     *                   present for one they hand over and come back for. Its
-     *                   PRESENCE is what makes an offering a drop-off: two
-     *                   fields, a flag and a delay, could disagree, and one of
-     *                   the two disagreements - a drop-off with no delay
-     *                   announced - is a promise nobody made
-     * @param location whether the provider travels. Exclusive with a
-     *                 turnaround: a drop-off asks the customer to bring the
-     *                 thing in, and asking them to bring it to their own house
-     *                 is not a service anybody sells
+     * @param turnaround the delay announced for {@code DROP_OFF}, and present
+     *                   exactly when that mode is offered. It was the
+     *                   discriminant before V044 and is now a promise about one
+     *                   of possibly several modes: a service that is also
+     *                   {@code ON_SITE} carries no promise for the customer who
+     *                   stayed in the chair
+     * @param fulfilments every way this one service can be obtained. One price
+     *                    and one duration whichever the customer picks - a
+     *                    surcharge for travelling is a pricing model nobody has
+     *                    decided, and a provider who genuinely charges more to
+     *                    travel still publishes two services
      */
     record OfferingDefinition(String name,
                               Optional<String> description,
@@ -46,19 +50,29 @@ public interface ManageServiceOfferingsUseCase {
                               Duration bufferBefore,
                               Duration bufferAfter,
                               Optional<Duration> turnaround,
-                              ServiceLocation location,
+                              Set<Fulfilment> fulfilments,
                               Money price,
                               boolean priceVisible,
                               int sortOrder,
                               boolean active) {
 
         public OfferingDefinition {
-            if (location == ServiceLocation.AT_CUSTOMER && turnaround.isPresent()) {
-                throw new IncompatibleServiceShapeException();
+            if (fulfilments.isEmpty()) {
+                throw IncompatibleServiceShapeException.offeredNoWay();
+            }
+            // An EnumSet, so iteration is declaration order wherever this is
+            // read - a Set.copyOf would leave the published array in whatever
+            // order a hash happened to produce.
+            fulfilments = Collections.unmodifiableSet(EnumSet.copyOf(fulfilments));
+            // The pairing the table states as an equality between two columns.
+            // Stated here too because the message matters: a constraint name
+            // tells a provider nothing.
+            if (turnaround.isPresent() != fulfilments.contains(Fulfilment.DROP_OFF)) {
+                throw turnaround.isPresent()
+                        ? IncompatibleServiceShapeException.turnaroundWithoutDropOff()
+                        : IncompatibleServiceShapeException.dropOffWithoutTurnaround();
             }
             turnaround.ifPresent(t -> {
-                // Mirrors the column's CHECK. Stated here too because the
-                // message matters: a constraint name tells a provider nothing.
                 if (t.isNegative() || t.isZero() || t.toHours() > 2160) {
                     throw new IllegalArgumentException(
                             "a turnaround is between one hour and ninety days");
@@ -66,14 +80,9 @@ public interface ManageServiceOfferingsUseCase {
             });
         }
 
-        /** What the customer does: sit down, or hand it over. */
-        public boolean isDropOff() {
-            return turnaround.isPresent();
-        }
-
-        /** What the provider does: stay, or travel. */
-        public boolean isCallOut() {
-            return location == ServiceLocation.AT_CUSTOMER;
+        /** The one value the deprecated singular field on both views carries. */
+        public Fulfilment primaryFulfilment() {
+            return Fulfilment.primaryOf(fulfilments);
         }
     }
 

@@ -7,6 +7,7 @@ import com.balaaca.booking.ports.inbound.ListAppointmentsUseCase.AgendaEntry;
 import com.balaaca.booking.ports.inbound.ListAppointmentsUseCase.AgendaPosition;
 import com.balaaca.booking.ports.inbound.ListAppointmentsUseCase.AgendaQuery;
 import com.balaaca.booking.ports.outbound.AppointmentAgendaRepository;
+import com.balaaca.catalog.ports.inbound.Fulfilment;
 import com.balaaca.sharedkernel.ids.AppointmentId;
 import com.balaaca.sharedkernel.ids.StaffId;
 import com.balaaca.sharedkernel.money.Currency;
@@ -52,7 +53,8 @@ public class AppointmentAgendaSqlRepository implements AppointmentAgendaReposito
                        a.customer_price_amount_minor, a.customer_price_currency,
                        c.full_name, c.phone_e164, c.email, a.customer_note,
                        a.staff_id, s.display_name, a.ready_by, a.ready_at,
-                       l.slug, a.service_area, a.service_directions
+                       l.slug, a.service_area, a.service_directions,
+                       a.service_fulfilment
                   FROM appointments a
                   JOIN customers c ON c.id = a.customer_id
                   JOIN provider_staff s
@@ -105,6 +107,7 @@ public class AppointmentAgendaSqlRepository implements AppointmentAgendaReposito
                 (String) r[12],
                 new CustomerContact((String) r[7], new PhoneNumber((String) r[8]),
                                     Optional.ofNullable((String) r[9])),
+                Fulfilment.valueOf((String) r[18]),
                 Optional.ofNullable((String) r[10]).filter(n -> !n.isBlank()),
                 Optional.ofNullable(r[13]).map(AppointmentAgendaSqlRepository::instant),
                 Optional.ofNullable(r[14]).map(AppointmentAgendaSqlRepository::instant),

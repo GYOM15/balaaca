@@ -20,6 +20,18 @@ const FAMILY_GLYPHS: ReadonlySet<string> = new Set([
   "savoir",
 ]);
 
+/**
+ * The tally, as `/metiers` already words it.
+ *
+ * <p>"Aucun professionnel" and not "0 professionnels": the band now draws the
+ * trades nobody holds, and a zero read as a tally looks like a counter that
+ * failed rather than a trade waiting for its first business.
+ */
+function people(count: number): string {
+  if (count === 0) return "Aucun professionnel";
+  return count > 1 ? `${count} professionnels` : "1 professionnel";
+}
+
 export function Trades({
   busiest,
   families,
@@ -42,8 +54,8 @@ export function Trades({
             <p className="t-overline">Par métier</p>
             <h2 className="t-h2">Là où il y a déjà du monde</h2>
             <p className="t-body">
-              Les métiers ci-dessous comptent des professionnels inscrits près de chez
-              vous. Les autres arrivent.
+              Les métiers qui comptent déjà des professionnels inscrits viennent en
+              premier. Les autres attendent encore le leur.
             </p>
           </div>
           <Link className="link-action" href="/metiers">
@@ -75,7 +87,7 @@ export function Trades({
           {busiest.map((t) => (
             <Link
               key={t.slug}
-              className="trade"
+              className={t.provider_count === 0 ? "trade trade--empty" : "trade"}
               href={`/?category_slug=${encodeURIComponent(t.slug)}`}
             >
               <span className="trade__icon">
@@ -83,9 +95,7 @@ export function Trades({
               </span>
               <span className="grow">
                 <span className="trade__name">{t.label_fr}</span>
-                <span className="trade__count">
-                  {t.provider_count} professionnel{t.provider_count > 1 ? "s" : ""}
-                </span>
+                <span className="trade__count">{people(t.provider_count)}</span>
               </span>
             </Link>
           ))}

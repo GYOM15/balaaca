@@ -6,6 +6,7 @@ import com.balaaca.booking.domain.BookingSource;
 import com.balaaca.booking.domain.CustomerContact;
 import com.balaaca.booking.domain.ServiceAddress;
 import com.balaaca.catalog.ports.inbound.BookableOffering;
+import com.balaaca.catalog.ports.inbound.Fulfilment;
 import com.balaaca.sharedkernel.ids.AppointmentId;
 import com.balaaca.sharedkernel.ids.CustomerId;
 import com.balaaca.sharedkernel.ids.ServiceOfferingId;
@@ -107,9 +108,16 @@ public interface AppointmentRepository {
             BookedSlot slot,
             CustomerId customerId,
             /**
-             * Resolved and validated before it gets here: present iff the
-             * offering travels, and its locality slug already checked against
-             * the published map.
+             * The customer's choice among the modes the offering publishes,
+             * already resolved and already checked against them. Frozen onto the
+             * row, because the offering can no longer answer the question: it
+             * may publish all three, and this booking is one of them.
+             */
+            Fulfilment fulfilment,
+            /**
+             * Resolved and validated before it gets here: present iff the CHOSEN
+             * mode travels, and its locality slug already checked against the
+             * published map.
              */
             Optional<ServiceAddress> serviceAddress,
             BookingSource source,

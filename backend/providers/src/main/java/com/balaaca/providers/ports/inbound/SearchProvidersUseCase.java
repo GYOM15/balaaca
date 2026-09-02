@@ -1,5 +1,6 @@
 package com.balaaca.providers.ports.inbound;
 
+import com.balaaca.sharedkernel.money.Money;
 import java.util.List;
 import java.util.Optional;
 
@@ -64,9 +65,30 @@ public interface SearchProvidersUseCase {
     }
 
     /**
+     * The ways a business can be reached, gathered over the services it
+     * currently offers. Three answers rather than a set of a fourth enum: this
+     * is the shape the column holds, the edge already turns predicates like it
+     * into the published vocabulary, and a second Java word for a value the
+     * contract already names is a word that can drift from it.
+     *
+     * <p>All three false is a real answer and not a missing one - a business
+     * that has published nothing yet has nothing to offer, and a card that
+     * invented a mode for it would be advertising something nobody said.
+     */
+    record Fulfilments(boolean onSite, boolean dropOff, boolean atCustomer) {
+    }
+
+    /**
      * What a card shows. No phone, no email: a directory that hands out every
      * provider's contact details in one request is a marketing list, and one
      * request is all it would take.
+     *
+     * <p>{@code fulfilments} and {@code priceFrom} are DERIVED and never
+     * authored: a business says it travels by publishing a service that does,
+     * and stops saying so by retiring it. The price is the floor over the
+     * services whose price is visible, so it is empty when there is nothing to
+     * take a floor of - which is not zero, and a card that drew it as zero
+     * would read as free.
      */
     record ProviderCard(String slug,
                         String businessName,
@@ -77,6 +99,8 @@ public interface SearchProvidersUseCase {
                         Optional<String> localitySlug,
                         Optional<String> localityLabel,
                         Optional<String> area,
+                        Fulfilments fulfilments,
+                        Optional<Money> priceFrom,
                         Position position) {
     }
 

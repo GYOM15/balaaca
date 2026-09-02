@@ -82,13 +82,17 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
     asked.area.length > 0;
 
   // Ranked by how many providers actually hold the trade, which is the only
-  // ordering the contract publishes anything for. Alphabetical on a tie. Trades
-  // nobody holds are left out: the hub says where there is already somebody.
+  // ordering the contract publishes anything for. Alphabetical on a tie.
+  //
+  // Trades nobody holds are no longer filtered out, they are ranked last and
+  // drawn as `.trade--empty`: six businesses in the seed meant six tiles and a
+  // band designed for twelve stood half empty. What is never done is padding -
+  // the slice takes what the taxonomy holds and stops, so a shorter taxonomy
+  // gets a shorter band rather than placeholder boxes.
   const busiest = [...categories.data]
     .sort(
       (a, b) => b.provider_count - a.provider_count || a.label_fr.localeCompare(b.label_fr, "fr"),
     )
-    .filter((t) => t.provider_count > 0)
     .slice(0, TRADES_SHOWN);
 
   // The panel offers the head of the published taxonomy, and any trade already
@@ -141,8 +145,10 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
                 showed it: the heading says "where there are already people" and
                 the sentence under it promises a list. With nobody registered
                 there is no such place, and the section rendered a title, a
-                promise and a family rail over nothing at all. */}
-            {busiest.length > 0 ? (
+                promise and a family rail over nothing at all. The test is now
+                whether ONE trade holds somebody, not whether the slice is
+                non-empty - the slice is never empty any more. */}
+            {busiest.some((t) => t.provider_count > 0) ? (
               <Trades busiest={busiest} families={families} total={categories.data.length} />
             ) : null}
             {/* Nothing published yet is the state on the first day, and a band

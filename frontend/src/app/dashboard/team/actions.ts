@@ -3,9 +3,15 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { ApiError, api } from "@/lib/api";
+import { type SuccessCode, succeed } from "@/lib/feedback";
 import type { StaffInvitation } from "@/lib/types";
 
-async function write(formData: FormData, path: string, method: string): Promise<void> {
+async function write(
+  formData: FormData,
+  path: string,
+  method: string,
+  done: SuccessCode,
+): Promise<void> {
   try {
     await api(path, {
       method,
@@ -22,14 +28,30 @@ async function write(formData: FormData, path: string, method: string): Promise<
     throw error;
   }
   revalidatePath("/dashboard/team");
+  succeed("/dashboard/team", done);
 }
 
 export async function addMember(formData: FormData): Promise<void> {
-  await write(formData, "/v1/staff", "POST");
+  await write(formData, "/v1/staff", "POST", "MEMBER_ADDED");
 }
 
+/**
+ * One PUT, two pieces of news.
+ *
+ * <p>The edit dialog and the deactivate dialog both replace the whole row, so
+ * the request cannot tell them apart - a departure and a corrected spelling
+ * arrive identically. The form says which it was, because "la fiche est à jour"
+ * after pressing Désactiver confirms something the provider did not do.
+ */
 export async function replaceMember(formData: FormData): Promise<void> {
-  await write(formData, `/v1/staff/${encodeURIComponent(String(formData.get("id")))}`, "PUT");
+  const done: SuccessCode =
+    formData.get("intent") === "deactivate" ? "MEMBER_DEACTIVATED" : "MEMBER_SAVED";
+  await write(
+    formData,
+    `/v1/staff/${encodeURIComponent(String(formData.get("id")))}`,
+    "PUT",
+    done,
+  );
 }
 
 /**
@@ -42,6 +64,10 @@ export async function replaceMember(formData: FormData): Promise<void> {
  * <p>The refusal lands on its own parameter: `VALIDATION_FAILED` means "not an
  * active colleague with an account, or yourself" here, and "il faut un nom" on
  * the same page's other forms.
+ *
+ * <p>`given` survives alongside the confirmation. The toast is gone in five
+ * seconds and what it announces is irreversible, so the consequences stay on
+ * the page underneath it rather than travelling with it.
  */
 export async function transferOwnership(formData: FormData): Promise<void> {
   const id = String(formData.get("id"));
@@ -57,7 +83,7 @@ export async function transferOwnership(formData: FormData): Promise<void> {
   // from the caller's role, and the caller's role is what just changed.
   revalidatePath("/dashboard", "layout");
   const name = String(formData.get("name") ?? "");
-  redirect(`/dashboard/team?given=${encodeURIComponent(name)}`);
+  succeed(`/dashboard/team?given=${encodeURIComponent(name)}`, "OWNERSHIP_TRANSFERRED");
 }
 
 /**
@@ -66,6 +92,15 @@ export async function transferOwnership(formData: FormData): Promise<void> {
  * <p>Returned once and stored nowhere, so it is put straight in the URL the
  * owner lands on: they have to read it off the screen and pass it on. Issuing
  * another replaces it, which is also how to revoke one.
+ *
+ * <p>No toast, and deliberately: the code IS the confirmation, it is shown once
+ * and it has to stay on the screen long enough to be copied into WhatsApp. A
+ * four-second announcement over the top of it would say less than the notice
+ * already says and would train the eye away from the one thing that matters.
+ *
+ * <p>The expiry travels too. Seven days is the server's, not this screen's, and
+ * an owner who reads a code out on Monday deserves to know it stops working -
+ * it was in the response all along and was being thrown away here.
  */
 export async function invite(formData: FormData): Promise<void> {
   const id = String(formData.get("id"));
@@ -84,9 +119,9 @@ export async function invite(formData: FormData): Promise<void> {
   // The name travels with the code so the notice can say who to give it to.
   // It is the provider's own staff list either way - nothing is disclosed by
   // putting it in their own URL.
+  const back = new URLSearchParams({ invited: invitation.code });
   const name = String(formData.get("name") ?? "");
-  redirect(
-    `/dashboard/team?invited=${encodeURIComponent(invitation.code)}` +
-      (name ? `&name=${encodeURIComponent(name)}` : ""),
-  );
+  if (name) back.set("name", name);
+  if (invitation.expires_at) back.set("until", invitation.expires_at);
+  redirect(`/dashboard/team?${back.toString()}`);
 }

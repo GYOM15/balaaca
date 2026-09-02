@@ -1567,6 +1567,8 @@ paths:
                 $ref: '#/components/schemas/CustomerBookingView'
         '404':
           $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
 
   /v1/bookings/{reference}/reschedule:
     post:
@@ -1627,6 +1629,8 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+        '429':
+          $ref: '#/components/responses/RateLimited'
 
   /v1/bookings/{reference}/cancellation:
     post:
@@ -1677,6 +1681,8 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+        '429':
+          $ref: '#/components/responses/RateLimited'
 
   /v1/providers/{slug}/appointments:
     post:
@@ -2006,6 +2012,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '404':
           $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
 
   /v1/provider-profile/contestation:
     get:
@@ -2843,13 +2851,46 @@ components:
       name: reference
       in: path
       required: true
-      description: The capability minted at booking. Opaque, and the only thing
-        that distinguishes the person who booked from a stranger.
+      description: |
+        The capability minted at booking, and the only thing that distinguishes
+        the person who booked from a stranger.
+
+        Canonical form is `AAA-BBBBBB`: three letters taken from the business
+        name, a hyphen, then six symbols drawn from an alphabet of 31 - the
+        digits and the upper-case letters with `0`, `O`, `1`, `I` and `L`
+        removed, because those are the characters a person hears wrong and
+        reads wrong. Display it exactly as it was returned, and never inside
+        anything that transforms case.
+
+        It is ACCEPTED more loosely than it is minted, because it is meant to be
+        said down a telephone and typed back in. Case is ignored and the hyphen
+        is optional, so `sfa-k7m2qp` and `SFAK7M2QP` are the same reference as
+        `SFA-K7M2QP`. Within the three initials - and only there, because the
+        six-symbol alphabet contains none of them - `0` reads as `O`, and `1`
+        and `L` read as `I`. That is why the pattern admits `0` and `1` in the
+        first three positions and nowhere else: `S1L-K7M2QP` is how somebody
+        transcribes `SIL-K7M2QP`, and it resolves.
+
+        The six symbols admit no such tolerance and want none. `0`, `O`, `1`,
+        `I` and `L` are not in that alphabet, so a character heard wrong there
+        has no correct reading and the answer is `400`, not a `404` that leaves
+        the customer wondering whether the booking still exists.
+
+        The initials are a courtesy for a person reading a list of references,
+        and for the salon recognising its own. They are not a secret, they grant
+        nothing, and they are not a key on their own: the whole string is the
+        key, and two references can never differ only in the characters above.
+
+        This replaced 43 characters of base64url. That value was case-sensitive,
+        so no page could display it in a heading without destroying it, and it
+        could not be dictated at all. Every reference of the old shape was
+        reissued when the format changed, so no client holds one that would
+        still have worked.
       schema:
         type: string
-        minLength: 20
-        maxLength: 64
-        pattern: '^[A-Za-z0-9_-]+$'
+        minLength: 9
+        maxLength: 10
+        pattern: '^[A-Za-z01]{3}-?[2-9A-HJKMNP-Za-hjkmnp-z]{6}$'
     ProviderSlug:
       name: slug
       in: path
@@ -2902,6 +2943,29 @@ components:
         `RESOURCE_NOT_FOUND`. One answer for a resource that does not exist and
         for one that is not the caller's, byte for byte: any way to tell them
         apart is an oracle for whether a hidden resource exists.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    RateLimited:
+      description: |
+        `RATE_LIMITED` - too many attempts arrived from one source.
+
+        On the customer booking routes this is not a courtesy to the server, it
+        is the second half of the authorisation. A booking reference is short
+        enough to be read aloud, which is short enough to be enumerated: six
+        symbols from an alphabet of 31 is 887 million per prefix, and a prefix
+        is shared by every business whose initials match. The limit is what
+        makes walking that space cost more than it is worth, and it is the
+        reason the reference is allowed to be that short.
+
+        `Retry-After` says how long to wait. Retrying sooner returns this same
+        answer and counts against the limit.
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying.
+          schema:
+            type: integer
       content:
         application/problem+json:
           schema:
@@ -3428,14 +3492,41 @@ components:
           description: The requested start, as a UTC instant.
         customer:
           $ref: '#/components/schemas/CustomerContact'
+        fulfilment:
+          allOf:
+            - $ref: '#/components/schemas/Fulfilment'
+          description: |
+            Which of the service's published `fulfilments` the customer chose.
+            The choice is FROZEN onto the appointment and is not re-derived from
+            the offering afterwards: a braider who stops travelling must not turn
+            Thursday's house call into a chair in her salon.
+
+            OMIT IT when the service publishes exactly one mode - the server
+            takes that one, which is what every request sent before this field
+            existed means and why it is not required. When the service publishes
+            several, omitting it is `400 VALIDATION_FAILED`: there is no
+            defensible default between sitting in a salon and having somebody
+            come to your house, and picking one would send a stranger to an
+            address or leave a customer waiting at home.
+
+            A value the service does not publish is `400 VALIDATION_FAILED` for
+            the same reason a wrong `service_offering_id` is - it names
+            something that is not on offer.
+
+            It does not change the price or the duration. Both are frozen from
+            the offering, which carries one of each whichever mode is chosen.
         service_address:
           allOf:
             - $ref: '#/components/schemas/ServiceAddress'
           description: |
-            Where to come. Required when the offering is `AT_CUSTOMER`, refused
-            otherwise - an appointment that happens at the shop must not carry
-            somebody's home address, and a call-out with no directions is a job
-            nobody can do.
+            Where to come. Required when the chosen `fulfilment` is
+            `AT_CUSTOMER`, refused otherwise - an appointment that happens at
+            the shop must not carry somebody's home address, and a call-out with
+            no directions is a job nobody can do.
+
+            "The chosen one", not "the offering's": a service that publishes
+            both `ON_SITE` and `AT_CUSTOMER` needs an address for one booking
+            and must not hold one for the next.
         customer_note:
           type: string
           maxLength: 500
@@ -3651,6 +3742,40 @@ components:
           minimum: 0
           maximum: 240
           default: 0
+        fulfilments:
+          type: array
+          # NOT minItems. The property is optional - the deprecated `location`
+          # path this document still promises omits it - and jaxrs-spec
+          # initialises an absent array to an empty list, then puts
+          # @Size(min=1) on the getter. An omitted array would therefore be
+          # refused by bean validation before any handler ran, and every
+          # existing caller would answer 400. Proved, not reasoned.
+          #
+          # "At least one" is enforced where it belongs and twice:
+          # ck_service_offerings_offers_one in the schema, and
+          # OfferingDefinition's compact constructor.
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/Fulfilment'
+          description: |
+            Every way this one service can be obtained. At least one, each value
+            at most once, order ignored.
+
+            `turnaround_hours` is required when this contains `DROP_OFF` and
+            refused when it does not: the delay is the promise attached to that
+            mode, and a service that also does `ON_SITE` carries no promise for
+            the customer who stayed in the chair.
+
+            ONE PRICE AND ONE DURATION, whichever mode the customer picks. A
+            surcharge for travelling to somebody's house is a pricing model
+            nobody has decided, and putting one here would change what a
+            customer is charged after they have read a number on the page. A
+            provider who genuinely charges more to travel still publishes two
+            services - which is the same answer as before, now applied only to
+            the case that actually differs.
+
+            Omit it only to keep using the deprecated `location` below. Sending
+            both is refused.
         turnaround_hours:
           type: integer
           format: int32
@@ -3660,27 +3785,23 @@ components:
             The workshop delay, for a service the customer HANDS OVER rather
             than waits for: a garage, a phone repairer, an alteration.
 
-            Exclusive with `location: AT_CUSTOMER`, and refused with it: a
-            drop-off asks the customer to bring the thing in, and asking them to
-            bring it to their own house is not a service anybody sells.
+            Required with `DROP_OFF` in `fulfilments`, refused without it. When
+            the request uses the deprecated `location` instead, its presence is
+            what makes the offering a drop-off, and it stays exclusive with
+            `location: AT_CUSTOMER`.
         location:
+          deprecated: true
           allOf:
             - $ref: '#/components/schemas/ServiceLocation'
           description: |
-            Omit it for the ordinary case - the customer comes to the shop.
-            `AT_CUSTOMER` is the plumber, the electrician, the cleaner and the
-            mover, and it makes the booking form ask where to go.
+            Superseded by `fulfilments`, and refused alongside it - two fields
+            for one fact are two fields that disagree.
 
-            Its presence is what makes the offering a drop-off. There is no
-            second flag to set, because two fields can disagree and one of the
-            two disagreements - a drop-off with no delay announced - is a
-            promise nobody made.
-
-            Omit it for anything performed while the customer is there. And
-            when it IS present, `duration_minutes` stops being the length of
-            the work and becomes the length of the HANDOVER at the counter:
-            the work occupies the workshop, not a chair, and a tailor sews
-            twelve boubous at once.
+            It could name only one shape, so a braider who works in her salon
+            and at her customers' houses had to publish the same service twice.
+            Read as a set of one: absent or `AT_PROVIDER` with no
+            `turnaround_hours` is `[ON_SITE]`, absent or `AT_PROVIDER` with one
+            is `[DROP_OFF]`, and `AT_CUSTOMER` is `[AT_CUSTOMER]`.
         price:
           $ref: '#/components/schemas/Money'
         price_visible:
@@ -3720,9 +3841,24 @@ components:
         turnaround_hours:
           type: integer
           format: int32
-          description: Absent on an on-site service.
+          description: Present exactly when `fulfilments` contains `DROP_OFF`.
+        fulfilments:
+          type: array
+          minItems: 1
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/Fulfilment'
+          description: Every way this service can be obtained. At least one.
         fulfilment:
-          $ref: '#/components/schemas/Fulfilment'
+          deprecated: true
+          allOf:
+            - $ref: '#/components/schemas/Fulfilment'
+          description: |
+            Superseded by `fulfilments`. Kept because it is published and
+            required, and it now answers a question a single value cannot: for a
+            service offering several modes it is the first of `ON_SITE`,
+            `DROP_OFF`, `AT_CUSTOMER` that the service publishes, which is not
+            the same thing as what the service is.
         price:
           $ref: '#/components/schemas/Money'
         price_visible:
@@ -3736,8 +3872,7 @@ components:
     Fulfilment:
       type: string
       description: |
-        The shape of the transaction. Three, and they are mutually exclusive -
-        the database refuses any pairing of them.
+        How the work reaches the customer.
 
         `ON_SITE`: the customer sits down and waits, and `duration_minutes` is
         how long.
@@ -3747,11 +3882,18 @@ components:
         `AT_CUSTOMER`: the provider travels, and the appointment carries the
         address. `duration_minutes` is the visit.
 
-        Required on every view and never accepted on a request: the server
-        derives it from `turnaround_hours` and `location`. A client must not
-        have to branch on the absence of a field, and a request that carried
-        both the inputs and the derived value would carry two sources of truth
-        for one fact.
+        These were mutually exclusive and are no longer. A service may publish
+        SEVERAL of them - braids in the salon or at your house is one service,
+        one price and one duration, and making a provider list it twice gave the
+        catalogue two rows to keep in step and a customer two entries to choose
+        between for no reason. See `fulfilments` on the offering schemas for the
+        set, and `fulfilment` on `BookAppointmentRequest` for the customer's
+        choice among them.
+
+        The set is unordered. Where one value has to stand for a service that
+        offers more than one - the deprecated singular `fulfilment` on the
+        views - it is the first of `ON_SITE`, `DROP_OFF`, `AT_CUSTOMER` that the
+        service publishes.
 
         A client that does not know a value should treat it as `ON_SITE`, which
         is what every service created before this enum grew actually is.
@@ -3860,6 +4002,15 @@ components:
             because this is the only screen it was ever for - it was accepted
             by the booking request and discarded, so the box said "Message for
             the salon" and the message went nowhere.
+        fulfilment:
+          allOf:
+            - $ref: '#/components/schemas/Fulfilment'
+          description: |
+            How this booking is being fulfilled, as the customer chose it and as
+            it was frozen. It can no longer be inferred from the presence of
+            `ready_by` or `service_address`, because the service it was booked
+            from may publish all three modes and this appointment is only one of
+            them.
         ready_by:
           type: string
           format: date-time
@@ -3969,6 +4120,14 @@ components:
           type: string
         service_name:
           type: string
+        fulfilment:
+          allOf:
+            - $ref: '#/components/schemas/Fulfilment'
+          description: |
+            What the customer chose when they booked, frozen. The one field on
+            this view that says whether to go to the salon, drop something off,
+            or wait at home - and since a service may now publish all three, it
+            cannot be worked out from the service name.
         timezone:
           type: string
           description: |
@@ -4029,8 +4188,17 @@ components:
           format: uuid
         reference:
           type: string
-          description: Keep it. It is the only way back to this appointment
-            without an account, and it is returned once.
+          description: |
+            Keep it. It is the only way back to this appointment without an
+            account, and it is returned once.
+
+            Canonical `AAA-BBBBBB`, ten characters, and it is meant to be read
+            aloud and written down. Upper case throughout, deliberately: the
+            previous format was mixed-case base64url, the page rendered it
+            inside an element carrying `text-transform: uppercase`, and what
+            every customer copied off the screen was therefore not their
+            reference. A format a stylesheet cannot damage was the fix, rather
+            than a rule about which element it may be put in.
         status:
           $ref: '#/components/schemas/AppointmentStatus'
 
@@ -4252,10 +4420,32 @@ components:
         turnaround_hours:
           type: integer
           format: int32
-          description: Absent on an on-site service. "Ready in 48 h" is what a
-            customer needs before choosing, which is why it is published.
+          description: Present exactly when `fulfilments` contains `DROP_OFF`.
+            "Ready in 48 h" is what a customer needs before choosing, which is
+            why it is published.
+        fulfilments:
+          type: array
+          minItems: 1
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/Fulfilment'
+          description: |
+            Every way this service can be obtained, and therefore exactly what
+            the booking form must offer the customer as a choice. One value
+            means no choice to make and nothing to ask; more than one means the
+            form asks, and `fulfilment` on the booking request carries the
+            answer.
+
+            The price and the duration above apply to all of them.
         fulfilment:
-          $ref: '#/components/schemas/Fulfilment'
+          deprecated: true
+          allOf:
+            - $ref: '#/components/schemas/Fulfilment'
+          description: |
+            Superseded by `fulfilments`. For a service publishing several modes
+            this is the first of `ON_SITE`, `DROP_OFF`, `AT_CUSTOMER` among
+            them, so a client that branches on it will draw one of the ways this
+            service can be had and hide the others.
         photos:
           type: array
           maxItems: 5
@@ -4443,6 +4633,37 @@ components:
           description: The quartier, as the provider wrote it.
         logo_url:
           type: string
+        fulfilments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Fulfilment'
+          description: |
+            Every way this business can be reached, as a set, DERIVED from the
+            modes its currently ACTIVE service offerings publish. Not a field
+            the provider fills in: a business that offers house calls says so by
+            publishing a service that does, and stops saying so by retiring it.
+
+            Unordered, and each value appears once. It may be EMPTY - a business
+            with no active service publishes nothing to aggregate, and that is a
+            real state a directory card has to draw. Treat empty as "not stated"
+            rather than as "none", and show nothing rather than a badge saying
+            so.
+        price_from:
+          allOf:
+            - $ref: '#/components/schemas/Money'
+          nullable: true
+          description: |
+            The lowest price among the same active offerings, counting only
+            those whose price the provider chose to publish. DERIVED, like
+            `fulfilments`, and `null` whenever there is nothing to derive it
+            from - no active service, or none with a visible price. Null and
+            zero are different answers and a client must not render one as the
+            other.
+
+            It is a floor and it is presented as one - "dès 90 000 GNF". It is
+            not what this customer will pay, because what they pay depends on
+            the service they pick, and a card that showed it as a price would be
+            quoting a number nobody agreed to.
 
     LocalityRef:
       type: object

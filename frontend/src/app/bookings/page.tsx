@@ -11,12 +11,22 @@ export const metadata: Metadata = {
 };
 
 /**
- * The shape the contract publishes for a reference: 20 to 64 characters of
- * URL-safe alphabet. Checked here so a typo comes back as a sentence instead
- * of a 404 - and checked ONLY for shape, because whether a well-formed
+ * The shape the contract publishes for a reference: three initials taken from
+ * the business name, an optional hyphen, then six symbols of an alphabet with
+ * `0`, `O`, `1`, `I` and `L` struck out of it - the characters a person hears
+ * wrong and reads wrong down a telephone.
+ *
+ * <p>Both cases are in it because the API ignores case, and the initials admit
+ * `0` and `1` because that is how somebody transcribes the `O` or the `I` they
+ * were just told. The six symbols admit no such tolerance and want none: a
+ * character heard wrong there has no correct reading.
+ *
+ * <p>This replaced 43 characters of base64url, which no page could put in a
+ * heading without destroying. Checked here so a typo comes back as a sentence
+ * instead of a 404 - and checked ONLY for shape, because whether a well-formed
  * reference names anything is not this page's business to reveal.
  */
-const REFERENCE = /^[A-Za-z0-9_-]{20,64}$/;
+const REFERENCE = /^[A-Za-z01]{3}-?[2-9A-HJKMNP-Za-hjkmnp-z]{6}$/;
 
 /**
  * The way back in, for somebody who has their reference and nothing else.
@@ -38,8 +48,13 @@ export default async function FindBooking({
   const query = await searchParams;
   const typed = normalise(query.reference ?? "");
 
-  if (typed && REFERENCE.test(typed)) redirect(`/bookings/${encodeURIComponent(typed)}`);
-  const invalid = typed.length > 0;
+  if (typed && REFERENCE.test(typed)) {
+    redirect(`/bookings/${encodeURIComponent(canonical(typed))}`);
+  }
+  // Anything left in the box that was not redirected was refused, which is why
+  // this reads the raw parameter rather than the normalised one: a paste of
+  // "/" normalises to nothing while still being something the person typed.
+  const invalid = (query.reference ?? "").trim().length > 0;
 
   return (
     <>
@@ -86,9 +101,14 @@ export default async function FindBooking({
                   type="text"
                   required
                   defaultValue={query.reference ?? ""}
-                  // A phone capitalises and autocorrects on its own, which is
-                  // enough to break a reference that is case-sensitive.
-                  autoCapitalize="none"
+                  // Upper case on a phone keyboard, because that is the case a
+                  // reference is minted and printed in: the customer is copying
+                  // one off a screen and comparing what they typed to it. The
+                  // API ignores case either way, so this changes nothing but
+                  // whether the two look alike while it is being typed.
+                  autoCapitalize="characters"
+                  // Autocorrect, on the other hand, would rewrite six random
+                  // characters into a word it recognises.
                   autoCorrect="off"
                   spellCheck={false}
                   autoComplete="off"
@@ -101,14 +121,18 @@ export default async function FindBooking({
                   <p className="field__error" id="reference-error">
                     <Icon name="alert-circle" size={16} />
                     <span>
-                      Cette référence n’a pas la bonne forme. Vérifiez qu’elle est
-                      complète, sans espace ni caractère en trop.
+                      Cette référence n’a pas la bonne forme. Elle s’écrit en
+                      trois lettres, un tiret et six caractères, comme
+                      SFA-K7M2QP. Vérifiez qu’elle est complète et sans
+                      caractère en trop.
                     </span>
                   </p>
                 ) : (
                   <p className="field__hint" id="reference-hint">
-                    Les majuscules comptent. Vous pouvez aussi coller le lien
-                    complet de votre rendez-vous : la référence y est.
+                    Trois lettres, un tiret et six caractères, comme SFA-K7M2QP.
+                    Majuscules ou minuscules, avec ou sans le tiret : c’est la
+                    même référence. Vous pouvez aussi coller le lien complet de
+                    votre rendez-vous : la référence y est.
                   </p>
                 )}
               </div>
@@ -150,14 +174,38 @@ export default async function FindBooking({
  *
  * <p>People paste the whole link, because the link is what the confirmation
  * message contains. Taking the last path segment costs one line and saves the
- * person who did the obvious thing from being told they did it wrong. The case
- * is left alone: the alphabet is case-sensitive, so upper-casing a reference
- * would break it rather than tidy it.
+ * person who did the obvious thing from being told they did it wrong - and
+ * taking it unconditionally is what makes a bare reference with a trailing
+ * slash or a query stuck to it work too. It used to be taken only when there
+ * was more than one segment, so `SFA-K7M2QP/` and `SFA-K7M2QP?x=1` were handed
+ * on whole and refused.
+ *
+ * <p>Spaces go because a reference dictated over the telephone gets written
+ * down in halves, and none is ever part of one. The case is left as typed: it
+ * is the raw parameter that fills the box again when the shape is refused, and
+ * showing somebody their own typing back is the point of that.
  */
 function normalise(value: string): string {
-  const trimmed = value.trim();
-  const path = trimmed.split(/[?#]/)[0] ?? "";
+  const path = value.trim().split(/[?#]/)[0] ?? "";
   const segments = path.split("/").filter(Boolean);
-  return segments.length > 1 ? (segments[segments.length - 1] ?? "") : trimmed;
+  return (segments[segments.length - 1] ?? "").replace(/\s+/g, "");
+}
+
+/**
+ * The reference as the API mints one: `AAA-BBBBBB`, upper case throughout.
+ *
+ * <p>Accepted more loosely than it is minted - case ignored, hyphen optional -
+ * so `sfa-k7m2qp` and `SFAK7M2QP` both resolve. This is what turns either of
+ * them into the one form, so the URL a customer lands on and shares is the one
+ * printed on their confirmation rather than whichever way they typed it.
+ *
+ * <p>Safe only on a value the pattern above has already accepted: the six
+ * symbols have no lower-case-only members, so upper-casing cannot take a
+ * reference out of the alphabet, and nine characters means the hyphen is
+ * missing rather than somewhere else.
+ */
+function canonical(reference: string): string {
+  const upper = reference.toUpperCase();
+  return upper.includes("-") ? upper : `${upper.slice(0, 3)}-${upper.slice(3)}`;
 }
 

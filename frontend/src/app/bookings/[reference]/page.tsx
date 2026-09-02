@@ -225,12 +225,18 @@ export default async function BookingPage({
       `/v1/bookings/${encodeURIComponent(reference)}`,
     );
   } catch (error) {
-    // A reference that names nothing and one at a suspended business answer
-    // identically, and so does this page. A reference the contract's pattern
-    // rejects outright is a 400 and belongs here too: it also names nothing,
-    // and a 500 would tell a mistyped character that the product is broken.
-    if (error instanceof ApiError && (error.status === 404 || error.status === 400)) {
-      notFound();
+    if (error instanceof ApiError) {
+      // The reference is short enough to be dictated, which is what makes it
+      // short enough to be guessed, so the API throttles whoever tries. The
+      // person reading the refusal is almost never that guesser - a household,
+      // a shared phone and a salon's wifi all put several customers behind one
+      // address - and telling them the product is broken would be a lie.
+      if (error.status === 429) return <Throttled reference={reference} />;
+      // A reference that names nothing and one at a suspended business answer
+      // identically, and so does this page. A reference the contract's pattern
+      // rejects outright is a 400 and belongs here too: it also names nothing,
+      // and a 500 would tell a mistyped character that the product is broken.
+      if (error.status === 404 || error.status === 400) notFound();
     }
     throw error;
   }
@@ -386,10 +392,10 @@ function DetailView({
           style={{ marginTop: "var(--s-5)", alignItems: "flex-start", gap: "var(--s-4)" }}
         >
           <div>
-            <p className="t-overline">Réservation {booking.reference}</p>
-            <h1 className="t-h2" style={{ marginTop: "var(--s-2)" }}>
-              {booking.service_name}
-            </h1>
+            {/* The reference used to be the overline here, and the crumb above
+                already says which page this is - so the title carries the one
+                thing it is about and nothing repeats. */}
+            <h1 className="t-h2">{booking.service_name}</h1>
           </div>
           <span className={`badge badge--${status?.tone ?? "neutral"}`}>
             <Icon name={status?.icon ?? "info"} />
@@ -430,6 +436,11 @@ function DetailView({
               "Réessayez dans un instant, ou appelez le professionnel : son numéro est sur sa page."}
           </Alert>
         ) : null}
+
+        {/* Under whatever the customer's own action just raised, and above
+            everything that is merely true of the appointment: they came here
+            to read this, and after an action they came to read that first. */}
+        <Reference reference={booking.reference} />
 
         {note ? (
           <Alert
@@ -645,6 +656,95 @@ function DetailView({
         </div>
       </div>
     </section>
+  );
+}
+
+/**
+ * The reference, given the weight of the only thing the customer holds.
+ *
+ * <p>It used to be set in `t-overline` above the title - twelve pixels, tertiary
+ * grey, and `text-transform: uppercase`. The old reference was case-sensitive
+ * base64url, so what a customer copied off this screen was not their reference:
+ * `1Uksca31nJzs3aiPeGCoaoRstjsGOu79wyzW3RUMqWY` was offered as
+ * `1UKSCA31NJZS3AIPEGCOAORSTJSGOU79WYZW3RUMQWY`, and pasting it back answered
+ * 404. The format changed to one a stylesheet cannot damage, but the markup
+ * that damaged it was the second half of the fault and this is that half.
+ *
+ * <p>So: `.ref`, the design system's own box for a reference - large, full
+ * contrast, tabular, and carrying no case transform at all. It is drawn exactly
+ * as the API returned it, and it is the same block, in the same words, as the
+ * confirmation screen where the customer first read it.
+ *
+ * <p>The button carries `data-copy` and nothing else: the vendored island reads
+ * the attribute, writes the clipboard and raises the toast - and shows the
+ * reference in that toast when the browser refuses the clipboard, which is the
+ * case that matters most here. No script is written on this side and none is
+ * needed.
+ */
+function Reference({ reference }: { reference: string }) {
+  return (
+    <div className="card" style={{ marginTop: "var(--s-6)" }}>
+      <div className="card__head" style={{ alignItems: "center", flexWrap: "wrap" }}>
+        <div>
+          <div className="t-overline">Votre référence</div>
+          <div className="ref" style={{ marginTop: "var(--s-2)" }}>
+            {reference}
+          </div>
+        </div>
+        <button className="btn btn--secondary" type="button" data-copy={reference}>
+          <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
+            <Icon name="copy" size={18} />
+          </span>
+          <span className="btn__label--idle">Copier</span>
+        </button>
+      </div>
+      <div className="card__body">
+        <p className="t-sm" style={{ maxWidth: "52ch" }}>
+          Gardez-la : sans compte, c’est elle qui rouvre ce rendez-vous. Vous
+          pouvez la dicter telle quelle — majuscules ou minuscules, avec ou sans
+          le tiret, c’est la même référence.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The answer to a 429 on the reading itself.
+ *
+ * <p>Guessing references is what the throttle is for, and the customer sitting
+ * behind the same address as the guesser is who reads this. A sentence and a
+ * way to try again, rather than the 500 screen, which says the product is
+ * broken when the product simply asked somebody to wait.
+ *
+ * <p>The refusals the actions raise already say this on the appointment itself.
+ * This one has no appointment to say it on: the read is what was refused.
+ */
+function Throttled({ reference }: { reference: string }) {
+  return (
+    <>
+      <FocusHeader back="/bookings" label="Retrouver ma réservation" />
+      <main id="contenu">
+        <div className="page page--narrow" style={{ paddingBlock: "var(--s-8) var(--s-16)" }}>
+          <h1 className="t-h2">Trop de demandes d’un coup</h1>
+          <Alert
+            tone="warning"
+            icon="alert-triangle"
+            title="Réessayez dans un instant"
+            code="RATE_LIMITED"
+            actions={
+              <Link className="btn btn--primary btn--sm" href={hrefOf(reference)}>
+                <span className="btn__label--idle">Réessayer</span>
+              </Link>
+            }
+          >
+            Trop de références ont été demandées depuis votre connexion en peu de
+            temps, et l’accès a été mis en pause quelques instants. Votre
+            rendez-vous n’a pas bougé et votre référence reste valable.
+          </Alert>
+        </div>
+      </main>
+    </>
   );
 }
 

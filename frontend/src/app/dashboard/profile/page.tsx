@@ -2,7 +2,7 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import { dateTime, mediaUrl } from "@/lib/format";
 import { Icon } from "@/components/icon";
-import { EmptyState, Notice, initials } from "@/components/ui";
+import { Notice, initials } from "@/components/ui";
 import type {
   AreaList,
   BookingPolicy,
@@ -11,7 +11,13 @@ import type {
   ReadinessView,
 } from "@/lib/types";
 import { groupLocalities, localityLabel } from "@/lib/localities";
-import { saveProfile, savePolicy, uploadCover, uploadLogo } from "./actions";
+import {
+  saveProfile,
+  savePolicy,
+  setPublished,
+  uploadCover,
+  uploadLogo,
+} from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -19,12 +25,35 @@ export const dynamic = "force-dynamic";
 const QR_CODE = "/dashboard/profile/qr-code";
 
 /**
- * The publish switch lives in the aside, beside the state it changes, while
- * the save button that carries it sits in the panel foot. `form` is what binds
- * a control to a form it is not nested in - native, so the no-JavaScript
- * submission carries it too.
+ * The two boxes the island fills with the chosen file, and the two inputs that
+ * choose it.
+ *
+ * <p>They are named apart because they must be apart. Section 6 of
+ * presentation-script.ts replaces the preview element's `innerHTML`, so an
+ * input sitting inside one is destroyed - with the file it was holding - before
+ * the form it belongs to can send anything. The services screen learned that
+ * first; here `.pcover::after` adds a second reason, having measured as
+ * `pointer-events: auto` across the whole band.
  */
-const PROFILE_FORM = "profile-form";
+const COVER_PREVIEW = "cover-preview";
+const COVER_INPUT = "cover-file";
+const LOGO_PREVIEW = "logo-preview";
+const LOGO_INPUT = "logo-file";
+
+/**
+ * What the publish switch actually activates.
+ *
+ * <p>A checkbox cannot submit its form without JavaScript, and a submit button
+ * cannot be `:checked` - which is what the design's track is drawn from. So the
+ * switch is a `label` for this control, and the checkbox it contains carries no
+ * name and exists only to light the track. A label's `for` beats a control
+ * nested inside it, so clicking anywhere on the switch reaches this and the
+ * page saves itself.
+ */
+const PUBLISH_SUBMIT = "publish-submit";
+
+/** `.btn__icon--idle` has no display of its own; only its two siblings do. */
+const ICON_IDLE = { display: "inline-flex" } as const;
 
 const REFUSALS: Record<string, string> = {
   FORBIDDEN: "Seul le propriétaire modifie la page et les réglages.",
@@ -147,88 +176,138 @@ export default async function Profile({
                 </div>
                 <div className="card__body">
                   <form action={uploadCover}>
-                    <div
-                      style={{
-                        position: "relative",
-                        borderRadius: "var(--r-sm)",
-                        overflow: "hidden",
-                        border: "1px solid var(--border)",
-                      }}
-                    >
+                    {/* The band a visitor gets, drawn by the class that draws
+                        it there, rather than by a ratio written on this line.
+                        Same height to the pixel - the design gives a cover
+                        `clamp(160px, 26vw, 300px)` - and the panel is narrower
+                        than a page, so what this shows is the tighter of the
+                        two crops. That is the safe direction to be wrong in,
+                        and it is as close as markup gets while the height is
+                        measured against the window and the width against
+                        this column. */}
+                    <div className="pcover atmo grain grain--dark" id={COVER_PREVIEW}>
                       {cover ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={cover}
-                          alt="Bandeau actuel"
-                          style={{ width: "100%", aspectRatio: "15/4", objectFit: "cover" }}
-                        />
-                      ) : (
-                        <EmptyState
-                          compact
-                          sketch="storefront"
-                          title="Aucun bandeau"
-                          body="Un croquis de votre métier tient la place sur votre page publique."
-                        />
-                      )}
-                      <label
-                        className="btn btn--secondary btn--sm"
-                        style={{ position: "absolute", right: 12, bottom: 12 }}
-                      >
-                        <input
-                          type="file"
-                          className="sr-only"
-                          accept="image/jpeg,image/png"
-                          name="image"
-                        />
-                        <Icon name="camera" size={18} /> Changer le bandeau
-                      </label>
+                        <img src={cover} alt="Bandeau actuel" width={1600} height={500} />
+                      ) : null}
                     </div>
-                    {/* The design changes the image the moment one is chosen. No
-                        page here writes JavaScript, so the send is a button. */}
-                    <div style={{ marginTop: "var(--s-3)" }}>
-                      <button className="btn btn--secondary btn--sm" type="submit">
-                        <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
+                    {cover ? null : (
+                      <p className="t-xs" style={{ marginTop: "var(--s-2)" }}>
+                        Sans bandeau, votre page ouvre sur ce fond.
+                      </p>
+                    )}
+                    <div
+                      className="row row--wrap"
+                      style={{ marginTop: "var(--s-3)", gap: "var(--s-3)" }}
+                    >
+                      {/* Outside the box above, and that is the whole trick:
+                          the island empties that box to show the choice, and
+                          an input standing in it goes with the contents. */}
+                      <label className="btn btn--secondary btn--sm" htmlFor={COVER_INPUT}>
+                        <span className="btn__icon--idle" style={ICON_IDLE}>
+                          <Icon name="camera" size={18} />
+                        </span>
+                        <span className="btn__label--idle">Choisir un bandeau</span>
+                      </label>
+                      <input
+                        className="sr-only"
+                        type="file"
+                        id={COVER_INPUT}
+                        name="image"
+                        accept="image/jpeg,image/png"
+                        data-preview={COVER_PREVIEW}
+                      />
+                      {/* Four labels, and NOT a progress bar: a figure that
+                          means anything needs the upload to report itself,
+                          which needs XHR and a client component, and this page
+                          is neither. Two of the four are also dead for now -
+                          `data-busy` is what the stylesheet swaps them on, and
+                          nothing in the shipped island sets it on a form that
+                          really submits. They are written the way every other
+                          screen writes them, so the day something does, this
+                          says so too. What a provider is actually owed - that
+                          the bytes arrived, and which image they were - the
+                          action says when it lands. */}
+                      <button className="btn btn--primary btn--sm" type="submit">
+                        <span className="btn__icon--idle" style={ICON_IDLE}>
                           <Icon name="upload" size={18} />
                         </span>
-                        <span className="btn__label--idle">Envoyer le bandeau</span>
+                        <span className="btn__label--idle">Enregistrer le bandeau</span>
+                        <span className="btn__icon--busy">
+                          <Icon name="loader" size={18} className="ico--spin" />
+                        </span>
+                        <span className="btn__label--busy">Envoi du bandeau…</span>
+                        <span className="btn__icon--done">
+                          <Icon name="check" size={18} />
+                        </span>
+                        <span className="btn__label--done">Bandeau enregistré</span>
                       </button>
                     </div>
                   </form>
 
                   <form action={uploadLogo}>
                     <div className="row" style={{ marginTop: "var(--s-5)", gap: "var(--s-4)" }}>
-                      <span className="avatar avatar--xl">
+                      {/* The slot the public page gives a logo, and not the
+                          round `.avatar`: that one crops to a circle, so a
+                          provider was judging their logo by a cut no customer
+                          will ever see. The margin below it pays for the phone
+                          layout, where this box stacks above the card. The
+                          position is what keeps the island's preview furniture
+                          in the box: it is absolute, and this slot is the one
+                          preview target the design leaves unpositioned, so
+                          without this the "Envoi…" tag lands in the top-left
+                          corner of the window - measured, not feared. */}
+                      <div
+                        className="phead__logo"
+                        id={LOGO_PREVIEW}
+                        style={{ marginBottom: 0, position: "relative" }}
+                      >
                         {logo ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={logo} alt="Logo actuel" width={76} height={76} />
+                          <img src={logo} alt="Logo actuel" width={88} height={88} />
                         ) : (
-                          initials(profile.business_name)
+                          <span className="avatar avatar--xl" aria-hidden="true">
+                            {initials(profile.business_name)}
+                          </span>
                         )}
-                      </span>
+                      </div>
                       <div className="grow">
                         <div className="t-strong">Logo</div>
                         <p className="t-xs" style={{ marginTop: 2 }}>
-                          Carré, JPEG ou PNG, 5 Mo maximum.
+                          Carré, JPEG ou PNG, 5 Mo maximum. Il n’est pas
+                          rogné&nbsp;: une image large s’affiche large.
                         </p>
-                        <div style={{ marginTop: "var(--s-3)" }}>
-                          <label className="btn btn--secondary btn--sm">
-                            <input
-                              type="file"
-                              className="sr-only"
-                              accept="image/jpeg,image/png"
-                              name="image"
-                            />
-                            <Icon name="upload" size={18} /> Remplacer
-                          </label>
-                          <button
-                            className="btn btn--secondary btn--sm"
-                            type="submit"
-                            style={{ marginLeft: "var(--s-2)" }}
-                          >
-                            <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
+                        <div
+                          className="row row--wrap"
+                          style={{ marginTop: "var(--s-3)", gap: "var(--s-2)" }}
+                        >
+                          <label className="btn btn--secondary btn--sm" htmlFor={LOGO_INPUT}>
+                            <span className="btn__icon--idle" style={ICON_IDLE}>
                               <Icon name="upload" size={18} />
                             </span>
-                            <span className="btn__label--idle">Envoyer le logo</span>
+                            <span className="btn__label--idle">Choisir un logo</span>
+                          </label>
+                          <input
+                            className="sr-only"
+                            type="file"
+                            id={LOGO_INPUT}
+                            name="image"
+                            accept="image/jpeg,image/png"
+                            data-preview={LOGO_PREVIEW}
+                          />
+                          <button className="btn btn--primary btn--sm" type="submit">
+                            <span className="btn__icon--idle" style={ICON_IDLE}>
+                              <Icon name="upload" size={18} />
+                            </span>
+                            <span className="btn__label--idle">Enregistrer le logo</span>
+                            <span className="btn__icon--busy">
+                              <Icon name="loader" size={18} className="ico--spin" />
+                            </span>
+                            <span className="btn__label--busy">Envoi du logo…</span>
+                            <span className="btn__icon--done">
+                              <Icon name="check" size={18} />
+                            </span>
+                            <span className="btn__label--done">Logo enregistré</span>
                           </button>
                         </div>
                       </div>
@@ -242,14 +321,22 @@ export default async function Profile({
                 <div className="panel__head">
                   <div className="panel__title">Informations publiques</div>
                 </div>
-                <form action={saveProfile} id={PROFILE_FORM}>
+                <form action={saveProfile}>
                   <div className="card__body">
                     {/* The API replaces the profile whole, so what this screen
                         does not draw travels with it as it stands. Dropping any
                         of these from the body would clear the column on the
                         next save: `city` still feeds the directory card, the
                         trade decides which trade page carries this business,
-                        and a blank timezone is not a timezone at all. */}
+                        and a blank timezone is not a timezone at all.
+                        `published` is the one that would cost the most - the
+                        switch is its own form now, and without this line a
+                        corrected address would take a live page offline. */}
+                    <input
+                      type="hidden"
+                      name="published"
+                      value={profile.published ? "on" : ""}
+                    />
                     <input type="hidden" name="city" value={profile.city ?? ""} />
                     <input
                       type="hidden"
@@ -585,26 +672,62 @@ export default async function Profile({
                       offered to a published page, because unpublishing is
                       always allowed. */}
                   {readiness.can_publish || profile.published ? (
-                    <label className="switch" style={{ width: "100%" }}>
+                    /* Its own form of its own single field, so turning the
+                       switch IS the save. It used to set a field of the form
+                       in the other column, which meant a provider turned it,
+                       saw it turn, and left with a page still offline. */
+                    <form action={setPublished}>
+                      {/* The state wanted, not a request to flip: a page left
+                          open in a second tab and clicked twice lands on the
+                          same answer both times. */}
                       <input
-                        type="checkbox"
+                        type="hidden"
                         name="published"
-                        form={PROFILE_FORM}
-                        defaultChecked={profile.published}
+                        value={profile.published ? "" : "on"}
                       />
-                      <span className="switch__track" />
-                      <span className="grow">
-                        <span className="t-sm t-strong">Page visible du public</span>
-                        <span className="t-xs" style={{ display: "block" }}>
-                          Désactiver la retire des recherches. Vos rendez-vous
-                          restent intacts.
+                      <label
+                        className="switch"
+                        htmlFor={PUBLISH_SUBMIT}
+                        style={{ width: "100%" }}
+                      >
+                        {/* Nameless and unreachable: it sends nothing and it is
+                            what the design's track reads. Its state is the
+                            server's answer, so the switch never shows a
+                            publication that has not happened. */}
+                        <input
+                          type="checkbox"
+                          defaultChecked={profile.published}
+                          tabIndex={-1}
+                          aria-hidden="true"
+                        />
+                        <span className="switch__track" />
+                        <span className="grow">
+                          <span className="t-sm t-strong">Page visible du public</span>
+                          <span className="t-xs" style={{ display: "block" }}>
+                            Le changement est enregistré tout de suite.
+                            Désactiver la retire des recherches&nbsp;; vos
+                            rendez-vous restent intacts.
+                          </span>
                         </span>
-                      </span>
-                    </label>
+                      </label>
+                      {/* Off-screen but focusable, and named for what pressing
+                          it does rather than for the state beside it - it is
+                          what a keyboard and a screen reader reach. */}
+                      <input
+                        className="sr-only"
+                        id={PUBLISH_SUBMIT}
+                        type="submit"
+                        value={
+                          profile.published
+                            ? "Retirer ma page de l’annuaire"
+                            : "Publier ma page"
+                        }
+                      />
+                    </form>
                   ) : (
                     <Notice tone="warning" title="Publication indisponible">
-                      Une condition n’est pas remplie. Le bouton apparaîtra dès
-                      qu’elle le sera.
+                      Une condition n’est pas remplie. L’interrupteur apparaîtra
+                      dès qu’elle le sera.
                     </Notice>
                   )}
 

@@ -7,6 +7,7 @@ import com.balaaca.booking.domain.BookingExceptions.TransientBookingConflictExce
 import com.balaaca.booking.domain.CustomerContact;
 import com.balaaca.booking.domain.ServiceAddress;
 import com.balaaca.booking.ports.outbound.AppointmentRepository;
+import com.balaaca.catalog.ports.inbound.Fulfilment;
 import com.balaaca.platformkernel.tenancy.TenantContext;
 import com.balaaca.sharedkernel.ids.AppointmentId;
 import com.balaaca.sharedkernel.ids.CustomerId;
@@ -17,7 +18,6 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceException;
 import java.security.SecureRandom;
 import java.sql.SQLException;
-import java.util.Base64;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -32,6 +32,18 @@ import java.util.UUID;
 public class AppointmentSqlRepository implements AppointmentRepository {
 
     private static final SecureRandom RANDOM = new SecureRandom();
+
+    /**
+     * The digits and the upper-case letters with 0, O, 1, I and L removed,
+     * because those are the characters a person hears wrong and reads wrong.
+     * The same thirty-one V043 reissued the existing references with.
+     */
+    private static final String ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
+    private static final int BODY_LENGTH = 6;
+
+    /** The two indexes a drawn body can collide with, and nothing else. */
+    private static final String REFERENCE_KEY_INDEX = "uq_appointments_reference_key";
+    private static final String REFERENCE_UNIQUE_INDEX = "uq_appointments_public_reference";
 
     private static final String EXCLUSION_VIOLATION = "23P01";
     private static final String UNIQUE_VIOLATION = "23505";
@@ -55,11 +67,13 @@ public class AppointmentSqlRepository implements AppointmentRepository {
         String key = a.idempotencyKey().orElse(null);
 
         try {
-            // A capability, minted here and nowhere else. 256 bits from a
-            // SecureRandom: it is the only thing standing between a stranger
-            // and one customer's appointment, so it is not derived from the
-            // id, the phone or the time - all of which someone could know.
-            String reference = mintReference();
+            // Half of a capability, minted here. The other half - the three
+            // initials - is derived from the business name by the database
+            // inside the statement below, so there is one implementation of
+            // that rule and it is the one V043 reissued every existing row
+            // with. Neither half is derived from the id, the phone or the time,
+            // all of which someone could know.
+            String referenceBody = mintReferenceBody();
 
             List<Object[]> inserted = em.createNativeQuery("""
                     INSERT INTO appointments (
@@ -69,19 +83,35 @@ public class AppointmentSqlRepository implements AppointmentRepository {
                         customer_price_amount_minor, customer_price_currency,
                         duration_minutes, source, idempotency_key, idempotency_request_hash,
                         public_reference, customer_note, turnaround_hours, ready_by,
-                        service_location_kind, service_locality_id, service_area,
+                        service_fulfilment, service_locality_id, service_area,
                         service_directions, status)
                     VALUES (
                         :id, :providerId, :staffId, :offeringId, :customerId,
                         :startsAt, :endsAt, :bufferBefore, :bufferAfter,
                         :blockedFrom, :blockedUntil, :serviceName,
                         :priceMinor, :currency, :duration, :source, :key, :hash,
-                        :reference, :customerNote,
-                        -- Frozen from the offering, like the price and the
-                        -- buffers. The promise is derived here rather than by
-                        -- the application so the two cannot disagree: ready_by
-                        -- is always ends_at plus the delay that was announced
-                        -- WHEN THIS WAS BOOKED, and re-announcing a shorter one
+                        -- The initials come from the row, not from Java. A
+                        -- second implementation of the folding rule is a second
+                        -- implementation that will stop agreeing with the first,
+                        -- and this one has to agree with a unique index that was
+                        -- built on it. RLS makes the provider readable here -
+                        -- the auto_confirm subquery below reads the same row.
+                        (SELECT app_booking_initials(business_name)
+                           FROM providers WHERE id = :providerId)
+                          || '-' || CAST(:referenceBody AS varchar),
+                        :customerNote,
+                        -- Frozen from the offering like the price and the
+                        -- buffers, but only onto a booking that IS a drop-off:
+                        -- the offering may announce a delay while this customer
+                        -- chose to sit in the chair, and freezing it regardless
+                        -- would promise them something would be ready on Friday.
+                        -- ck_appointments_turnaround_is_drop_off refuses the
+                        -- pair the other way round.
+                        --
+                        -- The promise is derived here rather than by the
+                        -- application so the two cannot disagree: ready_by is
+                        -- always ends_at plus the delay that was announced WHEN
+                        -- THIS WAS BOOKED, and re-announcing a shorter one
                         -- tomorrow leaves this row alone.
                         CAST(:turnaround AS int),
                         -- endsAt is CAST here as well as bound: in this
@@ -110,10 +140,11 @@ public class AppointmentSqlRepository implements AppointmentRepository {
                         -- request first?", and the request it is about is a
                         -- stranger's. A walk-in left PENDING would put the
                         -- salon's own entry in the salon's own queue.
-                        -- Frozen too. A plumber who stops making house calls
-                        -- must not turn Thursday's call-out into a shop
-                        -- appointment the customer never agreed to.
-                        :locationKind,
+                        -- The customer's own choice, frozen. Not re-derivable
+                        -- from the offering any more: since V044 it may publish
+                        -- all three, and a braider who stops travelling must not
+                        -- turn Thursday's house call into a chair in her salon.
+                        :fulfilment,
                         -- Resolved here rather than carried in as an id: the
                         -- slug was already checked against the published map,
                         -- and an application layer with no use for a foreign
@@ -128,7 +159,7 @@ public class AppointmentSqlRepository implements AppointmentRepository {
                     ON CONFLICT (provider_id, idempotency_key)
                         WHERE idempotency_key IS NOT NULL
                     DO NOTHING
-                    RETURNING id, status
+                    RETURNING id, status, public_reference
                     """)
                     .setParameter("id", a.id().value())
                     .setParameter("providerId", providerId)
@@ -139,7 +170,7 @@ public class AppointmentSqlRepository implements AppointmentRepository {
                     .setParameter("endsAt", a.slot().endsAt())
                     .setParameter("bufferBefore", a.slot().bufferBeforeMinutes())
                     .setParameter("bufferAfter", a.slot().bufferAfterMinutes())
-                    .setParameter("locationKind", a.offering().location().name())
+                    .setParameter("fulfilment", a.fulfilment().name())
                     .setParameter("serviceLocality", a.serviceAddress()
                             .flatMap(ServiceAddress::localitySlug).orElse(null))
                     .setParameter("serviceArea", a.serviceAddress()
@@ -156,10 +187,9 @@ public class AppointmentSqlRepository implements AppointmentRepository {
                     .setParameter("accepted", a.source().arrivesAccepted())
                     .setParameter("key", key)
                     .setParameter("hash", a.idempotencyRequestHash().orElse(null))
-                    .setParameter("reference", reference)
+                    .setParameter("referenceBody", referenceBody)
                     .setParameter("customerNote", a.customerNote().orElse(null))
-                    .setParameter("turnaround",
-                            a.offering().turnaround().map(t -> (int) t.toHours()).orElse(null))
+                    .setParameter("turnaround", turnaroundOf(a))
                     // RETURNING rather than a row count: the status is decided
                     // by the provider's auto_confirm inside this statement, and
                     // reading it back afterwards would be a second query
@@ -169,7 +199,7 @@ public class AppointmentSqlRepository implements AppointmentRepository {
 
             if (!inserted.isEmpty()) {
                 Object[] row = (Object[]) inserted.get(0);
-                return new InsertOutcome(a.id(), reference,
+                return new InsertOutcome(a.id(), (String) row[2],
                                          AppointmentStatus.valueOf((String) row[1]), false);
             }
             // Zero rows means the conflict target fired, so the key exists and
@@ -214,6 +244,20 @@ public class AppointmentSqlRepository implements AppointmentRepository {
     }
 
     /**
+     * The delay this BOOKING carries, which is the offering's only when the
+     * customer chose to hand the work over.
+     *
+     * <p>The offering's own turnaround belongs to its drop-off mode, and a
+     * service may now publish that mode alongside others. Anything else here
+     * would announce a workshop delay to somebody who never left the chair.
+     */
+    private static Integer turnaroundOf(NewAppointment a) {
+        return a.fulfilment() == Fulfilment.DROP_OFF
+                ? a.offering().turnaround().map(t -> (int) t.toHours()).orElse(null)
+                : null;
+    }
+
+    /**
      * Turns a SQLSTATE into the right business answer. The distinction that
      * matters is 23P01 against 40P01: both mean this transaction lost, but only
      * the first means the slot is taken.
@@ -227,6 +271,20 @@ public class AppointmentSqlRepository implements AppointmentRepository {
             return new TransientBookingConflictException(e);
         }
         if (UNIQUE_VIOLATION.equals(state)) {
+            // A drawn body that somebody already holds. One in 887 million per
+            // prefix, which is rare and not impossible, and the customer must
+            // never be handed the reference of another appointment - so this is
+            // retried and never swallowed.
+            //
+            // Retried by BookAppointmentService, which opens a NEW transaction
+            // per attempt and draws again on the way through. A loop here would
+            // fail on its own second statement: once a constraint fires, the
+            // transaction is rollback-only and nothing further can run in it.
+            // The budget is bounded there, and exhausting it answers 429 rather
+            // than reusing anything.
+            if (namesAReferenceIndex(e)) {
+                return new TransientBookingConflictException(e);
+            }
             return new IdempotencyKeyReusedException(a.idempotencyKey().orElse(null));
         }
         return e;
@@ -347,15 +405,42 @@ public class AppointmentSqlRepository implements AppointmentRepository {
         return CustomerId.of(id);
     }
     /**
-     * URL-safe, unpadded, 43 characters. Deliberately not the appointment's id:
-     * the id appears on the provider's agenda, in the audit trail and in log
-     * lines, and a capability has to be a value whose only job is to be one, so
-     * that widening where the id is used never widens what the id can do.
+     * Which unique index fired, read out of the driver's own message.
+     *
+     * <p>The typed accessor for a constraint name lives on PSQLException, and
+     * the PostgreSQL driver is not a dependency of this module - it arrives at
+     * runtime through the deployable. The two names are ours, they are created
+     * by migrations, and a message that names neither is not a collision.
      */
-    private static String mintReference() {
-        byte[] raw = new byte[32];
-        RANDOM.nextBytes(raw);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(raw);
+    private static boolean namesAReferenceIndex(Throwable e) {
+        for (Throwable t = e; t != null && t.getCause() != t; t = t.getCause()) {
+            String message = t.getMessage();
+            if (message != null && (message.contains(REFERENCE_KEY_INDEX)
+                                    || message.contains(REFERENCE_UNIQUE_INDEX))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Six symbols, and deliberately not the appointment's id: the id appears on
+     * the provider's agenda, in the audit trail and in log lines, and a
+     * capability has to be a value whose only job is to be one, so that widening
+     * where the id is used never widens what the id can do.
+     *
+     * <p>{@code nextInt} rather than a random byte reduced modulo 31. 256 is not
+     * a multiple of 31, so the fold would make the first eight symbols of the
+     * alphabet 12% likelier than the rest; nextInt rejects the tail of the range
+     * instead. Thirty-one symbols is not much to give away, and this is the only
+     * thing standing between a stranger and one customer's appointment.
+     */
+    private static String mintReferenceBody() {
+        StringBuilder body = new StringBuilder(BODY_LENGTH);
+        for (int i = 0; i < BODY_LENGTH; i++) {
+            body.append(ALPHABET.charAt(RANDOM.nextInt(ALPHABET.length())));
+        }
+        return body.toString();
     }
 
 }

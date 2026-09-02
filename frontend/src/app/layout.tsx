@@ -3,6 +3,7 @@ import { Manrope } from "next/font/google";
 import { Suspense } from "react";
 import { Presentation } from "@/components/presentation";
 import { Sprite } from "@/components/sprite";
+import { Toasts } from "@/components/toasts";
 import "./globals.css";
 
 /**
@@ -28,6 +29,14 @@ export const metadata: Metadata = {
   // the brand sheet rather than the square one: at 32 px a rounded square and
   // a circle are one pixel apart, and the circle survives the crop every
   // platform applies without asking.
+  //
+  // These are the declarations, and app/favicon.ico is the other half of the
+  // answer: a browser asks the origin for /favicon.ico whatever the page
+  // declares, and caches what it gets per origin. That path answered 404, so
+  // the tab kept whatever it had - which is why the wrong mark appeared on
+  // some pages and not others. Next serves the file convention there and puts
+  // it at the head of this list; do not delete one thinking the other covers
+  // it.
   icons: {
     icon: [{ url: "/brand/favicon-512.png", type: "image/png", sizes: "512x512" }],
     apple: "/brand/favicon-512.png",
@@ -57,9 +66,21 @@ export const viewport: Viewport = {
   colorScheme: "light",
 };
 
+/**
+ * data-scroll-behavior is not decoration, and it is the fix for a defect the
+ * owner reported as "ça scrolle automatiquement jusqu'en bas".
+ *
+ * <p>globals.css sets `html { scroll-behavior: smooth }`. Since Next 15.2 the
+ * router only suspends that during a route transition when this attribute says
+ * so. Without it, every client navigation started a smooth ANIMATION towards
+ * the top, re-measured a document that had not moved yet, concluded the target
+ * was still off screen, and fired a second scrollIntoView on top of the first -
+ * so the reader watched the whole page travel rather than arriving at the top
+ * of it. Next warns about exactly this in development.
+ */
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="fr" className={manrope.variable}>
+    <html lang="fr" className={manrope.variable} data-scroll-behavior="smooth">
       <body>
         {/* Once, at the root: every `use` after this is a reference rather
             than another parse, which is what makes an icon free on the
@@ -94,6 +115,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             so the fallback is nothing. */}
         <Suspense fallback={null}>
           <Presentation />
+          {/* After Presentation and not before it: a toast is drawn by the
+              island Presentation boots, and effects run in mount order, so
+              this one is raised into an island that already exists.
+
+              Outside `.route`, because the region is position: fixed and the
+              route carries an animation - and because it is one region for the
+              whole product, mounted here once, never per screen. */}
+          <Toasts />
         </Suspense>
       </body>
     </html>

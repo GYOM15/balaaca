@@ -4,6 +4,7 @@ import com.balaaca.sharedkernel.ids.ServiceOfferingId;
 import com.balaaca.sharedkernel.money.Money;
 import java.time.Duration;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * What catalog publishes about an offering to the rest of the core.
@@ -20,18 +21,21 @@ public record BookableOffering(
         Duration bufferBefore,
         Duration bufferAfter,
         /**
-         * Empty when the customer waits for the work; present when they hand it
-         * over. Booking freezes it onto the appointment and derives the promise
-         * from it, so re-announcing a shorter delay tomorrow never rewrites what
-         * was promised yesterday.
+         * The delay attached to {@code DROP_OFF}, empty when the service is not
+         * offered that way. Booking freezes it onto the appointment - and only
+         * onto a booking that IS a drop-off - so re-announcing a shorter delay
+         * tomorrow never rewrites what was promised yesterday.
          */
         Optional<Duration> turnaround,
         /**
-         * Whether the provider travels. Frozen onto the appointment for the
-         * same reason as the turnaround: a plumber who stops making house calls
-         * must not turn Thursday's call-out into a shop appointment the
-         * customer never agreed to.
+         * Every way this service can be had, and therefore the choice the
+         * booking form has to offer. Never empty: a service obtainable no way
+         * at all is a row with no meaning, and a CHECK refuses it.
+         *
+         * <p>Which one a customer picked is frozen onto the appointment rather
+         * than re-read from here: a braider who stops travelling must not turn
+         * Thursday's house call into a chair in her salon.
          */
-        ServiceLocation location,
+        Set<Fulfilment> fulfilments,
         Money price) {
 }

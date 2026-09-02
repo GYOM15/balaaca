@@ -25,7 +25,7 @@ export const dynamic = "force-dynamic";
 const REFUSALS: Record<string, string> = {
   FORBIDDEN: "Seul le propriétaire modifie le catalogue.",
   VALIDATION_FAILED:
-    "Vérifiez la durée (au moins 1 minute), le prix, et le délai s’il s’agit d’une prestation à déposer (1 h à 90 jours).",
+    "Vérifiez la durée (au moins 1 minute), le prix, au moins un mode de réalisation, et le délai si vous proposez le dépôt (1 h à 90 jours).",
   RESOURCE_NOT_FOUND: "Cette prestation n’existe plus.",
 };
 
@@ -67,7 +67,7 @@ const PHOTO_REFUSALS: Record<string, string> = {
   RESOURCE_NOT_FOUND: "Cette prestation n’existe plus.",
 };
 
-/** One of the three shapes a service can take, as the page draws it. */
+/** One of the three modes a service can publish, as the page draws it. */
 type ServiceShape = {
   value: Fulfilment;
   label: string;
@@ -92,11 +92,12 @@ const ON_SITE: ServiceShape = {
 };
 
 /**
- * The three shapes, as one control.
+ * The three shapes, in the order the contract reads a set in.
  *
- * <p>One control and not two. The API derives the shape from `turnaround_hours`
- * and `location`, refuses them together, and the only way a form can be sure
- * never to send that pair is never to offer them as two questions.
+ * <p>A service publishes as many of them as it likes: braids in the salon or at
+ * the customer's house is one service at one price, and making a provider list
+ * it twice gave the catalogue two rows to keep in step. Every list here is
+ * drawn by filtering this, so the order never depends on how a set arrived.
  */
 const SHAPES: ServiceShape[] = [
   ON_SITE,
@@ -105,7 +106,7 @@ const SHAPES: ServiceShape[] = [
     label: "Dépôt",
     icon: "mode-dropoff",
     mode: "drop-off",
-    desc: "Le client dépose et repasse. Le rendez-vous ne dure que la remise au comptoir.",
+    desc: "Le client dépose son travail et repasse le chercher. Vous annoncez un délai.",
   },
   {
     value: "AT_CUSTOMER",
@@ -115,6 +116,64 @@ const SHAPES: ServiceShape[] = [
     desc: "Vous vous déplacez chez le client. L’adresse est jointe au rendez-vous.",
   },
 ];
+
+/**
+ * Every mode one service publishes, drawn in the contract's order.
+ *
+ * <p>`fulfilments` is not required on the view, so the deprecated singular is
+ * the fallback and not the other way round: a service written through the old
+ * single-location path answers with `fulfilment` alone, and reading only the
+ * array would draw that service with no mode at all.
+ *
+ * <p>Anything left - a value this client does not know, or a service being
+ * created - is on-site, which is what the contract says to assume and what
+ * every service made before the enum grew actually is.
+ */
+function shapesOf(service: ServiceOffering | null): ServiceShape[] {
+  const offered: Fulfilment[] = service?.fulfilments?.length
+    ? service.fulfilments
+    : service
+      ? [service.fulfilment]
+      : [];
+  const known = SHAPES.filter((shape) => offered.includes(shape.value));
+  return known.length > 0 ? known : [ON_SITE];
+}
+
+/**
+ * The conditional fields of the modes panel, in CSS, scoped to this screen.
+ *
+ * <p>Section 7 of the vendored island is what reveals a conditional field
+ * everywhere else on this product, and it cannot do this one. It reads
+ * `group.querySelector('input[name="..."]:checked')` - the FIRST checked input,
+ * one value - and it only re-runs on `input[type=radio]`. Given a service that
+ * is both on-site and drop-off it would read "ON_SITE", hide the delay a
+ * drop-off must announce, and never run again as boxes were ticked. Rewriting
+ * it is not this screen's to do, and globals.css is not this screen's to edit,
+ * so the rule lives with the markup it governs.
+ *
+ * <p>`:has()` selects the fieldset by what is ticked inside it, which is the
+ * whole trick and the reason no JavaScript is needed. Where it is missing the
+ * hiding rule is missing with it: both explanations stay on screen, which is
+ * untidy and traps nobody. The warning is hidden outside `@supports` for the
+ * same reason read the other way - a sentence that cannot be dismissed is worse
+ * than a sentence that never appears.
+ *
+ * <p>No colour and no spacing: `.field__error` and `.alert--info` are the
+ * design system's, and the rules here only decide what is on screen.
+ */
+const MODE_REVEALS = `
+[data-modes-empty] { display: none; }
+@supports selector(:has(*)) {
+  [data-modes-when] { display: none; }
+  [data-modes]:has(input[value="DROP_OFF"]:checked) [data-modes-when="DROP_OFF"],
+  [data-modes]:has(input[value="AT_CUSTOMER"]:checked) [data-modes-when="AT_CUSTOMER"] {
+    display: block;
+  }
+  [data-modes]:not(:has(input[name="fulfilments"]:checked)) [data-modes-empty] {
+    display: flex;
+  }
+}
+`;
 
 /** The gap the design's panel stacks are built on. */
 const PANEL_GAP = { "--stack-gap": "var(--s-6)" } as CSSProperties;
@@ -166,7 +225,6 @@ export default async function Services({
   searchParams: Promise<{
     error?: string;
     edit?: string;
-    created?: string;
     performers?: string;
     performer_error?: string;
     photos?: string;
@@ -225,8 +283,6 @@ export default async function Services({
     );
   }
 
-  const created = services.data.find((s) => s.service_offering_id === query.created);
-
   return (
     <>
       <div className="appbar">
@@ -257,22 +313,6 @@ export default async function Services({
 
       <main id="contenu" className="app__main has-tabbar">
         <div className="app__inner">
-          {created ? (
-            <div style={{ marginBottom: "var(--s-6)" }}>
-              <div className="alert alert--success" role="status">
-                <span className="alert__icon">
-                  <Icon name="check-circle" />
-                </span>
-                <div className="grow">
-                  <div className="alert__title">Prestation créée</div>
-                  <div className="alert__body">
-                    « {created.name} » est en ligne et réservable.
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : null}
-
           {query.error ? (
             <div style={{ marginBottom: "var(--s-6)" }}>
               <Refusal code={query.error} />
@@ -380,7 +420,6 @@ function Refusal({
  */
 function Row({ service }: { service: ServiceOffering }) {
   const id = service.service_offering_id;
-  const shape = SHAPES.find((s) => s.value === service.fulfilment) ?? ON_SITE;
   const href = `/dashboard/services?edit=${encodeURIComponent(id)}`;
 
   return (
@@ -404,10 +443,12 @@ function Row({ service }: { service: ServiceOffering }) {
           className="row row--wrap"
           style={{ gap: "var(--s-2)", marginTop: "var(--s-2)" }}
         >
-          <span className={`mode mode--${shape.mode}`}>
-            <Icon name={shape.icon} />
-            {shape.label}
-          </span>
+          {shapesOf(service).map((shape) => (
+            <span className={`mode mode--${shape.mode}`} key={shape.value}>
+              <Icon name={shape.icon} />
+              {shape.label}
+            </span>
+          ))}
           <span className="fact">
             <Icon name="clock" />
             {durationLabel(service.duration_minutes)}
@@ -697,18 +738,20 @@ function Essentials({
 }
 
 /**
- * The one control that picks the shape, and the one field that follows from it.
+ * How this service can be obtained - as many ways as the provider offers.
  *
- * <p>The delay is shown only for a drop-off, which is the only shape that
- * carries one. It is not `required`: the panel is hidden for the other two, and
+ * <p>The delay is shown only where Dépôt is ticked, which is the only mode that
+ * carries one. It is not `required`: the field is hidden for the other two, and
  * a hidden field a browser refuses to submit is a save that fails with nothing
  * on screen to explain it. An empty box on a drop-off arrives as a delay the
  * server refuses, and that refusal is a sentence this page prints.
+ *
+ * <p>At least one box is required, and the page says so while it is still being
+ * filled in - see {@link MODE_REVEALS} for why that sentence is CSS and not the
+ * island every other conditional field on this product uses.
  */
 function Shape({ service }: { service: ServiceOffering | null }) {
-  // Falling back also means no radio group ever renders with nothing checked.
-  const shape: Fulfilment =
-    SHAPES.find((s) => s.value === service?.fulfilment)?.value ?? ON_SITE.value;
+  const offered = new Set(shapesOf(service).map((shape) => shape.value));
 
   return (
     <div className="panel">
@@ -716,25 +759,25 @@ function Shape({ service }: { service: ServiceOffering | null }) {
         <div>
           <div className="panel__title">Déroulement</div>
           <div className="panel__sub">
-            Un seul mode par prestation : la base de données refuse toute
-            combinaison.
+            Cochez chaque façon dont vous réalisez cette prestation. Un seul prix
+            et une seule durée, quel que soit le mode choisi par le client.
           </div>
         </div>
       </div>
       <div className="card__body">
-        <fieldset
-          style={{ border: 0, padding: 0, margin: 0 }}
-          data-reveal-group="fulfilment"
-        >
-          <legend className="sr-only">Mode de la prestation</legend>
+        <style dangerouslySetInnerHTML={{ __html: MODE_REVEALS }} />
+        <fieldset style={{ border: 0, padding: 0, margin: 0 }} data-modes="">
+          <legend className="sr-only">
+            Modes de réalisation, au moins un
+          </legend>
           <div className="choice-grid choice-grid--3">
             {SHAPES.map((s) => (
               <label className="choice" key={s.value}>
                 <input
-                  type="radio"
-                  name="fulfilment"
+                  type="checkbox"
+                  name="fulfilments"
                   value={s.value}
-                  defaultChecked={s.value === shape}
+                  defaultChecked={offered.has(s.value)}
                 />
                 <span className="choice__mark">
                   <Icon name="check-circle" />
@@ -750,14 +793,13 @@ function Shape({ service }: { service: ServiceOffering | null }) {
             ))}
           </div>
 
-          {/* Rendered already open when the stored shape is the drop-off, so
-              the field is right on the first paint and reachable even if the
-              presentation script never runs. */}
-          <div
-            data-reveal-when="DROP_OFF"
-            hidden={shape !== "DROP_OFF"}
-            style={{ marginTop: "var(--s-5)" }}
-          >
+          <p className="field__error" data-modes-empty="" role="status">
+            <Icon name="alert-circle" size={16} />
+            Choisissez au moins un mode : une prestation qu’on ne peut obtenir
+            d’aucune façon n’est pas réservable.
+          </p>
+
+          <div data-modes-when="DROP_OFF" style={{ marginTop: "var(--s-5)" }}>
             <div className="field">
               <label className="field__label" htmlFor="f-turnaround">
                 Délai promis
@@ -779,17 +821,14 @@ function Shape({ service }: { service: ServiceOffering | null }) {
                 <span className="input-group__suffix">heures</span>
               </div>
               <p className="field__hint">
-                Le client lit « Prêt sous 48 h ». La durée du rendez-vous
-                ci-dessus ne représente que la remise au comptoir.
+                Le client lit « Prêt sous 48 h ». La promesse ne vaut que pour
+                le dépôt : celui qui reste sur place repart avec son travail
+                fait.
               </p>
             </div>
           </div>
 
-          <div
-            data-reveal-when="AT_CUSTOMER"
-            hidden={shape !== "AT_CUSTOMER"}
-            style={{ marginTop: "var(--s-5)" }}
-          >
+          <div data-modes-when="AT_CUSTOMER" style={{ marginTop: "var(--s-5)" }}>
             <div className="alert alert--info" role="status">
               <span className="alert__icon">
                 <Icon name="info" />
@@ -1122,7 +1161,7 @@ function Preview({
   service: ServiceOffering | null;
   album: ServicePhotoList | null;
 }) {
-  const shape = SHAPES.find((s) => s.value === service?.fulfilment) ?? ON_SITE;
+  const shapes = shapesOf(service);
   const cover = album?.data[0];
 
   return (
@@ -1155,10 +1194,14 @@ function Preview({
               className="row row--wrap"
               style={{ gap: "var(--s-2)", marginTop: "var(--s-2)" }}
             >
-              <span className={`mode mode--${shape.mode}`}>
-                <Icon name={shape.icon} />
-                {shape.label}
-              </span>
+              {/* Every mode, because the customer chooses among them and a card
+                  showing one of three would be choosing for them. */}
+              {shapes.map((shape) => (
+                <span className={`mode mode--${shape.mode}`} key={shape.value}>
+                  <Icon name={shape.icon} />
+                  {shape.label}
+                </span>
+              ))}
               {service ? (
                 <span className="fact">
                   <Icon name="clock" />

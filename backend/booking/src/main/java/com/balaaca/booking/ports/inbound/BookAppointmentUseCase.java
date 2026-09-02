@@ -5,6 +5,7 @@ import com.balaaca.booking.domain.BookingSource;
 import com.balaaca.booking.domain.CustomerContact;
 import com.balaaca.sharedkernel.ids.AppointmentId;
 import com.balaaca.booking.domain.ServiceAddress;
+import com.balaaca.catalog.ports.inbound.Fulfilment;
 import com.balaaca.sharedkernel.ids.ServiceOfferingId;
 import com.balaaca.sharedkernel.ids.StaffId;
 import java.time.Instant;
@@ -32,9 +33,19 @@ public interface BookAppointmentUseCase {
             Instant startsAt,
             CustomerContact customer,
             /**
-             * Where to go. Present exactly when the offering is a call-out -
-             * checked against the offering rather than trusted, because the
-             * client cannot be the one to decide whether an address is owed.
+             * Which of the modes the service publishes the customer picked.
+             *
+             * <p>Empty is an answer, not an omission: a service published one
+             * way asks nothing, and that is what every request sent before this
+             * field existed means. Empty against a service published several
+             * ways is refused - there is no defensible default between sitting
+             * in a salon and having somebody come to your house.
+             */
+            Optional<Fulfilment> fulfilment,
+            /**
+             * Where to go. Present exactly when the CHOSEN mode is at-customer -
+             * checked server-side rather than trusted, because the client cannot
+             * be the one to decide whether an address is owed.
              */
             Optional<ServiceAddress> serviceAddress,
             Optional<String> customerNote,

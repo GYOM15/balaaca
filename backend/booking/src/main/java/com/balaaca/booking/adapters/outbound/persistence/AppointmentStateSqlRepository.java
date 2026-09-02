@@ -8,6 +8,7 @@ import com.balaaca.booking.domain.CustomerContact;
 import com.balaaca.booking.domain.ServiceAddress;
 import com.balaaca.booking.ports.inbound.ListAppointmentsUseCase.AgendaEntry;
 import com.balaaca.booking.ports.outbound.AppointmentStateRepository;
+import com.balaaca.catalog.ports.inbound.Fulfilment;
 import com.balaaca.sharedkernel.ids.AppointmentId;
 import com.balaaca.sharedkernel.ids.ServiceOfferingId;
 import com.balaaca.sharedkernel.ids.StaffId;
@@ -69,7 +70,8 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                 RETURNING id, starts_at, ends_at, status, service_name,
                           customer_price_amount_minor, customer_price_currency,
                           customer_id, customer_note, staff_id, ready_by, ready_at,
-                          service_locality_id, service_area, service_directions
+                          service_locality_id, service_area, service_directions,
+                          service_fulfilment
                 """)
                 .setParameter("id", id.value())
                 .setParameter("reason", reason.orElse(null))
@@ -137,7 +139,8 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                 RETURNING id, starts_at, ends_at, status, service_name,
                           customer_price_amount_minor, customer_price_currency,
                           customer_id, customer_note, staff_id, ready_by, ready_at,
-                          service_locality_id, service_area, service_directions
+                          service_locality_id, service_area, service_directions,
+                          service_fulfilment
                 """)
                 .setParameter("id", id.value())
                 .setParameter("startsAt", Timestamp.from(slot.startsAt()))
@@ -192,7 +195,8 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                 RETURNING id, starts_at, ends_at, status, service_name,
                           customer_price_amount_minor, customer_price_currency,
                           customer_id, customer_note, staff_id, ready_by, ready_at,
-                          service_locality_id, service_area, service_directions
+                          service_locality_id, service_area, service_directions,
+                          service_fulfilment
                 """)
                 .setParameter("id", id.value())
                 .setParameter("at", Timestamp.from(at))
@@ -220,7 +224,8 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                 RETURNING id, starts_at, ends_at, status, service_name,
                           customer_price_amount_minor, customer_price_currency,
                           customer_id, customer_note, staff_id, ready_by, ready_at,
-                          service_locality_id, service_area, service_directions
+                          service_locality_id, service_area, service_directions,
+                          service_fulfilment
                 """)
                 .setParameter("id", id.value())
                 .setParameter("readyBy", Timestamp.from(readyBy))
@@ -270,7 +275,8 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                 RETURNING id, starts_at, ends_at, status, service_name,
                           customer_price_amount_minor, customer_price_currency,
                           customer_id, customer_note, staff_id, ready_by, ready_at,
-                          service_locality_id, service_area, service_directions
+                          service_locality_id, service_area, service_directions,
+                          service_fulfilment
                 """)
                 .setParameter("id", id.value())
                 .setParameter("to", to.name())
@@ -327,6 +333,7 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                 staffName,
                 new CustomerContact((String) c[0], new PhoneNumber((String) c[1]),
                                     Optional.ofNullable((String) c[2])),
+                Fulfilment.valueOf((String) r[15]),
                 Optional.ofNullable((String) r[8]).filter(n -> !n.isBlank()),
                 Optional.ofNullable(r[10]).map(AppointmentStateSqlRepository::instant),
                 Optional.ofNullable(r[11]).map(AppointmentStateSqlRepository::instant),

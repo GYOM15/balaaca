@@ -46,9 +46,11 @@ public final class BookingExceptions {
     }
 
     /**
-     * Two transactions deadlocked competing for the slot. Retryable, and
-     * deliberately NOT a conflict: PostgreSQL broke a wait cycle, which says
-     * nothing about whether the slot is free. Never surfaced to a client.
+     * This attempt lost for a reason that says nothing about the slot: either
+     * two transactions deadlocked competing for it, or the reference drawn for
+     * it is one somebody already holds. Retryable, and deliberately NOT a
+     * conflict - the answer is a new transaction rather than a refusal, and the
+     * mint happens again on the way through. Never surfaced to a client.
      */
     public static final class TransientBookingConflictException extends DomainException {
         public TransientBookingConflictException(Throwable cause) {
@@ -110,6 +112,39 @@ public final class BookingExceptions {
     }
 
     /**
+     * The service can be had several ways and the request named none.
+     *
+     * <p>400 rather than a default. There is no defensible one between sitting
+     * in a salon and having somebody come to your house: picking the first would
+     * send a stranger to an address, and picking the last would leave a customer
+     * waiting at home for nobody.
+     *
+     * <p>The modes travel as names rather than as the enum: this is a domain
+     * type, and a domain that mentions another context makes every reshape over
+     * there ripple in here.
+     */
+    public static final class FulfilmentNotChosenException extends DomainException {
+        public FulfilmentNotChosenException(java.util.List<String> offered) {
+            super("VALIDATION_FAILED", 400, "Choose how this service is to be carried out",
+                  Map.of("fulfilments", offered));
+        }
+    }
+
+    /**
+     * A mode the service does not publish.
+     *
+     * <p>A client that has gone stale - the provider stopped travelling between
+     * the page being drawn and the form being sent - so it names something that
+     * is not on offer, exactly like an unknown service would.
+     */
+    public static final class FulfilmentNotOfferedException extends DomainException {
+        public FulfilmentNotOfferedException(String chosen, java.util.List<String> offered) {
+            super("VALIDATION_FAILED", 400, "This service is not carried out that way",
+                  Map.of("fulfilment", chosen, "fulfilments", offered));
+        }
+    }
+
+    /**
      * A call-out with nowhere to go, or a shop appointment carrying an address.
      *
      * <p>Both directions are refused, and the second matters as much as the
@@ -118,13 +153,18 @@ public final class BookingExceptions {
      * into a list of where its customers live.
      *
      * <p>422 rather than 400: the body is well formed, and whether an address
-     * is owed depends on the offering, which only the server knows.
+     * is owed depends on the mode chosen, which only the server can check
+     * against what the offering publishes.
+     *
+     * <p>It is the CHOICE that decides, not the service. A service offering
+     * both shapes needs an address for one booking of it and must not hold one
+     * for the next.
      */
     public static final class ServiceAddressMismatchException extends DomainException {
         public ServiceAddressMismatchException(boolean callOut) {
             super("VALIDATION_FAILED", 422,
-                  callOut ? "This service is performed at the customer's address"
-                          : "This service is performed at the provider's address",
+                  callOut ? "This booking is at the customer's address"
+                          : "This booking is at the provider's address",
                   Map.of("service_address", callOut ? "required" : "not accepted"));
         }
     }
