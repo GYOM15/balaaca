@@ -12,8 +12,9 @@ protocol; only the account is missing. Without it, a salon discovers its
 appointments by refreshing a page.
 
 It will take: `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN` (system user),
-`WHATSAPP_BUSINESS_ACCOUNT_ID`, four approved templates with the order of their
-parameters, and the decision **Balaaca number or salon number**
+`WHATSAPP_BUSINESS_ACCOUNT_ID`, EIGHT approved templates with the order of their
+parameters (five to the customer, three to the provider: see docs/WHATSAPP.md,
+which has the names and the parameter order the worker fills positionally), and the decision **Balaaca number or salon number**
 (recommendation: Balaaca - one account to verify, one quota to watch, and a
 salon that leaves does not take the number with it).
 
