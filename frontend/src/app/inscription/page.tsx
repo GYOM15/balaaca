@@ -17,7 +17,7 @@ export const metadata: Metadata = { title: "Créer ma page" };
  * The public link, exactly as the person will read it.
  *
  * <p>Built from the origin this server is reached at rather than written down:
- * the design prints `balaaca.gn/p/` because a static mock has one environment,
+ * the design prints `balaaca.com/p/` because a static mock has one environment,
  * and a hardcoded domain here would be wrong on every environment but one. In
  * development it says localhost, which is exactly what the link will be.
  */

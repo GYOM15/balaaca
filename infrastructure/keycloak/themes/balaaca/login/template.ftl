@@ -16,10 +16,10 @@
   <meta name="theme-color" content="#123C35">
   <title><#if showTitle><#nested "title"><#else>${msg("loginTitle",(realm.displayName!''))}</#if></title>
   <link rel="icon" href="${url.resourcesPath}/img/logo.png">
-  <#-- Manrope, self-hosted by the product but not reachable from this origin.
-       The stack falls back to the system's own humanist sans, which is what a
-       sign-in page can afford to do: it is seven pages of one form, and a face
-       that arrives late here costs more than it gives. -->
+  <#-- Clash Display and DM Sans, served by this theme itself and never by a
+       CDN: a sign-in screen that waits on a third party is a sign-in screen
+       that goes blank when the third party is slow. Declared in balaaca.css
+       beside the tokens they belong to. -->
   <#if properties.styles?has_content>
     <#list properties.styles?split(' ') as style>
       <link href="${url.resourcesPath}/${style}" rel="stylesheet">

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
-import { Manrope } from "next/font/google";
+import { DM_Sans } from "next/font/google";
+import localFont from "next/font/local";
 import { Suspense } from "react";
 import { Presentation } from "@/components/presentation";
 import { Sprite } from "@/components/sprite";
@@ -7,20 +8,39 @@ import { Toasts } from "@/components/toasts";
 import "./globals.css";
 
 /**
- * Self-hosted, not linked.
+ * Two families, and the split is the point.
  *
- * <p>The mockup pulled Manrope from fonts.googleapis.com in a render-blocking
- * <link>. next/font downloads the face at build time and serves it from this
- * origin, so the first paint waits on nothing a third party controls - which
- * matters more on a phone in Conakry than anywhere this was designed.
+ * <p>Clash Display carries the identity: the headings, the hero, the marketing
+ * sections, the figures. DM Sans carries the work: navigation, running text,
+ * forms, tables, the dashboard. A single family doing both ends up either too
+ * plain where the brand should speak or too mannered where a provider is
+ * reading a price.
  *
- * <p>display: swap, so the page is readable in the fallback while the face
- * arrives rather than blank.
+ * <p>Self-hosted, not linked. next/font downloads at build time and serves from
+ * this origin, so the first paint waits on nothing a third party controls,
+ * which matters more on a telephone in Conakry than anywhere this was designed.
+ * display: swap, so the page is readable in the fallback rather than blank.
+ *
+ * <p>Clash is next/font/local and not next/font/google because it is not on
+ * Google Fonts at all: it is Indian Type Foundry's, served by Fontshare, and
+ * the four weights live in src/app/fonts. Replacing them is dropping four
+ * files; nothing here names a version.
  */
-const manrope = Manrope({
+const clash = localFont({
+  src: [
+    { path: "./fonts/ClashDisplay-400.woff2", weight: "400", style: "normal" },
+    { path: "./fonts/ClashDisplay-500.woff2", weight: "500", style: "normal" },
+    { path: "./fonts/ClashDisplay-600.woff2", weight: "600", style: "normal" },
+    { path: "./fonts/ClashDisplay-700.woff2", weight: "700", style: "normal" },
+  ],
+  variable: "--font-display-face",
+  display: "swap",
+});
+
+const dmSans = DM_Sans({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800"],
-  variable: "--font-manrope",
+  weight: ["400", "500", "700"],
+  variable: "--font-face",
   display: "swap",
 });
 
@@ -80,7 +100,7 @@ export const viewport: Viewport = {
  */
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="fr" className={manrope.variable} data-scroll-behavior="smooth">
+    <html lang="fr" className={`${clash.variable} ${dmSans.variable}`} data-scroll-behavior="smooth">
       <body>
         {/* Once, at the root: every `use` after this is a reference rather
             than another parse, which is what makes an icon free on the

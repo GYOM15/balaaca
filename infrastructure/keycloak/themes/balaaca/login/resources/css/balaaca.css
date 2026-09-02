@@ -142,7 +142,17 @@
      Manrope seule. Échelle fluide : la hiérarchie est le premier outil
      de design du produit, jamais une suite de 12–14 px.
      --------------------------------------------------------------------- */
-  --font: "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* DEUX FAMILLES, et le partage est le propos. Clash Display porte
+     l'identite - titres, hero, sections marketing, chiffres - et DM Sans porte
+     le travail : navigation, textes, formulaires, tableaux, tableau de bord.
+     Une seule famille pour les deux finit ou trop plate la ou la marque doit
+     parler, ou trop mania la ou un prestataire lit un prix.
+
+     Les deux faces sont chargees par next/font dans layout.tsx et exposees en
+     --font-display-face et --font-face. Le repli reste complet : une face qui
+     n'arrive pas laisse une page lisible, pas une page nue. */
+  --font-display: var(--font-display-face), "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font: var(--font-face), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 
   --fs-display:  clamp(2.25rem, 1.35rem + 3.6vw, 3.5rem);   /* 36 -> 56 */
   --fs-h1:       clamp(1.875rem, 1.35rem + 2.1vw, 2.625rem); /* 30 -> 42 */
@@ -238,7 +248,27 @@
   --z-dialog: 70;
   --z-toast: 90;
 }
-/* ==== END TOKENS ==== */
+/* ==== END TOKENS ====
+
+   Les deux variables que le bloc ci-dessus reference, --font-display-face et
+   --font-face, sont posees par next/font dans l'application. Keycloak sert ces
+   pages depuis sa propre origine et n'a pas next/font : les faces sont donc
+   declarees ici, servies par le theme lui-meme, et jamais par un CDN. Un
+   ecran de connexion qui attend une police chez un tiers est un ecran de
+   connexion qui blanchit quand le tiers est lent. */
+
+@font-face { font-family: "Clash Display Local"; src: url("../fonts/ClashDisplay-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Clash Display Local"; src: url("../fonts/ClashDisplay-500.woff2") format("woff2"); font-weight: 500; font-display: swap; }
+@font-face { font-family: "Clash Display Local"; src: url("../fonts/ClashDisplay-600.woff2") format("woff2"); font-weight: 600; font-display: swap; }
+@font-face { font-family: "Clash Display Local"; src: url("../fonts/ClashDisplay-700.woff2") format("woff2"); font-weight: 700; font-display: swap; }
+@font-face { font-family: "DM Sans Local"; src: url("../fonts/DMSans-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "DM Sans Local"; src: url("../fonts/DMSans-500.woff2") format("woff2"); font-weight: 500; font-display: swap; }
+@font-face { font-family: "DM Sans Local"; src: url("../fonts/DMSans-700.woff2") format("woff2"); font-weight: 700; font-display: swap; }
+
+:root {
+  --font-display-face: "Clash Display Local";
+  --font-face: "DM Sans Local";
+}
 
 *, *::before, *::after { box-sizing: border-box; }
 
@@ -293,9 +323,10 @@ body::before {
 }
 .bal__mark { width: 38px; height: 38px; border-radius: var(--r-sm); display: block; }
 .bal__word {
+  font-family: var(--font-display);
   font-size: 1.3rem;
-  font-weight: var(--fw-extrabold);
-  letter-spacing: -0.035em;
+  font-weight: 600;
+  letter-spacing: -0.032em;
 }
 .bal__word em { font-style: normal; color: var(--accent-strong); }
 
@@ -314,8 +345,9 @@ body::before {
 
 .bal__title {
   margin: 0;
+  font-family: var(--font-display);
   font-size: var(--fs-h3);
-  font-weight: var(--fw-extrabold);
+  font-weight: 600;
   letter-spacing: var(--ls-tight);
   line-height: var(--lh-tight);
 }

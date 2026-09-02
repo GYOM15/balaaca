@@ -158,7 +158,17 @@
      Manrope seule. Échelle fluide : la hiérarchie est le premier outil
      de design du produit, jamais une suite de 12–14 px.
      --------------------------------------------------------------------- */
-  --font: "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* DEUX FAMILLES, et le partage est le propos. Clash Display porte
+     l'identite - titres, hero, sections marketing, chiffres - et DM Sans porte
+     le travail : navigation, textes, formulaires, tableaux, tableau de bord.
+     Une seule famille pour les deux finit ou trop plate la ou la marque doit
+     parler, ou trop mania la ou un prestataire lit un prix.
+
+     Les deux faces sont chargees par next/font dans layout.tsx et exposees en
+     --font-display-face et --font-face. Le repli reste complet : une face qui
+     n'arrive pas laisse une page lisible, pas une page nue. */
+  --font-display: var(--font-display-face), "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font: var(--font-face), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 
   --fs-display:  clamp(2.25rem, 1.35rem + 3.6vw, 3.5rem);   /* 36 -> 56 */
   --fs-h1:       clamp(1.875rem, 1.35rem + 2.1vw, 2.625rem); /* 30 -> 42 */
@@ -292,7 +302,7 @@
    BALAACA : Socle : reset raisonné, typographie, accessibilité
    ========================================================================== */
 
-/* Manrope auto-hébergée : variable, sous-ensembles latin. __FONT_FACE__ */
+/* Les deux faces sont chargees par next/font dans layout.tsx. */
 
 *, *::before, *::after { box-sizing: border-box; }
 
@@ -378,6 +388,25 @@ hr { border: 0; border-top: 1px solid var(--border); margin: var(--s-8) 0; }
   font-weight: var(--fw-extrabold);
 }
 .t-h1 { font-size: var(--fs-h1); line-height: var(--lh-tight); letter-spacing: var(--ls-heading); }
+
+/* ==========================================================================
+   LES DEUX FAMILLES
+   Clash porte l'identite, DM Sans porte le reste. Clash a un oeil plus grand
+   et des jambages plus courts que Manrope : a interlettrage egal il parait
+   espace, et son 600 pese ce que le 800 de Manrope pesait. On resserre, et on
+   descend d'un cran en graisse. C'est la difference entre du caractere et du
+   gras.
+   ========================================================================== */
+.t-display, .t-h1, .t-h2, .t-h3, .t-h4,
+.logo__word, .stat__num, .mini__title, .price {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.028em;
+}
+.t-display { letter-spacing: -0.035em; }
+/* L'oeil de bœuf reste en DM Sans : c'est une etiquette, pas un titre. */
+.t-overline { font-family: var(--font); }
+
 .t-h2 { font-size: var(--fs-h2); line-height: var(--lh-tight); letter-spacing: var(--ls-heading); }
 .t-h3 { font-size: var(--fs-h3); line-height: var(--lh-snug); letter-spacing: var(--ls-heading); }
 .t-h4 { font-size: var(--fs-h4); line-height: var(--lh-snug); letter-spacing: var(--ls-normal); font-weight: var(--fw-bold); }
@@ -1986,3 +2015,169 @@ a.choice { text-decoration: none; color: inherit; }
 @media (min-width: 1000px){ .hide-lg{display:none !important} }
 @media (max-width: 999px){ .show-lg{display:none !important} }
 .route[hidden]{display:none !important}
+
+/* ==========================================================================
+   LA VITRINE, L'ATELIER ET LE MANIFESTE
+   Valides en maquette avant d'arriver ici. Trois choses seulement :
+   une capture que la section rogne, des marqueurs de liste qui ne sont pas
+   une coche, et une section d'honnetete qui n'est plus un tableau comparatif.
+   ========================================================================== */
+/* --- LE CADRE, celui de la premiere maquette ------------------------------
+   Vert profond, 10 px, coins a 34, l'ombre portee loin et basse. C'est la
+   version validee ; le verre est abandonne. */
+.shot {
+  position: relative;
+  width: min(100%, 30rem);
+  border-radius: 34px;
+  padding: 10px;
+  background: var(--p-green-900);
+  box-shadow:
+    0 60px 100px -50px rgba(8,31,27,.55),
+    0 20px 40px -30px rgba(8,31,27,.4),
+    inset 0 0 0 1px rgba(255,255,255,.10);
+  transform: rotate(-2.4deg);
+  transition: transform 600ms var(--ease-out);
+}
+.feat--flip .shot { transform: rotate(2.4deg); }
+.feat__art:hover .shot { transform: rotate(0deg); }
+
+/* La capture reelle a sa propre bordure et son ombre, faites pour vivre seule
+   sur du blanc. Dans le cadre elles font une double bordure, donc elles
+   partent : le cadre est le chassis, la capture est l'ecran. */
+.shot > .shot-browser {
+  border: 0;
+  box-shadow: none;
+  border-radius: 25px;
+}
+
+/* --- LA DISPOSITION -------------------------------------------------------
+   Les marges negatives sur une cellule de grille ne rognent rien : elles font
+   deborder l'element sur son voisin, et c'est comme ca que la capture est
+   passee par-dessus le texte. La capture est donc ABSOLUE dans sa colonne, et
+   c'est la section qui la rogne.
+
+   Consequence voulue : le cadre n'a plus de bordure du cote ou il sort. Elle
+   n'est pas masquee, elle n'existe pas - le coin arrondi est coupe avec le
+   reste. */
+.feat { position: relative; overflow: hidden; padding-block: clamp(3.5rem, 2rem + 7vw, 7rem); }
+.feat__in { display: grid; gap: var(--s-8); align-items: center; }
+.feat__text { max-width: 34rem; position: relative; z-index: 2; }
+
+/* La colonne reserve la hauteur de la rangee et sert d'origine. La capture est
+   PLUS HAUTE qu'elle, donc le bas sort et se fait couper. */
+.feat__art { position: relative; }
+
+.feat__art::before {
+  content: ""; position: absolute; z-index: 0;
+  inset: -18% -24% -34% -18%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 45%,
+              rgba(201,168,106,.22) 0%, rgba(201,168,106,.08) 45%, transparent 72%);
+  pointer-events: none;
+}
+
+@media (min-width: 900px) {
+  /* PAS DE REMBOURRAGE EN BAS. C'est lui qui empechait la coupe : la capture
+     s'arretait au bord de sa colonne et il restait 112 px de section en
+     dessous, donc le cadre gardait son coin arrondi. Sans lui, le bord de la
+     section vient a la rencontre de la capture et la coupe. */
+  .feat { padding-bottom: 0; }
+  .feat__in { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--s-16); }
+  .feat__art { height: 22rem; }
+
+  .shot {
+    position: absolute; z-index: 1; top: 0;
+    width: 44rem;      /* plus large que la colonne : sort de cote */
+                       /* et plus haute que 22 rem : sort par le bas */
+  }
+  /* VITRINE : ancree a gauche de sa colonne, elle grandit vers la droite et
+     sort par la droite et par le bas. Ces deux bordures n'existent pas. */
+  .feat .shot { left: 0; }
+  /* ATELIER : ancree a DROITE de sa colonne, elle grandit vers la gauche et
+     sort par la gauche et par le bas. Ancree a droite, elle ne peut pas
+     atteindre le texte : c'est ce qui garantit qu'elle ne le chevauche plus. */
+  .feat--flip .feat__text { order: 2; }
+  /* Plus basse que l'autre : la capture du tableau de bord est moins haute que
+     celle de la page publique, donc sa colonne doit l'etre aussi pour que le
+     bas sorte pareil. Une hauteur commune coupait l'une et pas l'autre. */
+  .feat--flip .feat__art  { order: 1; height: 16rem; }
+  .feat--flip .shot { left: auto; right: 0; }
+}
+
+@media (max-width: 899px) {
+  .feat__art { height: 21rem; margin-top: var(--s-8); }
+  .shot { position: absolute; top: 0; z-index: 1; width: 30rem; }
+  .feat .shot { left: 8%; }
+  .feat--flip .shot { left: auto; right: 8%; }
+  /* A 390 px les deux colonnes du tableau de bord cote a cote rendent les
+     rendez-vous illisibles, et un menu n'apprend rien a qui n'a pas de compte. */
+  .feat--flip .shot-browser__body > div:first-child { display: none; }
+}
+
+/* --- LES MARQUEURS, valides ---------------------------------------------- */
+.marks ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-4); }
+.marks li { font-size: var(--fs-sm); color: var(--text-secondary); line-height: 1.55; }
+.marks b { color: var(--text); }
+
+.mark-a li { display: block; padding-top: var(--s-4); border-top: 1px solid var(--border); }
+.mark-a b { display: block; font-family: var(--font-display); font-weight: 600;
+            font-size: 1.0625rem; letter-spacing: -0.02em; margin-bottom: 4px; }
+
+.mark-b li { display: grid; grid-template-columns: 2rem 1fr; gap: var(--s-3); align-items: start; }
+.mark-b .num { font-family: var(--font-display); font-weight: 600; font-size: 1.125rem;
+               color: var(--accent-strong); letter-spacing: -0.02em; line-height: 1.3; }
+
+.mark-c li { display: grid; grid-template-columns: 14px 1fr; gap: var(--s-4); align-items: start; }
+.mark-c .rule { height: 2px; background: var(--brand); border-radius: 2px; margin-top: .68em; }
+
+/* --- L'HONNETETE, validee ------------------------------------------------ */
+.creed { position: relative; overflow: hidden;
+  background: var(--surface-inverse-deep); color: var(--text-on-dark);
+  padding-block: clamp(4rem, 2.5rem + 7vw, 7.5rem); }
+.creed::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(80% 60% at 85% 0%, rgba(201,168,106,.18) 0%, transparent 60%),
+              radial-gradient(60% 50% at 0% 100%, rgba(255,255,255,.05) 0%, transparent 60%);
+}
+.creed > .page { position: relative; z-index: 1; }
+.creed .t-overline { color: var(--accent); }
+.creed h2 { color: #fff; margin: var(--s-4) 0 var(--s-3); max-width: 22ch; }
+.creed__lead { color: var(--text-on-dark-muted); max-width: 46ch; font-size: 1.0625rem; line-height: 1.6; }
+
+.creed__list { margin-top: clamp(2.5rem, 1.5rem + 4vw, 4rem); display: grid; gap: 0; }
+.creed__item { display: grid; gap: var(--s-2); padding: var(--s-6) 0;
+  border-top: 1px solid rgba(255,255,255,.13); }
+.creed__item:last-child { border-bottom: 1px solid rgba(255,255,255,.13); }
+@media (min-width: 780px) {
+  .creed__item { grid-template-columns: minmax(0, 20rem) minmax(0, 1fr);
+    gap: var(--s-8); align-items: baseline; }
+}
+.creed__no { font-family: var(--font-display); font-weight: 600;
+  font-size: clamp(1.25rem, 1.05rem + 0.9vw, 1.75rem);
+  letter-spacing: -0.028em; line-height: 1.2; color: #fff; }
+.creed__why { color: var(--text-on-dark-muted); font-size: var(--fs-sm); line-height: 1.6; }
+
+.creed__have { margin-top: clamp(2.5rem, 1.5rem + 4vw, 4rem);
+  padding-top: var(--s-8); border-top: 1px solid rgba(255,255,255,.13); }
+.creed__have h3 { font-family: var(--font-display); font-weight: 600; font-size: var(--fs-h4);
+  letter-spacing: -0.02em; color: #fff; margin: 0 0 var(--s-5); }
+.creed__have ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-3) var(--s-8); }
+@media (min-width: 700px)  { .creed__have ul { grid-template-columns: 1fr 1fr; } }
+@media (min-width: 1040px) { .creed__have ul { grid-template-columns: repeat(3, 1fr); } }
+.creed__have li { display: grid; grid-template-columns: 12px 1fr; gap: var(--s-3);
+  align-items: start; font-size: var(--fs-sm); color: var(--text-on-dark-muted); line-height: 1.5; }
+.creed__have .rule { height: 2px; background: var(--accent); border-radius: 2px; margin-top: .62em; }
+
+.js .creed__item { opacity: 0; transform: translateY(10px); }
+.js .creed.is-in .creed__item {
+  animation: creedRise 620ms var(--ease-entrance) forwards;
+  animation-delay: calc(var(--i) * 110ms); }
+@keyframes creedRise { to { opacity: 1; transform: none; } }
+.js .creed__have { opacity: 0; }
+.js .creed.is-in .creed__have { animation: creedRise 620ms var(--ease-entrance) 700ms forwards; }
+
+@media (prefers-reduced-motion: reduce) {
+  .js .creed__item, .js .creed__have { opacity: 1; transform: none; animation: none !important; }
+  .shot, .feat__art:hover .shot { transition: none; transform: none; }
+}
+

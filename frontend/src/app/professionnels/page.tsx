@@ -81,22 +81,53 @@ const MODES: [string, string, string, string][] = [
   ],
 ];
 
+/**
+ * Ce que le produit tient, en contrepoint du manifeste.
+ *
+ * <p>Court et serré, sur trois colonnes : ce n'est pas ce qu'on vient lire
+ * ici, et cela ne doit pas se battre avec le refus.
+ */
 const BUILT = [
-  "Une page publique avec un lien court et un QR code, à vie.",
-  "Un agenda jour et semaine, avec plusieurs personnes si besoin.",
-  "Un catalogue de prestations avec photos, prix et durée.",
-  "Des horaires par semaine, plus les fermetures exceptionnelles.",
-  "Une fiche par client, avec son historique et une note privée.",
-  "Des notifications WhatsApp à chaque étape.",
+  "Une page publique, un lien court et un QR code, à vie.",
+  "Un agenda jour et semaine, à plusieurs si besoin.",
+  "Un catalogue avec photos, prix et durée.",
+  "Des horaires par semaine et les fermetures exceptionnelles.",
+  "Une fiche par client, son historique et une note privée.",
+  "Des notifications WhatsApp ou par e-mail, au choix du client.",
 ];
 
-const NOT_YET = [
-  "Aucun paiement en ligne ni acompte : vous encaissez comme aujourd’hui.",
-  "Aucun SMS ni e-mail automatique : les messages passent par WhatsApp.",
-  "Aucune note ni avis client pour l’instant.",
-  "Aucune mise en avant payante : le classement est alphabétique.",
-  "Aucune statistique de chiffre d’affaires.",
-  "Aucune application à télécharger : tout tient dans le navigateur.",
+/**
+ * Ce que le produit refuse, et POURQUOI.
+ *
+ * <p>La raison n'est pas une décoration : un refus sans raison est une excuse,
+ * et c'est la raison qui fait la différence entre une position et une liste de
+ * fonctionnalités manquantes. Chaque ligne engage le produit, donc chaque ligne
+ * se relit avant d'être publiée.
+ *
+ * <p>« Aucun SMS ni e-mail automatique » est parti : le client choisit son
+ * canal depuis V049, et la phrase était devenue fausse.
+ */
+const REFUSALS: [string, string][] = [
+  [
+    "Aucun paiement en ligne, aucun acompte.",
+    "Vous encaissez comme aujourd’hui, en espèces ou en mobile money, directement. Balaaca ne touche jamais votre argent et n’a donc rien à vous retenir.",
+  ],
+  [
+    "Aucune note, aucun avis client.",
+    "Une moyenne sur quatre avis ne dit rien de vrai sur un salon, et elle se manipule le premier jour. Tant qu’on ne sait pas la rendre honnête, on ne la met pas.",
+  ],
+  [
+    "Aucune mise en avant payante.",
+    "Le classement est alphabétique, pour tout le monde, et il le restera. Personne ne paie pour passer devant vous.",
+  ],
+  [
+    "Aucune statistique de chiffre d’affaires.",
+    "Vos prix sont sur votre page, pas dans un tableau de bord qui vous compare aux autres. Ce que vous gagnez ne regarde que vous.",
+  ],
+  [
+    "Aucune application à télécharger.",
+    "Tout tient dans le navigateur, sur le téléphone que vous avez déjà. Rien à installer, rien à mettre à jour, rien qui prenne de la place.",
+  ],
 ];
 
 export default function ProLanding() {
@@ -159,95 +190,76 @@ export default function ProLanding() {
           </div>
         </section>
 
-        <section className="section atmo tex-dots">
-          <div className="page">
-            <div className="feature">
-              <div data-reveal="left">
-                <p className="t-overline t-overline--accent">Votre vitrine</p>
-                <h2 className="t-h2 hair" style={{ marginTop: "var(--s-5)" }}>
-                  Une page qui répond avant vous
-                </h2>
-                <p className="t-lead" style={{ marginTop: "var(--s-4)" }}>
-                  Vos prestations, vos prix, vos horaires, votre équipe. Le
-                  client sait ce que ça coûte et comment ça se passe avant même
-                  de vous écrire.
-                </p>
-                <ul
-                  className="stack"
-                  style={{
-                    "--stack-gap": "var(--s-4)",
-                    marginTop: "var(--s-7)",
-                  } as CSSProperties}
-                >
+        <section className="feat section--surface atmo tex-dots">
+          <div className="page feat__in">
+            <div className="feat__text" data-reveal="left">
+              <p className="t-overline t-overline--accent">Votre vitrine</p>
+              <h2 className="t-h2 hair" style={{ marginTop: "var(--s-5)" }}>
+                Une page qui répond avant vous
+              </h2>
+              <p className="t-lead" style={{ marginTop: "var(--s-4)" }}>
+                Vos prestations, vos prix, vos horaires, votre équipe. Le client
+                sait ce que ça coûte et comment ça se passe avant même de vous
+                écrire.
+              </p>
+              {/* Pas de coche. Le cercle vert coché est le geste qu'emploient
+                  toutes les pages de produit, et c'est pour cela qu'il se lit
+                  comme généré ; un filet et un intertitre disent la même chose
+                  et ressemblent à de l'imprimé. */}
+              <div className="marks mark-a" style={{ marginTop: "var(--s-7)" }}>
+                <ul>
                   {SHOPFRONT.map(([title, detail]) => (
-                    <li
-                      className="row"
-                      style={{ alignItems: "flex-start", gap: "var(--s-4)" }}
-                      key={title}
-                    >
-                      <span
-                        className="choice__icon"
-                        style={{
-                          width: "32px",
-                          height: "32px",
-                          background: "var(--brand-soft)",
-                        }}
-                      >
-                        <Icon name="check" size={18} />
-                      </span>
-                      <span>
-                        <span className="t-strong">{title}</span>
-                        <span
-                          className="t-sm"
-                          style={{ display: "block", marginTop: "2px" }}
-                        >
-                          {detail}
-                        </span>
-                      </span>
+                    <li key={title}>
+                      <b>{title}</b>
+                      {detail}
                     </li>
                   ))}
                 </ul>
               </div>
-              <div className="feature__art" data-reveal="right">
+            </div>
+            {/* La capture est absolue dans sa colonne et la section la rogne :
+                ses bordures droite et basse n'existent pas, elles sont coupées
+                avec le reste. Une marge négative ferait déborder sur le texte
+                au lieu de couper. */}
+            <div className="feat__art" data-reveal="right">
+              <div className="shot">
                 <PublicPageShot />
               </div>
             </div>
           </div>
-        </section>
-
-        <section className="section section--sunken atmo grain">
+        </section><section className="feat feat--flip section--sunken atmo grain">
           <svg className="wm wm--bl" viewBox="0 0 24 24" aria-hidden="true">
             <use href="#i-calendar" />
           </svg>
-          <div className="page">
-            {/* feature--flip moves the first child to order 2, and the
-                stylesheet reads it a second time to lean the device the other
-                way. Which rows carry it is a design decision, not a layout
-                convenience. */}
-            <div className="feature feature--flip">
-              <div className="feature__art" data-reveal="left">
+          <div className="page feat__in">
+            {/* feat--flip puts the text second and anchors the capture to the
+                RIGHT of its own column, so it grows leftward and off the page.
+                Anchored that way it cannot reach the text, which is what stops
+                it overlapping. */}
+            <div className="feat__art" data-reveal="left">
+              <div className="shot">
                 <DashboardShot />
               </div>
-              <div data-reveal="right">
-                <p className="t-overline t-overline--accent">Votre atelier</p>
-                <h2 className="t-h2 hair" style={{ marginTop: "var(--s-5)" }}>
-                  La journée d’un coup d’œil
-                </h2>
-                <p className="t-lead" style={{ marginTop: "var(--s-4)" }}>
-                  Qui vient, à quelle heure, pour quoi, et ce qui attend votre
-                  accord. Confirmer, déplacer, marquer une absence, saisir
-                  quelqu’un qui passe sans rendez-vous.
-                </p>
-                <div
-                  className="row row--wrap"
-                  style={{ marginTop: "var(--s-7)", gap: "var(--s-3)" }}
-                >
+            </div>
+            <div className="feat__text" data-reveal="right">
+              <p className="t-overline t-overline--accent">Votre atelier</p>
+              <h2 className="t-h2 hair" style={{ marginTop: "var(--s-5)" }}>
+                La journée d’un coup d’œil
+              </h2>
+              <p className="t-lead" style={{ marginTop: "var(--s-4)" }}>
+                Qui vient, à quelle heure, pour quoi, et ce qui attend votre
+                accord. Confirmer, déplacer, marquer une absence, saisir
+                quelqu’un qui passe sans rendez-vous.
+              </p>
+              <div className="marks mark-c" style={{ marginTop: "var(--s-7)" }}>
+                <ul>
                   {DAY_CHIPS.map(([icon, label]) => (
-                    <span className="chip" key={label}>
-                      <Icon name={icon} size={16} /> {label}
-                    </span>
+                    <li key={label}>
+                      <span className="rule" aria-hidden="true" />
+                      <span>{label}</span>
+                    </li>
                   ))}
-                </div>
+                </ul>
               </div>
             </div>
           </div>
@@ -286,7 +298,7 @@ export default function ProLanding() {
                 >
                   <div className="dl__row">
                     <span className="dl__key">Votre lien</span>
-                    <span className="dl__val">balaaca.gn/p/votre-nom</span>
+                    <span className="dl__val">balaaca.com/p/votre-nom</span>
                   </div>
                   <div className="dl__row">
                     <span className="dl__key">Compte client à créer</span>
@@ -298,7 +310,10 @@ export default function ProLanding() {
           </div>
         </section>
 
-        <section className="section section--dark on-dark atmo grain grain--dark tex-halo tex-halo--dark">
+        {/* Fond creux et non plus sombre : le manifeste juste en dessous prend le
+            vert, et deux bandes sombres collées se lisent comme une seule. La
+            page en garde exactement deux, le hero et le manifeste. */}
+        <section className="section section--sunken atmo grain">
           <div className="page">
             <div className="section-head">
               <div className="section-head__text">
@@ -355,95 +370,38 @@ export default function ProLanding() {
           </div>
         </section>
 
-        <section className="section atmo tex-dots">
-          <svg className="wm wm--tr" viewBox="0 0 24 24" aria-hidden="true">
-            <use href="#i-shield" />
-          </svg>
+        <section className="creed on-dark" data-reveal>
           <div className="page">
-            <div className="section-head">
-              <div className="section-head__text">
-                <p className="t-overline">Honnêteté</p>
-                <h2 className="t-h2">
-                  Ce que Balaaca fait, et ce qu’il ne fait pas
-                </h2>
-                <p className="t-body">
-                  Mieux vaut le savoir avant de s’inscrire qu’après.
-                </p>
-              </div>
+            <p className="t-overline">Honnêteté</p>
+            <h2 className="t-h2">Ce que Balaaca refuse de faire</h2>
+            <p className="creed__lead">
+              Tout le monde publie la liste de ce qu’un produit sait faire.
+              Celle-ci est plus courte à écrire et plus longue à assumer.
+            </p>
+
+            <div className="creed__list">
+              {REFUSALS.map(([refusal, why], index) => (
+                <div
+                  className="creed__item"
+                  key={refusal}
+                  style={{ "--i": index } as CSSProperties}
+                >
+                  <p className="creed__no">{refusal}</p>
+                  <p className="creed__why">{why}</p>
+                </div>
+              ))}
             </div>
-            <div className="cols cols--2" style={{ gap: "var(--s-10)" }}>
-              <div className="card card--pad" data-reveal="left">
-                <div
-                  className="row"
-                  style={{ gap: "var(--s-3)", marginBottom: "var(--s-5)" }}
-                >
-                  <span
-                    className="choice__icon"
-                    style={{
-                      background: "var(--success-bg)",
-                      color: "var(--success)",
-                    }}
-                  >
-                    <Icon name="check-circle" />
-                  </span>
-                  <h3 className="t-h4">Construit et disponible</h3>
-                </div>
-                <ul
-                  className="stack"
-                  style={{ "--stack-gap": "var(--s-3)" } as CSSProperties}
-                >
-                  {BUILT.map((line) => (
-                    <li
-                      className="row"
-                      style={{ alignItems: "flex-start", gap: "var(--s-3)" }}
-                      key={line}
-                    >
-                      <span style={{ color: "var(--success)" }}>
-                        <Icon name="check" size={18} />
-                      </span>
-                      <span className="t-sm">{line}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div
-                className="card card--pad"
-                style={{ background: "var(--bg-sunken)", boxShadow: "none" }}
-                data-reveal="right"
-              >
-                <div
-                  className="row"
-                  style={{ gap: "var(--s-3)", marginBottom: "var(--s-5)" }}
-                >
-                  <span
-                    className="choice__icon"
-                    style={{
-                      background: "var(--surface)",
-                      color: "var(--text-tertiary)",
-                    }}
-                  >
-                    <Icon name="x-circle" />
-                  </span>
-                  <h3 className="t-h4">Pas encore, et nous le disons</h3>
-                </div>
-                <ul
-                  className="stack"
-                  style={{ "--stack-gap": "var(--s-3)" } as CSSProperties}
-                >
-                  {NOT_YET.map((line) => (
-                    <li
-                      className="row"
-                      style={{ alignItems: "flex-start", gap: "var(--s-3)" }}
-                      key={line}
-                    >
-                      <span style={{ color: "var(--text-tertiary)" }}>
-                        <Icon name="minus" size={18} />
-                      </span>
-                      <span className="t-sm">{line}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+
+            <div className="creed__have">
+              <h3>Et ce qui est construit, disponible aujourd’hui</h3>
+              <ul>
+                {BUILT.map((line) => (
+                  <li key={line}>
+                    <span className="rule" aria-hidden="true" />
+                    <span>{line}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
           </div>
         </section>
@@ -575,7 +533,7 @@ function PublicPageShot() {
         <span className="shot-browser__dot" />
         <span className="shot-browser__dot" />
         <span className="shot-browser__dot" />
-        <span className="shot-browser__url">balaaca.gn/p/salon-aissatou</span>
+        <span className="shot-browser__url">balaaca.com/p/salon-aissatou</span>
       </div>
       <div className="shot-browser__body mini">
         <div className="mini__cover">
@@ -697,7 +655,7 @@ function DashboardShot() {
         <span className="shot-browser__dot" />
         <span className="shot-browser__dot" />
         <span className="shot-browser__dot" />
-        <span className="shot-browser__url">balaaca.gn/dashboard</span>
+        <span className="shot-browser__url">balaaca.com/dashboard</span>
       </div>
       <div
         className="shot-browser__body mini"
@@ -863,7 +821,7 @@ function PosterShot() {
           letterSpacing: ".04em",
         }}
       >
-        balaaca.gn/p/salon-aissatou
+        balaaca.com/p/salon-aissatou
       </div>
     </div>
   );

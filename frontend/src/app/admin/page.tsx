@@ -742,7 +742,7 @@ function Businesses({
             name="q"
             defaultValue={q}
             autoComplete="off"
-            placeholder="Nom ou balaaca.gn/p/…"
+            placeholder="Nom ou balaaca.com/p/…"
             aria-label="Rechercher un établissement"
           />
         </div>
@@ -808,7 +808,7 @@ function Businesses({
                         <div className="t-strong" style={{ fontSize: "var(--fs-sm)" }}>
                           {row.business_name}
                         </div>
-                        <div className="t-xs">balaaca.gn/p/{row.slug}</div>
+                        <div className="t-xs">balaaca.com/p/{row.slug}</div>
                         {/* A registration with no trade is one of the things an
                             operator is looking for, so the absence is written
                             rather than left as an empty cell. */}

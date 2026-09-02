@@ -501,7 +501,7 @@ function PublicPageShot() {
         <span className="shot-browser__dot" />
         <span className="shot-browser__dot" />
         <span className="shot-browser__dot" />
-        <span className="shot-browser__url">balaaca.gn/p/salon-aissatou</span>
+        <span className="shot-browser__url">balaaca.com/p/salon-aissatou</span>
       </div>
       <div className="shot-browser__body mini">
         <div className="mini__cover">
