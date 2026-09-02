@@ -123,5 +123,8 @@ export async function invite(formData: FormData): Promise<void> {
   const name = String(formData.get("name") ?? "");
   if (name) back.set("name", name);
   if (invitation.expires_at) back.set("until", invitation.expires_at);
-  redirect(`/dashboard/team?${back.toString()}`);
+  // Said out loud as well as shown. Minting a code sends nothing to anybody,
+  // and the one action on this screen that a provider is most likely to
+  // believe was an invitation is exactly this one.
+  succeed(`/dashboard/team?${back.toString()}`, "ACCESS_CODE_CREATED");
 }

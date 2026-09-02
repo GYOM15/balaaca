@@ -79,6 +79,8 @@ export const SUCCESSES = {
   PHOTO_REMOVED: "La photo est retirée de la prestation.",
 
   /* The team. */
+  ACCESS_CODE_CREATED:
+    "Le code est prêt. Envoyez-le à la personne : rien n’est parti tout seul.",
   MEMBER_ADDED: "La personne est ajoutée à l’équipe.",
   MEMBER_SAVED: "La fiche de cette personne est à jour.",
   MEMBER_DEACTIVATED: "Cette personne ne peut plus se connecter ni être réservée.",
