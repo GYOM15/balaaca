@@ -296,66 +296,11 @@ export default function ProLanding() {
           </div>
         </section>
 
-        {/* Fond creux et non plus sombre : le manifeste juste en dessous prend le
-            vert, et deux bandes sombres collées se lisent comme une seule. La
-            page en garde exactement deux, le hero et le manifeste. */}
-        <section className="section section--sunken atmo grain">
-          <div className="page">
-            <div className="section-head">
-              <div className="section-head__text">
-                <p className="t-overline" style={{ color: "var(--accent)" }}>
-                  Trois façons de travailler
-                </p>
-                <h2 className="t-h1" style={{ color: "#fff" }}>
-                  Balaaca comprend votre métier
-                </h2>
-                <p
-                  className="t-lead"
-                  style={{ color: "var(--text-on-dark-muted)" }}
-                >
-                  Un garage ne travaille pas comme un salon, et un plombier ne
-                  reçoit personne. Chaque prestation porte son mode, et c’est ce
-                  que le client lit avant de réserver.
-                </p>
-              </div>
-            </div>
-            <div className="valueband" data-reveal-group>
-              {MODES.map(([icon, name, body, note]) => (
-                <div className="valueband__item" key={name}>
-                  <span style={{ color: "var(--accent)" }}>
-                    <Icon name={icon} size={32} />
-                  </span>
-                  <h3
-                    className="t-h3"
-                    style={{ color: "#fff", marginTop: "var(--s-4)" }}
-                  >
-                    {name}
-                  </h3>
-                  <p
-                    className="t-body"
-                    style={{
-                      color: "var(--text-on-dark-muted)",
-                      marginTop: "var(--s-3)",
-                    }}
-                  >
-                    {body}
-                  </p>
-                  <p
-                    className="t-sm"
-                    style={{
-                      color: "var(--accent)",
-                      marginTop: "var(--s-4)",
-                      fontWeight: 700,
-                    }}
-                  >
-                    {note}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
+        {/* Le manifeste passe AVANT les trois façons. Il vient de la section
+            ivoire qui le precede et repart sur du creux : deux fonds clairs
+            encadrent la seule bande sombre de cette moitie de page, ce qui la
+            fait exister. Derriere les trois façons, il fermait la page sur du
+            sombre juste avant le pied, qui l'est aussi. */}
         <section className="creed on-dark" data-reveal>
           <div className="page">
             <p className="t-overline">Honnêteté</p>
@@ -382,6 +327,52 @@ export default function ProLanding() {
         </section>
 
         <section className="section section--sunken atmo grain">
+          <div className="page">
+            <div className="section-head">
+              <div className="section-head__text">
+                <p className="t-overline t-overline--accent">Trois façons de travailler</p>
+                <h2 className="t-h1">
+                  Balaaca comprend votre métier
+                </h2>
+                <p className="t-lead">
+                  Un garage ne travaille pas comme un salon, et un plombier ne
+                  reçoit personne. Chaque prestation porte son mode, et c’est ce
+                  que le client lit avant de réserver.
+                </p>
+              </div>
+            </div>
+            <div className="valueband" data-reveal-group>
+              {MODES.map(([icon, name, body, note]) => (
+                <div className="valueband__item" key={name}>
+                  <span style={{ color: "var(--accent-strong)" }}>
+                    <Icon name={icon} size={32} />
+                  </span>
+                  <h3 className="t-h3" style={{ marginTop: "var(--s-4)" }}>
+                    {name}
+                  </h3>
+                  <p className="t-body" style={{ marginTop: "var(--s-3)" }}>
+                    {body}
+                  </p>
+                  <p
+                    className="t-sm"
+                    style={{
+                      color: "var(--accent)",
+                      marginTop: "var(--s-4)",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {note}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Ivoire : les trois façons juste au-dessus sont en creux, et deux fonds
+            identiques colles n'en font qu'un. La page finit en clair avant le
+            pied, qui est vert. */}
+        <section className="section atmo grain">
           <div className="page">
             <div
               className="feature feature--wide-left"

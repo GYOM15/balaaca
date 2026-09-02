@@ -1146,7 +1146,22 @@ a.choice { text-decoration: none; color: inherit; }
 }
 .tabbar__item[aria-current="page"] { color: var(--brand); }
 .tabbar__item[aria-current="page"] .ico { transform: translateY(-1px); }
-.has-tabbar { padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom)); }
+/* La reserve pour la barre d'onglets, qui n'existe que sous 900 px. Elle etait
+   posee a toutes les largeurs, donc soixante pixels de vide sur grand ecran ou
+   il n'y a aucune barre.
+
+   Et elle etait sur <main>, alors que le pied vient apres : au lieu de proteger
+   le bas de la page, elle creusait une bande claire ENTRE la derniere section
+   et le pied. Quand un pied suit, c'est lui qui porte la reserve, parce que
+   c'est lui que la barre recouvre. */
+@media (max-width: 899px) {
+  .has-tabbar { padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom)); }
+  .has-tabbar:has(+ .foot) { padding-bottom: 0; }
+  /* footer.foot et non .foot : la regle d'origine du pied est declaree plus
+     loin dans cette feuille, donc a specificite egale c'est elle qui gagnait,
+     et la barre recouvrait les soixante derniers pixels du pied. */
+  footer.foot { padding-bottom: calc(var(--s-10) + var(--tabbar-h) + env(safe-area-inset-bottom)); }
+}
 @media (min-width: 900px) { .has-tabbar { padding-bottom: 0; } }
 
 /* --------------------------------------------------------------------------
@@ -2084,7 +2099,11 @@ a.choice { text-decoration: none; color: inherit; }
   pointer-events: none;
 }
 
-@media (min-width: 900px) {
+/* 1100 et non 900 : a deux colonnes la capture fait 44 rem, et une tablette de
+   1024 laisse au texte moins de 450 px en face. Les deux se marchent dessus
+   bien avant que l'ecran soit vraiment petit, donc tout ce qui n'est pas un
+   grand ecran reste en pile. */
+@media (min-width: 1100px) {
   .feat__in { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--s-16); }
   /* La colonne garde une hauteur pour que la rangee ne s'ecrase pas quand le
      texte est court, et elle s'ETIRE sur toute la rangee. Centree, son bas
@@ -2118,8 +2137,12 @@ a.choice { text-decoration: none; color: inherit; }
   .feat--flip .shot { left: auto; right: 0; }
 }
 
-@media (max-width: 899px) {
-  .feat__art { min-height: 17rem; margin-top: var(--s-8); }
+@media (max-width: 1099px) {
+  /* LE TEXTE D'ABORD, TOUJOURS. feat--flip met l'image en premier dans le DOM
+     pour le grand ecran ; en pile cela mettrait la capture avant la phrase qui
+     l'explique, et le lecteur verrait une image sans savoir de quoi elle parle. */
+  .feat__text { order: 1; }
+  .feat__art  { order: 2; min-height: 21rem; margin-top: var(--s-8); }
   .shot {
     position: absolute; z-index: 1; top: auto;
     bottom: calc(-1 * var(--feat-pad) - 1rem);
