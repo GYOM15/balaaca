@@ -97,11 +97,10 @@ ete invente et rien n'a ete ajoute au backend.** A decider une par une.
 
 ### L'annuaire, la ou ca se voit le plus
 
-- **`ProviderSummary` n'a ni les modes ni un prix a partir de.** Les pastilles
-  `Sur place / Depot / A domicile` et le `des 90 000 GNF` sont sur chaque carte
-  du design - accueil, recherche, collections. Les deux absents, tout le pied
-  de carte disparait. `fulfilments: Fulfilment[]` et `price_from: Money`
-  finiraient la carte. C'est la plus visible des lacunes.
+- ~~**`ProviderSummary` n'a ni les modes ni un prix a partir de.**~~ (fait)
+  V044 et l'agregat de carte les publient : `fulfilments` et `price_from` sont
+  derives des prestations actives. Le pied de la carte de l'annuaire est revenu.
+
 - **`GET /v1/providers` n'accepte pas de parametre de mode.** Le groupe de
   cases `Mode` des filtres est retire plutot que d'expedier trois cases qui ne
   filtrent rien. Un parametre `fulfilment` repetable le rendrait.
