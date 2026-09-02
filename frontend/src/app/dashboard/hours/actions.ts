@@ -42,12 +42,26 @@ function week(staffId: string, error?: string): string {
  * emptied that nobody meant to close. So the form posts every day it knows
  * about, and a day left blank is a day off - stated, not inferred.
  */
+/**
+ * The hour the two lists agreed on.
+ *
+ * <p>The screen posts `<name>_h` and `<name>_m` rather than one time field,
+ * because a native time input commits a half-typed hour on a timer and sets one
+ * the provider never chose. Half a time is no time: a field left at "--" reads
+ * as empty, which is how a day is declared closed.
+ */
+function timeOf(formData: FormData, name: string): string {
+  const hour = String(formData.get(`${name}_h`) ?? "");
+  const minute = String(formData.get(`${name}_m`) ?? "");
+  return hour && minute ? `${hour}:${minute}` : "";
+}
+
 export async function replaceHours(formData: FormData): Promise<void> {
   const staffId = String(formData.get("staff_id"));
 
   const data = DAYS.flatMap((day) => {
-    const start = String(formData.get(`start_${day}`) ?? "");
-    const end = String(formData.get(`end_${day}`) ?? "");
+    const start = timeOf(formData, `start_${day}`);
+    const end = timeOf(formData, `end_${day}`);
     return start && end ? [{ day_of_week: day, start_time: start, end_time: end }] : [];
   });
 
@@ -70,8 +84,8 @@ export async function replaceHours(formData: FormData): Promise<void> {
 export async function addClosure(formData: FormData): Promise<void> {
   const staffId = String(formData.get("staff_id"));
   const kind = String(formData.get("kind"));
-  const start = String(formData.get("start_time") ?? "");
-  const end = String(formData.get("end_time") ?? "");
+  const start = timeOf(formData, "start_time");
+  const end = timeOf(formData, "end_time");
 
   // Narrowed here so the confirmation can name what was declared. The dialog's
   // three radios are the only kinds this screen offers, and anything else is

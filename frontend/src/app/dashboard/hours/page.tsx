@@ -182,22 +182,16 @@ export default async function Hours({
                             {label}
                           </span>
                           <div className="row" style={{ gap: "var(--s-2)", flexWrap: "wrap" }}>
-                            <input
-                              className="input"
-                              type="time"
+                            <TimeField
                               name={`start_${day}`}
-                              defaultValue={segment?.start_time ?? ""}
-                              style={{ width: 154, minHeight: 42 }}
-                              aria-label={`Ouverture ${label}`}
+                              value={segment?.start_time}
+                              label={`Ouverture ${label}`}
                             />
                             <span className="t-xs">à</span>
-                            <input
-                              className="input"
-                              type="time"
+                            <TimeField
                               name={`end_${day}`}
-                              defaultValue={segment?.end_time ?? ""}
-                              style={{ width: 154, minHeight: 42 }}
-                              aria-label={`Fermeture ${label}`}
+                              value={segment?.end_time}
+                              label={`Fermeture ${label}`}
                             />
                             {segment ? null : (
                               <span className="t-sm" style={{ color: "var(--text-tertiary)" }}>
@@ -437,13 +431,13 @@ export default async function Hours({
                       <label className="field__label" htmlFor="c-start">
                         Début
                       </label>
-                      <input className="input" id="c-start" type="time" name="start_time" />
+                      <TimeField name="start_time" label="Début" />
                     </div>
                     <div className="field">
                       <label className="field__label" htmlFor="c-end">
                         Fin
                       </label>
-                      <input className="input" id="c-end" type="time" name="end_time" />
+                      <TimeField name="end_time" label="Fin" />
                     </div>
                   </div>
 
@@ -468,5 +462,71 @@ export default async function Hours({
         </div>
       </main>
     </>
+  );
+}
+
+/**
+ * An hour of the day, as two lists rather than one time field.
+ *
+ * <p>`<input type="time">` decides for the reader. Type "1" for ten o'clock,
+ * pause, and the browser rules that the hour was "01" and moves on to the
+ * minutes - so a provider who does not type both digits quickly enough sets a
+ * time they did not mean, and nothing tells them. That is native behaviour, not
+ * something styling can reach, and the owner hit it.
+ *
+ * <p>Two selects have no such timer. They are also the better control on the
+ * telephone this product is used on: Android opens a native list with rows big
+ * enough for a thumb, where the time field offers a spinner the width of a
+ * fingernail. Minutes go in fives - a salon opens at a quarter past, never at
+ * 08:07 - and the hour keeps all twenty-four.
+ *
+ * <p>No JavaScript: two named fields that the server action puts back together,
+ * so the form still works before hydration and without it.
+ */
+function TimeField({
+  name,
+  value,
+  label,
+}: {
+  name: string;
+  value?: string | null;
+  label: string;
+}) {
+  // The API sends "08:00:00"; a select needs its option value exactly.
+  const [hour = "", minute = ""] = (value ?? "").split(":");
+  const pad = (n: number) => String(n).padStart(2, "0");
+
+  return (
+    <span className="row" style={{ gap: "var(--s-1)" }}>
+      <select
+        className="input"
+        name={`${name}_h`}
+        defaultValue={hour}
+        style={{ width: 76, minHeight: 42 }}
+        aria-label={`${label}, heure`}
+      >
+        <option value="">--</option>
+        {Array.from({ length: 24 }, (_, h) => (
+          <option key={h} value={pad(h)}>
+            {pad(h)}
+          </option>
+        ))}
+      </select>
+      <span aria-hidden="true">:</span>
+      <select
+        className="input"
+        name={`${name}_m`}
+        defaultValue={minute}
+        style={{ width: 76, minHeight: 42 }}
+        aria-label={`${label}, minutes`}
+      >
+        <option value="">--</option>
+        {Array.from({ length: 12 }, (_, i) => (
+          <option key={i} value={pad(i * 5)}>
+            {pad(i * 5)}
+          </option>
+        ))}
+      </select>
+    </span>
   );
 }
