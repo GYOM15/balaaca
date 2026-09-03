@@ -1,0 +1,70 @@
+# Every migration that has shipped, and the checksum Flyway recorded for it.
+#
+# A migration that has run somewhere is HISTORY. Editing it does not change any
+# database that already applied it; it only makes Flyway refuse to start against
+# that database, with a checksum mismatch and nothing that says which edit did
+# it. That is not hypothetical - V016 was edited to translate one comment from
+# French to English, and the API could not start on a developer machine for
+# hours afterwards while the process that was already up served a half-stale
+# classpath.
+#
+# CI never caught it because CI starts from an empty database, where a rewritten
+# migration is simply the only version there has ever been. Only a database that
+# predates the edit can tell, and CI does not have one. This file is that
+# database's memory, kept in the repository.
+#
+# Adding a migration: add its line here in the same commit. Print the value with
+#   mvn -pl app test -Dtest=MigrationChecksumTest
+# which names the missing file and the checksum it computed.
+#
+# Changing one that is already listed: do not. Write the next migration instead.
+# The only edit this file accepts is an append.
+V001__create_extensions_and_functions.sql 1248913665
+V002__create_users.sql -875761842
+V003__create_provider_categories.sql -871856208
+V004__create_providers.sql -1615378547
+V005__create_provider_staff.sql -1958803177
+V006__create_service_offerings.sql 1131121922
+V007__create_customers.sql 1748699818
+V008__create_availability.sql -706083105
+V009__create_appointments.sql -2001437933
+V010__create_notifications.sql 1434775490
+V011__create_subscriptions.sql -787201427
+V012__create_audit_logs.sql -975989512
+V013__enable_row_level_security.sql 1697179936
+V014__enable_provider_registration.sql -1879846128
+V015__enforce_membership_and_isolation.sql -1670812769
+V016__seed_provider_categories.sql 2105146195
+V017__narrow_two_policies.sql 1553064591
+V018__record_the_audit_trail.sql 170806779
+V019__let_a_customer_reach_their_booking.sql -1951530922
+V020__answer_the_caller_before_the_slug.sql 733981687
+V021__let_an_employee_be_invited.sql -1123100395
+V022__make_the_directory_searchable.sql -1557638143
+V023__tell_a_customer_their_booking_was_accepted.sql 420257563
+V024__let_a_day_have_more_than_one_shape.sql 250943448
+V025__widen_the_trades_and_group_them.sql -1046094426
+V026__count_what_a_trade_actually_holds.sql 1648705252
+V027__let_a_job_be_dropped_off_and_collected.sql 802453643
+V028__place_a_business_on_the_map.sql -2018507621
+V029__seed_the_guinean_localities.sql -1519780421
+V030__let_a_provider_name_their_own_quartier.sql 1258838594
+V031__let_the_provider_come_to_you.sql -136177819
+V032__say_who_performs_what.sql 1486200290
+V033__tell_the_salon_its_customer_moved.sql -1135646740
+V034__keep_a_quartier_the_shape_it_is_offered.sql 790482849
+V035__leave_a_business_only_two_standings.sql 1146212358
+V036__let_the_platform_suspend_a_business.sql -1859940058
+V037__let_a_customer_report_a_business.sql -1888340961
+V038__stop_a_chair_vanishing_under_a_booking.sql 938098877
+V039__stop_the_schema_naming_a_state_it_forbids.sql 1750168797
+V040__let_a_business_change_hands.sql -528943908
+V041__let_a_business_answer_back.sql -281894692
+V042__let_a_service_show_itself.sql 1666889911
+V043__make_a_reference_a_person_can_say_out_loud.sql 1845013425
+V044__let_one_service_be_offered_several_ways.sql 139569162
+V045__make_a_staff_code_sayable.sql 562890115
+V046__put_the_staff_code_back_to_full_length.sql 970434937
+V047__accent_the_copy_without_losing_the_search.sql -941524025
+V048__let_the_operator_see_who_he_moderates.sql -775388195
+V049__let_the_customer_say_how_to_reach_them.sql 1300448472

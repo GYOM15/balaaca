@@ -83,15 +83,15 @@ const MODES: [string, string, string, string][] = [
 
 
 /**
- * Ce que le produit refuse, et POURQUOI.
+ * What the product refuses to do, and WHY.
  *
- * <p>La raison n'est pas une décoration : un refus sans raison est une excuse,
- * et c'est la raison qui fait la différence entre une position et une liste de
- * fonctionnalités manquantes. Chaque ligne engage le produit, donc chaque ligne
- * se relit avant d'être publiée.
+ * <p>The reason is not decoration. A refusal with no reason is an excuse, and
+ * the reason is the whole difference between a position and a list of missing
+ * features. Every line here commits the product, so every line is re-read
+ * before it ships.
  *
- * <p>« Aucun SMS ni e-mail automatique » est parti : le client choisit son
- * canal depuis V049, et la phrase était devenue fausse.
+ * <p>"Aucun SMS ni e-mail automatique" is gone: the customer has picked their
+ * own channel since V049, and the sentence had become untrue.
  */
 const REFUSALS: [string, string][] = [
   [
@@ -188,10 +188,10 @@ export default function ProLanding() {
                 sait ce que ça coûte et comment ça se passe avant même de vous
                 écrire.
               </p>
-              {/* Pas de coche. Le cercle vert coché est le geste qu'emploient
-                  toutes les pages de produit, et c'est pour cela qu'il se lit
-                  comme généré ; un filet et un intertitre disent la même chose
-                  et ressemblent à de l'imprimé. */}
+              {/* No tick. The ticked green circle is the gesture every product
+                  page reaches for, which is exactly why it reads as generated;
+                  a rule and a subheading say the same thing and look like
+                  print. */}
               <div className="marks mark-a" style={{ marginTop: "var(--s-7)" }}>
                 <ul>
                   {SHOPFRONT.map(([title, detail]) => (
@@ -203,10 +203,10 @@ export default function ProLanding() {
                 </ul>
               </div>
             </div>
-            {/* La capture est absolue dans sa colonne et la section la rogne :
-                ses bordures droite et basse n'existent pas, elles sont coupées
-                avec le reste. Une marge négative ferait déborder sur le texte
-                au lieu de couper. */}
+            {/* The capture is absolute in its column and the section crops it:
+                its right and bottom borders do not exist, they are cut away
+                with the rest. A negative margin would overflow onto the text
+                instead of cropping. */}
             <div className="feat__art" data-reveal="right">
               <div className="shot">
                 <PublicPageShot />
@@ -253,9 +253,9 @@ export default function ProLanding() {
 
         <section className="feat atmo tex-rules">
           <div className="page feat__in">
-            {/* Le texte a gauche, l'image a droite : la rangee precedente a
-                l'image a gauche, et deux rangees de suite du meme cote donnent
-                la monotonie que la revue de design avait relevee. */}
+            {/* Text left, picture right. The row above has the picture on the
+                left, and two rows running the same way produce the monotony
+                the design review picked up. */}
             <div className="feat__text" data-reveal="left">
               <p className="t-overline t-overline--accent">Votre adresse, à vie</p>
               <h2 className="t-h2 hair" style={{ marginTop: "var(--s-5)" }}>
@@ -271,10 +271,10 @@ export default function ProLanding() {
                   <span className="dl__key">Votre lien</span>
                   <span className="dl__val">balaaca.com/p/votre-nom</span>
                 </div>
-                {/* Redevenue vraie avec V043. Elle avait été retirée parce que
-                    la référence faisait quarante-trois caractères de base64url
-                    que personne ne dicte ; elle en fait dix, dont les trois
-                    initiales de l’établissement. */}
+                {/* True again since V043. This row had been removed because a
+                    reference was forty-three characters of base64url that
+                    nobody dictates over a telephone; it is ten now, three of
+                    them the business's own initials. */}
                 <div className="dl__row">
                   <span className="dl__key">Référence d’un rendez-vous</span>
                   <span className="dl__val">Dix caractères, dictables</span>
@@ -294,11 +294,12 @@ export default function ProLanding() {
           </div>
         </section>
 
-        {/* Le manifeste passe AVANT les trois façons. Il vient de la section
-            ivoire qui le precede et repart sur du creux : deux fonds clairs
-            encadrent la seule bande sombre de cette moitie de page, ce qui la
-            fait exister. Derriere les trois façons, il fermait la page sur du
-            sombre juste avant le pied, qui l'est aussi. */}
+        {/* The manifesto comes BEFORE the three ways. It follows the ivory
+            section above it and leads back into a sunken one, so two light
+            grounds frame the only dark band in this half of the page, which is
+            what makes it register at all. Placed after the three ways, it
+            closed the page on dark immediately above the foot, which is dark
+            too. */}
         <section className="creed on-dark" data-reveal>
           <div className="page">
             <p className="t-overline">Honnêteté</p>
@@ -367,9 +368,9 @@ export default function ProLanding() {
           </div>
         </section>
 
-        {/* Ivoire : les trois façons juste au-dessus sont en creux, et deux fonds
-            identiques colles n'en font qu'un. La page finit en clair avant le
-            pied, qui est vert. */}
+        {/* Ivory. The three ways just above sit on a sunken ground, and two
+            identical grounds against each other read as one band. The page
+            ends light, above a foot that is green. */}
         <section className="section atmo grain">
           <div className="page">
             <div
@@ -621,9 +622,10 @@ function DashboardShot() {
         <span className="shot-browser__dot" />
         <span className="shot-browser__url">balaaca.com/dashboard</span>
       </div>
-      {/* La grille est dans la feuille de style et non ici : en ligne, elle
-          etait impossible a reprendre au point d'arret, ou la barre laterale
-          doit reprendre de la largeur. */}
+      {/* The grid lives in the stylesheet, not here. Declared inline it was
+          unreachable at the breakpoint, where the sidebar has to take back
+          some width - and an inline rule beats a stylesheet whatever its
+          specificity. */}
       <div className="shot-browser__body mini shot-dash">
         <div
           style={{
