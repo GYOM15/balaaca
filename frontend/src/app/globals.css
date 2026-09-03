@@ -1285,6 +1285,20 @@ a.choice { text-decoration: none; color: inherit; }
 /* --------------------------------------------------------------------------
    MENU MOBILE (détails/résumé : sans JavaScript)
    -------------------------------------------------------------------------- */
+/* Un panneau qui porte un menu ne peut pas rogner ce qui en sort.
+   `.panel` a `overflow: hidden`, et le panneau d'un menu est absolu : sur la
+   liste de l'equipe il debordait de 91 px sous la carte, et ces 91 px etaient
+   DECOUPES - pas peints derriere, absents. elementFromPoint a cet endroit
+   renvoyait le <main>. Le z-index n'y etait pour rien : il vaut 60, la ligne
+   suivante est statique, rien ne recouvrait quoi que ce soit.
+
+   Ce que le rognage protege, c'est l'angle arrondi : sans lui, le filet du
+   dernier element de liste traverse la courbe. Il est donc retire la ou un
+   menu existe, et seulement la, et le filet de trop part avec - la bordure du
+   panneau ferme deja la liste. */
+.panel:has(.menu) { overflow: visible; }
+.panel:has(.menu) .list__item:last-child { border-bottom: 0; }
+
 .menu { position: relative; }
 .menu > summary { list-style: none; cursor: pointer; }
 .menu > summary::-webkit-details-marker { display: none; }
