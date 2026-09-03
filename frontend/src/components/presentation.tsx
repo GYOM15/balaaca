@@ -66,10 +66,17 @@ export function Presentation() {
       const select = (event.target as Element | null)?.closest<HTMLElement>(
         "[data-submit-on-change]",
       );
-      // requestSubmit and not submit(): submit() skips validation and, more to
-      // the point here, skips the submit event a framework may be listening for.
       const form = (select as HTMLSelectElement | null)?.form;
-      if (form) form.requestSubmit();
+      if (!form) return;
+      // requestSubmit first: submit() skips validation and skips the submit
+      // event anything else may be listening for. But NOT requestSubmit only -
+      // the stylesheet hides the fallback button on the strength of the js
+      // class alone, so on a browser that runs scripts and lacks this method
+      // the button would be gone AND the choice would do nothing, which is the
+      // one state worse than the button. Old Android WebViews are exactly the
+      // market this product is for.
+      if (typeof form.requestSubmit === "function") form.requestSubmit();
+      else form.submit();
     };
     document.addEventListener("change", submit);
     return () => document.removeEventListener("change", submit);
