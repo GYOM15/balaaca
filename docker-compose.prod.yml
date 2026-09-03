@@ -132,6 +132,25 @@ services:
   # --- What the base file has to change once the app is in containers ---------
 
   keycloak:
+    # PRODUCTION mode. The base file runs start-dev, which disables HTTPS and
+    # relaxes the hostname check - fine on a machine only you can reach, and not
+    # fine on the open internet. This is the whole switch; it was never thirty
+    # lines of work.
+    command: ["start", "--http-port=8080", "--import-realm"]
+    environment:
+      # TLS terminates at Cloudflare, so this speaks plain HTTP on a private
+      # network and learns the public scheme and host from the proxy's headers.
+      # Without this, Keycloak sees http:// on its own port and writes that into
+      # every redirect and every confirmation link - so the browser is sent from
+      # an https page to an http one and the sign-in dies at the redirect.
+      KC_PROXY_HEADERS: xforwarded
+      KC_HTTP_ENABLED: "true"
+      # The three cache settings the base file turns OFF for a theme edit to be
+      # visible without a restart. On, here: every sign-in screen is otherwise
+      # re-read from disk on every request, on a Raspberry Pi.
+      KC_SPI_THEME_STATIC_MAX_AGE: "2592000"
+      KC_SPI_THEME_CACHE_THEMES: "true"
+      KC_SPI_THEME_CACHE_TEMPLATES: "true"
     # Published on every interface, not only loopback. The browser is redirected
     # here by address; bound to 127.0.0.1 on the Pi, every sign-in from any
     # other machine fails at the redirect with nothing in any log to say why.
