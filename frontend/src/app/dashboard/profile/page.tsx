@@ -177,18 +177,21 @@ export default async function Profile({
                 <div className="card__body">
                   <form action={uploadCover}>
                     {/* The band a visitor gets, drawn by the class that draws
-                        it there, rather than by a ratio written on this line.
-                        Same height to the pixel - the design gives a cover
-                        `clamp(160px, 26vw, 300px)` - and the panel is narrower
-                        than a page, so what this shows is the tighter of the
-                        two crops. That is the safe direction to be wrong in,
-                        and it is as close as markup gets while the height is
-                        measured against the window and the width against
-                        this column. */}
+                        it there. It is now the SAME band: `.pcover` has a
+                        ratio rather than a capped height, and the file is
+                        stored in that ratio, so this panel and the public page
+                        show the same picture at different sizes.
+
+                        They did not before, and the comment here claimed the
+                        opposite of what was happening: this panel is narrower
+                        than a page, and a narrower box of the same height shows
+                        MORE of an image, not less. A provider approved a band
+                        of which they saw 76% and shipped one of which a visitor
+                        saw 37%. */}
                     <div className="pcover atmo grain grain--dark" id={COVER_PREVIEW}>
                       {cover ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={cover} alt="Bandeau actuel" width={1600} height={500} />
+                        <img src={cover} alt="Bandeau actuel" width={1600} height={400} />
                       ) : null}
                     </div>
                     {cover ? null : (
@@ -196,6 +199,15 @@ export default async function Profile({
                         Sans bandeau, votre page ouvre sur ce fond.
                       </p>
                     )}
+                    {/* Said before the choice rather than discovered after it.
+                        A band is a shape and a photograph put in one loses
+                        something; a provider who knows that picks a picture
+                        whose subject is not at the top. */}
+                    <p className="field__hint" style={{ marginTop: "var(--s-2)" }}>
+                      <Icon name="info" size={16} /> Format 4:1, par exemple
+                      1600&nbsp;×&nbsp;400. Une photo d’une autre forme est
+                      recadrée en son centre.
+                    </p>
                     <div
                       className="row row--wrap"
                       style={{ marginTop: "var(--s-3)", gap: "var(--s-3)" }}

@@ -57,7 +57,7 @@ class SanitisedImageTest {
         @Test
         @DisplayName("A JPEG comes back a JPEG")
         void acceptsAJpeg() {
-            SanitisedImage accepted = SanitisedImage.of(image("jpeg", 100, 80, false));
+            SanitisedImage accepted = SanitisedImage.of(image("jpeg", 100, 80, false), ImageStore.Shape.FREE);
 
             assertThat(accepted.contentType()).isEqualTo("image/jpeg");
             assertThat(accepted.extension()).isEqualTo("jpg");
@@ -67,7 +67,7 @@ class SanitisedImageTest {
         @Test
         @DisplayName("A PNG comes back a PNG")
         void acceptsAPng() {
-            SanitisedImage accepted = SanitisedImage.of(image("png", 100, 80, false));
+            SanitisedImage accepted = SanitisedImage.of(image("png", 100, 80, false), ImageStore.Shape.FREE);
 
             assertThat(accepted.contentType()).isEqualTo("image/png");
             assertThat(accepted.extension()).isEqualTo("png");
@@ -76,14 +76,14 @@ class SanitisedImageTest {
         @Test
         @DisplayName("A PNG with transparency survives as a JPEG-free PNG")
         void keepsAlphaInPng() {
-            assertThat(SanitisedImage.of(image("png", 40, 40, true)).contentType())
+            assertThat(SanitisedImage.of(image("png", 40, 40, true), ImageStore.Shape.FREE).contentType())
                     .isEqualTo("image/png");
         }
 
         @Test
         @DisplayName("The bytes handed out are a copy, not the record's own array")
         void doesNotLeakItsArray() {
-            SanitisedImage accepted = SanitisedImage.of(image("png", 20, 20, false));
+            SanitisedImage accepted = SanitisedImage.of(image("png", 20, 20, false), ImageStore.Shape.FREE);
 
             byte[] first = accepted.content();
             first[0] = 0;
@@ -106,7 +106,7 @@ class SanitisedImageTest {
                     .getBytes(StandardCharsets.UTF_8);
             byte[] withPayload = concat(image("png", 60, 60, false), secret);
 
-            byte[] published = SanitisedImage.of(withPayload).content();
+            byte[] published = SanitisedImage.of(withPayload, ImageStore.Shape.FREE).content();
 
             assertThat(new String(published, StandardCharsets.ISO_8859_1))
                     .doesNotContain("GPS:9.5092")
@@ -119,7 +119,108 @@ class SanitisedImageTest {
             byte[] sent = concat(image("png", 60, 60, false),
                                  "trailing".getBytes(StandardCharsets.UTF_8));
 
-            assertThat(SanitisedImage.of(sent).content()).isNotEqualTo(sent);
+            assertThat(SanitisedImage.of(sent, ImageStore.Shape.FREE).content()).isNotEqualTo(sent);
+        }
+    }
+
+    @Nested
+    @DisplayName("What shape it comes back")
+    class Shapes {
+
+        @Test
+        @DisplayName("A logo is padded to a square, never cropped")
+        void squaresALogoByPadding() throws java.io.IOException {
+            // 400x160: were it cropped to a square, 60% of the mark would be
+            // gone. Padding keeps every pixel and adds ground either side.
+            java.awt.image.BufferedImage stored = decode(
+                    SanitisedImage.of(image("png", 400, 160, false),
+                                      ImageStore.Shape.SQUARE));
+
+            assertThat(stored.getWidth()).isEqualTo(stored.getHeight());
+            assertThat(stored.getWidth()).isEqualTo(400);
+        }
+
+        @Test
+        @DisplayName("A logo already square is left at its own size")
+        void doesNotEnlargeASquareLogo() throws java.io.IOException {
+            java.awt.image.BufferedImage stored = decode(
+                    SanitisedImage.of(image("png", 300, 300, false),
+                                      ImageStore.Shape.SQUARE));
+
+            assertThat(stored.getWidth()).isEqualTo(300);
+            assertThat(stored.getHeight()).isEqualTo(300);
+        }
+
+        @Test
+        @DisplayName("A logo larger than the square bound is brought down to it")
+        void boundsALargeLogo() throws java.io.IOException {
+            java.awt.image.BufferedImage stored = decode(
+                    SanitisedImage.of(image("png", 2000, 2000, false),
+                                      ImageStore.Shape.SQUARE));
+
+            assertThat(stored.getWidth()).isEqualTo(SanitisedImage.SQUARE_SIDE);
+            assertThat(stored.getHeight()).isEqualTo(SanitisedImage.SQUARE_SIDE);
+        }
+
+        @Test
+        @DisplayName("A cover comes back in the banner proportion, whatever went in")
+        void cropsACoverToTheBanner() throws java.io.IOException {
+            // 16:9, which is what a telephone and a laptop both produce.
+            java.awt.image.BufferedImage stored = decode(
+                    SanitisedImage.of(image("jpeg", 1600, 900, false),
+                                      ImageStore.Shape.BANNER));
+
+            assertThat(ratio(stored)).isEqualTo(ratio(SanitisedImage.BANNER_WIDTH,
+                                                      SanitisedImage.BANNER_HEIGHT));
+        }
+
+        @Test
+        @DisplayName("A cover taller than it is wide is still a banner afterwards")
+        void cropsAPortraitCover() throws java.io.IOException {
+            java.awt.image.BufferedImage stored = decode(
+                    SanitisedImage.of(image("jpeg", 600, 1200, false),
+                                      ImageStore.Shape.BANNER));
+
+            assertThat(ratio(stored)).isEqualTo(ratio(SanitisedImage.BANNER_WIDTH,
+                                                      SanitisedImage.BANNER_HEIGHT));
+        }
+
+        @Test
+        @DisplayName("A small cover is cropped, never blown up to fill the band")
+        void neverEnlargesACover() throws java.io.IOException {
+            java.awt.image.BufferedImage stored = decode(
+                    SanitisedImage.of(image("jpeg", 800, 600, false),
+                                      ImageStore.Shape.BANNER));
+
+            // Cropping inward: the width it had, in the proportion it needed.
+            assertThat(stored.getWidth()).isLessThanOrEqualTo(800);
+            assertThat(ratio(stored)).isEqualTo(ratio(SanitisedImage.BANNER_WIDTH,
+                                                      SanitisedImage.BANNER_HEIGHT));
+        }
+
+        @Test
+        @DisplayName("A photograph of the work keeps the proportion it arrived in")
+        void leavesAFreeImageAlone() throws java.io.IOException {
+            java.awt.image.BufferedImage stored = decode(
+                    SanitisedImage.of(image("jpeg", 1200, 900, false),
+                                      ImageStore.Shape.FREE));
+
+            assertThat(ratio(stored)).isEqualTo(ratio(4, 3));
+        }
+
+        private java.awt.image.BufferedImage decode(SanitisedImage image)
+                throws java.io.IOException {
+            return javax.imageio.ImageIO.read(
+                    new java.io.ByteArrayInputStream(image.content()));
+        }
+
+        /** Rounded to two places: a crop of an odd number of pixels is off by one. */
+        private double ratio(java.awt.image.BufferedImage image) {
+            return ratio(image.getWidth(), image.getHeight());
+        }
+
+        private double ratio(int width, int height) {
+            return Math.round(100.0 * width / height) / 100.0;
         }
     }
 
@@ -130,10 +231,10 @@ class SanitisedImageTest {
         @Test
         @DisplayName("Nothing at all")
         void refusesAnEmptyBody() {
-            assertThatThrownBy(() -> SanitisedImage.of(new byte[0]))
+            assertThatThrownBy(() -> SanitisedImage.of(new byte[0], ImageStore.Shape.FREE))
                     .isInstanceOf(ImageRejectedException.class)
                     .hasMessageContaining("empty");
-            assertThatThrownBy(() -> SanitisedImage.of(null))
+            assertThatThrownBy(() -> SanitisedImage.of(null, ImageStore.Shape.FREE))
                     .isInstanceOf(ImageRejectedException.class);
         }
 
@@ -142,7 +243,7 @@ class SanitisedImageTest {
         void refusesSomethingElseEntirely() {
             // The Content-Type said image/jpeg. The bytes are the fact.
             assertThatThrownBy(() -> SanitisedImage.of(
-                    "#!/bin/sh\nrm -rf /".getBytes(StandardCharsets.UTF_8)))
+                    "#!/bin/sh\nrm -rf /".getBytes(StandardCharsets.UTF_8), ImageStore.Shape.FREE))
                     .isInstanceOf(ImageRejectedException.class)
                     .hasMessageContaining("only JPEG and PNG");
         }
@@ -154,7 +255,7 @@ class SanitisedImageTest {
             // produces JPEG and PNG.
             byte[] gif = "GIF89a".getBytes(StandardCharsets.US_ASCII);
 
-            assertThatThrownBy(() -> SanitisedImage.of(gif))
+            assertThatThrownBy(() -> SanitisedImage.of(gif, ImageStore.Shape.FREE))
                     .isInstanceOf(ImageRejectedException.class)
                     .hasMessageContaining("only JPEG and PNG");
         }
@@ -167,7 +268,7 @@ class SanitisedImageTest {
             pretendJpeg[1] = (byte) 0xD8;
             pretendJpeg[2] = (byte) 0xFF;
 
-            assertThatThrownBy(() -> SanitisedImage.of(pretendJpeg))
+            assertThatThrownBy(() -> SanitisedImage.of(pretendJpeg, ImageStore.Shape.FREE))
                     .isInstanceOf(ImageRejectedException.class)
                     .hasMessageContaining("could not be read");
         }
@@ -180,7 +281,7 @@ class SanitisedImageTest {
             huge[1] = (byte) 0xD8;
             huge[2] = (byte) 0xFF;
 
-            assertThatThrownBy(() -> SanitisedImage.of(huge))
+            assertThatThrownBy(() -> SanitisedImage.of(huge, ImageStore.Shape.FREE))
                     .isInstanceOf(ImageRejectedException.class)
                     .hasMessageContaining("5 MB");
         }
@@ -194,7 +295,7 @@ class SanitisedImageTest {
             // it through and a decode alone dies on it.
             byte[] enormous = image("png", SanitisedImage.MAX_DIMENSION + 1, 4, false);
 
-            assertThatThrownBy(() -> SanitisedImage.of(enormous))
+            assertThatThrownBy(() -> SanitisedImage.of(enormous, ImageStore.Shape.FREE))
                     .isInstanceOf(ImageRejectedException.class)
                     .hasMessageContaining("6000 pixels");
         }
@@ -209,7 +310,7 @@ class SanitisedImageTest {
             // 3000 x 2000 is an ordinary mid-range camera. Nothing resized
             // before this, so a five-megabyte file was served as a logo to a
             // phone on 3G - which is the market, not an edge case.
-            byte[] published = SanitisedImage.of(image("jpeg", 3000, 2000, false)).content();
+            byte[] published = SanitisedImage.of(image("jpeg", 3000, 2000, false), ImageStore.Shape.FREE).content();
 
             java.awt.image.BufferedImage stored = javax.imageio.ImageIO.read(
                     new java.io.ByteArrayInputStream(published));
@@ -224,7 +325,7 @@ class SanitisedImageTest {
         @Test
         @DisplayName("A small image is left alone rather than enlarged")
         void aSmallImageIsUntouched() throws Exception {
-            byte[] published = SanitisedImage.of(image("png", 200, 120, false)).content();
+            byte[] published = SanitisedImage.of(image("png", 200, 120, false), ImageStore.Shape.FREE).content();
 
             java.awt.image.BufferedImage stored = javax.imageio.ImageIO.read(
                     new java.io.ByteArrayInputStream(published));
@@ -265,7 +366,7 @@ class SanitisedImageTest {
 
             java.awt.image.BufferedImage stored = javax.imageio.ImageIO.read(
                     new java.io.ByteArrayInputStream(
-                            SanitisedImage.of(raw.toByteArray()).content()));
+                            SanitisedImage.of(raw.toByteArray(), ImageStore.Shape.FREE).content()));
 
             StringBuilder recovered = new StringBuilder();
             for (int i = 0; i < bits.length * 8; i += 8) {

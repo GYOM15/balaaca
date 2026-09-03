@@ -1456,9 +1456,22 @@ a.choice { text-decoration: none; color: inherit; }
    n'est plus la marque. Il est donc POSE sur le fond chaud, entier et centre,
    exactement comme le dessin de metier qui le remplace quand il n'y en a pas. */
 .pcard__cover--mark img {
-  width: auto; height: auto;
-  max-width: 62%; max-height: 72%;
+  /* Dimensionne par la HAUTEUR de la bande : un pourcentage de largeur se
+     mesure sur les 253 px de la carte et depassait la bande en 16/9. */
+  height: 72%; width: auto; max-width: 62%;
+  /* Le stockage garantit desormais un carre ; ceci le tient quand meme, pour
+     les logos deposes avant ce changement. */
+  aspect-ratio: 1;
   object-fit: contain;
+  /* La plaque, et c'est elle le correctif. La plupart des logos arrivent en
+     JPEG, format sans transparence, donc avec leur propre fond blanc : posee
+     nue sur le beige, la marque devenait un carre blanc flottant, un
+     autocollant colle sur la carte. Sur une plaque blanche, ce meme fond se
+     confond avec elle, et un PNG transparent y est juste aussi. */
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  box-shadow: var(--sh-sm);
 }
 .pcard:hover .pcard__cover--mark img { transform: scale(1.03); }
 .pcard:hover .pcard__cover img { transform: scale(1.03); }
@@ -1479,7 +1492,20 @@ a.choice { text-decoration: none; color: inherit; }
 /* --------------------------------------------------------------------------
    PAGE PRESTATAIRE
    -------------------------------------------------------------------------- */
-.pcover { position: relative; height: clamp(160px, 26vw, 300px); background: var(--surface-inverse); overflow: hidden; }
+/* Un RATIO, et non plus une hauteur. Une largeur fluide contre une hauteur
+   plafonnee n'est pas un ratio du tout : la bande allait de 2,4:1 sur un
+   telephone a 6,7:1 sur un grand ecran, donc aucune forme stockee ne pouvait y
+   correspondre et chaque visiteur voyait un recadrage different. Le bandeau est
+   maintenant stocke en 4:1, et jusqu'a 1360 px c'est exactement ce qui
+   s'affiche - rien n'est rogne.
+
+   Le plafond de hauteur garde la photo a sa place sur un tres grand ecran. Au
+   dela, la boite devient plus large que 4:1 et le rognage revient - mais sur
+   les COTES, jamais en hauteur, ou se trouve le sujet. */
+.pcover { position: relative; aspect-ratio: 4 / 1; max-height: 340px; background: var(--surface-inverse); overflow: hidden; }
+/* Sous 700 px, 4:1 ne ferait plus que 98 px de haut : une meurtriere. Le ratio
+   s'elargit, donc la aussi on rogne sur les cotes. */
+@media (max-width: 700px) { .pcover { aspect-ratio: 5 / 2; } }
 .pcover img { width: 100%; height: 100%; object-fit: cover; }
 .pcover::after { content:""; position:absolute; inset:0; background: linear-gradient(180deg, rgba(8,31,27,.05) 0%, rgba(8,31,27,.42) 100%); }
 .phead { position: relative; margin-top: -46px; z-index: 2; }

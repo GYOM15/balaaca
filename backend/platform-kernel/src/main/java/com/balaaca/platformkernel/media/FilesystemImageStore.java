@@ -76,8 +76,8 @@ public class FilesystemImageStore implements ImageStore {
     }
 
     @Override
-    public String store(byte[] content) {
-        SanitisedImage image = SanitisedImage.of(content);
+    public String store(byte[] content, Shape shape) {
+        SanitisedImage image = SanitisedImage.of(content, shape);
         byte[] raw = new byte[16];
         RANDOM.nextBytes(raw);
         String name = Base64.getUrlEncoder().withoutPadding().encodeToString(raw)

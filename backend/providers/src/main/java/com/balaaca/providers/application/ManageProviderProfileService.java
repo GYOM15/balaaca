@@ -146,13 +146,23 @@ public class ManageProviderProfileService implements ManageProviderProfileUseCas
     @Override
     @Transactional(Transactional.TxType.REQUIRED)
     public ProviderProfile replaceLogo(byte[] image) {
-        return replaceImage(image, "replace_logo", profiles::replaceLogo);
+        // A mark is padded to a square and never cropped: cut in half it is not
+        // a smaller logo, it is a different one. Squaring it here is also what
+        // lets a directory card draw ONE plate for every business instead of
+        // guessing a shape per file.
+        return replaceImage(image, "replace_logo", ImageStore.Shape.SQUARE,
+                            profiles::replaceLogo);
     }
 
     @Override
     @Transactional(Transactional.TxType.REQUIRED)
     public ProviderProfile replaceCover(byte[] image) {
-        return replaceImage(image, "replace_cover", profiles::replaceCover);
+        // A band is a shape, so the picture loses something. It loses it HERE,
+        // where the provider is still looking at the upload and can choose a
+        // different photograph, rather than on the public page at a proportion
+        // that changed with the width of the visitor's window.
+        return replaceImage(image, "replace_cover", ImageStore.Shape.BANNER,
+                            profiles::replaceCover);
     }
 
     /**
@@ -165,11 +175,12 @@ public class ManageProviderProfileService implements ManageProviderProfileUseCas
      * still uses. Wasted bytes are cheap and a broken page is not.
      */
     private ProviderProfile replaceImage(byte[] raw, String action,
+                                         ImageStore.Shape shape,
                                          java.util.function.Function<String,
                                                  Optional<String>> swap) {
         tenant.requireOwner(action);
 
-        String name = images.store(raw);
+        String name = images.store(raw, shape);
         Optional<String> previous = swap.apply(name);
 
         audit.record(new AuditEvent(action.toUpperCase(java.util.Locale.ROOT), "provider",
