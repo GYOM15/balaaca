@@ -177,7 +177,7 @@ export default async function Team({
                 icon="shield"
               >
                 Rien n’a été envoyé. Copiez ce lien et donnez-le à{" "}
-                {query.name ?? "cette personne"}.
+                {query.name ?? "cette personne"} via WhatsApp ou SMS.
                 {/* One link, not a code and an address. It carries the code in
                     its query, so the person receiving it taps once and types
                     nothing - which is the whole reason the code stayed long.
