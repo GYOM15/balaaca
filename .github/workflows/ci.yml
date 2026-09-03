@@ -200,7 +200,8 @@ jobs:
           shellcheck --severity=warning \
             infrastructure/postgres/bootstrap.sh \
             infrastructure/keycloak/smoke.sh \
-            scripts/dev.sh scripts/dev-stop.sh
+            scripts/dev.sh scripts/dev-stop.sh \
+            scripts/generate-env.sh scripts/deploy.sh
           # The entrypoint is POSIX sh: the Keycloak image has no bash.
           shellcheck --shell=sh --severity=warning \
             infrastructure/keycloak/init-realm.sh
