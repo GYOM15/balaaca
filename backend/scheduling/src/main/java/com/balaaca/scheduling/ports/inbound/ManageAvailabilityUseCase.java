@@ -1,0 +1,91 @@
+package com.balaaca.scheduling.ports.inbound;
+
+import com.balaaca.scheduling.domain.AvailabilityOverride;
+import com.balaaca.scheduling.domain.OpenWindow;
+import com.balaaca.sharedkernel.ids.StaffId;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * What a provider declares about when they are open.
+ *
+ * <p>Everything here is LOCAL time. The provider's zone turns it into instants,
+ * and that conversion belongs to the calculator - a recurring rule stored as an
+ * instant would drift the day a zone changes its offset.
+ */
+public interface ManageAvailabilityUseCase {
+
+    List<WeeklySegment> openingHours(StaffId staffId);
+
+    /**
+     * The hours of the business rather than of one person: every bookable,
+     * active staff member's currently-effective hours, merged.
+     *
+     * <p>It takes no staff identifier because the question has none. A customer
+     * reading a provider's page wants to know when the door is open, and a
+     * provider asking whether their page is ready to publish wants the same
+     * thing. Rules whose effective period has not started, or has ended, are
+     * already gone.
+     */
+    List<OpenWindow> combinedOpeningHours();
+
+    /**
+     * Replaces the whole week for one staff member.
+     *
+     * <p>Whole, not day by day: a per-day edit leaves the days nobody mentioned
+     * ambiguous, which is how a Saturday gets emptied that no one meant to
+     * close.
+     */
+    List<WeeklySegment> replaceOpeningHours(StaffId staffId, List<WeeklySegment> segments);
+
+    List<Closure> closures(StaffId staffId, LocalDate from, LocalDate to);
+
+    Closure addClosure(Closure closure);
+
+    /**
+     * Removes a closure, restoring the weekly hours for that day.
+     *
+     * <p>Throws rather than returning a boolean the edge would have to
+     * interpret: what a missing closure means is this use case's business, and
+     * a caller that had to decide could decide differently in two places.
+     */
+    void removeClosure(UUID closureId);
+
+    /**
+     * @param dayOfWeek ISO numbering, 1 is Monday
+     * @param end       before start means the window wraps past midnight, which
+     *                  a provider open until one in the morning needs
+     */
+    record WeeklySegment(int dayOfWeek, LocalTime start, LocalTime end,
+                         Optional<LocalDate> effectiveFrom, Optional<LocalDate> effectiveTo) {
+    }
+
+    /**
+     * One dated exception to the week.
+     *
+     * <p>The kind is carried rather than inferred from whether a window is
+     * present. It used to be inferred, and that was only possible while two
+     * kinds existed: TIME_OFF carries a window exactly as CUSTOM_HOURS does, and
+     * they mean opposite things - one opens the day, the other takes an hour out
+     * of it.
+     *
+     * @param window empty when and only when the day is closed outright
+     */
+    record Closure(Optional<UUID> id, StaffId staffId, LocalDate date,
+                   AvailabilityOverride.Kind kind,
+                   Optional<LocalTimeRange> window, Optional<String> reason) {
+
+        public Closure {
+            if ((kind == AvailabilityOverride.Kind.CLOSED) == window.isPresent()) {
+                throw new IllegalArgumentException(
+                        "CLOSED carries no window; CUSTOM_HOURS and TIME_OFF require one");
+            }
+        }
+    }
+
+    record LocalTimeRange(LocalTime start, LocalTime end) {
+    }
+}

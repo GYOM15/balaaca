@@ -1,0 +1,30 @@
+#!/bin/sh
+# Fast local feedback on the two branches that only ever advance through a
+# merged pull request. GitHub enforces this server-side (protected branches,
+# required status checks, enforce_admins), so this hook does not provide the
+# guarantee - it just saves a network round-trip and a confusing GH006.
+#
+# There is deliberately no override. An earlier version offered
+# ALLOW_MAIN_PUSH=1 as a milestone-promotion escape hatch; that was written
+# when nothing protected main, and the server now refuses it regardless. A
+# documented path that cannot work is worse than no path at all.
+
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+    case "$remote_ref" in
+        refs/heads/main)
+            printf 'pre-push: main only advances by merging a pull request.\n' >&2
+            printf '  Promote a milestone with:\n' >&2
+            printf '    gh pr create --base main --head develop\n' >&2
+            printf '  The same three checks run on it.\n' >&2
+            exit 1
+            ;;
+        refs/heads/develop)
+            printf 'pre-push: develop only advances by merging a pull request.\n' >&2
+            printf '  Open one from a feature/, fix/, chore/, docs/ or ci/ branch:\n' >&2
+            printf '    gh pr create --base develop\n' >&2
+            exit 1
+            ;;
+    esac
+done
+
+exit 0

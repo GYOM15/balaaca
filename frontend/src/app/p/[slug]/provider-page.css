@@ -1,0 +1,39 @@
+/* ---------------------------------------------------------------------------
+   What the public page adds to the system, and nothing more.
+
+   globals.css already carries .pub, .pub-cover, .pub-id, .pub-meta,
+   .pub-aside, .svc-row and .hours-row. This file redefines none of them: it
+   covers the three cases the mockup could not know about, because it drew a
+   monogram not knowing images were stored, and because every one of its
+   services had a price.
+   ------------------------------------------------------------------------ */
+
+/* A cover photo is light or dark depending on the photo, and the text laid
+   over it is white either way. The veil keeps the header legible whatever the
+   picture, without darkening it into a flat block. */
+.pub-cover__scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--ink) 55%, transparent) 0%,
+    color-mix(in srgb, var(--ink) 82%, transparent) 100%
+  );
+  pointer-events: none;
+}
+
+/* The service row is a link here, not a button: it leads to the booking page,
+   so a long press opens it in a tab and the keyboard announces it as a link.
+   globals.css tints only the button on hover. */
+a.svc-row:hover {
+  background: var(--brand-tint-04);
+}
+
+/* A price the provider has not published is not a price: it reads as a note
+   and not as an amount. Same place in the row so the column stays straight,
+   but neither bold nor tabular figures. */
+.svc-row__price--ask {
+  font-weight: var(--weight-medium);
+  color: var(--text-tertiary);
+  font-variant-numeric: normal;
+}

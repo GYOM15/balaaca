@@ -1,0 +1,195 @@
+package com.balaaca.app.rest;
+
+import com.balaaca.app.api.ProvidersApi;
+import com.balaaca.app.api.model.Fulfilment;
+import com.balaaca.app.api.model.LocalityRef;
+import com.balaaca.app.api.model.Money;
+import com.balaaca.app.api.model.ProviderRegisteredView;
+import com.balaaca.app.api.model.ProviderSummary;
+import com.balaaca.app.api.model.ProviderSummaryPage;
+import com.balaaca.app.api.model.RegisterProviderRequest;
+import com.balaaca.platformkernel.tenancy.AuthenticatedSubject;
+import com.balaaca.providers.ports.inbound.RegisterProviderUseCase;
+import com.balaaca.providers.ports.inbound.RegisterProviderUseCase.Account;
+import com.balaaca.providers.ports.inbound.RegisterProviderUseCase.Registration;
+import com.balaaca.providers.ports.inbound.SearchProvidersUseCase;
+import com.balaaca.providers.ports.inbound.SearchProvidersUseCase.ProviderCard;
+import com.balaaca.providers.ports.inbound.SearchProvidersUseCase.Query;
+import io.quarkus.security.Authenticated;
+import jakarta.ws.rs.core.Response;
+import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+
+/**
+ * The provider collection: finding a business, and becoming one.
+ *
+ * <p>Two operations that could hardly be less alike sit in one class, and they
+ * have to. A path is served by exactly one JAX-RS resource: split across two
+ * classes, the router keeps one and answers 405 to the other - which is how
+ * registration broke the day the directory was added, silently, until a test on
+ * an unrelated path noticed.
+ *
+ * <p>So security is declared per method rather than on the class. Listing is
+ * public. Registering is {@code @Authenticated} and deliberately NOT
+ * {@code @TenantBound}: every other authenticated route resolves a tenant before
+ * it runs, and this is what makes a tenant resolvable, so binding one first
+ * would refuse exactly the callers it exists for.
+ */
+public class ProvidersResource implements ProvidersApi {
+
+    private static final ZoneId DEFAULT_ZONE = ZoneId.of("Africa/Conakry");
+
+    private final AuthenticatedSubject caller;
+    private final RegisterProviderUseCase registration;
+    private final SearchProvidersUseCase directory;
+
+    public ProvidersResource(AuthenticatedSubject caller,
+                             RegisterProviderUseCase registration,
+                             SearchProvidersUseCase directory) {
+        this.caller = caller;
+        this.registration = registration;
+        this.directory = directory;
+    }
+
+    /**
+     * The hub. No tenant is bound and none is wanted: this is the one public
+     * read that spans providers, and what makes it safe is the database's own
+     * public-read policy, which admits published rows to an unbound connection
+     * and nothing else.
+     */
+    @Override
+    public Response listProviders(String q, List<String> categorySlug, String locality,
+                                  String area, List<Fulfilment> fulfilment, String city,
+                                  String cursor, Integer limit) {
+        var found = directory.search(new Query(
+                trimmed(q),
+                categorySlug == null ? List.of()
+                        : categorySlug.stream().filter(v -> !v.isBlank()).toList(),
+                trimmed(city),
+                trimmed(locality),
+                trimmed(area),
+                asked(fulfilment),
+                Cursors.directoryPosition(cursor),
+                limit == null ? Cursors.DEFAULT_LIMIT : limit));
+
+        return Response.ok(new ProviderSummaryPage()
+                .data(found.cards().stream().map(ProvidersResource::card).toList())
+                .nextCursor(found.next().map(Cursors::encodeDirectory).orElse(null))
+                .total(found.total()))
+                .header("Cache-Control", PublicCaching.DIRECTORY)
+                .build();
+    }
+
+    /**
+     * The account fields come from the verified token rather than the body. A
+     * display name a caller typed would be the name on the audit trail, and an
+     * email they typed would be an unverified address the platform would write
+     * to.
+     */
+    @Override
+    @Authenticated
+    public Response registerProvider(RegisterProviderRequest request) {
+        var registered = registration.register(new Registration(
+                new Account(caller.require(), caller.displayName(), caller.email()),
+                request.getSlug(),
+                request.getBusinessName(),
+                Optional.ofNullable(request.getCategorySlug()),
+                Optional.ofNullable(request.getCity()),
+                zone(request.getTimezone())));
+
+        return Response.status(201)
+                .entity(new ProviderRegisteredView()
+                        .providerId(registered.id().value())
+                        .slug(registered.slug())
+                        .published(false))
+                .build();
+    }
+
+    private static ProviderSummary card(ProviderCard found) {
+        ProviderSummary summary = new ProviderSummary()
+                .slug(found.slug())
+                .businessName(found.businessName());
+
+        found.description().ifPresent(summary::setDescription);
+        found.categorySlug().ifPresent(summary::setCategorySlug);
+        found.city().ifPresent(summary::setCity);
+        found.area().ifPresent(summary::setArea);
+        found.logoUrl().ifPresent(summary::setLogoUrl);
+        summary.setFulfilments(fulfilmentsOf(found));
+
+        // A floor, and the copy on the card says so. Absent when no active
+        // service shows a price - not zero, which reads as free.
+        found.priceFrom().ifPresent(price -> summary.setPriceFrom(new Money()
+                .amountMinor(price.amountMinor())
+                .currency(price.currency().name())));
+
+        // Both halves or neither: a slug with no label draws an empty chip, and
+        // a label with no slug is a filter the client cannot then apply.
+        found.localitySlug().flatMap(slug -> found.localityLabel()
+                        .map(label -> new LocalityRef().slug(slug).labelFr(label)))
+                .ifPresent(summary::setLocality);
+        return summary;
+    }
+
+    /**
+     * The set, in the order the contract calls canonical.
+     *
+     * <p>Empty when the business has published no service yet, and the contract
+     * says to draw nothing rather than a badge announcing it offers nothing -
+     * a salon registered this morning is not a salon that refuses to serve
+     * anybody.
+     */
+    private static List<Fulfilment> fulfilmentsOf(ProviderCard found) {
+        var modes = new ArrayList<Fulfilment>(3);
+        if (found.fulfilments().onSite()) {
+            modes.add(Fulfilment.ON_SITE);
+        }
+        if (found.fulfilments().dropOff()) {
+            modes.add(Fulfilment.DROP_OFF);
+        }
+        if (found.fulfilments().atCustomer()) {
+            modes.add(Fulfilment.AT_CUSTOMER);
+        }
+        return modes;
+    }
+
+    /**
+     * The modes asked for, in the shape the directory already speaks.
+     *
+     * <p>The same triple the card publishes, read the other way round, so there
+     * is one definition of what a business offers rather than one for the badge
+     * and another for the filter. Nothing asked for means no filter: a caller
+     * ticking no box wants the whole directory, not the businesses that offer
+     * nothing.
+     */
+    private static SearchProvidersUseCase.Fulfilments asked(List<Fulfilment> modes) {
+        List<Fulfilment> wanted = modes == null ? List.of() : modes;
+        return new SearchProvidersUseCase.Fulfilments(
+                wanted.contains(Fulfilment.ON_SITE),
+                wanted.contains(Fulfilment.DROP_OFF),
+                wanted.contains(Fulfilment.AT_CUSTOMER));
+    }
+
+    /** A blank query parameter is an absent one, not a value to match on. */
+    private static Optional<String> trimmed(String value) {
+        return Optional.ofNullable(value).map(String::trim).filter(v -> !v.isEmpty());
+    }
+
+    /**
+     * Defaulted, never assumed: the product is not Guinea-only, and a zone the
+     * client invented is refused here rather than stored and discovered months
+     * later by a reminder that fired at the wrong hour.
+     */
+    private static ZoneId zone(String requested) {
+        if (requested == null || requested.isBlank()) {
+            return DEFAULT_ZONE;
+        }
+        try {
+            return ZoneId.of(requested);
+        } catch (java.time.DateTimeException e) {
+            throw new UnknownTimezoneException(requested);
+        }
+    }
+}

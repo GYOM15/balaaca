@@ -1,0 +1,25 @@
+# The one datasource, provisioned from a file so that it exists on a fresh
+# machine without anybody remembering how it was set up. An observability
+# configuration nobody can recreate is the same problem as a schema with no
+# migrations.
+#
+# The uid is FIXED and the dashboard JSON names it. Grafana generates a random
+# uid for a datasource created in the browser, and a dashboard that carries a
+# random uid renders "Datasource not found" on the next machine.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: balaaca-prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    # Everything here is declared, so Grafana must not keep an older copy of it
+    # that somebody edited in the browser.
+    editable: false
+    jsonData:
+      # Match the scrape interval, or Grafana suggests step values finer than
+      # the data and draws gaps that are not there.
+      timeInterval: 15s
+      httpMethod: POST

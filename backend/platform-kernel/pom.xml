@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.balaaca</groupId>
+    <artifactId>balaaca-backend</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+  <artifactId>platform-kernel</artifactId>
+  <dependencies>
+    <dependency><groupId>com.balaaca</groupId><artifactId>shared-kernel</artifactId></dependency>
+    <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-arc</artifactId></dependency>
+    <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-oidc</artifactId></dependency>
+    <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-agroal</artifactId></dependency>
+    <!-- The audit trail writes one row through the same EntityManager and the
+         same tenant-bound connection as everything else. audit_logs has no
+         business owner: it records the tenancy boundary, which is what this
+         module is. -->
+    <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-hibernate-orm</artifactId></dependency>
+    <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-redis-client</artifactId></dependency>
+  </dependencies>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>io.smallrye</groupId>
+        <artifactId>jandex-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+</project>

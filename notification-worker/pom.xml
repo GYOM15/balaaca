@@ -1,0 +1,69 @@
+<?xml version="1.0"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.balaaca</groupId>
+    <artifactId>balaaca-backend</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <relativePath>../backend/pom.xml</relativePath>
+  </parent>
+  <artifactId>notification-worker</artifactId>
+  <name>Balaaca notification worker</name>
+
+  <!--
+    A satellite, not a backend module: the parent is inherited for versions
+    only, and this is deliberately absent from its <modules>. It depends on no
+    balaaca artifact at all, which is the outbox contract made structural - a
+    notification row is a self-contained snapshot, so the worker has no domain
+    to import and no table but one to read.
+  -->
+  <dependencies>
+    <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-arc</artifactId></dependency>
+    <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-agroal</artifactId></dependency>
+    <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-jdbc-postgresql</artifactId></dependency>
+    <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-scheduler</artifactId></dependency>
+    <!--
+      The e-mail transport. It is pointed at the relay Keycloak already uses:
+      one SMTP account, one reputation, and one place to change when Gmail
+      becomes SES. See the KEYCLOAK_SMTP_* block in application.properties.
+    -->
+    <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-mailer</artifactId></dependency>
+    <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-smallrye-health</artifactId></dependency>
+    <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-micrometer-registry-prometheus</artifactId></dependency>
+    <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-logging-json</artifactId></dependency>
+
+    <!-- Version from the Quarkus BOM, never pinned: it manages the
+         testcontainers core, and a module pinned beside it resolves a core of
+         another major. -->
+    <dependency>
+      <groupId>org.testcontainers</groupId><artifactId>testcontainers-postgresql</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.tngtech.archunit</groupId><artifactId>archunit-junit5</artifactId>
+      <version>${archunit.version}</version><scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>${quarkus.platform.group-id}</groupId>
+        <artifactId>quarkus-maven-plugin</artifactId>
+        <version>${quarkus.platform.version}</version>
+        <extensions>true</extensions>
+        <executions>
+          <execution>
+            <goals>
+              <goal>build</goal>
+              <goal>generate-code</goal>
+              <goal>generate-code-tests</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

@@ -1,0 +1,23 @@
+# French prose that predates the gate. This list IS the debt.
+#
+# code-language has required English since the pack was written - down to the
+# ADRs and the commit messages - and it was broken anyway. Freezing the debt was
+# worth more than paying it that day: nothing new could be written in French
+# while the product was still being built, and the translation pass was finished
+# when this file held nothing but comments.
+#
+# It does. The thirteen documents it named - README.md, docs/DEPLOYMENT.md,
+# docs/BACKLOG.md, the nine ADRs and the ADR index - are English, and the nine
+# ADRs were renamed out of French at the same time, because a file name is
+# something a developer reads too.
+#
+# The list is kept empty rather than deleted. RepositoryLanguageTest reads it,
+# and a debt that has nowhere to be written down is a debt that gets written
+# into the code instead.
+#
+# Format: path: reason
+#
+# Do not add a line here to make a build pass. If the file is new, write it in
+# English; that costs less than the line. And in a comment, the French copy a
+# screen shows does not count against you as long as it is quoted - which is
+# how every comment in frontend/ already cites it.

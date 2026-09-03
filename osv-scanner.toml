@@ -1,0 +1,11 @@
+# Waivers for OSV-Scanner. Every entry carries a reason and an expiry: a waiver
+# without a review date silently becomes permanent, which is how a real finding
+# ends up ignored.
+#
+# There are none, and that is the point of saying so here rather than deleting
+# the file. The one that existed - GHSA-6fmv-xxpf-w3cw, plexus-utils 3.5.1 -
+# was written when this job scanned pom.xml files and resolved a version Maven
+# never actually uses. Since the scan became SBOM-based it resolves what the
+# build resolves, stopped reporting it, and the scanner began warning that the
+# ignore was unused. A waiver nothing matches is exactly what the paragraph
+# above warns about, so it is gone rather than renewed.

@@ -1,0 +1,43 @@
+# What Prometheus scrapes when the application runs in containers.
+#
+# The only difference from prometheus.yml beside it is WHERE the two application
+# targets live. In development they are jars on the host, reached through
+# host.docker.internal; deployed, they are services on this same bridge network
+# and are reached by name.
+#
+# A second file rather than a substitution, because Prometheus does none in this
+# file: there is no way to write one target that means both. Everything else -
+# the interval, the labels, the outbox job - is identical on purpose, so a
+# dashboard built against one reads the other without a change.
+#
+# THE PORT NUMBERS BELOW ARE ALSO IN application.properties, and in the two
+# Dockerfiles' EXPOSE lines. Changing a management port means changing it in
+# each of them, and a mismatch shows up only as a target that is down.
+
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  external_labels:
+    stack: balaaca
+
+scrape_configs:
+  # The API's MANAGEMENT port, which is not the port the front end talks to:
+  # /v1 is public and the metrics are not, and here that separation is real -
+  # neither port is published to the host at all.
+  - job_name: balaaca-api
+    metrics_path: /q/metrics
+    static_configs:
+      - targets: ["api:9000"]
+
+  # The worker. What this target is for is `up`: a worker that has stopped is
+  # the failure this scrape exists to catch, and a stopped process cannot report
+  # its own queue - which is why the outbox is measured from the database.
+  - job_name: balaaca-notification-worker
+    metrics_path: /q/metrics
+    static_configs:
+      - targets: ["worker:9100"]
+
+  # The outbox, read straight from PostgreSQL, from outside the worker.
+  - job_name: balaaca-outbox
+    static_configs:
+      - targets: ["postgres-exporter:9187"]

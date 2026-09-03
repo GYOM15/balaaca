@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.balaaca</groupId>
+    <artifactId>balaaca-backend</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+  <artifactId>scheduling</artifactId>
+  <dependencies>
+    <dependency><groupId>com.balaaca</groupId><artifactId>shared-kernel</artifactId></dependency>
+    <dependency><groupId>com.balaaca</groupId><artifactId>platform-kernel</artifactId></dependency>
+    <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-arc</artifactId></dependency>
+    <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-hibernate-orm</artifactId></dependency>
+    <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-hibernate-validator</artifactId></dependency>
+  </dependencies>
+  <build>
+    <plugins>
+      <!--
+        Mutation coverage, on the rules and not on the wiring. A line covered by
+        a test that asserts nothing still counts in JaCoCo; PIT changes the code
+        and asks whether a test notices. That question is only worth asking
+        where the logic is pure - the slot calculator - and pointless
+        against an adapter whose behaviour is a SQL statement.
+
+        Threshold set below 74%, the score the day it was written, and not
+        at it. A threshold equal to the score turns the next honest test red.
+      -->
+      <plugin>
+        <groupId>org.pitest</groupId>
+        <artifactId>pitest-maven</artifactId>
+        <executions>
+          <execution>
+            <id>mutation-gate</id>
+            <phase>verify</phase>
+            <goals><goal>mutationCoverage</goal></goals>
+          </execution>
+        </executions>
+        <configuration>
+          <targetClasses><param>com.balaaca.scheduling.domain.*</param></targetClasses>
+          <targetTests><param>com.balaaca.scheduling.*</param></targetTests>
+          <mutationThreshold>68</mutationThreshold>
+          <timestampedReports>false</timestampedReports>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>io.smallrye</groupId>
+        <artifactId>jandex-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+</project>

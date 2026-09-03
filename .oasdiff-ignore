@@ -1,0 +1,28 @@
+# Breaking changes accepted deliberately, with the reason and the date.
+#
+# The matching runs the way round that is easy to get wrong, and getting it
+# wrong fails open in the safe direction - the gate stays red. oasdiff checks
+# that THIS LINE contains the operation, the path AND the whole rendered text of
+# the finding; it does not look for this line inside the finding. So an entry is
+# a superset, one per operation, and a waiver written as an excerpt matches
+# nothing at all.
+#
+# That makes each line as narrow as the operation it names: these four cover a
+# decrease from exactly 64 to exactly 10 on the `reference` path parameter of
+# exactly these four routes. Any other length change, on any other parameter or
+# any other route, still fails.
+#
+# 2026-09-03 - the booking reference was shortened from 43 characters of
+# base64url to ten, three of them the business's initials, because the old one
+# could not be read aloud down a telephone and this market books by telephone.
+# That is a breaking change and oasdiff is right to say so.
+#
+# It is waived rather than versioned because /v1 promises compatibility to
+# CLIENTS, and there are none: nothing outside this repository has ever held a
+# booking reference. The promise starts at launch. Delete this file then - and
+# if a length ever has to change afterwards, it is /v2, not another line here.
+
+get /v1/bookings/{reference} for the `path` request parameter `reference`, the maxLength was decreased from `64` to `10`
+post /v1/bookings/{reference}/cancellation for the `path` request parameter `reference`, the maxLength was decreased from `64` to `10`
+post /v1/bookings/{reference}/report for the `path` request parameter `reference`, the maxLength was decreased from `64` to `10`
+post /v1/bookings/{reference}/reschedule for the `path` request parameter `reference`, the maxLength was decreased from `64` to `10`

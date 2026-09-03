@@ -1,0 +1,371 @@
+package com.balaaca.app.it;
+
+import jakarta.enterprise.context.ApplicationScoped;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
+
+/**
+ * Seeds providers, staff and offerings for the integration tests.
+ *
+ * <p>Fixtures connect as the superuser, not as balaaca_app. That is not a
+ * shortcut but a necessity: balaaca_app owns no table, so it cannot TRUNCATE,
+ * and RLS would reject an INSERT into providers before any tenant exists to
+ * bind. The application under test never gets this connection - it always runs
+ * as balaaca_app, through HTTP, with RLS fully in force.
+ */
+@ApplicationScoped
+public class BookingFixtures {
+
+    public static final UUID SALON = UUID.fromString("11111111-1111-1111-1111-111111111111");
+    public static final UUID HIDDEN = UUID.fromString("22222222-2222-2222-2222-222222222222");
+    public static final UUID SOLO = UUID.fromString("33333333-3333-3333-3333-333333333333");
+
+    /** Keycloak subjects. The staff row is what ties one to a provider. */
+    public static final String SALON_SUBJECT = "kc-salon-fatou";
+    public static final String SOLO_SUBJECT = "kc-coiffeur-solo";
+    public static final String STRANGER_SUBJECT = "kc-nobody";
+    /** Nobody at all: no users row either, which is what a real signup looks like. */
+    public static final String NEWCOMER_SUBJECT = "kc-nouveau";
+    /** An employee at the salon. Belongs there, and does not own it. */
+    public static final String EMPLOYEE_SUBJECT = "kc-employee";
+
+    public static final UUID SALON_OWNER_STAFF =
+            UUID.fromString("a1a1a1a1-0000-0000-0000-000000000001");
+    public static final UUID SALON_EMPLOYEE_STAFF =
+            UUID.fromString("a4a4a4a4-0000-0000-0000-000000000001");
+
+    public static final String CATEGORY = "coiffure";
+
+    /**
+     * The instant the application believes it is, written so SQL can say it too.
+     *
+     * <p>`%test.balaaca.clock.pinned-to` freezes the injected Clock, which is
+     * what stopped this suite expiring - its dates are chosen for their day of
+     * week and it began failing on 2026-09-02. But PostgreSQL's `now()` is not
+     * pinned by anything, so a fixture that moves an appointment to
+     * `now() + interval '1 hour'` puts it a year and a day into the
+     * application's future, and a test about a deadline then measures nothing.
+     *
+     * <p>Use this wherever a row's time has to be read back BY THE APPLICATION.
+     * Plain `now()` is still right for a column only the database compares -
+     * an invitation's expiry, a suspension's timestamp.
+     */
+    public static final String APPLICATION_NOW = "timestamptz '2026-08-31T08:00:00Z'";
+
+    public static final UUID SALON_OFFERING = UUID.fromString("5e111111-0000-0000-0000-000000000001");
+    public static final UUID HIDDEN_OFFERING = UUID.fromString("5e222222-0000-0000-0000-000000000001");
+    public static final UUID SOLO_OFFERING = UUID.fromString("50103333-0000-0000-0000-000000000001");
+
+    private final String jdbcUrl;
+    private final io.quarkus.redis.datasource.RedisDataSource redis;
+
+    public BookingFixtures(@ConfigProperty(name = "quarkus.datasource.jdbc.url") String jdbcUrl,
+                           io.quarkus.redis.datasource.RedisDataSource redis) {
+        this.jdbcUrl = jdbcUrl;
+        this.redis = redis;
+    }
+
+    public void reset() {
+        // Redis is part of the world now, so resetting the world includes it.
+        // The registration limiter keeps a counter per subject for an hour, and
+        // Quarkus reuses one instance across every test class: without this,
+        // the tenth registration anywhere in the suite starts answering 429 and
+        // the failure lands in whichever class happens to run last.
+        redis.flushall();
+        run("""
+            TRUNCATE notifications, appointments, customers, availability_overrides,
+                     availability_rules, service_offerings, provider_staff, providers,
+                     audit_logs, users CASCADE
+            """);
+        // The trades come from V016 and are NOT truncated: the tests browse the
+        // taxonomy the product actually ships. Only the withdrawn one is local -
+        // naming a retired trade must be refused like any unknown one, not
+        // quietly stored as none.
+        run("""
+            INSERT INTO provider_categories (id, slug, label_fr, active) VALUES
+              ('ca7e6047-0000-0000-0000-000000000002','retire','Retire',false)
+            ON CONFLICT (slug) DO NOTHING
+            """);
+        // A user with no staff row exists on purpose: a valid token whose
+        // subject belongs to nobody here must be told 403, not handed an empty
+        // agenda that looks like a working account.
+        run("""
+            INSERT INTO users (id, keycloak_user_id, display_name) VALUES
+              ('d1d1d1d1-0000-0000-0000-000000000001','%s','Fatou'),
+              ('d2d2d2d2-0000-0000-0000-000000000001','%s','Solo'),
+              ('d3d3d3d3-0000-0000-0000-000000000001','%s','Personne')
+            """.formatted(SALON_SUBJECT, SOLO_SUBJECT, STRANGER_SUBJECT));
+        // The salon vets its bookings and the solo barber does not, so both
+        // sides of auto_confirm are exercised: a booking that arrives PENDING
+        // and one that arrives CONFIRMED. The column defaults to true, so
+        // leaving it out here would have quietly made every test the second
+        // case - which is how it went unnoticed that nothing read it at all.
+        //
+        // Only the salon publishes a way to be reached. coiffeur-solo deliberately
+        // does not: a provider with no contact must still be bookable, and the
+        // staff notice is simply not planned.
+        run("""
+            INSERT INTO providers (id, slug, business_name, country_code, published, status,
+                                   whatsapp_phone_e164, auto_confirm) VALUES
+              ('%s','salon-fatou','Salon Fatou','GN',true,'ACTIVE','+224622999001',false),
+              ('%s','barbier-cache','Barbier Cache','GN',false,'ACTIVE',NULL,false),
+              ('%s','coiffeur-solo','Coiffeur Solo','GN',true,'ACTIVE',NULL,true)
+            """.formatted(SALON, HIDDEN, SOLO));
+        run("""
+            INSERT INTO provider_staff (id, provider_id, user_id, display_name, role) VALUES
+              ('a1a1a1a1-0000-0000-0000-000000000001','%s','d1d1d1d1-0000-0000-0000-000000000001','Fatou','OWNER'),
+              ('b1b1b1b1-0000-0000-0000-000000000001','%s',NULL,'Cache','OWNER'),
+              ('c3c3c3c3-0000-0000-0000-000000000001','%s','d2d2d2d2-0000-0000-0000-000000000001','Solo','OWNER')
+            """.formatted(SALON, HIDDEN, SOLO));
+        // Monday to Saturday, 08:00 to 20:00 local. Without these every booking
+        // is now correctly refused as outside the provider's declared hours,
+        // which is the point of this increment.
+        for (int day = 1; day <= 6; day++) {
+            run("""
+                INSERT INTO availability_rules
+                  (id, provider_id, staff_id, day_of_week, start_time, end_time) VALUES
+                  (gen_random_uuid(),'%s','a1a1a1a1-0000-0000-0000-000000000001',%d,'08:00','20:00'),
+                  (gen_random_uuid(),'%s','c3c3c3c3-0000-0000-0000-000000000001',%d,'08:00','20:00')
+                """.formatted(SALON, day, SOLO, day));
+        }
+        run("""
+            INSERT INTO service_offerings
+              (id, provider_id, name, duration_minutes, buffer_before_minutes,
+               buffer_after_minutes, price_amount_minor, price_currency,
+               -- Named, not defaulted: V044 defaults all three modes to false
+               -- so that an INSERT choosing none is refused rather than quietly
+               -- filed as on-site, and this decor is written straight to the
+               -- table with no create path to fill it in.
+               offers_on_site) VALUES
+              ('%s','%s','Tresses',60,15,10,150000,'GNF',true),
+              ('%s','%s','Coupe',30,0,0,50000,'GNF',true),
+              ('%s','%s','Coupe',60,0,0,80000,'GNF',true)
+            """.formatted(SALON_OFFERING, SALON, HIDDEN_OFFERING, HIDDEN, SOLO_OFFERING, SOLO));
+        grantEveryCompetence();
+    }
+
+    /**
+     * Everybody performs everything, which is what the application does on its
+     * own when a service or a colleague is created.
+     *
+     * <p>These rows have to be here because the decor above is written straight
+     * to the tables rather than through the API, so the grants the create path
+     * performs never run. Without them competence is strict and empty, and every
+     * booking test in this package would fail as "no eligible staff" - a green
+     * suite turning red for a reason that has nothing to do with what it tests.
+     */
+    public void grantEveryCompetence() {
+        run("""
+            INSERT INTO staff_service_offerings (provider_id, staff_id, service_offering_id)
+            SELECT s.provider_id, s.id, o.id
+              FROM provider_staff s
+              JOIN service_offerings o ON o.provider_id = s.provider_id
+            ON CONFLICT DO NOTHING
+            """);
+    }
+
+    /** One line of the audit trail, as an operator would read it. */
+    public record AuditRow(String action, String entityType, String outcome,
+                           String actorRole, String providerId, String metadata) {
+    }
+
+    public List<AuditRow> auditTrail() {
+        String sql = """
+                SELECT action, entity_type, outcome, coalesce(actor_role,''),
+                       coalesce(provider_id::text,''), metadata::text
+                  FROM audit_logs ORDER BY id
+                """;
+        List<AuditRow> rows = new ArrayList<>();
+        try (Connection c = admin(); Statement s = c.createStatement(); ResultSet rs = s.executeQuery(sql)) {
+            while (rs.next()) {
+                rows.add(new AuditRow(rs.getString(1), rs.getString(2), rs.getString(3),
+                                      rs.getString(4), rs.getString(5), rs.getString(6)));
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+        return rows;
+    }
+
+    /**
+     * One outbox row, as the worker would read it.
+     *
+     * <p>Both addresses and the channel are here because that is exactly what
+     * the worker gets: its role holds this one table, so anything missing from
+     * the row is a fact it can never go and look up.
+     */
+    public record NotificationRow(String kind, String recipientKind, String toPhone,
+                                  String toEmail, String preferredChannel,
+                                  String dedupeKey, String status, String payload) {
+    }
+
+    public List<NotificationRow> notifications(UUID providerId) {
+        String sql = """
+                SELECT kind, recipient_kind, coalesce(to_phone_e164,''),
+                       coalesce(to_email,''), preferred_channel, dedupe_key,
+                       status, payload::text
+                  FROM notifications WHERE provider_id = '%s'
+                 ORDER BY scheduled_at, kind
+                """.formatted(providerId);
+        List<NotificationRow> rows = new ArrayList<>();
+        try (Connection c = admin(); Statement s = c.createStatement(); ResultSet rs = s.executeQuery(sql)) {
+            while (rs.next()) {
+                rows.add(new NotificationRow(rs.getString(1), rs.getString(2), rs.getString(3),
+                                             rs.getString(4), rs.getString(5), rs.getString(6),
+                                             rs.getString(7), rs.getString(8)));
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+        return rows;
+    }
+
+    public long activeAppointments(UUID providerId) {
+        return query("""
+                SELECT count(*) FROM appointments
+                 WHERE provider_id = '%s' AND status IN ('PENDING','CONFIRMED')
+                """.formatted(providerId));
+    }
+
+    /**
+     * An employee with an account at the salon, added on request rather than to
+     * the shared decor.
+     *
+     * <p>Note what the shared decor still gives every provider: exactly ONE
+     * bookable person. That is why the whole any-staff availability path could
+     * be wrong in three ways at once without a test noticing - see
+     * MultiChairAvailabilityIT, which adds the second chair on purpose.
+     *
+     * <p>A second bookable member is not a neutral addition: the booking path
+     * resolves "any available staff" by retrying against the next candidate, so
+     * a salon with two chairs answers 201 where a salon with one answers 409.
+     * Putting this row in reset() silently rewrote four double-booking tests
+     * into tests of something else.
+     */
+    public void seedEmployee() {
+        run("""
+            INSERT INTO users (id, keycloak_user_id, display_name)
+                 VALUES ('d4d4d4d4-0000-0000-0000-000000000001','%s','Mariama');
+            INSERT INTO provider_staff (id, provider_id, user_id, display_name, role)
+                 VALUES ('%s','%s','d4d4d4d4-0000-0000-0000-000000000001','Mariama','STAFF')
+            """.formatted(EMPLOYEE_SUBJECT, SALON_EMPLOYEE_STAFF, SALON));
+        grantEveryCompetence();
+    }
+
+    /**
+     * An unclaimed chair carrying a known invitation code.
+     *
+     * <p>Minted in SQL rather than through the API because redeeming it needs a
+     * DIFFERENT subject from the one that minted it, and @TestSecurity binds one
+     * per method. The minting path has its own tests.
+     */
+    public void seedInvitation(String code) {
+        run("""
+            INSERT INTO provider_staff (id, provider_id, user_id, display_name, role,
+                                        invitation_token, invitation_expires_at)
+                 VALUES ('a5a5a5a5-0000-0000-0000-000000000001','%s',NULL,'Mariama','STAFF',
+                         '%s', now() + interval '7 days')
+            """.formatted(SALON, code));
+        grantEveryCompetence();
+    }
+
+    /**
+     * How each of this provider's appointments asked to be reached, oldest
+     * first.
+     *
+     * <p>Read off the appointment rather than off the customer, because that is
+     * the claim under test: the same telephone number books twice and the two
+     * bookings must keep their own answers.
+     */
+    public List<String> appointmentChannels(UUID providerId) {
+        List<String> channels = new ArrayList<>();
+        String sql = """
+                SELECT preferred_channel FROM appointments
+                 WHERE provider_id = '%s' ORDER BY starts_at
+                """.formatted(providerId);
+        try (Connection c = admin(); Statement s = c.createStatement(); ResultSet rs = s.executeQuery(sql)) {
+            while (rs.next()) {
+                channels.add(rs.getString(1));
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+        return channels;
+    }
+
+    /** Every customer phone this provider has stored, as E.164. */
+    public List<String> customerPhones(UUID providerId) {
+        List<String> phones = new ArrayList<>();
+        String sql = "SELECT phone_e164 FROM customers WHERE provider_id = '%s' ORDER BY 1"
+                .formatted(providerId);
+        try (Connection c = admin(); Statement s = c.createStatement(); ResultSet rs = s.executeQuery(sql)) {
+            while (rs.next()) {
+                phones.add(rs.getString(1));
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+        return phones;
+    }
+
+    /**
+     * Arbitrary SQL, for the one-off row a single test needs and no other.
+     *
+     * <p>Re-grants competence afterwards, and that is not magic: half the decor
+     * in this package adds a chair or a service by writing the table directly,
+     * which skips the grant the create path performs. Without this, adding a
+     * second chair would silently make it able to perform nothing, and a test
+     * about availability would fail for a reason about competence.
+     *
+     * <p>A test that means to RESTRICT competence does it through the API,
+     * after its decor is placed, so this never undoes it.
+     */
+    public void execute(String sql) {
+        run(sql);
+        grantEveryCompetence();
+    }
+
+    /** Closes a single date for the salon, to exercise an override. */
+    public void closeSalonOn(String isoDate) {
+        run("""
+            INSERT INTO availability_overrides
+              (id, provider_id, staff_id, override_date, kind, reason) VALUES
+              (gen_random_uuid(),'%s','a1a1a1a1-0000-0000-0000-000000000001','%s','CLOSED','ferie')
+            """.formatted(SALON, isoDate));
+    }
+
+    public long distinctStaffBooked(UUID providerId) {
+        return query("""
+                SELECT count(DISTINCT staff_id) FROM appointments
+                 WHERE provider_id = '%s' AND status IN ('PENDING','CONFIRMED')
+                """.formatted(providerId));
+    }
+
+    private long query(String sql) {
+        try (Connection c = admin(); Statement s = c.createStatement(); ResultSet rs = s.executeQuery(sql)) {
+            rs.next();
+            return rs.getLong(1);
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private void run(String sql) {
+        try (Connection c = admin(); Statement s = c.createStatement()) {
+            s.execute(sql);
+        } catch (SQLException e) {
+            throw new IllegalStateException("fixture failed: " + e.getMessage(), e);
+        }
+    }
+
+    private Connection admin() throws SQLException {
+        return DriverManager.getConnection(jdbcUrl, "postgres", "test");
+    }
+}

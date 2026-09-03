@@ -1,0 +1,200 @@
+package com.balaaca.scheduling.adapters.outbound.persistence;
+
+import com.balaaca.platformkernel.tenancy.TenantContext;
+import com.balaaca.scheduling.domain.AvailabilityOverride;
+import com.balaaca.scheduling.ports.inbound.ManageAvailabilityUseCase.Closure;
+import com.balaaca.scheduling.ports.inbound.ManageAvailabilityUseCase.LocalTimeRange;
+import com.balaaca.scheduling.ports.inbound.ManageAvailabilityUseCase.WeeklySegment;
+import com.balaaca.scheduling.domain.OpenWindow;
+import com.balaaca.scheduling.ports.outbound.AvailabilityAdminRepository;
+import com.balaaca.sharedkernel.ids.StaffId;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.persistence.EntityManager;
+import java.sql.Date;
+import java.sql.Time;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * The declared week, in SQL.
+ *
+ * <p>Reads and the delete carry no provider predicate: RLS supplies it, so a
+ * staff member or a closure that is not the caller's is invisible rather than
+ * forbidden. The inserts are the exception - a native insert bypasses any tenant
+ * filter, so provider_id comes from TenantContext and the policy's WITH CHECK is
+ * the backstop.
+ */
+@ApplicationScoped
+public class AvailabilityAdminSqlRepository implements AvailabilityAdminRepository {
+
+    private final EntityManager em;
+    private final TenantContext tenantContext;
+
+    public AvailabilityAdminSqlRepository(EntityManager em, TenantContext tenantContext) {
+        this.em = em;
+        this.tenantContext = tenantContext;
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public boolean staffExists(StaffId staffId) {
+        return !em.createNativeQuery("SELECT 1 FROM provider_staff WHERE id = :id")
+                .setParameter("id", staffId.value())
+                .getResultList().isEmpty();
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public List<WeeklySegment> segmentsOf(StaffId staffId) {
+        List<Object[]> rows = em.createNativeQuery("""
+                SELECT day_of_week, start_time, end_time, effective_from, effective_to
+                  FROM availability_rules
+                 WHERE staff_id = :staffId
+                 ORDER BY day_of_week, start_time
+                """).setParameter("staffId", staffId.value()).getResultList();
+
+        return rows.stream().map(r -> new WeeklySegment(
+                ((Number) r[0]).intValue(),
+                localTime(r[1]), localTime(r[2]),
+                Optional.ofNullable(r[3]).map(AvailabilityAdminSqlRepository::localDate),
+                Optional.ofNullable(r[4]).map(AvailabilityAdminSqlRepository::localDate))).toList();
+    }
+
+    /**
+     * The joins are the point. provider_staff decides who counts - a disabled
+     * employee's leftover rules would otherwise keep the shop open on a day
+     * nobody works - and providers supplies the timezone the effective dates are
+     * read in. RLS still confines every one of the three tables to the tenant
+     * bound on this connection.
+     */
+    @Override
+    @SuppressWarnings("unchecked")
+    public List<OpenWindow> effectiveWindows() {
+        List<Object[]> rows = em.createNativeQuery("""
+                SELECT r.day_of_week, r.start_time, r.end_time
+                  FROM availability_rules r
+                  JOIN provider_staff s
+                    ON s.provider_id = r.provider_id AND s.id = r.staff_id
+                  JOIN providers p ON p.id = r.provider_id
+                 WHERE s.status = 'ACTIVE' AND s.bookable
+                   AND (r.effective_from IS NULL
+                        OR r.effective_from <= (now() AT TIME ZONE p.timezone)::date)
+                   AND (r.effective_to IS NULL
+                        OR r.effective_to >= (now() AT TIME ZONE p.timezone)::date)
+                 ORDER BY r.day_of_week, r.start_time
+                """).getResultList();
+
+        return rows.stream().map(r -> new OpenWindow(
+                ((Number) r[0]).intValue(), localTime(r[1]), localTime(r[2]))).toList();
+    }
+
+    @Override
+    public List<WeeklySegment> replaceSegments(StaffId staffId, List<WeeklySegment> segments) {
+        // Delete then insert, inside the caller's transaction. A week is one
+        // thing a provider edits, so it is replaced as one: reconciling row by
+        // row would leave a moment where the week is neither the old one nor
+        // the new one, and a booking arriving then would be judged against it.
+        em.createNativeQuery("DELETE FROM availability_rules WHERE staff_id = :staffId")
+                .setParameter("staffId", staffId.value())
+                .executeUpdate();
+
+        UUID providerId = tenantContext.require().value();
+        for (WeeklySegment s : segments) {
+            em.createNativeQuery("""
+                    INSERT INTO availability_rules (
+                        id, provider_id, staff_id, day_of_week, start_time, end_time,
+                        effective_from, effective_to)
+                    VALUES (:id, :providerId, :staffId, :day, CAST(:start AS time),
+                            CAST(:end AS time), CAST(:from AS date), CAST(:to AS date))
+                    """)
+                    .setParameter("id", UUID.randomUUID())
+                    .setParameter("providerId", providerId)
+                    .setParameter("staffId", staffId.value())
+                    .setParameter("day", s.dayOfWeek())
+                    .setParameter("start", s.start().toString())
+                    .setParameter("end", s.end().toString())
+                    .setParameter("from", s.effectiveFrom().map(LocalDate::toString).orElse(null))
+                    .setParameter("to", s.effectiveTo().map(LocalDate::toString).orElse(null))
+                    .executeUpdate();
+        }
+        return segmentsOf(staffId);
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public List<Closure> closures(StaffId staffId, LocalDate from, LocalDate to) {
+        List<Object[]> rows = em.createNativeQuery("""
+                SELECT id, override_date, kind, start_time, end_time, reason
+                  FROM availability_overrides
+                 WHERE staff_id = :staffId AND override_date BETWEEN :from AND :to
+                 ORDER BY override_date
+                """)
+                .setParameter("staffId", staffId.value())
+                .setParameter("from", Date.valueOf(from))
+                .setParameter("to", Date.valueOf(to))
+                .getResultList();
+
+        return rows.stream().map(r -> {
+            AvailabilityOverride.Kind kind = AvailabilityOverride.Kind.valueOf((String) r[2]);
+            return new Closure(
+                    Optional.of((UUID) r[0]),
+                    staffId,
+                    localDate(r[1]),
+                    kind,
+                    kind == AvailabilityOverride.Kind.CLOSED
+                            ? Optional.<LocalTimeRange>empty()
+                            : Optional.of(new LocalTimeRange(localTime(r[3]), localTime(r[4]))),
+                    Optional.ofNullable((String) r[5]));
+        }).toList();
+    }
+
+    @Override
+    public Closure insertClosure(UUID id, Closure closure) {
+        em.createNativeQuery("""
+                INSERT INTO availability_overrides (
+                    id, provider_id, staff_id, override_date, kind, start_time, end_time, reason)
+                VALUES (:id, :providerId, :staffId, CAST(:date AS date), :kind,
+                        CAST(:start AS time), CAST(:end AS time), :reason)
+                """)
+                .setParameter("id", id)
+                .setParameter("providerId", tenantContext.require().value())
+                .setParameter("staffId", closure.staffId().value())
+                .setParameter("date", closure.date().toString())
+                .setParameter("kind", closure.kind().name())
+                .setParameter("start", closure.window().map(w -> w.start().toString()).orElse(null))
+                .setParameter("end", closure.window().map(w -> w.end().toString()).orElse(null))
+                .setParameter("reason", closure.reason().orElse(null))
+                .executeUpdate();
+
+        return new Closure(Optional.of(id), closure.staffId(), closure.date(),
+                           closure.kind(), closure.window(), closure.reason());
+    }
+
+    @Override
+    public boolean deleteClosure(UUID id, Optional<StaffId> restrictTo) {
+        // The staff restriction is a predicate, not a check around the call. A
+        // read-then-delete would leave a window in which the row changes hands,
+        // and RLS already puts another provider's closure out of reach - this
+        // adds the same protection between colleagues.
+        return em.createNativeQuery("""
+                DELETE FROM availability_overrides
+                 WHERE id = :id
+                   AND (CAST(:staffId AS uuid) IS NULL
+                        OR staff_id = CAST(:staffId AS uuid))
+                """)
+                .setParameter("id", id)
+                .setParameter("staffId", restrictTo.map(StaffId::value).orElse(null))
+                .executeUpdate() == 1;
+    }
+
+    private static LocalTime localTime(Object value) {
+        return value instanceof LocalTime t ? t : ((Time) value).toLocalTime();
+    }
+
+    private static LocalDate localDate(Object value) {
+        return value instanceof LocalDate d ? d : ((Date) value).toLocalDate();
+    }
+}

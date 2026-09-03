@@ -1,0 +1,46 @@
+# Columns the schema declares that no code names, each with the reason it is
+# allowed to stay that way. The point of this file is not to be empty - it is
+# that nobody adds a line to it without writing why.
+#
+# Format: table.column: reason
+#
+# Before adding one, ask which of these it is:
+#   - the database fills it and nothing needs to read it (a default, a clock);
+#   - a capability that is deliberately not built yet, and named as such;
+#   - a column that should not have been created before its reader existed,
+#     in which case the answer is to write the reader, not the waiver.
+
+# The corpus this gate searches is the STRING LITERALS of the main sources, not
+# the sources. A local variable, a record component, a Javadoc paragraph or a
+# log message that happens to spell a column name is no longer cover for it -
+# customers.blocked passed for six months on the strength of a local called
+# `blocked` in the slot calculator. So a column whose only justification is
+# written in a comment now needs its reason written down HERE, where the gate
+# can see it.
+
+# --- Filled by the database, read by nobody, and that is correct -------------
+users.created_at:        DEFAULT now(). Nothing has needed to read it, and a reader that only existed to satisfy this gate would be worse than the waiver.
+audit_logs.occurred_at:  DEFAULT now(). The trail is written by the application and read by an operator in SQL.
+
+# --- Deliberately never filled ----------------------------------------------
+audit_logs.actor_ip:     Left NULL on purpose, and the reason is on AuditTrailSqlRepository: filling it would give the tenancy kernel a dependency on the HTTP layer in order to store a piece of personal data the reverse proxy already logs, against a column comment that says never more personal data than the action needs to be reconstructible. The account identifies the actor; the address adds a subject and no answer. It surfaced when this gate stopped counting comments as cover, which is the gate working.
+
+# --- Encapsulated by a SECURITY DEFINER function ----------------------------
+users.keycloak_user_id:  Named only inside app_resolve_membership and app_register_provider. Java passes a subject and never the column - which is the point of the function.
+
+# --- Deliberately not built, and named in the backlog -----------------------
+providers.is_featured:      Sponsored placement. The DDL says "not built" and docs/BACKLOG.md says the same.
+providers.featured_until:   Sponsored placement, as above.
+subscriptions.started_at:   Billing. The module has one file and the plan tiers are an open product decision.
+subscriptions.expires_at:   Billing, as above.
+
+# --- Capabilities nobody has asked for yet ----------------------------------
+appointments.provider_note:    A provider cannot annotate an appointment.
+appointments.booked_by_user_id: WHICH staff member entered a walk-in. The path exists now - bookWalkIn - and it records the appointment without recording who typed it, so a salon reading its own diary back cannot tell one colleague's entry from another's. Attribution needs the acting user threaded from the resource into the insert; the row is correct without it, and nothing today asks the question.
+
+# --- Tables the application role may write, and what writes them ------------
+# Waived as <table>.* when the write is legitimate but not an INSERT in Java.
+subscriptions.*: Billing. Nothing creates a subscription because no plan exists to subscribe to; the tiers and prices are an open product decision, recorded in docs/BACKLOG.md.
+provider_reports.reported_at:  Named only inside app_list_provider_reports and app_review_provider_report. Java never names the column because it cannot read the table at all - balaaca_app has no policy on it, which is the point: a provider must not learn who reported them.
+provider_reports.reviewed_at:  As above. Written by app_review_provider_report and returned by it; the Java side receives a position in a row and never a column name.
+provider_contestations.read_at: Named only inside app_list_contestations and app_read_contestation. Java receives a position in a row and never a column name, because balaaca_app cannot read another provider's contestation - only the moderator can, and only through those two functions.

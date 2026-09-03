@@ -1,0 +1,64 @@
+<?xml version="1.0"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.balaaca</groupId>
+    <artifactId>balaaca-backend</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+  <artifactId>shared-kernel</artifactId>
+
+  <dependencies>
+    <!-- Phone parsing is the one thing here worth a dependency: E.164
+         normalisation with a per-region default is a data problem, not a
+         regex. Apache 2.0, no transitive dependencies. -->
+    <dependency>
+      <groupId>com.googlecode.libphonenumber</groupId>
+      <artifactId>libphonenumber</artifactId>
+      <version>9.0.19</version>
+    </dependency>
+  </dependencies>
+  <build>
+    <plugins>
+      <!--
+        Mutation coverage, on the rules and not on the wiring. A line covered by
+        a test that asserts nothing still counts in JaCoCo; PIT changes the code
+        and asks whether a test notices. That question is only worth asking
+        where the logic is pure - money arithmetic and phone normalisation - and pointless
+        against an adapter whose behaviour is a SQL statement.
+
+        Threshold set below 60%, the score the day it was written, and not
+        at it. The margin is wider here on purpose: Money is property-tested with jqwik, whose seed changes per run, so a mutation killed by one draw can survive the next. A tight threshold would fail on a Tuesday for no reason anyone could reproduce.
+      -->
+      <plugin>
+        <groupId>org.pitest</groupId>
+        <artifactId>pitest-maven</artifactId>
+        <executions>
+          <execution>
+            <id>mutation-gate</id>
+            <phase>verify</phase>
+            <goals><goal>mutationCoverage</goal></goals>
+          </execution>
+        </executions>
+        <configuration>
+          <targetClasses>
+            <!-- One pattern per param: a comma inside a single param is part of
+                 the pattern, matches nothing, and PIT then reports "no mutations
+                 found" as if the classpath were wrong. -->
+            <param>com.balaaca.sharedkernel.money.*</param>
+            <param>com.balaaca.sharedkernel.phone.*</param>
+          </targetClasses>
+          <targetTests><param>com.balaaca.sharedkernel.*</param></targetTests>
+          <mutationThreshold>50</mutationThreshold>
+          <timestampedReports>false</timestampedReports>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>io.smallrye</groupId>
+        <artifactId>jandex-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+</project>

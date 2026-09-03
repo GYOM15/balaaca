@@ -1,4 +1,4 @@
-# --- Secrets : rien de tout cela ne doit jamais être commité ---
+# --- Secrets: none of this is ever committed ---
 .env
 .env.*
 !.env.example
@@ -46,3 +46,11 @@ Thumbs.db
 coverage/
 jacoco.exec
 .scannerwork/
+
+# --- Maven / Quarkus build output ---
+backend/**/target/
+.jqwik-database
+
+# What scripts/dev.sh writes locally. None of it is ever committed.
+.dev-logs/
+.dev-media/

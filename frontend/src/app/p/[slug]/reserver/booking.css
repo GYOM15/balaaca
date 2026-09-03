@@ -1,0 +1,53 @@
+/*
+ * The three rules the booking flow needs and `globals.css` does not have.
+ *
+ * `globals.css` is the ported design system and is not edited: it was written
+ * against a browser application whose choices were buttons holding state.
+ * Here the state is the URL and the form, so the same pictures are drawn by a
+ * link and by a radio - two elements the mockup never styled. Every selector
+ * below is a modifier of a class that already exists, so nothing here can
+ * change how the rest of the product looks.
+ */
+
+/* --- A choice that navigates ----------------------------------------------
+   `.choice[aria-checked]` is a radio's state. A step that moves the customer
+   to the next screen is a link, and a link is never checked - it is current.
+   Same picture, honest markup. */
+.choice.choice--step[aria-current="true"] {
+  border-color: var(--brand-primary);
+  box-shadow: inset 0 0 0 1px var(--brand-primary);
+}
+.choice.choice--step[aria-current="true"] .choice__mark { border-color: var(--brand-primary); }
+.choice.choice--step[aria-current="true"] .choice__dot { transform: scale(1); }
+
+/* --- A slot that is a radio ------------------------------------------------
+   The slot travels with the name and the telephone in one submission, so it
+   has to be a form control rather than a link.
+
+   The input is transparent and fills the label rather than being clipped away
+   with `.sr-only`: a control the browser cannot place on the screen is one it
+   refuses to report as invalid, and "choose a slot" would then fail silently
+   with nothing said to the customer. */
+.slot.slot--pick { position: relative; cursor: pointer; }
+.slot.slot--pick input {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%; margin: 0;
+  appearance: none; opacity: 0; cursor: pointer;
+}
+.slot.slot--pick:has(input:checked) {
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+  color: var(--text-inverse);
+}
+.slot.slot--pick:has(input:focus-visible) {
+  outline: var(--focus-width) solid var(--focus-ring);
+  outline-offset: var(--focus-offset);
+}
+
+/* --- The form is the page --------------------------------------------------
+   The confirm button lives in the sticky bar at the bottom, so the bar is
+   inside the form - which makes the form the flex child `.book` expects. */
+.book__form { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+
+/* A fieldset groups the slots for a screen reader and must not draw a box. */
+.book__group { border: 0; padding: 0; margin: 0; min-width: 0; }

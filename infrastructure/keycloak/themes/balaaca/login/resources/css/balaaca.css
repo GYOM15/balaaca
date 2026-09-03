@@ -1,0 +1,486 @@
+/*
+ * Balaaca - the sign-in screens.
+ *
+ * The token block below is COPIED VERBATIM from
+ * frontend/src/app/globals.css. Not imported, because Keycloak serves these
+ * screens from its own origin and cannot reach the application's stylesheet -
+ * and not retyped, because a hand-copied palette drifts. A test in the
+ * frontend reads both files and fails the build if the two blocks stop
+ * matching, so this copy cannot go stale quietly.
+ *
+ * Everything after the block is written for these screens only. They are seven
+ * pages with one form on each, so they need a fraction of the system: no grid,
+ * no cards, no icons beyond the mark.
+ *
+ * ==== BEGIN TOKENS - copied from frontend/src/app/globals.css ====
+ */
+:root {
+  /* ---------------------------------------------------------------------
+     1. PALETTE BRUTE
+     --------------------------------------------------------------------- */
+
+  /* Vert de marque */
+  --p-green-900: #081F1B;
+  --p-green-800: #0C302A;
+  --p-green-700: #123C35;
+  --p-green-600: #1B5148;
+  --p-green-500: #2A6B60;
+  --p-green-200: #A9C4BD;
+  --p-green-100: #DCE7E4;
+  --p-green-050: #EDF3F1;
+
+  /* Or : accent rare et raffiné */
+  --p-gold-700: #7E6023;
+  --p-gold-600: #A5844A;
+  --p-gold-500: #C9A86A;
+  --p-gold-200: #E7D8B6;
+  --p-gold-100: #F4EDDD;
+  --p-gold-050: #FBF7EE;
+
+  /* Neutres chauds */
+  --p-warm-000: #FFFFFF;
+  --p-warm-050: #FAF8F2;
+  --p-warm-100: #F3F0E7;
+  --p-warm-200: #E7E3D6;
+  --p-warm-300: #D6D2C5;
+  --p-warm-400: #B4B1A6;
+  --p-warm-600: #666C69;   /* ajusté depuis #6B716E : voir note AA ci-dessous */
+  --p-warm-500: #6F7471;   /* texte indicatif des champs */
+  --p-warm-700: #505653;
+  --p-warm-900: #17201E;
+
+  /* Sémantiques : valeurs du brief. Indépendantes du vert de marque :
+     le vert Balaaca ne signifie jamais « succès ». Chaque état a un ton
+     principal, un ton subtil et un ton de bordure. */
+  --p-success-500: #147A45;
+  --p-success-100: #E7F2EB;
+  --p-success-border: #A9CDB8;
+  --p-warning-500: #9C5715;
+  --p-warning-100: #FAF0E4;
+  --p-warning-border: #DEBE93;
+  --p-danger-500: #A32B22;
+  --p-danger-100: #F9EAE8;
+  --p-danger-border: #DFAFAA;
+  --p-info-500: #1F5F86;
+  --p-info-100: #E8EFF4;
+  --p-info-border: #A8C4D6;
+
+  /* ---------------------------------------------------------------------
+     2. ALIAS SÉMANTIQUES : surfaces
+     --------------------------------------------------------------------- */
+  --bg: var(--p-warm-050);            /* fond chaud, identité forte */
+  --bg-sunken: var(--p-warm-100);     /* zones en retrait, alternance */
+  --surface: var(--p-warm-000);       /* cartes, panneaux */
+  --surface-raised: var(--p-warm-000);
+  --surface-inverse: var(--p-green-700);
+  --surface-inverse-deep: var(--p-green-900);
+  --surface-accent: var(--p-gold-100);
+  --surface-accent-soft: var(--p-gold-050);
+
+  /* Bordures : le produit s'appuie sur le trait, pas sur l'ombre */
+  --border: #E4E0D4;
+  --border-strong: #D2CDBE;
+  --border-subtle: #EFEBE0;
+  --border-inverse: rgba(255, 255, 255, 0.16);
+  --border-accent: var(--p-gold-200);
+
+  /* ---------------------------------------------------------------------
+     3. ALIAS SÉMANTIQUES : texte
+     --------------------------------------------------------------------- */
+  --text: var(--p-warm-900);
+  --text-secondary: var(--p-warm-700);
+  --text-tertiary: var(--p-warm-600);
+  --text-disabled: var(--p-warm-400);
+  --text-placeholder: var(--p-warm-500);
+  --text-on-dark: #FFFFFF;
+  --text-on-dark-muted: #B6C6C1;
+  --text-brand: var(--p-green-700);
+  --text-accent: var(--p-gold-700);
+  --text-link: var(--p-green-700);
+
+  /* ---------------------------------------------------------------------
+     4. ALIAS SÉMANTIQUES : interactif
+     --------------------------------------------------------------------- */
+  --brand: var(--p-green-700);
+  --brand-hover: var(--p-green-800);
+  --brand-pressed: var(--p-green-900);
+  --brand-soft: var(--p-green-050);
+  --brand-border: var(--p-green-200);
+
+  --accent: var(--p-gold-500);
+  --accent-strong: var(--p-gold-700);
+  --accent-soft: var(--p-gold-100);
+
+  --focus-ring: var(--p-gold-700);
+  --focus-ring-inverse: var(--p-gold-500);
+  --focus-offset: var(--surface);
+
+  /* ---------------------------------------------------------------------
+     5. ÉTATS
+     --------------------------------------------------------------------- */
+  --success: var(--p-success-500);
+  --success-text: var(--p-success-500);
+  --success-bg: var(--p-success-100);
+  --success-border: var(--p-success-border);
+  --warning: var(--p-warning-500);
+  --warning-text: var(--p-warning-500);
+  --warning-bg: var(--p-warning-100);
+  --warning-border: var(--p-warning-border);
+  --danger: var(--p-danger-500);
+  --danger-text: var(--p-danger-500);
+  --danger-bg: var(--p-danger-100);
+  --danger-border: var(--p-danger-border);
+  --info: var(--p-info-500);
+  --info-text: var(--p-info-500);
+  --info-bg: var(--p-info-100);
+  --info-border: var(--p-info-border);
+  --neutral-text: var(--p-warm-700);
+  --neutral-bg: var(--p-warm-100);
+
+  /* ---------------------------------------------------------------------
+     6. TYPOGRAPHIE
+     Manrope seule. Échelle fluide : la hiérarchie est le premier outil
+     de design du produit, jamais une suite de 12–14 px.
+     --------------------------------------------------------------------- */
+  /* DEUX FAMILLES, et le partage est le propos. Clash Display porte
+     l'identite - titres, hero, sections marketing, chiffres - et DM Sans porte
+     le travail : navigation, textes, formulaires, tableaux, tableau de bord.
+     Une seule famille pour les deux finit ou trop plate la ou la marque doit
+     parler, ou trop mania la ou un prestataire lit un prix.
+
+     Les deux faces sont chargees par next/font dans layout.tsx et exposees en
+     --font-display-face et --font-face. Le repli reste complet : une face qui
+     n'arrive pas laisse une page lisible, pas une page nue. */
+  --font-display: var(--font-display-face), "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font: var(--font-face), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --fs-display:  clamp(2.25rem, 1.35rem + 3.6vw, 3.5rem);   /* 36 -> 56 */
+  --fs-h1:       clamp(1.875rem, 1.35rem + 2.1vw, 2.625rem); /* 30 -> 42 */
+  --fs-h2:       clamp(1.5rem, 1.24rem + 1.05vw, 2rem);      /* 24 -> 32 */
+  --fs-h3:       clamp(1.25rem, 1.14rem + 0.45vw, 1.5rem);   /* 20 -> 24 */
+  --fs-h4:       1.125rem;   /* 18 */
+  --fs-lg:       1.0625rem;  /* 17 */
+  --fs-base:     1rem;       /* 16 : lisibilité mobile non négociable */
+  --fs-sm:       0.9375rem;  /* 15 */
+  --fs-xs:       0.8125rem;  /* 13 */
+  --fs-micro:    0.75rem;    /* 12 : étiquettes uniquement */
+
+  --lh-display: 1.04;
+  --lh-tight: 1.14;
+  --lh-snug: 1.28;
+  --lh-normal: 1.5;
+  --lh-relaxed: 1.62;
+
+  --ls-display: -0.028em;
+  --ls-heading: -0.018em;
+  --ls-normal: -0.004em;
+  --ls-wide: 0.02em;
+  --ls-overline: 0.09em;
+
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+  --fw-extrabold: 800;
+
+  /* ---------------------------------------------------------------------
+     7. ESPACEMENT : grille de 4 px
+     --------------------------------------------------------------------- */
+  --s-1: 0.25rem;  --s-2: 0.5rem;   --s-3: 0.75rem;  --s-4: 1rem;
+  --s-5: 1.25rem;  --s-6: 1.5rem;   --s-7: 1.75rem;  --s-8: 2rem;
+  --s-10: 2.5rem;  --s-12: 3rem;    --s-14: 3.5rem;  --s-16: 4rem;
+  --s-20: 5rem;    --s-24: 6rem;    --s-28: 7rem;    --s-32: 8rem;
+
+  /* Rythme vertical des sections publiques */
+  --section-y: clamp(3rem, 2rem + 5vw, 6rem);
+  --section-y-lg: clamp(4rem, 2.5rem + 7vw, 8rem);
+
+  /* ---------------------------------------------------------------------
+     8. RAYONS : 4 / 8 / 12 / pilule. Rien d'autre.
+     --------------------------------------------------------------------- */
+  --r-xs: 4px;
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-pill: 9999px;
+  --r-circle: 50%;
+
+  /* ---------------------------------------------------------------------
+     9. OMBRES : quasi plates. Le trait porte l'élévation.
+     --------------------------------------------------------------------- */
+  --sh-none: none;
+  --sh-xs: 0 1px 1px rgba(23, 32, 30, 0.04);
+  --sh-sm: 0 1px 2px rgba(23, 32, 30, 0.05), 0 1px 3px -1px rgba(23, 32, 30, 0.04);
+  --sh-md: 0 2px 4px -1px rgba(23, 32, 30, 0.06), 0 4px 12px -4px rgba(23, 32, 30, 0.08);
+  --sh-lg: 0 8px 28px -12px rgba(8, 31, 27, 0.22), 0 2px 6px -2px rgba(8, 31, 27, 0.06);
+  --sh-inverse: 0 8px 28px -12px rgba(8, 31, 27, 0.5);
+
+  /* ---------------------------------------------------------------------
+     10. MOUVEMENT : 120 / 180 / 240 ms. Le mouvement informe, il ne décore pas.
+     --------------------------------------------------------------------- */
+  --dur-instant: 90ms;
+  --dur-fast: 140ms;
+  --dur-base: 190ms;
+  --dur-slow: 240ms;
+  --ease-out: cubic-bezier(0.22, 0.8, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.45, 0.05, 0.25, 1);
+  --ease-entrance: cubic-bezier(0.16, 0.9, 0.3, 1);
+
+  /* ---------------------------------------------------------------------
+     11. GABARITS
+     --------------------------------------------------------------------- */
+  --w-page: 1216px;
+  --w-wide: 1400px;
+  --w-text: 68ch;
+  --w-narrow: 640px;
+  --gutter: clamp(1rem, 0.4rem + 2.4vw, 2.5rem);
+
+  --header-h: 64px;
+  --tabbar-h: 60px;
+  --sidebar-w: 264px;
+
+  /* ---------------------------------------------------------------------
+     12. PROFONDEUR
+     --------------------------------------------------------------------- */
+  --z-base: 1;
+  --z-sticky: 20;
+  --z-header: 40;
+  --z-drawer: 60;
+  --z-dialog: 70;
+  --z-toast: 90;
+}
+/* ==== END TOKENS ====
+
+   Les deux variables que le bloc ci-dessus reference, --font-display-face et
+   --font-face, sont posees par next/font dans l'application. Keycloak sert ces
+   pages depuis sa propre origine et n'a pas next/font : les faces sont donc
+   declarees ici, servies par le theme lui-meme, et jamais par un CDN. Un
+   ecran de connexion qui attend une police chez un tiers est un ecran de
+   connexion qui blanchit quand le tiers est lent. */
+
+@font-face { font-family: "Clash Display Local"; src: url("../fonts/ClashDisplay-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Clash Display Local"; src: url("../fonts/ClashDisplay-500.woff2") format("woff2"); font-weight: 500; font-display: swap; }
+@font-face { font-family: "Clash Display Local"; src: url("../fonts/ClashDisplay-600.woff2") format("woff2"); font-weight: 600; font-display: swap; }
+@font-face { font-family: "Clash Display Local"; src: url("../fonts/ClashDisplay-700.woff2") format("woff2"); font-weight: 700; font-display: swap; }
+@font-face { font-family: "DM Sans Local"; src: url("../fonts/DMSans-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "DM Sans Local"; src: url("../fonts/DMSans-500.woff2") format("woff2"); font-weight: 500; font-display: swap; }
+@font-face { font-family: "DM Sans Local"; src: url("../fonts/DMSans-700.woff2") format("woff2"); font-weight: 700; font-display: swap; }
+
+:root {
+  --font-display-face: "Clash Display Local";
+  --font-face: "DM Sans Local";
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { color-scheme: light; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: var(--s-6) var(--gutter);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+  line-height: var(--lh-normal);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The warm halo the product's dark bands carry, at a fraction of its strength:
+   these screens are ivory, and the gold is here to say the page belongs to the
+   same product, not to decorate it. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(70% 55% at 50% 0%, rgba(201, 168, 106, 0.14) 0%, transparent 62%),
+    radial-gradient(60% 50% at 50% 100%, rgba(18, 60, 53, 0.05) 0%, transparent 60%);
+}
+
+.bal {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 27rem;
+  display: grid;
+  gap: var(--s-6);
+}
+
+/* --- The mark ------------------------------------------------------------ */
+
+.bal__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-3);
+  justify-self: center;
+  text-decoration: none;
+  color: var(--text);
+}
+.bal__mark { width: 38px; height: 38px; border-radius: var(--r-sm); display: block; }
+.bal__word {
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  font-weight: 600;
+  letter-spacing: -0.032em;
+}
+.bal__word em { font-style: normal; color: var(--accent-strong); }
+
+/* --- The card ------------------------------------------------------------ */
+
+.bal__card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--sh-sm);
+  padding: var(--s-8) var(--s-7);
+}
+@media (max-width: 480px) {
+  .bal__card { padding: var(--s-6) var(--s-5); }
+}
+
+.bal__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-h3);
+  font-weight: 600;
+  letter-spacing: var(--ls-tight);
+  line-height: var(--lh-tight);
+}
+.bal__lead {
+  margin: var(--s-2) 0 0;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+.bal__form { margin-top: var(--s-6); display: grid; gap: var(--s-5); }
+
+/* --- Fields -------------------------------------------------------------- */
+
+.bal__field { display: grid; gap: var(--s-2); }
+.bal__label {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-overline);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.bal__input {
+  width: 100%;
+  padding: 0.7rem var(--s-4);
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--text);
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-sm);
+  transition: border-color var(--dur-fast) var(--ease-out),
+              box-shadow var(--dur-fast) var(--ease-out);
+}
+.bal__input:hover { border-color: var(--p-warm-400); }
+.bal__input:focus-visible {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(18, 60, 53, 0.12);
+}
+.bal__input[aria-invalid="true"] { border-color: var(--danger); }
+
+.bal__hint { font-size: var(--fs-xs); color: var(--text-tertiary); line-height: 1.45; }
+.bal__error {
+  font-size: var(--fs-xs);
+  color: var(--danger);
+  font-weight: var(--fw-semibold);
+}
+
+/* A checkbox is one line: the box, then the words, aligned on the first one. */
+.bal__check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+.bal__check input { margin-top: 0.2rem; accent-color: var(--brand); }
+
+/* --- Buttons ------------------------------------------------------------- */
+
+.bal__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  width: 100%;
+  padding: 0.8rem var(--s-5);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+  border-radius: var(--r-sm);
+  border: 1.5px solid var(--brand);
+  background: var(--brand);
+  color: var(--text-on-dark);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background-color var(--dur-fast) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-out);
+}
+.bal__btn:hover { background: var(--p-green-800); border-color: var(--p-green-800); }
+.bal__btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.bal__btn--quiet {
+  background: transparent;
+  color: var(--text);
+  border-color: var(--border);
+}
+.bal__btn--quiet:hover { background: var(--bg-sunken); border-color: var(--p-warm-400); }
+
+/* --- Notices ------------------------------------------------------------- */
+
+.bal__note {
+  display: flex;
+  gap: var(--s-3);
+  padding: var(--s-4) var(--s-5);
+  border: 1px solid;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  margin-bottom: var(--s-5);
+}
+.bal__note--info    { background: var(--info-soft);    border-color: var(--info-border);    color: var(--info-strong); }
+.bal__note--success { background: var(--success-soft); border-color: var(--success-border); color: var(--success-strong); }
+.bal__note--warning { background: var(--warning-soft); border-color: var(--warning-border); color: var(--warning-strong); }
+.bal__note--error   { background: var(--danger-soft);  border-color: var(--danger-border);  color: var(--danger-strong); }
+
+/* --- The rest ------------------------------------------------------------ */
+
+.bal__foot {
+  margin-top: var(--s-6);
+  padding-top: var(--s-5);
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  text-align: center;
+}
+.bal__link { color: var(--brand); font-weight: var(--fw-semibold); }
+.bal__link:hover { color: var(--accent-strong); }
+
+.bal__legal {
+  justify-self: center;
+  font-size: var(--fs-xs);
+  color: var(--text-tertiary);
+  text-align: center;
+  line-height: 1.6;
+}
+.bal__legal a { color: var(--text-secondary); }
+
+/* Keycloak renders its locale picker as a plain list when a realm supports
+   more than one. One is supported today, so it never appears - and if a second
+   is added, it lands here already dressed rather than as a bare <ul>. */
+.bal__locales { justify-self: center; display: flex; gap: var(--s-3); list-style: none; margin: 0; padding: 0; }
+.bal__locales a { font-size: var(--fs-xs); color: var(--text-tertiary); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+}

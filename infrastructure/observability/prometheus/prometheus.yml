@@ -1,0 +1,45 @@
+# What Prometheus scrapes, as a file rather than a click.
+#
+# The two application targets are NOT containers. docker-compose here carries
+# infrastructure only: the API and the notification worker run as jars on the
+# host (see scripts/dev.sh and docs/DEPLOYMENT.md), so Prometheus reaches them
+# through host.docker.internal, which the compose file maps to the bridge
+# gateway on Linux and Docker Desktop provides on its own.
+#
+# THE PORT NUMBERS BELOW ARE ALSO IN application.properties, twice. Prometheus
+# does no environment substitution in this file, so BACKEND_MANAGEMENT_PORT and
+# NOTIFICATION_WORKER_MANAGEMENT_PORT cannot be read here: changing either one
+# means changing it in both places, and a mismatch shows up as a target that is
+# simply down.
+
+global:
+  # Fifteen seconds is the floor that still draws a readable line on a one-hour
+  # window. Faster costs a Raspberry Pi's SD card write budget for nothing.
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  external_labels:
+    stack: balaaca
+
+scrape_configs:
+  # The API. /q/metrics lives on the MANAGEMENT interface, port 9000, which is
+  # deliberately not the port nginx forwards: /v1 is public, the metrics are not.
+  - job_name: balaaca-api
+    metrics_path: /q/metrics
+    static_configs:
+      - targets: ["host.docker.internal:9000"]
+
+  # The worker. Its own counters are thin on purpose: what this target is for is
+  # `up`. A worker that has stopped is the failure this scrape exists to catch,
+  # and a stopped process cannot report its own queue - which is why the outbox
+  # is measured from the database instead, below.
+  - job_name: balaaca-notification-worker
+    metrics_path: /q/metrics
+    static_configs:
+      - targets: ["host.docker.internal:9100"]
+
+  # The outbox, read straight from PostgreSQL. Measuring the queue from OUTSIDE
+  # the worker is the whole point: a gauge inside the worker goes quiet at the
+  # exact moment it matters.
+  - job_name: balaaca-outbox
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
