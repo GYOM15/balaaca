@@ -504,8 +504,13 @@ export default async function Profile({
                   <div className="card__body">
                     <div className="cols cols--2" style={{ gap: "var(--s-5)" }}>
                       <div className="field">
+                        {/* "Pas des creneaux" reads as "no slots" before it
+                            reads as a step, and the two meanings are opposite.
+                            It is not the length of an appointment either - that
+                            belongs to the service - so the label says what the
+                            number actually sets: the spacing of the grid. */}
                         <label className="field__label" htmlFor="b-slot">
-                          Pas des créneaux
+                          Intervalle entre deux horaires proposés
                         </label>
                         <div className="input-group input-group--suffix">
                           <input
@@ -522,9 +527,10 @@ export default async function Profile({
                           <span className="input-group__suffix">minutes</span>
                         </div>
                         <p className="field__hint">
-                          Quinze convient à un salon&nbsp;; un photographe qui
-                          travaille en demi-journées n’en veut pas trente-deux
-                          avant midi.
+                          <Icon name="info" size={16} /> Sur 30, vous proposez
+                          9h00, 9h30, 10h00. Quinze convient à un salon, soixante
+                          à qui travaille en demi-journées. Ce n’est pas la durée
+                          d’un rendez-vous&nbsp;: celle-là est sur la prestation.
                         </p>
                       </div>
                       <div className="field">

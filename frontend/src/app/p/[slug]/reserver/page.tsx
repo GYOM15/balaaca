@@ -1768,8 +1768,13 @@ function resolveStep(
   if (!hasService) return 1;
   if (query.error && day) return 4;
 
+  // A service named with NO step is a customer who chose it on the provider's
+  // page: they have already answered step one, and asking again asks the same
+  // question twice. Number(undefined) is NaN, so the old guard sent every one
+  // of those cards straight back to the list they were clicked from. Only an
+  // explicit etape=1 returns to it now.
   const wanted = Number(query.etape);
-  if (!Number.isInteger(wanted) || wanted <= 1) return 1;
+  if (Number.isInteger(wanted) && wanted <= 1) return 1;
   if (wanted >= 5 && day && slotAt) return 5;
   if (wanted >= 4 && day) return 4;
   if (wanted >= 3) return 3;

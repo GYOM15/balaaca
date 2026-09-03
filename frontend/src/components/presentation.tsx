@@ -48,6 +48,33 @@ export function Presentation() {
     };
   }, []);
 
+  /**
+   * A GET form whose only control is a select submits itself.
+   *
+   * <p>Here and not in presentation-script.ts on purpose: that file is vendored
+   * from the design source and is replaced wholesale the next time the design
+   * changes, so anything of ours written into it is work thrown away. This one
+   * belongs to the product.
+   *
+   * <p>It still touches no value. The select already names a URL - the choice
+   * is a query parameter, so it can be shared and reloaded - and all this does
+   * is follow it without waiting for a second click on a button that only
+   * existed because nothing here was listening.
+   */
+  useEffect(() => {
+    const submit = (event: Event) => {
+      const select = (event.target as Element | null)?.closest<HTMLElement>(
+        "[data-submit-on-change]",
+      );
+      // requestSubmit and not submit(): submit() skips validation and, more to
+      // the point here, skips the submit event a framework may be listening for.
+      const form = (select as HTMLSelectElement | null)?.form;
+      if (form) form.requestSubmit();
+    };
+    document.addEventListener("change", submit);
+    return () => document.removeEventListener("change", submit);
+  }, []);
+
   // What the mockup's router did on every screen change, minus the router. It
   // is not a second router: it reads the route Next has already taken and does
   // the two things that were the router's and are nobody else's here.

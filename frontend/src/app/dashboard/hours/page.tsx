@@ -305,7 +305,18 @@ export default async function Hours({
                         <label className="field__label" htmlFor="c-staff">
                           Personne
                         </label>
-                        <select className="select" id="c-staff" name="staff" defaultValue={staffId}>
+                        {/* Choosing IS the request. A person picked and then a
+                            button pressed asks the same question twice, and the
+                            second half is the half people forget. The button
+                            below stays for a browser running no script, and
+                            hides itself the moment one is running. */}
+                        <select
+                          className="select"
+                          id="c-staff"
+                          name="staff"
+                          defaultValue={staffId}
+                          data-submit-on-change
+                        >
                           {team.data.map((p) => (
                             <option key={p.staff_id} value={p.staff_id}>
                               {p.display_name}
@@ -314,7 +325,7 @@ export default async function Hours({
                           ))}
                         </select>
                       </div>
-                      <div style={{ marginTop: "var(--s-4)" }}>
+                      <div className="js-none" style={{ marginTop: "var(--s-4)" }}>
                         <button className="btn btn--secondary btn--block" type="submit">
                           <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
                             <Icon name="arrow-right" size={18} />

@@ -57,15 +57,55 @@ echo " ready"
 
 # --- 2. The API -------------------------------------------------------------
 JAR="$ROOT/backend/app/target/quarkus-app/quarkus-run.jar"
+
+# Anything the jar is built FROM. Kept in one place because the interesting
+# failure is a source this list forgets: it would be newer than the jar, the
+# jar would not be rebuilt, and the difference would show up as behaviour that
+# does not match the code in front of you.
+sources_newer_than() {
+    find backend \
+        -path '*/target' -prune -o \
+        -type f \( -name '*.java' -o -name '*.sql' -o -name '*.yaml' \
+                   -o -name '*.yml' -o -name '*.properties' \) \
+        -newer "$1" -print -quit
+}
+
+# Rebuild when a source is newer than the jar, and not only when the jar is
+# missing. This checked for absence alone, which is the half that never bites:
+# what bites is a jar built BEFORE the code it is meant to run, or - worse -
+# rebuilt UNDER a process that is already up. Quarkus reads a fast-jar's
+# classes lazily, so such a process ends up mixing two builds, and a CDI proxy
+# calls a constructor its own class no longer has. Nothing says "stale": it
+# surfaces as a 500 with no compilation error and no migration error anywhere
+# near it, which cost hours once already.
 if [ ! -f "$JAR" ]; then
-    say "2/4  The API is not built yet, building it (once)"
+    say "2/4  The API is not built yet, building it"
+    (cd backend && mvn -q -pl app -am -DskipTests -Djacoco.skip=true package)
+elif [ -n "$(sources_newer_than "$JAR")" ]; then
+    say "2/4  The API changed since it was built, rebuilding it"
     (cd backend && mvn -q -pl app -am -DskipTests -Djacoco.skip=true package)
 else
     say "2/4  The API"
 fi
 
+# When this script last started an API. A marker file rather than the process
+# start time: reading that portably means /proc on Linux and parsing `ps` on
+# macOS, and a check that is only right on one of them is worse than no check.
+# Two file dates compare the same way everywhere.
+STARTED="$LOGS/.api-started"
+
+# A running API older than the jar it is meant to be running is the state above,
+# already happening. It is restarted three lines down whatever we say, so all
+# this has to do is NAME it - the person who rebuilt by hand and did not restart
+# has no other way to learn that what answered them was not their code.
+if pgrep -f quarkus-run.jar >/dev/null 2>&1 \
+   && [ -f "$STARTED" ] && [ "$JAR" -nt "$STARTED" ]; then
+    echo "     the API that is running predates this jar - restarting it" >&2
+fi
+
 pkill -f quarkus-run.jar 2>/dev/null || true
 nohup java -jar "$JAR" > "$LOGS/api.log" 2>&1 &
+touch "$STARTED"
 
 printf '     api '
 ready=no
@@ -78,11 +118,38 @@ if [ "$ready" = yes ]; then
     echo " ready"
 else
     # Say WHAT went down, not merely that the wait expired: the body of
-    # /q/health/ready names the check at fault.
+    # /q/health/ready names the check at fault - and when the API never got far
+    # enough to answer at all, the last ERROR it logged does.
     echo " not ready"
     curl -s "http://localhost:$QUARKUS_HTTP_PORT/q/health/ready" || true
     echo
-    echo "     The detail is in $LOGS/api.log" >&2
+    echo "     The API did not start. The last error it logged:" >&2
+    # The cause chain, not just the top line. "Failed to start quarkus" names
+    # nothing; the cause underneath it is where a Flyway checksum mismatch, a
+    # role that does not exist, or a port already taken actually says so.
+    python3 - "$LOGS/api.log" >&2 <<'PY' || tail -3 "$LOGS/api.log" >&2
+import json, sys
+last = None
+for line in open(sys.argv[1], encoding="utf-8", errors="replace"):
+    if not line.startswith("{"):
+        continue
+    try:
+        row = json.loads(line)
+    except ValueError:
+        continue
+    if row.get("level") == "ERROR":
+        last = row
+if last is None:
+    raise SystemExit(1)
+print("       " + last.get("message", ""))
+seen = last.get("exception")
+while seen:
+    text = (seen.get("message") or "").replace("\n", "\n       ")
+    if text:
+        print("       " + seen.get("exceptionType", "") + ": " + text)
+    seen = (seen.get("causedBy") or {}).get("exception")
+PY
+    echo "     The whole log is in $LOGS/api.log" >&2
     exit 1
 fi
 

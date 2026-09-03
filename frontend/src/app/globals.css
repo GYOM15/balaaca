@@ -1435,6 +1435,10 @@ a.choice { text-decoration: none; color: inherit; }
 /* --------------------------------------------------------------------------
    CARTE PRESTATAIRE : objet de découverte principal
    -------------------------------------------------------------------------- */
+/* Ce que le script rend inutile. `js` est posee sur <html> par l'amorcage,
+   donc la regle ne s'applique que la ou le remplacement fonctionne vraiment. */
+.js .js-none { display: none; }
+
 .pcards { display: grid; gap: var(--s-5); grid-template-columns: 1fr; }
 @media (min-width: 640px) { .pcards { grid-template-columns: repeat(2, minmax(0,1fr)); } }
 @media (min-width: 1024px) { .pcards { grid-template-columns: repeat(3, minmax(0,1fr)); } }
@@ -1447,6 +1451,16 @@ a.choice { text-decoration: none; color: inherit; }
 .pcard:hover { border-color: var(--border-strong); box-shadow: var(--sh-md); transform: translateY(-3px); }
 .pcard__cover { position: relative; aspect-ratio: 16 / 9; background: var(--bg-sunken); overflow: hidden; }
 .pcard__cover img { width: 100%; height: 100%; object-fit: cover; transition: transform var(--dur-slow) var(--ease-out); }
+/* Un logo n'est pas une photo de couverture. Rogne en 16/9 comme une photo, un
+   logo carre perd 44 % de sa hauteur et un logo haut est detruit : ce qui reste
+   n'est plus la marque. Il est donc POSE sur le fond chaud, entier et centre,
+   exactement comme le dessin de metier qui le remplace quand il n'y en a pas. */
+.pcard__cover--mark img {
+  width: auto; height: auto;
+  max-width: 62%; max-height: 72%;
+  object-fit: contain;
+}
+.pcard:hover .pcard__cover--mark img { transform: scale(1.03); }
 .pcard:hover .pcard__cover img { transform: scale(1.03); }
 .pcard__badges { position: absolute; left: var(--s-3); top: var(--s-3); display: flex; gap: var(--s-2); flex-wrap: wrap; }
 .pcard__logo { position: absolute; left: var(--s-4); bottom: calc(var(--s-4) * -1); width: 52px; height: 52px; border-radius: var(--r-sm); background: var(--surface); border: 2px solid var(--surface); box-shadow: var(--sh-sm); display: grid; place-items: center; overflow: hidden; }

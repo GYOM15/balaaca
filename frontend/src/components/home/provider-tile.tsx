@@ -61,12 +61,20 @@ export function ProviderTile({
 
   return (
     <Link className="pcard" href={`/p/${provider.slug}`}>
-      <span className="pcard__cover" style={{ display: "grid", placeItems: "center" }}>
+      <span
+        className={`pcard__cover${logo ? " pcard__cover--mark" : ""}`}
+        style={{ display: "grid", placeItems: "center" }}
+      >
         {logo ? (
           // Plain img, not next/image: the bytes come through this server's own
           // /media route and are already immutable and sized by the API.
+          //
+          // The intrinsic size said 640x360, which no logo is: it described the
+          // 16/9 slot rather than the file, and the stylesheet then cropped a
+          // square mark to fit that lie. Square is the honest guess for a logo,
+          // and the --mark rules contain it either way.
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={logo} alt="" loading="lazy" width={640} height={360} />
+          <img src={logo} alt="" loading="lazy" width={640} height={640} />
         ) : (
           <Sketch name={sketchForTrade(provider.category_slug)} width={160} />
         )}
