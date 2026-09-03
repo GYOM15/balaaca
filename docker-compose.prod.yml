@@ -1,0 +1,150 @@
+# Balaaca - the application itself, on top of the infrastructure.
+#
+# An OVERLAY, never used alone:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# docker-compose.yml carries PostgreSQL, Keycloak, Redis and the observability
+# floor, and says in its own header that the API and the worker are jars on the
+# host. That is true of a developer's machine and false of a deployment: this
+# file adds the three services that were missing and stops nothing from being
+# built locally, because it pulls images rather than building them.
+#
+# WHAT THIS FILE DOES NOT DO, said here rather than discovered later:
+#
+#   * it does not put Keycloak into production mode. The base file runs
+#     `start-dev`, which disables HTTPS and relaxes hostname checks. That is
+#     tolerable on a machine reachable only from your own network and it is NOT
+#     tolerable on the open internet - see docs/DEPLOYMENT.md;
+#   * it terminates no TLS. There is no certificate anywhere in this stack;
+#   * it backs nothing up.
+#
+# It publishes exactly two ports beyond the base file's loopback ones: the front
+# end, and Keycloak. Keycloak has to be published because the BROWSER is
+# redirected to it by address - a sign-in it cannot reach is a sign-in that
+# fails. The API and the worker are published nowhere at all: the front end
+# reaches the API by service name on this network, which is a thing the
+# development setup cannot do and this one gets for free.
+
+services:
+  api:
+    image: ghcr.io/gyom15/balaaca-api:${BALAACA_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      # Inside the network, so the container's own names and the default port.
+      POSTGRES_HOST: postgres
+      POSTGRES_HOST_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB}
+      BALAACA_DB_APP_PASSWORD: ${BALAACA_DB_APP_PASSWORD}
+      BALAACA_DB_MIGRATOR_PASSWORD: ${BALAACA_DB_MIGRATOR_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_HOST_PORT: "6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      # The issuer the API validates tokens against. It must be the address
+      # Keycloak PUTS IN the token, not the one that happens to work from here:
+      # a token minted for http://pi.local:8180/realms/balaaca is refused by a
+      # server expecting http://keycloak:8080/realms/balaaca, and the refusal
+      # says only that the issuer is wrong.
+      QUARKUS_OIDC_AUTH_SERVER_URL: ${KEYCLOAK_ISSUER_URL}
+      # Keycloak is healthy before this starts, but a realm that answers is not
+      # a realm that has published its keys. A delay here is a slower boot; the
+      # absence of one is every token refused until a restart.
+      QUARKUS_OIDC_CONNECTION_DELAY: 30S
+      # What the QR code and the printed poster carry. It is the address a
+      # CUSTOMER types, so it is the front end's public origin and never a
+      # service name - a poster naming http://web:3000 is a wasted print run.
+      BALAACA_PUBLIC_BASE_URL: ${APP_PUBLIC_ORIGIN:-http://localhost:3000}
+      BALAACA_MEDIA_ROOT: /var/lib/balaaca/media
+    volumes:
+      # Uploaded logos, covers and service photographs. A named volume and not a
+      # bind mount, so it survives a `docker compose down` - and it is NOT in
+      # the PostgreSQL dump, so it is backed up separately or it is lost.
+      - balaaca-media:/var/lib/balaaca/media
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [balaaca]
+
+  worker:
+    image: ghcr.io/gyom15/balaaca-worker:${BALAACA_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_HOST_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB}
+      # Its own role, which holds SELECT and UPDATE on notifications and nothing
+      # else. Never the application's: a drain bug on the app role would be a
+      # cross-tenant read, and this one cannot express it.
+      BALAACA_DB_WORKER_PASSWORD: ${BALAACA_DB_WORKER_PASSWORD}
+      # The SAME relay Keycloak uses, from the SAME variables. One SMTP
+      # account, one sending reputation, one place to change when Gmail stops
+      # being enough. Unset, they land on mailpit.
+      KEYCLOAK_SMTP_HOST: ${KEYCLOAK_SMTP_HOST:-mailpit}
+      KEYCLOAK_SMTP_PORT: ${KEYCLOAK_SMTP_PORT:-1025}
+      KEYCLOAK_SMTP_FROM: ${KEYCLOAK_SMTP_FROM:-bonjour@balaaca.local}
+      KEYCLOAK_SMTP_FROM_DISPLAY: ${KEYCLOAK_SMTP_FROM_DISPLAY:-Balaaca}
+      KEYCLOAK_SMTP_USER: ${KEYCLOAK_SMTP_USER:-}
+      KEYCLOAK_SMTP_PASSWORD: ${KEYCLOAK_SMTP_PASSWORD:-}
+      KEYCLOAK_SMTP_STARTTLS: ${KEYCLOAK_SMTP_STARTTLS:-false}
+      # Which channels the worker actually sends on, in order of preference.
+      # Left at smtp,console until the WhatsApp account exists: a channel named
+      # here with no credentials behind it fails every message it is given.
+      BALAACA_NOTIFICATION_CHANNEL: ${BALAACA_NOTIFICATION_CHANNEL:-smtp,console}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      # Not on the API. The outbox is a table, and the worker's whole design is
+      # that it needs nothing else running - an API that is down must not stop a
+      # reminder that is already owed.
+    networks: [balaaca]
+
+  web:
+    image: ghcr.io/gyom15/balaaca-web:${BALAACA_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      # By service name: the browser never addresses the API, so this is the
+      # only place the API's address is written and it never leaves the network.
+      BALAACA_API_BASE_URL: http://api:8080
+      # These two are addresses a BROWSER must resolve. On a Raspberry Pi that
+      # means the machine's name or address on your network, not localhost -
+      # localhost on a visitor's telephone is the telephone.
+      KEYCLOAK_ISSUER_URL: ${KEYCLOAK_ISSUER_URL}
+      APP_PUBLIC_ORIGIN: ${APP_PUBLIC_ORIGIN:-http://localhost:3000}
+      KEYCLOAK_FRONTEND_CLIENT_ID: ${KEYCLOAK_FRONTEND_CLIENT_ID:-balaaca-frontend}
+      KEYCLOAK_FRONTEND_CLIENT_SECRET: ${KEYCLOAK_FRONTEND_CLIENT_SECRET}
+      # The key that seals the session cookie. Rotating it signs everybody out,
+      # which is correct and worth knowing before you rotate it.
+      BALAACA_SESSION_SECRET: ${BALAACA_SESSION_SECRET}
+    ports:
+      - "${WEB_HOST_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [balaaca]
+
+  # --- What the base file has to change once the app is in containers ---------
+
+  keycloak:
+    # Published on every interface, not only loopback. The browser is redirected
+    # here by address; bound to 127.0.0.1 on the Pi, every sign-in from any
+    # other machine fails at the redirect with nothing in any log to say why.
+    ports:
+      - "${KEYCLOAK_PORT:-8180}:8080"
+
+  prometheus:
+    # The application targets are containers now, reached by name. The base
+    # file's config points at host.docker.internal, which resolves to the Pi
+    # itself, where nothing listens any more.
+    volumes:
+      - ./infrastructure/observability/prometheus/prometheus.prod.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+
+volumes:
+  balaaca-media:

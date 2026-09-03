@@ -1,0 +1,46 @@
+# What never belongs in a build context.
+#
+# This is not only about speed. A build context is uploaded whole to the
+# daemon and every file in it can be COPYed by a later line - so a secret that
+# is merely gitignored is still one `COPY . .` away from a published layer, and
+# a layer is public the moment the image is. .env is listed first for that
+# reason, not for its size.
+#
+# Everything below is either a secret, a build output that the image rebuilds
+# itself, or a thing no build reads. Nothing here is a source file.
+
+# Secrets, first and always.
+.env
+.env.*
+!.env.example
+
+# Build outputs. The image builds its own; copying a host's would ship whatever
+# architecture the host happened to be - an amd64 jar on an arm64 Pi starts and
+# then dies on the first native call.
+**/target/
+**/node_modules/
+**/.next/
+**/out/
+**/dist/
+
+# Local state, none of which a build reads.
+.git/
+.gitignore
+.githooks/
+.dev-logs/
+.dev-media/
+.claude/
+**/.DS_Store
+**/*.log
+
+# Test and tooling artefacts.
+**/surefire-reports/
+**/failsafe-reports/
+**/jacoco.exec
+**/pit-reports/
+coverage/
+
+# Editors.
+.idea/
+.vscode/
+*.iml

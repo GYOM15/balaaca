@@ -78,12 +78,19 @@ sources_newer_than() {
 # calls a constructor its own class no longer has. Nothing says "stale": it
 # surfaces as a 500 with no compilation error and no migration error anywhere
 # near it, which cost hours once already.
+# `clean`, and it is not caution. Maven copies src/main/resources into
+# target/classes and NEVER removes what is no longer there, so a file deleted
+# from the sources stays in the jar. That is not hypothetical twice over: a
+# throwaway probe and a throwaway migration both shipped that way, and the
+# migration was APPLIED to a live database by a jar built from sources that no
+# longer contained it. Flyway then refused every subsequent start, against a
+# history row nothing could explain.
 if [ ! -f "$JAR" ]; then
     say "2/4  The API is not built yet, building it"
-    (cd backend && mvn -q -pl app -am -DskipTests -Djacoco.skip=true package)
+    (cd backend && mvn -q -pl app -am -DskipTests -Djacoco.skip=true clean package)
 elif [ -n "$(sources_newer_than "$JAR")" ]; then
     say "2/4  The API changed since it was built, rebuilding it"
-    (cd backend && mvn -q -pl app -am -DskipTests -Djacoco.skip=true package)
+    (cd backend && mvn -q -pl app -am -DskipTests -Djacoco.skip=true clean package)
 else
     say "2/4  The API"
 fi
