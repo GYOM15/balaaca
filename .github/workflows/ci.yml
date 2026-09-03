@@ -183,7 +183,12 @@ jobs:
           # Additive changes pass. Removing a field, tightening a type, renaming
           # an error code or making an optional parameter required does not:
           # inside /v1 the promise is compatibility, and breaking it needs /v2.
-          ./oasdiff breaking /tmp/published.yaml "$spec" --fail-on ERR
+          # --err-ignore, not a relaxed --fail-on: the waivers are named, dated
+          # and quoted in .oasdiff-ignore, and each one is as narrow as the
+          # sentence it quotes. Lowering the threshold instead would waive every
+          # future breaking change along with the one being accepted today.
+          ./oasdiff breaking /tmp/published.yaml "$spec" \
+            --fail-on ERR --err-ignore .oasdiff-ignore
 
   lint:
     name: shell and compose

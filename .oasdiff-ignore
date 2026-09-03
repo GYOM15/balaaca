@@ -1,0 +1,18 @@
+# Breaking changes accepted deliberately, with the reason and the date.
+#
+# Each line is matched against the text oasdiff renders for a finding, so a
+# waiver here is as narrow as the sentence it quotes: this one covers a decrease
+# from exactly 64 to exactly 10, on exactly the `reference` path parameter. Any
+# other length change, on any other parameter, still fails the gate.
+#
+# 2026-09-03 - the booking reference was shortened from 43 characters of
+# base64url to ten, three of them the business's initials, because the old one
+# could not be read aloud down a telephone and this market books by telephone.
+# That is a breaking change and oasdiff is right to say so.
+#
+# It is waived rather than versioned because /v1 promises compatibility to
+# CLIENTS, and there are none: nothing outside this repository has ever held a
+# booking reference. The promise starts at launch. Delete this file then - and
+# if a length ever has to change afterwards, it is /v2, not another line here.
+
+for the `path` request parameter `reference`, the maxlength was decreased from `64` to `10`
