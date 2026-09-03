@@ -44,7 +44,9 @@ public class ManageServicePhotosService implements ManageServicePhotosUseCase {
     public List<Photo> add(ServiceOfferingId serviceOfferingId, byte[] image) {
         requireOffering(serviceOfferingId);
 
-        String name = images.store(image);
+        // FREE, and deliberately: this is a photograph of the work itself, and
+        // the platform has no business deciding what to trim out of it.
+        String name = images.store(image, ImageStore.Shape.FREE);
         if (photos.add(serviceOfferingId, name).isEmpty()) {
             // Every slot taken. The file is dropped rather than left behind:
             // nothing will ever name it, so it is an orphan by construction and

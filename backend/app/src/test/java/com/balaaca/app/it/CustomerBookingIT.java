@@ -52,7 +52,12 @@ class CustomerBookingIT {
     void returnsAReferenceThatWorks() {
         String reference = book("2026-09-04T10:00:00Z");
 
-        assertThat(reference).isNotBlank().hasSize(43);
+        // Three initials from the business name, a hyphen, six symbols from
+        // an alphabet with 0, O, 1, I and L left out. Ten characters a person
+        // can read down a telephone, where the 43 of base64url could only be
+        // copied - and could not survive the heading it was copied from, which
+        // upper-cases everything in it.
+        assertThat(reference).matches("^[A-Z]{3}-[2-9A-HJKMNP-Z]{6}$").startsWith("SFA-");
 
         given().when().get("/v1/bookings/" + reference).then().statusCode(200)
                 .body("reference", equalTo(reference))
@@ -109,7 +114,10 @@ class CustomerBookingIT {
     @Test
     @DisplayName("A reference nobody minted is a 404")
     void refusesAnUnknownReference() {
-        given().when().get("/v1/bookings/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        // Well formed and never minted, so the refusal comes from the lookup
+        // and not from the path's own pattern - which is the case worth
+        // pinning, and the one a badly shaped reference cannot reach.
+        given().when().get("/v1/bookings/SFA-7K2MQP")
                 .then().statusCode(404).body("code", equalTo("RESOURCE_NOT_FOUND"));
     }
 
@@ -152,12 +160,12 @@ class CustomerBookingIT {
         // appointment to one hour from now puts the caller inside it.
         fixtures.execute("""
                 UPDATE appointments
-                   SET starts_at = now() + interval '1 hour',
-                       ends_at = now() + interval '2 hours',
-                       blocked_from = now() + interval '45 minutes',
-                       blocked_until = now() + interval '2 hours 10 minutes'
-                 WHERE public_reference = '%s'
-                """.formatted(reference));
+                   SET starts_at = %1$s + interval '1 hour',
+                       ends_at = %1$s + interval '2 hours',
+                       blocked_from = %1$s + interval '45 minutes',
+                       blocked_until = %1$s + interval '2 hours 10 minutes'
+                 WHERE public_reference = '%2$s'
+                """.formatted(BookingFixtures.APPLICATION_NOW, reference));
 
         given().when().get("/v1/bookings/" + reference).then().statusCode(200)
                 // Said in advance, so a client need not offer a button that
@@ -254,12 +262,12 @@ class CustomerBookingIT {
         String reference = book("2026-09-04T10:00:00Z");
         fixtures.execute("""
                 UPDATE appointments
-                   SET starts_at = now() + interval '1 hour',
-                       ends_at = now() + interval '2 hours',
-                       blocked_from = now() + interval '45 minutes',
-                       blocked_until = now() + interval '2 hours 10 minutes'
-                 WHERE public_reference = '%s'
-                """.formatted(reference));
+                   SET starts_at = %1$s + interval '1 hour',
+                       ends_at = %1$s + interval '2 hours',
+                       blocked_from = %1$s + interval '45 minutes',
+                       blocked_until = %1$s + interval '2 hours 10 minutes'
+                 WHERE public_reference = '%2$s'
+                """.formatted(BookingFixtures.APPLICATION_NOW, reference));
 
         // The same disruption: a chair emptied an hour before it was due is
         // emptied whether or not something is put in its place. Otherwise the
@@ -280,8 +288,7 @@ class CustomerBookingIT {
         // and not reach anything.
         given().contentType("application/json")
                 .body("{\"starts_at\":\"2026-09-05T14:00:00Z\"}")
-                .when().post("/v1/bookings/"
-                             + "ThisReferenceWasNeverMintedByAnybodyAtAll_00/reschedule")
+                .when().post("/v1/bookings/SFA-7K2MQP/reschedule")
                 .then().statusCode(404);
     }
 

@@ -17,34 +17,34 @@ LOGS="$ROOT/.dev-logs"
 mkdir -p "$LOGS"
 
 if [ ! -f .env ]; then
-    echo "Il manque .env. Copiez-le : cp .env.example .env" >&2
+    echo ".env is missing. Copy it: cp .env.example .env" >&2
     exit 1
 fi
 # shellcheck source=/dev/null
 set -a; . ./.env; set +a
 
-# --- Ce qui n'est vrai qu'en local ------------------------------------------
-# .env decrit le reseau des conteneurs, ou l'API s'appelle "postgres". Lancee
-# ici, elle passe par le port publie sur la machine.
+# --- What is only true locally ----------------------------------------------
+# .env describes the container network, where the API calls itself "postgres".
+# Started here, it goes through the port published on this machine.
 export POSTGRES_HOST=localhost
 export POSTGRES_HOST_PORT="${POSTGRES_HOST_PORT:-55432}"
-# Meme chose pour Redis, et il se manifeste plus mal : rien de ce que le
-# produit fait aujourd'hui ne passe par lui, donc l'API repond a tout et
-# declare seulement /q/health/ready DOWN. Une attente de readiness tourne alors
-# deux minutes dans le vide avant d'abandonner sans rien expliquer.
+# Same for Redis, and it shows up worse: nothing the product does today goes
+# through it, so the API answers everything and only reports /q/health/ready
+# DOWN. A readiness wait then spins for two minutes and gives up explaining
+# nothing.
 export REDIS_HOST=localhost
 export REDIS_HOST_PORT="${REDIS_HOST_PORT:-56379}"
 export QUARKUS_OIDC_AUTH_SERVER_URL="${KEYCLOAK_ISSUER_URL}"
 export QUARKUS_HTTP_PORT="${BACKEND_PORT:-8080}"
-# Le defaut de production est /var/lib/balaaca/media, ou un developpeur n'ecrit
-# pas. Sans cette ligne, le premier envoi de logo repond 500 sans dire pourquoi.
+# The production default is /var/lib/balaaca/media, where a developer cannot
+# write. Without this line, the first logo upload answers 500 saying nothing.
 export BALAACA_MEDIA_ROOT="${BALAACA_MEDIA_ROOT_LOCAL:-$ROOT/.dev-media}"
 mkdir -p "$BALAACA_MEDIA_ROOT"
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 
-# --- 1. L'infrastructure ----------------------------------------------------
-say "1/4  PostgreSQL, Keycloak et Redis"
+# --- 1. The infrastructure --------------------------------------------------
+say "1/4  PostgreSQL, Keycloak and Redis"
 docker compose up -d postgres keycloak redis
 
 printf '     keycloak '
@@ -53,19 +53,66 @@ for _ in $(seq 1 60); do
     [ "$state" = healthy ] && break
     printf '.'; sleep 5
 done
-echo " pret"
+echo " ready"
 
-# --- 2. L'API ---------------------------------------------------------------
+# --- 2. The API -------------------------------------------------------------
 JAR="$ROOT/backend/app/target/quarkus-app/quarkus-run.jar"
+
+# Anything the jar is built FROM. Kept in one place because the interesting
+# failure is a source this list forgets: it would be newer than the jar, the
+# jar would not be rebuilt, and the difference would show up as behaviour that
+# does not match the code in front of you.
+sources_newer_than() {
+    find backend \
+        -path '*/target' -prune -o \
+        -type f \( -name '*.java' -o -name '*.sql' -o -name '*.yaml' \
+                   -o -name '*.yml' -o -name '*.properties' \) \
+        -newer "$1" -print -quit
+}
+
+# Rebuild when a source is newer than the jar, and not only when the jar is
+# missing. This checked for absence alone, which is the half that never bites:
+# what bites is a jar built BEFORE the code it is meant to run, or - worse -
+# rebuilt UNDER a process that is already up. Quarkus reads a fast-jar's
+# classes lazily, so such a process ends up mixing two builds, and a CDI proxy
+# calls a constructor its own class no longer has. Nothing says "stale": it
+# surfaces as a 500 with no compilation error and no migration error anywhere
+# near it, which cost hours once already.
+# `clean`, and it is not caution. Maven copies src/main/resources into
+# target/classes and NEVER removes what is no longer there, so a file deleted
+# from the sources stays in the jar. That is not hypothetical twice over: a
+# throwaway probe and a throwaway migration both shipped that way, and the
+# migration was APPLIED to a live database by a jar built from sources that no
+# longer contained it. Flyway then refused every subsequent start, against a
+# history row nothing could explain.
 if [ ! -f "$JAR" ]; then
-    say "2/4  L'API n'est pas construite, je la construis (une fois)"
-    (cd backend && mvn -q -pl app -am -DskipTests -Djacoco.skip=true package)
+    say "2/4  The API is not built yet, building it"
+    (cd backend && mvn -q -pl app -am -DskipTests -Djacoco.skip=true clean package)
+elif [ -n "$(sources_newer_than "$JAR")" ]; then
+    say "2/4  The API changed since it was built, rebuilding it"
+    (cd backend && mvn -q -pl app -am -DskipTests -Djacoco.skip=true clean package)
 else
-    say "2/4  L'API"
+    say "2/4  The API"
+fi
+
+# When this script last started an API. A marker file rather than the process
+# start time: reading that portably means /proc on Linux and parsing `ps` on
+# macOS, and a check that is only right on one of them is worse than no check.
+# Two file dates compare the same way everywhere.
+STARTED="$LOGS/.api-started"
+
+# A running API older than the jar it is meant to be running is the state above,
+# already happening. It is restarted three lines down whatever we say, so all
+# this has to do is NAME it - the person who rebuilt by hand and did not restart
+# has no other way to learn that what answered them was not their code.
+if pgrep -f quarkus-run.jar >/dev/null 2>&1 \
+   && [ -f "$STARTED" ] && [ "$JAR" -nt "$STARTED" ]; then
+    echo "     the API that is running predates this jar - restarting it" >&2
 fi
 
 pkill -f quarkus-run.jar 2>/dev/null || true
 nohup java -jar "$JAR" > "$LOGS/api.log" 2>&1 &
+touch "$STARTED"
 
 printf '     api '
 ready=no
@@ -75,19 +122,46 @@ for _ in $(seq 1 45); do
     printf '.'; sleep 2
 done
 if [ "$ready" = yes ]; then
-    echo " prete"
+    echo " ready"
 else
-    # Dire QUOI est tombe, et pas seulement que l'attente a expire : la sortie
-    # de /q/health/ready nomme le controle en cause.
-    echo " pas prete"
+    # Say WHAT went down, not merely that the wait expired: the body of
+    # /q/health/ready names the check at fault - and when the API never got far
+    # enough to answer at all, the last ERROR it logged does.
+    echo " not ready"
     curl -s "http://localhost:$QUARKUS_HTTP_PORT/q/health/ready" || true
     echo
-    echo "     Le detail est dans $LOGS/api.log" >&2
+    echo "     The API did not start. The last error it logged:" >&2
+    # The cause chain, not just the top line. "Failed to start quarkus" names
+    # nothing; the cause underneath it is where a Flyway checksum mismatch, a
+    # role that does not exist, or a port already taken actually says so.
+    python3 - "$LOGS/api.log" >&2 <<'PY' || tail -3 "$LOGS/api.log" >&2
+import json, sys
+last = None
+for line in open(sys.argv[1], encoding="utf-8", errors="replace"):
+    if not line.startswith("{"):
+        continue
+    try:
+        row = json.loads(line)
+    except ValueError:
+        continue
+    if row.get("level") == "ERROR":
+        last = row
+if last is None:
+    raise SystemExit(1)
+print("       " + last.get("message", ""))
+seen = last.get("exception")
+while seen:
+    text = (seen.get("message") or "").replace("\n", "\n       ")
+    if text:
+        print("       " + seen.get("exceptionType", "") + ": " + text)
+    seen = (seen.get("causedBy") or {}).get("exception")
+PY
+    echo "     The whole log is in $LOGS/api.log" >&2
     exit 1
 fi
 
-# --- 3. Le front ------------------------------------------------------------
-say "3/4  Le front"
+# --- 3. The front -----------------------------------------------------------
+say "3/4  The front"
 if [ ! -d frontend/node_modules ]; then
     (cd frontend && npm ci)
 fi
@@ -102,16 +176,17 @@ for _ in $(seq 1 40); do
     [ "$code" = 200 ] && break
     printf '.'; sleep 2
 done
-echo " pret"
+echo " ready"
 
-say "4/4  Tout tourne"
+say "4/4  Everything is up"
 cat <<EOF
-     Le site        http://localhost:3000
-     Une page       http://localhost:3000/p/salon-fatou
-     Le carnet      http://localhost:3000/dashboard
-     L'API          http://localhost:$QUARKUS_HTTP_PORT/q/health/ready
+     The site       http://localhost:3000
+     A page         http://localhost:3000/p/salon-fatou
+     The diary      http://localhost:3000/dashboard
+     The API        http://localhost:$QUARKUS_HTTP_PORT/q/health/ready
      Keycloak       ${KEYCLOAK_ISSUER_URL%/realms/*}
 
-     Les journaux   $LOGS/api.log  et  $LOGS/front.log
-     Pour arreter   scripts/dev-stop.sh
+     The logs       $LOGS/api.log  and  $LOGS/front.log
+     To stop        scripts/dev-stop.sh
+     Some data      scripts/seed.sh
 EOF

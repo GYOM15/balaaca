@@ -33,7 +33,7 @@ concurrency and money violations get their own explicit typed exceptions.
 1. **There is exactly ONE `DomainException` base, in
    `com.balaaca.sharedkernel.error`.** Every context extends that same class:
    `booking`, `scheduling`, `catalog`, `providers`, `identity`, `billing` and
-   shared-kernel itself. This is not a style preference — the single mapper is
+   shared-kernel itself. This is not a style preference - the single mapper is
    registered as `ExceptionMapper<DomainException>`, and JAX-RS resolves a
    mapper by the exception's type hierarchy. Seven per-context bases would give
    one mapper that catches one of them and six families surfacing as raw 500s
@@ -48,14 +48,14 @@ concurrency and money violations get their own explicit typed exceptions.
    `AppointmentConflictException`, `CrossTenantAccessException`.
 3. **Application/adapter failures live at the edge, not in the domain.**
    An outbound adapter wraps its technology's error into a named application
-   exception (`NotificationChannelUnavailableException`) — never lets a
+   exception (`NotificationChannelUnavailableException`) - never lets a
    `WebApplicationException`, a `PersistenceException` or an SDK type propagate
    inward. The domain depends on ports, so it can never catch a framework type
    (see `backend-architecture`). The one tenancy failure that crosses this line
    is `NoProviderMembershipException` (`sharedkernel.tenancy`): the
    authenticated subject has no `ACTIVE` row in `provider_staff`, so no tenant
    can be resolved. It extends `DomainException` like everything else, and it
-   is the ONLY name for that condition — `TenantNotResolvedException`,
+   is the ONLY name for that condition - `TenantNotResolvedException`,
    `TenantResolutionFailedException` and `MissingTenantClaimException` do not
    exist.
 4. **Exactly one place maps exceptions to HTTP: a `@Provider`
@@ -70,48 +70,48 @@ concurrency and money violations get their own explicit typed exceptions.
    is published).
 5. **Never leak internals to the client.** No stack trace, no SQL, no class
    name, no Hibernate/JDBC message, and in particular **no PostgreSQL
-   constraint name** in the `detail` — `appointments_no_overlap` tells an
+   constraint name** in the `detail` - `appointments_no_overlap` tells an
    attacker how exclusion is enforced and is not a message a human can act on.
    Log the cause server-side with the correlation id; return a sanitized,
    stable message. A 500 must carry a generic `detail` and a correlation id the
-   client can quote to support — the real cause stays in the logs.
+   client can quote to support - the real cause stays in the logs.
 6. **Slot, tenant, state, concurrency, entitlement and money violations are
-   always explicit typed exceptions — never a generic
+   always explicit typed exceptions - never a generic
    `IllegalStateException`.** These are the invariants the mandatory test
    suites assert on, so they must be nameable. The list that must exist:
-   - `SlotUnavailableException` — the database exclusion constraint rejected
+   - `SlotUnavailableException` - the database exclusion constraint rejected
      the insert (SQLSTATE `23P01`); another appointment already holds that
      staff member's blocked range. It is thrown for a slot the CLIENT named. On
      the "any available staff" path the server chose the staff member, so the
      application retries the whole unit of work against the next eligible
      candidate in a NEW transaction and only surfaces this exception when every
      candidate conflicts (see `booking-integrity`).
-   - `SlotOutsideAvailabilityException` — the requested start falls outside the
+   - `SlotOutsideAvailabilityException` - the requested start falls outside the
      provider's availability rules, inside an `AvailabilityOverride` that
      closes the day, or in the past. The past is outside every window; it needs
      no code of its own.
-   - `AppointmentConflictException` — a conditional `UPDATE ... WHERE id = :id
+   - `AppointmentConflictException` - a conditional `UPDATE ... WHERE id = :id
      AND status IN (...) AND version = :v` affected zero rows: someone else
      moved the appointment first. Distinct from `SlotUnavailableException`,
      which is about the calendar, not about a lost update.
-   - `CrossTenantAccessException` — a `TenantContext` mismatch; **maps to 404**
+   - `CrossTenantAccessException` - a `TenantContext` mismatch; **maps to 404**
      with the same code and body a genuine miss returns, so the response is no
      existence oracle for another provider's rows.
-   - `NoProviderMembershipException` — the caller is authenticated but is staff
+   - `NoProviderMembershipException` - the caller is authenticated but is staff
      at no provider, so no tenant exists to scope the request to.
-   - `InvalidStateTransitionException` — an appointment state-machine move that
+   - `InvalidStateTransitionException` - an appointment state-machine move that
      is not legal from the current status.
-   - `CancellationDeadlinePassedException` — cancellation attempted after the
+   - `CancellationDeadlinePassedException` - cancellation attempted after the
      provider's booking-policy deadline.
-   - `PlanLimitReachedException` — a `PlanEntitlements` quota (max services,
+   - `PlanLimitReachedException` - a `PlanEntitlements` quota (max services,
      max staff) would be exceeded.
-   - `IdempotencyKeyReusedException` — an `Idempotency-Key` replayed with a
+   - `IdempotencyKeyReusedException` - an `Idempotency-Key` replayed with a
      different request fingerprint (see `idempotency-concurrency`).
-   - `CurrencyMismatchException` — arithmetic across two currencies.
-   - `UnknownCurrencyException` — `Currency.of` was handed a code the platform
+   - `CurrencyMismatchException` - arithmetic across two currencies.
+   - `UnknownCurrencyException` - `Currency.of` was handed a code the platform
      does not support; a validation failure, not an `IllegalArgumentException`.
 7. **Map to the right status, deterministically.** The mapping lives in the
-   mapper, in one registry — reviewers check it there. This table is the
+   mapper, in one registry - reviewers check it there. This table is the
    complete set; `platform-api` publishes the same codes as a closed enum:
 
    | Exception                             | Status | Code                          |
@@ -142,14 +142,14 @@ concurrency and money violations get their own explicit typed exceptions.
    response for a cross-tenant read must be byte-identical to the response for
    a genuine miss: same status, same code, same title, same `detail`. There is
    no `TENANT_FORBIDDEN`, and no per-resource `APPOINTMENT_NOT_FOUND`,
-   `PROVIDER_NOT_FOUND` or `SERVICE_NOT_FOUND` — a distinct code, a distinct
+   `PROVIDER_NOT_FOUND` or `SERVICE_NOT_FOUND` - a distinct code, a distinct
    title, or even a distinct sentence leaks exactly what the 404 is hiding. An
-   idempotency replay with a MATCHING fingerprint is **not** an error — return
+   idempotency replay with a MATCHING fingerprint is **not** an error - return
    the original result (2xx), see `idempotency-concurrency`.
 8. **Exceptions carry minimal, structured-enough context.** A message
    (English, per `code-language`) plus optionally a `Throwable cause` and the
    few identifiers needed for the `code`/problem fields. No builders, no bags
-   of fields — richer data belongs in the problem response or the audit log,
+   of fields - richer data belongs in the problem response or the audit log,
    not the exception. Never put a customer phone number, name or email in an
    exception message: it ends up in a log line. `provider_id` and the
    correlation id are operational identifiers and are logged raw; identifiers
@@ -177,7 +177,7 @@ concurrency and money violations get their own explicit typed exceptions.
 10. **The interceptor traces, the mapper responds.** The audit/tracing CDI
     interceptor (see `cdi-interceptors`) records the failure and the
     correlation id; the `ExceptionMapper` produces the client body. Both run
-    for the same throw — keep logging out of the mapper beyond a single
+    for the same throw - keep logging out of the mapper beyond a single
     sanitized line, keep response-building out of the domain, and keep
     `Logger` fields out of application services entirely (see `backend-srp`).
 
@@ -258,7 +258,7 @@ public final class SlotUnavailableException extends DomainException {
 }
 ```
 
-The persistence adapter translates the database's verdict — the exclusion
+The persistence adapter translates the database's verdict - the exclusion
 constraint is the authority, the application never pre-checks with a lock and
 never takes one:
 
@@ -326,22 +326,22 @@ touched `Response`.
 
 ## Sibling skills
 
-- `backend-architecture` — dependencies point inward; the domain has no
+- `backend-architecture` - dependencies point inward; the domain has no
   web/JAX-RS types, so domain exceptions cannot know about HTTP.
-- `backend-naming` — the `*Exception` suffix rule, the prohibition on
+- `backend-naming` - the `*Exception` suffix rule, the prohibition on
   non-throwables ending in `Exception`, and where `DomainException` lives.
-- `platform-api` — the normative, closed catalogue of published error codes
+- `platform-api` - the normative, closed catalogue of published error codes
   this table must agree with.
-- `contract-first` — the RFC 7807 problem shapes are part of the OpenAPI
+- `contract-first` - the RFC 7807 problem shapes are part of the OpenAPI
   document and never change once published.
-- `cdi-interceptors` — the audit/tracing interceptor logs the failure; the
+- `cdi-interceptors` - the audit/tracing interceptor logs the failure; the
   mapper only responds.
-- `pii-masking-logging` — the sanitized log line carries `provider_id` and the
+- `pii-masking-logging` - the sanitized log line carries `provider_id` and the
   correlation id raw, and masks identifiers that resolve to a person.
 - `booking-integrity`, `money-currency`, `idempotency-concurrency`,
-  `multi-tenant-rls`, `temporal-modelling` — each owns the invariant whose
+  `multi-tenant-rls`, `temporal-modelling` - each owns the invariant whose
   violation is a specific typed exception here.
-- `backend-srp` — why a conditional UPDATE's affected-row count, not a
+- `backend-srp` - why a conditional UPDATE's affected-row count, not a
   `catch`, is what raises `AppointmentConflictException`.
-- `code-language` — exception messages and `code`s are English; the customer
+- `code-language` - exception messages and `code`s are English; the customer
   message is resolved from the i18n catalogue at the edge.

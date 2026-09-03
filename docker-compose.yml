@@ -66,6 +66,28 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
     networks: [balaaca]
 
+  # A mail catcher, and only ever that: it accepts SMTP on 1025, sends nothing
+  # anywhere, and shows what it caught at http://localhost:8025. It exists so
+  # the confirmation flow can be exercised end to end today, with no account to
+  # open and no address that could be reached by accident.
+  #
+  # Production replaces it by setting KEYCLOAK_SMTP_* to a real relay.
+  mailpit:
+    image: axllent/mailpit:v1.21
+    restart: unless-stopped
+    environment:
+      MP_MAX_MESSAGES: "500"
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+    ports:
+      - "127.0.0.1:${MAILPIT_WEB_PORT:-8025}:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [balaaca]
+
   keycloak:
     image: quay.io/keycloak/keycloak:26.4
     restart: unless-stopped
@@ -85,12 +107,41 @@ services:
       KC_DB_USERNAME: ${KEYCLOAK_DB_USER}
       KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
       KC_HEALTH_ENABLED: "true"
+      # A message has no request behind it, so Keycloak cannot work out from one
+      # what address to write into a confirmation link. Without this it writes
+      # the address it is bound to - localhost:8080, the port INSIDE the
+      # container - and every link in every message is dead on arrival.
+      #
+      # Everything else already agrees on this address: KEYCLOAK_ISSUER_URL is
+      # the same, and the issuer served on it is already the same. Production
+      # sets its own, over TLS - see docs/DEPLOYMENT.md.
+      KC_HOSTNAME: ${KEYCLOAK_PUBLIC_URL:-http://localhost:8180}
+      # kcadm and the healthcheck reach the server at localhost:8080 from inside
+      # the container. Dynamic backchannel keeps that working while the links it
+      # writes stay public.
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      # DEVELOPMENT ONLY, and start-dev already implies it: without this a theme
+      # edit needs a container rebuild to be seen. Production runs `start`,
+      # where caching is on and is what you want.
+      KC_SPI_THEME_STATIC_MAX_AGE: "-1"
+      KC_SPI_THEME_CACHE_THEMES: "false"
+      KC_SPI_THEME_CACHE_TEMPLATES: "false"
       KC_HTTP_ENABLED: "true"
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
       KEYCLOAK_FRONTEND_CLIENT_SECRET: ${KEYCLOAK_FRONTEND_CLIENT_SECRET}
       FRONTEND_REDIRECT_URI: ${FRONTEND_REDIRECT_URI:-http://localhost:3000/*}
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3000}
+      # Keycloak posts its own mail, over SMTP - it cannot use an HTTP API, so
+      # EMAIL_API_URL is no help to it. Unset, these point at the mailpit
+      # service below and every message lands in a web inbox on this machine.
+      KEYCLOAK_SMTP_HOST: ${KEYCLOAK_SMTP_HOST:-mailpit}
+      KEYCLOAK_SMTP_PORT: ${KEYCLOAK_SMTP_PORT:-1025}
+      KEYCLOAK_SMTP_FROM: ${KEYCLOAK_SMTP_FROM:-bonjour@balaaca.local}
+      KEYCLOAK_SMTP_FROM_DISPLAY: ${KEYCLOAK_SMTP_FROM_DISPLAY:-Balaaca}
+      KEYCLOAK_SMTP_USER: ${KEYCLOAK_SMTP_USER:-}
+      KEYCLOAK_SMTP_PASSWORD: ${KEYCLOAK_SMTP_PASSWORD:-}
+      KEYCLOAK_SMTP_STARTTLS: ${KEYCLOAK_SMTP_STARTTLS:-false}
     volumes:
       # A reviewed, versioned template rather than clicks in an admin console:
       # an identity configuration nobody can recreate is the same problem as a
@@ -98,10 +149,16 @@ services:
       # is confidential, and a secret in a committed file is a secret.
       - ./infrastructure/keycloak/realm-balaaca.json.template:/opt/keycloak/data/template/realm-balaaca.json.template:ro
       - ./infrastructure/keycloak/init-realm.sh:/opt/keycloak/data/init-realm.sh:ro
+      # The sign-in screens and the messages. Mounted rather than baked into an
+      # image so a wording change is a file edit and a container restart, which
+      # is the same loop as the rest of the product.
+      - ./infrastructure/keycloak/themes/balaaca:/opt/keycloak/themes/balaaca:ro
     ports:
       - "127.0.0.1:${KEYCLOAK_PORT:-8180}:8080"
     depends_on:
       postgres:
+        condition: service_healthy
+      mailpit:
         condition: service_healthy
     healthcheck:
       # The image carries no curl and no wget. Bash can open a TCP socket, so
@@ -123,8 +180,104 @@ services:
       start_period: 40s
     networks: [balaaca]
 
+  # --- Observability ---------------------------------------------------------
+  # The useful floor: metrics, a scraper, one provisioned dashboard. No
+  # Alertmanager and no rules - on a Raspberry Pi in beta an alert nobody
+  # receives is noise, and the person who would receive it is reading the
+  # dashboard instead. See infrastructure/observability/README.md.
+
+  prometheus:
+    image: prom/prometheus:v3.14.0
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      # A fortnight, not the default fifteen days' worth of everything: this
+      # lands on a Pi's SD card, and nobody debugs a beta from a month-old graph.
+      - --storage.tsdb.retention.time=15d
+    volumes:
+      - ./infrastructure/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    # The API and the worker are jars on the HOST: this file carries
+    # infrastructure only. On Linux this mapping is the only thing that makes the
+    # host reachable from the bridge. Docker Desktop already provides the name
+    # and repeating it here is harmless.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:${PROMETHEUS_HOST_PORT:-9090}:9090"
+    networks: [balaaca]
+
+  grafana:
+    image: grafana/grafana:13.2.1
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      # Nobody signs up for a beta's dashboard, and nobody reads it without
+      # signing in either.
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      # No call home, no news feed. This runs on a domestic connection.
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+    volumes:
+      # The datasource and the dashboard are files, reviewed and versioned,
+      # rather than clicks in a browser: a dashboard nobody can recreate is the
+      # same problem as a schema with no migrations.
+      #
+      # The dashboards live under /etc and NOT under /var/lib/grafana, which is
+      # the named volume holding Grafana's own database. Bind-mounting a
+      # read-only directory inside a volume works, and then somebody wonders why.
+      - ./infrastructure/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infrastructure/observability/grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      # 3001, because the front end owns 3000.
+      - "127.0.0.1:${GRAFANA_HOST_PORT:-3001}:3000"
+    depends_on:
+      - prometheus
+    networks: [balaaca]
+
+  # The outbox depth, read from the database rather than from the worker. A
+  # gauge the worker publishes disappears when the worker does, so the one
+  # moment the queue depth matters is the one moment it is not there.
+  #
+  # Pinned to 0.15.0: --extend.query-path is deprecated upstream in favour of
+  # compiled-in collectors, which cannot express a query about this product's own
+  # table. queries.yaml names the replacement path if the flag ever goes.
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.15.0
+    restart: unless-stopped
+    command:
+      # Only the queries in the file below. No pg_stat_*, no bloat estimates,
+      # no connection counts: none of it is on the dashboard, and a metric
+      # nobody reads is a metric that costs a Pi memory for nothing.
+      - --disable-default-metrics
+      - --extend.query-path=/etc/postgres-exporter/queries.yaml
+    environment:
+      # balaaca_notification_worker, whose RLS policy on notifications is
+      # USING (true), so it sees every tenant's rows. It also carries UPDATE,
+      # which a reader does not need: a read-only sixth role would be better and
+      # would have to be added in three places (see docs/DEPLOYMENT.md).
+      #
+      # A password containing @ : / or ? must be percent-encoded here, because
+      # this is a URI and not a key=value connection string.
+      DATA_SOURCE_NAME: postgresql://balaaca_notification_worker:${BALAACA_DB_WORKER_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+    volumes:
+      - ./infrastructure/observability/postgres-exporter/queries.yaml:/etc/postgres-exporter/queries.yaml:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # No published port. Prometheus reaches it by name on this network, and
+    # nothing else has any business reading it.
+    networks: [balaaca]
+
 volumes:
   postgres-data:
+  prometheus-data:
+  grafana-data:
 
 networks:
   balaaca:

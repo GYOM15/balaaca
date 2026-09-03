@@ -42,6 +42,20 @@ import org.junit.jupiter.api.Test;
  * <p>The distance is measured here instead. A waiver is allowed and must carry a
  * reason, exactly as {@code osv-scanner.toml} does: the point is not zero
  * unnamed columns, it is that nobody adds one silently.
+ *
+ * <p><strong>What counts as naming a column, and why it narrowed.</strong> It
+ * used to be the word appearing anywhere in the main sources, and
+ * {@code customers.blocked} passed that for six months on the strength of
+ * {@code InstantRange blocked}, a local variable in the slot calculator that has
+ * nothing to do with customers. Nothing wrote the column, no provider could
+ * refuse a no-show, and the gate said the schema was covered.
+ *
+ * <p>So the corpus is now the STRING LITERALS of the main sources and nothing
+ * else - which, by ADR-0008, is exactly the SQL this application executes. A
+ * local variable, a record component, a Javadoc paragraph and a log message no
+ * longer stand in for a reader. A column named only inside a SQL string still
+ * counts, and must: that IS how this codebase reads columns, and a test that
+ * demanded a Java field would fail every adapter in the project.
  */
 class SchemaCoverageTest {
 
@@ -58,6 +72,8 @@ class SchemaCoverageTest {
             + "|jsonb|numeric|smallint|citext|inet|bigserial)\\b");
     private static final Pattern ADD_COLUMN = Pattern.compile(
             "^ *ADD COLUMN ([a-z_]+) ", Pattern.MULTILINE);
+    private static final Pattern DROP_COLUMN = Pattern.compile(
+            "DROP COLUMN\\s+(?:IF EXISTS\\s+)?([a-z_]+)");
 
     @Test
     @DisplayName("Every column the schema declares is named by some code, or waived with a reason")
@@ -158,13 +174,75 @@ class SchemaCoverageTest {
     }
 
     /**
-     * Word-boundary, on the whole of the main sources at once. A column named
-     * only inside a SQL string still counts - that IS how this codebase reads
-     * columns, and a test that demanded a Java field would fail every adapter
-     * in the project (see ADR-0008).
+     * Word-boundary, on the SQL the sources carry rather than on the sources.
+     *
+     * <p>The boundary alone was never enough. It has been here since the gate
+     * was written and it caught nothing, because the words that stand in for a
+     * column are whole words: {@code blocked} the local variable is
+     * word-bounded, and so is every field, parameter and Javadoc mention that
+     * happens to spell a column name. Only narrowing WHERE we look separates a
+     * reader from a coincidence.
      */
     private static boolean mentions(String code, String column) {
         return Pattern.compile("\\b" + Pattern.quote(column) + "\\b").matcher(code).find();
+    }
+
+    /**
+     * The string literals of one Java source, and nothing around them.
+     *
+     * <p>Scanned character by character rather than matched with a regular
+     * expression, because the three things that must not be mistaken for a
+     * literal - a comment, a char literal, an escaped quote - are exactly the
+     * three a regular expression gets wrong. A comment carrying a quotation mark
+     * would otherwise re-admit prose to the corpus, which is the whole class of
+     * false cover this narrowing exists to remove.
+     *
+     * <p>An escape becomes a space rather than the character it names, so that
+     * {@code "\nnotes"} cannot spell a column that is not there.
+     */
+    private static String literals(String java) {
+        StringBuilder sql = new StringBuilder();
+        int i = 0;
+        int end = java.length();
+
+        while (i < end) {
+            char c = java.charAt(i);
+
+            if (c == '/' && i + 1 < end && java.charAt(i + 1) == '/') {
+                while (i < end && java.charAt(i) != '\n') {
+                    i++;
+                }
+            } else if (c == '/' && i + 1 < end && java.charAt(i + 1) == '*') {
+                int close = java.indexOf("*/", i + 2);
+                i = close < 0 ? end : close + 2;
+            } else if (c == '\'') {
+                i++;
+                while (i < end && java.charAt(i) != '\'') {
+                    i += java.charAt(i) == '\\' ? 2 : 1;
+                }
+                i++;
+            } else if (java.startsWith("\"\"\"", i)) {
+                int close = java.indexOf("\"\"\"", i + 3);
+                sql.append(java, i + 3, close < 0 ? end : close).append('\n');
+                i = close < 0 ? end : close + 3;
+            } else if (c == '"') {
+                i++;
+                while (i < end && java.charAt(i) != '"' && java.charAt(i) != '\n') {
+                    if (java.charAt(i) == '\\') {
+                        sql.append(' ');
+                        i += 2;
+                    } else {
+                        sql.append(java.charAt(i));
+                        i++;
+                    }
+                }
+                sql.append('\n');
+                i++;
+            } else {
+                i++;
+            }
+        }
+        return sql.toString();
     }
 
     /** Only columns inside a CREATE TABLE body, so plpgsql locals are not mistaken for one. */
@@ -202,6 +280,16 @@ class SchemaCoverageTest {
             while (more.find()) {
                 declared.putIfAbsent(more.group(1), lastTableAltered(sql, more.start()));
             }
+
+            // A dropped column is not declared any more, and demanding a reader
+            // for one would ask the code to name something the database no
+            // longer has. Applied per migration, in order, so a column dropped
+            // and later added back is declared again. Removed only when the
+            // recorded table matches the one being altered.
+            Matcher dropped = DROP_COLUMN.matcher(sql);
+            while (dropped.find()) {
+                declared.remove(dropped.group(1), lastTableAltered(sql, dropped.start()));
+            }
         }
         declared.values().removeIf(java.util.Objects::isNull);
         return declared;
@@ -224,13 +312,14 @@ class SchemaCoverageTest {
         }
     }
 
+    /** Every main source, reduced to the SQL and the strings it carries. */
     private static String allSourceCode() {
         StringBuilder all = new StringBuilder();
         for (Path root : SOURCES) {
             try (Stream<Path> files = Files.walk(root)) {
                 files.filter(p -> p.toString().endsWith(".java"))
                         .filter(p -> p.toString().contains("/src/main/java/"))
-                        .forEach(p -> all.append(read(p)).append('\n'));
+                        .forEach(p -> all.append(literals(read(p))).append('\n'));
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }

@@ -3,28 +3,34 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { ApiError, api } from "@/lib/api";
-import type { ServiceLocation } from "@/lib/types";
+import { succeed } from "@/lib/feedback";
+import type { Fulfilment } from "@/lib/types";
 
 /**
- * The shape of the transaction, from the one control that picks it.
+ * The modes, in the contract's own order.
  *
- * <p>`turnaround_hours` and `location: AT_CUSTOMER` are exclusive, and a
- * request carrying both is answered 400. So the form does not carry the two
- * fields at all: it carries the single shape a provider chose, and this writes
- * whichever of the pair that shape means. A delay typed before changing one's
- * mind is dropped here rather than sent alongside a location that contradicts
- * it - the refused combination is one the form cannot express.
+ * <p>The form is filtered against this rather than forwarded: it fixes the
+ * order a set has none of, and a value that is not one of the three never
+ * reaches the API at all.
  */
-function shapeFrom(formData: FormData): {
-  turnaround_hours: number | undefined;
-  location: ServiceLocation | undefined;
-} {
-  const shape = String(formData.get("fulfilment") ?? "ON_SITE");
-  return {
-    turnaround_hours:
-      shape === "DROP_OFF" ? Number(formData.get("turnaround_hours")) : undefined,
-    location: shape === "AT_CUSTOMER" ? "AT_CUSTOMER" : undefined,
-  };
+const FULFILMENTS: Fulfilment[] = ["ON_SITE", "DROP_OFF", "AT_CUSTOMER"];
+
+/** Every mode the provider ticked. */
+function modesFrom(formData: FormData): Fulfilment[] {
+  const ticked = new Set(formData.getAll("fulfilments").map(String));
+  return FULFILMENTS.filter((mode) => ticked.has(mode));
+}
+
+/**
+ * The editor a save comes back to when it is refused.
+ *
+ * <p>A refusal used to land on the bare list, which drew the sentence above a
+ * catalogue and not above the form it was about - the provider read why the
+ * save failed on a screen with nothing left to correct.
+ */
+function editorUrl(id: string | undefined, refusal?: string): string {
+  const editor = `/dashboard/services?edit=${encodeURIComponent(id ?? "new")}`;
+  return refusal ? `${editor}&error=${refusal}` : editor;
 }
 
 /**
@@ -33,8 +39,25 @@ function shapeFrom(formData: FormData): {
  * <p>Replaced and never patched: the API takes the whole offering, so a field
  * left out of an edit would be a field cleared rather than a field kept. The
  * form therefore carries every one of them, filled from what is stored.
+ *
+ * <p>`location` is not written at all. It is the deprecated spelling of the
+ * same fact and the API refuses the two together, so a form that speaks the
+ * set speaks only the set.
  */
 async function write(formData: FormData, path: string, method: string): Promise<void> {
+  const id = formData.get("id") ? String(formData.get("id")) : undefined;
+  const fulfilments = modesFrom(formData);
+
+  // The page says this before the button is pressed; this says it again for the
+  // post that arrives without a mode anyway. It cannot be left to the API: an
+  // empty array is indistinguishable there from an omitted one, an omitted one
+  // is the deprecated single-location path, and that path reads "no mode" as
+  // ON_SITE. A provider who unticked all three would be told their service was
+  // saved - as something they never asked for.
+  if (fulfilments.length === 0) {
+    redirect(editorUrl(id, "VALIDATION_FAILED"));
+  }
+
   try {
     await api(path, {
       method,
@@ -44,7 +67,14 @@ async function write(formData: FormData, path: string, method: string): Promise<
         duration_minutes: Number(formData.get("duration_minutes")),
         buffer_before_minutes: Number(formData.get("buffer_before_minutes") ?? 0),
         buffer_after_minutes: Number(formData.get("buffer_after_minutes") ?? 0),
-        ...shapeFrom(formData),
+        fulfilments,
+        // The delay is the promise attached to one mode. The API requires it
+        // with DROP_OFF and refuses it without, so a figure typed before
+        // unticking Dépôt is dropped here rather than sent beside a set that
+        // contradicts it.
+        turnaround_hours: fulfilments.includes("DROP_OFF")
+          ? Number(formData.get("turnaround_hours"))
+          : undefined,
         price: {
           // The minor unit is the currency's own. The franc has no
           // subdivision, so what is typed is what is stored - and dividing by a
@@ -63,7 +93,7 @@ async function write(formData: FormData, path: string, method: string): Promise<
     });
   } catch (error) {
     if (error instanceof ApiError) {
-      redirect(`/dashboard/services?error=${error.code ?? "UNKNOWN"}`);
+      redirect(editorUrl(id, error.code ?? "UNKNOWN"));
     }
     throw error;
   }
@@ -72,14 +102,15 @@ async function write(formData: FormData, path: string, method: string): Promise<
 
 export async function createService(formData: FormData): Promise<void> {
   await write(formData, "/v1/service-offerings", "POST");
+  // The catalogue, because the service now has a row in it and reopening the
+  // empty editor is what made a creation look like it had not happened.
+  succeed("/dashboard/services", "SERVICE_CREATED");
 }
 
 export async function replaceService(formData: FormData): Promise<void> {
-  await write(
-    formData,
-    `/v1/service-offerings/${encodeURIComponent(String(formData.get("id")))}`,
-    "PUT",
-  );
+  const id = String(formData.get("id"));
+  await write(formData, `/v1/service-offerings/${encodeURIComponent(id)}`, "PUT");
+  succeed(editorUrl(id), "SERVICE_SAVED");
 }
 
 /**
@@ -95,6 +126,7 @@ export async function replaceService(formData: FormData): Promise<void> {
  */
 export async function replacePerformers(formData: FormData): Promise<void> {
   const id = String(formData.get("id"));
+  const panel = `/dashboard/services?performers=${encodeURIComponent(id)}`;
   try {
     await api(`/v1/service-offerings/${encodeURIComponent(id)}/performers`, {
       method: "PUT",
@@ -104,17 +136,14 @@ export async function replacePerformers(formData: FormData): Promise<void> {
     if (error instanceof ApiError) {
       // The service travels with the refusal: the panel is opened by that
       // parameter, so dropping it would close the list the message is about.
-      redirect(
-        `/dashboard/services?performers=${encodeURIComponent(id)}` +
-          `&performer_error=${error.code ?? "UNKNOWN"}`,
-      );
+      redirect(`${panel}&performer_error=${error.code ?? "UNKNOWN"}`);
     }
     throw error;
   }
   revalidatePath("/dashboard/services");
-  // Re-rendering in place would keep whatever `performer_error` the URL still
-  // carries, showing a refusal over a save that worked.
-  redirect(`/dashboard/services?performers=${encodeURIComponent(id)}`);
+  // Landing on the panel again also drops whatever `performer_error` the URL
+  // still carried, which would show a refusal over a save that worked.
+  succeed(panel, "PERFORMERS_SAVED");
 }
 
 /**
@@ -178,9 +207,9 @@ export async function addServicePhoto(formData: FormData): Promise<void> {
     throw error;
   }
   revalidatePath("/dashboard/services");
-  // Re-rendering in place would keep whatever `photo_error` the URL still
-  // carries, showing a refusal over an upload that worked.
-  redirect(photosUrl(id));
+  // Landing on the panel again also drops whatever `photo_error` the URL still
+  // carried, which would show a refusal over an upload that worked.
+  succeed(photosUrl(id), "PHOTO_ADDED");
 }
 
 /**
@@ -208,5 +237,5 @@ export async function removeServicePhoto(formData: FormData): Promise<void> {
     throw error;
   }
   revalidatePath("/dashboard/services");
-  redirect(photosUrl(id));
+  succeed(photosUrl(id), "PHOTO_REMOVED");
 }

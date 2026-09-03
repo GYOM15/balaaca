@@ -26,4 +26,5 @@ public interface ProviderProfileRepository {
     Optional<String> replaceLogo(String name);
 
     Optional<String> replaceCover(String name);
+
 }

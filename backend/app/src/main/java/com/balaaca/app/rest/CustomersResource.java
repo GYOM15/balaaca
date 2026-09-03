@@ -2,6 +2,7 @@ package com.balaaca.app.rest;
 
 import com.balaaca.app.api.ClienteleApi;
 import com.balaaca.app.api.model.AppointmentStatus;
+import com.balaaca.app.api.model.CustomerBlockingRequest;
 import com.balaaca.app.api.model.CustomerDetailView;
 import com.balaaca.app.api.model.CustomerNotesRequest;
 import com.balaaca.app.api.model.CustomerPage;
@@ -77,6 +78,18 @@ public class CustomersResource implements ClienteleApi {
                 .build();
     }
 
+    @Override
+    @RolesAllowed("dashboard:read")
+    public Response replaceCustomerBlocking(UUID id, CustomerBlockingRequest request) {
+        // Required by the contract, so an absent flag is a malformed body rather
+        // than a default: either reading of it would be a provider's decision
+        // taken for them, and the two readings are opposites.
+        return Response.ok(detail(customers.setBlocked(
+                        CustomerId.of(id), request.getBlocked())))
+                .header("Cache-Control", PublicCaching.NEVER)
+                .build();
+    }
+
     private static CustomerSummaryView summary(CustomerSummary c) {
         return fill(new CustomerSummaryView(), c.id().value(), c.contact().fullName(),
                     c.contact().phone().e164(), c.contact().email(),
@@ -93,6 +106,7 @@ public class CustomersResource implements ClienteleApi {
         view.customerId(c.id().value())
                 .fullName(c.contact().fullName())
                 .phone(c.contact().phone().e164())
+                .blocked(c.blocked())
                 .visits(c.visits())
                 .history(c.history().stream()
                         .map(v -> new CustomerVisitView()

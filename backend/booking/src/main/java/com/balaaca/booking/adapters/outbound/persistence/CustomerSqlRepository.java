@@ -71,7 +71,7 @@ public class CustomerSqlRepository implements CustomerRepository {
     public Optional<CustomerDetail> detail(CustomerId id) {
         List<Object[]> rows = em.createNativeQuery("""
                 SELECT c.id, c.full_name, c.phone_e164, c.email, c.notes,
-                       v.visits, v.last_visit
+                       c.blocked, v.visits, v.last_visit
                   FROM customers c
                   LEFT JOIN LATERAL (
                         SELECT count(*)::int AS visits, max(a.starts_at) AS last_visit
@@ -83,8 +83,9 @@ public class CustomerSqlRepository implements CustomerRepository {
                 CustomerId.of((UUID) r[0]),
                 contact(r[1], r[2], r[3]),
                 Optional.ofNullable((String) r[4]).filter(n -> !n.isBlank()),
-                ((Number) r[5]).intValue(),
-                Optional.ofNullable(r[6]).map(CustomerSqlRepository::instant),
+                (Boolean) r[5],
+                ((Number) r[6]).intValue(),
+                Optional.ofNullable(r[7]).map(CustomerSqlRepository::instant),
                 history(id)));
     }
 
@@ -130,6 +131,23 @@ public class CustomerSqlRepository implements CustomerRepository {
                 .executeUpdate() > 0;
     }
 
+    @Override
+    public boolean setBlocked(CustomerId id, boolean blocked) {
+        // No provider predicate and no membership check: RLS removed every other
+        // salon's row from this statement's reach before it ran, so a customer
+        // id belonging elsewhere updates nothing and the caller is told the same
+        // thing an unknown id is told.
+        return em.createNativeQuery("""
+                UPDATE customers
+                   SET blocked = CAST(:blocked AS boolean),
+                       updated_at = now()
+                 WHERE id = :id
+                """)
+                .setParameter("blocked", blocked)
+                .setParameter("id", id.value())
+                .executeUpdate() > 0;
+    }
+
     private static CustomerSummary toSummary(Object[] r) {
         return new CustomerSummary(
                 CustomerId.of((UUID) r[0]),
@@ -139,8 +157,12 @@ public class CustomerSqlRepository implements CustomerRepository {
     }
 
     private static CustomerContact contact(Object name, Object phone, Object email) {
+        // email is citext, which the driver hands back as its own object and
+        // not as a String. The cast that used to stand here held only because
+        // the column was always null: every address book entry for a customer
+        // who had given an address would have answered 500.
         return new CustomerContact((String) name, new PhoneNumber((String) phone),
-                                   Optional.ofNullable((String) email));
+                                   Optional.ofNullable(email).map(Object::toString));
     }
 
     private static Instant instant(Object value) {

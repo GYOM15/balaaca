@@ -43,6 +43,22 @@ public class BookingFixtures {
 
     public static final String CATEGORY = "coiffure";
 
+    /**
+     * The instant the application believes it is, written so SQL can say it too.
+     *
+     * <p>`%test.balaaca.clock.pinned-to` freezes the injected Clock, which is
+     * what stopped this suite expiring - its dates are chosen for their day of
+     * week and it began failing on 2026-09-02. But PostgreSQL's `now()` is not
+     * pinned by anything, so a fixture that moves an appointment to
+     * `now() + interval '1 hour'` puts it a year and a day into the
+     * application's future, and a test about a deadline then measures nothing.
+     *
+     * <p>Use this wherever a row's time has to be read back BY THE APPLICATION.
+     * Plain `now()` is still right for a column only the database compares -
+     * an invitation's expiry, a suspension's timestamp.
+     */
+    public static final String APPLICATION_NOW = "timestamptz '2026-08-31T08:00:00Z'";
+
     public static final UUID SALON_OFFERING = UUID.fromString("5e111111-0000-0000-0000-000000000001");
     public static final UUID HIDDEN_OFFERING = UUID.fromString("5e222222-0000-0000-0000-000000000001");
     public static final UUID SOLO_OFFERING = UUID.fromString("50103333-0000-0000-0000-000000000001");
@@ -122,10 +138,15 @@ public class BookingFixtures {
         run("""
             INSERT INTO service_offerings
               (id, provider_id, name, duration_minutes, buffer_before_minutes,
-               buffer_after_minutes, price_amount_minor, price_currency) VALUES
-              ('%s','%s','Tresses',60,15,10,150000,'GNF'),
-              ('%s','%s','Coupe',30,0,0,50000,'GNF'),
-              ('%s','%s','Coupe',60,0,0,80000,'GNF')
+               buffer_after_minutes, price_amount_minor, price_currency,
+               -- Named, not defaulted: V044 defaults all three modes to false
+               -- so that an INSERT choosing none is refused rather than quietly
+               -- filed as on-site, and this decor is written straight to the
+               -- table with no create path to fill it in.
+               offers_on_site) VALUES
+              ('%s','%s','Tresses',60,15,10,150000,'GNF',true),
+              ('%s','%s','Coupe',30,0,0,50000,'GNF',true),
+              ('%s','%s','Coupe',60,0,0,80000,'GNF',true)
             """.formatted(SALON_OFFERING, SALON, HIDDEN_OFFERING, HIDDEN, SOLO_OFFERING, SOLO));
         grantEveryCompetence();
     }
@@ -173,14 +194,22 @@ public class BookingFixtures {
         return rows;
     }
 
-    /** One outbox row, as the worker would read it. */
+    /**
+     * One outbox row, as the worker would read it.
+     *
+     * <p>Both addresses and the channel are here because that is exactly what
+     * the worker gets: its role holds this one table, so anything missing from
+     * the row is a fact it can never go and look up.
+     */
     public record NotificationRow(String kind, String recipientKind, String toPhone,
+                                  String toEmail, String preferredChannel,
                                   String dedupeKey, String status, String payload) {
     }
 
     public List<NotificationRow> notifications(UUID providerId) {
         String sql = """
-                SELECT kind, recipient_kind, coalesce(to_phone_e164,''), dedupe_key,
+                SELECT kind, recipient_kind, coalesce(to_phone_e164,''),
+                       coalesce(to_email,''), preferred_channel, dedupe_key,
                        status, payload::text
                   FROM notifications WHERE provider_id = '%s'
                  ORDER BY scheduled_at, kind
@@ -189,7 +218,8 @@ public class BookingFixtures {
         try (Connection c = admin(); Statement s = c.createStatement(); ResultSet rs = s.executeQuery(sql)) {
             while (rs.next()) {
                 rows.add(new NotificationRow(rs.getString(1), rs.getString(2), rs.getString(3),
-                                             rs.getString(4), rs.getString(5), rs.getString(6)));
+                                             rs.getString(4), rs.getString(5), rs.getString(6),
+                                             rs.getString(7), rs.getString(8)));
             }
         } catch (SQLException e) {
             throw new IllegalStateException(e);
@@ -244,6 +274,30 @@ public class BookingFixtures {
                          '%s', now() + interval '7 days')
             """.formatted(SALON, code));
         grantEveryCompetence();
+    }
+
+    /**
+     * How each of this provider's appointments asked to be reached, oldest
+     * first.
+     *
+     * <p>Read off the appointment rather than off the customer, because that is
+     * the claim under test: the same telephone number books twice and the two
+     * bookings must keep their own answers.
+     */
+    public List<String> appointmentChannels(UUID providerId) {
+        List<String> channels = new ArrayList<>();
+        String sql = """
+                SELECT preferred_channel FROM appointments
+                 WHERE provider_id = '%s' ORDER BY starts_at
+                """.formatted(providerId);
+        try (Connection c = admin(); Statement s = c.createStatement(); ResultSet rs = s.executeQuery(sql)) {
+            while (rs.next()) {
+                channels.add(rs.getString(1));
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+        return channels;
     }
 
     /** Every customer phone this provider has stored, as E.164. */

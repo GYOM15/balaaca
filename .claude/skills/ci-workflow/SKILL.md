@@ -13,8 +13,8 @@ description: Use when editing .github/workflows/*.yml or a pom.xml gate (JaCoCo,
 GitHub Actions pipeline that mechanically enforces the Definition of Done on
 every module of the Quarkus modular monolith. A change is not "done" until the
 pipeline is green: build, all test levels, static analysis, security scans, and
-the coverage + mutation gates. No merge into `develop` — and no promotion into
-`main` — without it.
+the coverage + mutation gates. No merge into `develop` - and no promotion into
+`main` - without it.
 
 ## When to use
 
@@ -30,7 +30,7 @@ the coverage + mutation gates. No merge into `develop` — and no promotion into
 
 ## The rules
 
-1. **One pipeline shape, and every PR runs it — including the promotion PR.**
+1. **One pipeline shape, and every PR runs it - including the promotion PR.**
    `develop` is the integration branch and the GitHub default; `main` is the
    release branch and stays releasable. Feature branches are cut from `develop`
    and merged back into `develop` via a PR; `develop` is promoted to `main` at
@@ -51,20 +51,19 @@ the coverage + mutation gates. No merge into `develop` — and no promotion into
    and `openapi-diff` against the spec on the base branch, which fails the build
    on a backward-incompatible change (see `contract-first`).
 4. **All test levels run under one `mvn verify`, no mocked DB.** Unit plus
-   integration (Testcontainers PostgreSQL 18, Redis, Keycloak — NEVER an
+   integration (Testcontainers PostgreSQL 18, Redis, Keycloak - NEVER an
    in-memory or mocked database), jqwik property tests on Money arithmetic and
    slot calculation, ArchUnit rules, and the three mandatory suites: tenant
    non-leak, the IDOR/BOLA matrix, and booking concurrency (both the named-staff
    and the any-available-staff test). Testcontainers needs a Docker daemon on the
-   runner; do not swap it for H2 to "speed up" CI — H2 has neither RLS nor
+   runner; do not swap it for H2 to "speed up" CI - H2 has neither RLS nor
    `EXCLUDE USING gist`, so the suite would be green while the product is broken
    (see `backend-tests`).
 5. **Coverage gate + mutation gate both block the merge, scoped to the core.**
    JaCoCo enforces the line/branch threshold at `verify` (`mvn` fails, not a
    report you read later). PIT enforces the mutation-score threshold. Both cover
    `domain/` and `application/` in the seven contexts **plus** the flat
-   shared-kernel packages `com/balaaca/sharedkernel/{money,time,logging}/**` —
-   shared-kernel has no `domain/` segment, so a `com/balaaca/*/domain/**`
+   shared-kernel packages `com/balaaca/sharedkernel/{money,time,logging}/**` - shared-kernel has no `domain/` segment, so a `com/balaaca/*/domain/**`
    pattern alone silently drops `Money` and `LocalWindows` out of both gates.
    Adapters and generated code are excluded, because gating adapters buys
    plumbing tests that assert a mapper copies a field. Lowering either threshold
@@ -73,24 +72,22 @@ the coverage + mutation gates. No merge into `develop` — and no promotion into
    local ruleset committed to the repo** (`semgrep scan --config
    .semgrep/ --error`), never `semgrep ci` with a `SEMGREP_APP_TOKEN`: the App
    flow needs a hosted account, and a token that is absent on a fork or a fresh
-   clone turns the gate into a silent no-op. **SonarQube is not used at all** —
-   its quality gate requires a paid hosted instance, so it has no place in this
+   clone turns the gate into a silent no-op. **SonarQube is not used at all** - its quality gate requires a paid hosted instance, so it has no place in this
    pipeline. No `continue-on-error` on any analysis job.
 7. **Security scans block, four of them, all keyless.** gitleaks for secrets,
    run as its **MIT-licensed binary** rather than the action, which bills
-   organisation accounts; **OSV-Scanner** for vulnerable dependencies — keyless
+   organisation accounts; **OSV-Scanner** for vulnerable dependencies - keyless
    and it resolves transitive Maven dependencies, unlike OWASP Dependency-Check,
    which throttles to a multi-minute NVD warm-up without an API key and whose
    13.0.0 release fails outright when the key is absent; **Trivy** against the
    built image, failing on HIGH/CRITICAL; **Syft** to emit the SBOM as a build
-   artifact. Secrets never live in the repo — in CI they come from GitHub
+   artifact. Secrets never live in the repo - in CI they come from GitHub
    Actions repository secrets referenced by name, and at runtime from injected
    env or secret files on the VPS at deploy time.
 8. **Trivy runs with `ignore-unfixed: true` and a committed, expiring
    `.trivyignore`.** A single HIGH in the base image with no upstream fix would
    otherwise block every merge in the repository indefinitely, and the only
-   escapes then available are lowering the severity or `continue-on-error` —
-   both of which delete the gate. So: `ignore-unfixed: true` keeps the gate on
+   escapes then available are lowering the severity or `continue-on-error` - both of which delete the gate. So: `ignore-unfixed: true` keeps the gate on
    findings someone can actually act on, and anything else that must be waived
    goes in `.trivyignore`, where **every entry carries a justification comment
    and an `exp:` date**. Trivy stops honouring the entry on that date, and a
@@ -104,23 +101,22 @@ the coverage + mutation gates. No merge into `develop` — and no promotion into
    `linux/arm64`: a VPS is the real target and a Raspberry Pi is only a
    transitional first step, so the image must run on both without any design
    decision bending to a Pi's resources. Push with two tags: the git SHA and
-   `latest` — the SHA is the immutable one deploys pin.
+   `latest` - the SHA is the immutable one deploys pin.
 10. **The image job boots the image, and the boot must be able to succeed.**
     Unit and integration tests run in the test profile, so a production-only
-    configuration mistake — a required environment variable with no default, a
-    missing OIDC URL — is invisible to every one of them and surfaces at deploy.
+    configuration mistake - a required environment variable with no default, a
+    missing OIDC URL - is invisible to every one of them and surfaces at deploy.
     A smoke boot that cannot reach readiness proves nothing, so give it what
     production gives it: a **user-defined Docker network** (never the deprecated
     `--link`, which does not resolve on a modern daemon), a throwaway PostgreSQL
     with `QUARKUS_DATASOURCE_USERNAME` / `QUARKUS_DATASOURCE_PASSWORD` matching
     it, `QUARKUS_FLYWAY_MIGRATE_AT_START=true` so the schema exists, and an
-    **explicit test OIDC issuer** — a Keycloak container on the same network —
-    because Quarkus OIDC resolves its discovery document at startup and fails
+    **explicit test OIDC issuer** - a Keycloak container on the same network - because Quarkus OIDC resolves its discovery document at startup and fails
     without one. Then wait for `/q/health/ready` before scanning or pushing.
 11. **Flyway migrations never run against a shared or production database from
     CI.** The real cluster migration is a deploy step. CI applies migrations in
     two safe places: against the Testcontainers PostgreSQL during integration
-    tests, and against the throwaway database of the smoke boot in rule 10 — a
+    tests, and against the throwaway database of the smoke boot in rule 10 - a
     disposable container that exists for ninety seconds is not a database anyone
     can lose. What is forbidden is pointing `flyway:migrate` at a database
     somebody else is using.
@@ -135,7 +131,7 @@ the coverage + mutation gates. No merge into `develop` — and no promotion into
     and a `pre-commit` hook runs gitleaks; a `pre-push` hook guards both `main`
     and `develop` against direct pushes and rejects a branch name that breaks
     the naming rules. `branch-naming` holds the one authoritative copy of that
-    hook — do not restate a second, divergent version here or anywhere else.
+    hook - do not restate a second, divergent version here or anywhere else.
     All of it is client-side and `--no-verify` walks past every line of it. CI
     does not lint commit messages and does not verify signatures, so **do not
     document commit signing or message format as an enforced gate** (see
@@ -152,7 +148,7 @@ the coverage + mutation gates. No merge into `develop` — and no promotion into
 15. **Day-1 target is a VPS + containers.** Deploy pulls the SHA-tagged image on
     the VPS and restarts the service behind a health check
     (`/q/health/ready`, bounded retries). No Kubernetes and no Terraform until a
-    concrete scaling need justifies them — don't add them to the pipeline
+    concrete scaling need justifies them - don't add them to the pipeline
     speculatively.
 
 ## Anti-patterns
@@ -224,7 +220,7 @@ the coverage + mutation gates. No merge into `develop` — and no promotion into
 
 ## Minimal correct example
 
-`.github/workflows/ci.yml` — the gate chain:
+`.github/workflows/ci.yml` - the gate chain:
 
 ```yaml
 name: ci
@@ -346,7 +342,7 @@ jobs:
             --push -t "$IMAGE:${{ github.sha }}" -t "$IMAGE:latest" .
 ```
 
-`.trivyignore` — a waiver is a dated decision, not a hole:
+`.trivyignore` - a waiver is a dated decision, not a hole:
 
 ```text
 # libxml2 in the UBI-minimal base. No fixed RPM published upstream yet; the API
@@ -400,11 +396,11 @@ and never restates it.
 
 ## Sibling skills
 
-- `branch-naming` — `develop` as integration branch and default, `main` as the release branch, and the one authoritative `pre-push` hook.
-- `commit-style` — the house commit format, enforced by a local hook only and never by CI.
-- `backend-tests` — the test levels and the coverage/mutation scoping this pipeline enforces.
-- `contract-first` — the single OpenAPI document this build lints and diffs.
-- `backend-architecture` — the ArchUnit rules the `verify` step runs.
-- `booking-integrity` — the concurrency suites that must run against real PostgreSQL.
-- `multi-tenant-rls` — the tenant non-leak and IDOR suites the pipeline blocks on.
-- `money-currency` / `temporal-modelling` / `idempotency-concurrency` — the invariants behind the jqwik and PIT gates.
+- `branch-naming` - `develop` as integration branch and default, `main` as the release branch, and the one authoritative `pre-push` hook.
+- `commit-style` - the house commit format, enforced by a local hook only and never by CI.
+- `backend-tests` - the test levels and the coverage/mutation scoping this pipeline enforces.
+- `contract-first` - the single OpenAPI document this build lints and diffs.
+- `backend-architecture` - the ArchUnit rules the `verify` step runs.
+- `booking-integrity` - the concurrency suites that must run against real PostgreSQL.
+- `multi-tenant-rls` - the tenant non-leak and IDOR suites the pipeline blocks on.
+- `money-currency` / `temporal-modelling` / `idempotency-concurrency` - the invariants behind the jqwik and PIT gates.

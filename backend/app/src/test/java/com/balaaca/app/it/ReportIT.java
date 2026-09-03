@@ -71,7 +71,7 @@ class ReportIT {
     void aStrangerCannotReport() {
         // The capability is the guard. Without a reference there is no button,
         // which is what keeps a rival from pressing it all night.
-        report("AAAAAAAAAAAAAAAAAAAAAA", "{\"reason\":\"OTHER\"}", 404);
+        report("SFA-7K2MQP", "{\"reason\":\"OTHER\"}", 404);
     }
 
     @Test

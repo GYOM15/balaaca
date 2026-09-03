@@ -11,8 +11,8 @@ description: Guards the anti-double-booking invariant. Use when creating, resche
 > CANONICAL.md disagree, CANONICAL.md wins and this file is a bug.
 
 Two customers must never hold the same slot. This is Balaaca's single most
-critical invariant, and it is guaranteed by PostgreSQL — an `EXCLUDE USING
-gist` constraint on the `appointments` table — not by application code. Every
+critical invariant, and it is guaranteed by PostgreSQL - an `EXCLUDE USING
+gist` constraint on the `appointments` table - not by application code. Every
 other rule here exists to keep that constraint the *only* thing standing
 between a race and a double booking: a concrete `staff_id`, a slot recomputed
 server-side, a range that can never be empty, one transaction, and a `23P01`
@@ -43,8 +43,8 @@ it and points back here.
 1. **The database guarantees non-overlap; application code never does.** The
    `appointments` table carries an `EXCLUDE USING gist` constraint over
    `(provider_id, staff_id, blocked_range)`, partial on the active statuses.
-   It holds for every code path — REST, chatbot, an admin back-office, a
-   Flyway data fix, a `psql` session — for any number of application
+   It holds for every code path - REST, chatbot, an admin back-office, a
+   Flyway data fix, a `psql` session - for any number of application
    instances, at the default `READ COMMITTED` isolation, with no lock
    discipline for anyone to forget. A pre-`SELECT` "is this slot free?" is a
    *user-experience* check that produces a friendly message; it is never the
@@ -79,8 +79,7 @@ it and points back here.
 4. **The buffers are frozen into columns, and a `CHECK` pins the
    derivation.** `buffer_before_minutes` and `buffer_after_minutes` are
    copied from the `ServiceOffering` at booking time,
-   `NOT NULL CHECK (… >= 0)`. A `CHECK` constraint *may* call `make_interval`
-   — verified — even though a generated column may not, and that asymmetry is
+   `NOT NULL CHECK (… >= 0)`. A `CHECK` constraint *may* call `make_interval` - verified - even though a generated column may not, and that asymmetry is
    the whole reason for this shape. So
    `CONSTRAINT ck_appointments_block_derived CHECK (blocked_from = starts_at -
    make_interval(mins => buffer_before_minutes) AND blocked_until = ends_at +
@@ -92,8 +91,8 @@ it and points back here.
    composite foreign key declares the matching `UNIQUE`.** `uuid =` has no
    GiST operator class without `CREATE EXTENSION IF NOT EXISTS btree_gist`.
    And a `FOREIGN KEY (provider_id, staff_id) REFERENCES provider_staff
-   (provider_id, id)` fails on a fresh database with `42830` — "there is no
-   unique constraint matching the given keys" — unless `provider_staff`
+   (provider_id, id)` fails on a fresh database with `42830` - "there is no
+   unique constraint matching the given keys" - unless `provider_staff`
    declares `UNIQUE (provider_id, id)`. The same applies to
    `service_offerings`, `customers`, and to `appointments` itself, which
    `notifications` references the same way. Verified; a primary key on `id`
@@ -112,7 +111,7 @@ it and points back here.
 8. **"Any available staff" is resolved server-side to one concrete staff
    member before the insert.** The customer may ask for no particular person;
    the booking service produces an *ordered list* of qualified, available
-   `ProviderStaff` — least-loaded that day first, ties broken by id — and
+   `ProviderStaff` - least-loaded that day first, ties broken by id - and
    books against the head of it. The ordering is deterministic so it is
    testable, and it is a hint, not a guarantee: correctness still comes from
    the constraint.
@@ -122,7 +121,7 @@ it and points back here.
    same least-loaded candidate, so five simultaneous "any available staff"
    requests at a salon with five free chairs produce one success and four
    spurious `409`s while four chairs sit empty. Therefore: if the client named
-   the staff member, `23P01` maps to `409 SLOT_UNAVAILABLE` immediately — the
+   the staff member, `23P01` maps to `409 SLOT_UNAVAILABLE` immediately - the
    customer asked for that person and that person is busy. If the *server*
    chose, catch `23P01`, discard the failed transaction, and retry the whole
    unit of work in a **new** transaction against the next eligible candidate,
@@ -134,7 +133,7 @@ it and points back here.
     transaction, take `duration_minutes`, `buffer_before_minutes`,
     `buffer_after_minutes` from it, and derive `ends_at`, `blocked_from`, and
     `blocked_until` from `starts_at`. Any `ends_at`, `duration_minutes`, or
-    `blocked_range` in the request body is ignored — accepting one lets a
+    `blocked_range` in the request body is ignored - accepting one lets a
     client shrink its own footprint and book inside someone else's
     appointment. The request carries `starts_at`, `service_offering_id`, and
     optionally `staff_id`; nothing else about time.
@@ -156,7 +155,7 @@ it and points back here.
     `(provider_id, phone_e164)` key; insert the appointment; insert the
     `notifications` outbox rows; write the `audit_logs` row. No SMS, no push,
     no HTTP call, no Redis round-trip for business data happens between
-    `BEGIN` and `COMMIT` — the notification rows are the transactional
+    `BEGIN` and `COMMIT` - the notification rows are the transactional
     handoff, drained later by the `notification-worker`.
 13. **Availability validation and the exclusion constraint answer different
     questions.** Availability says "the provider is open and this service can
@@ -172,7 +171,7 @@ it and points back here.
     hash: equal returns the stored appointment and the original `201` body;
     different is `422 IDEMPOTENCY_KEY_REUSED`, because the same key with a
     different body previously returned someone else's appointment and reported
-    success. The conflict target is **explicit** — naming
+    success. The conflict target is **explicit** - naming
     `(provider_id, idempotency_key)` arbitrates only that index, so a `23P01`
     exclusion violation still surfaces as an error and rule 9 can act on it.
     Never `persist` + `flush` + catch for this path: it conflates the two
@@ -180,8 +179,8 @@ it and points back here.
     key lives for the life of the appointment row; there is no 24-hour expiry,
     because nothing implements one.
 15. **SQLSTATE `23P01` maps to `409` with a stable code.** The repository
-    inspects the `SQLState` of the cause chain and — doing no further database
-    work, because the transaction is already rollback-only — throws
+    inspects the `SQLState` of the cause chain and - doing no further database
+    work, because the transaction is already rollback-only - throws
     `SlotUnavailableException`, which extends the single `DomainException`
     base in `com.balaaca.sharedkernel.error` and carries `SLOT_UNAVAILABLE`.
     `platform-api`'s one `ExceptionMapper<DomainException>` renders RFC 7807
@@ -193,12 +192,12 @@ it and points back here.
     it can expire mid-insert, it is lost when Redis restarts, and it is
     unenforceable for any writer that does not participate. An advisory lock
     or a `FOR UPDATE` on some parent row makes correctness depend on every
-    future code path taking the same lock in the same order — one omission
+    future code path taking the same lock in the same order - one omission
     and the invariant is gone, silently. The constraint needs no cooperation
     from anybody. (`FOR UPDATE` on genuinely hot rows for *other* reasons
     remains a normal tool; see `idempotency-concurrency`.)
 17. **`provider_id` is in the exclusion key for selectivity and defence in
-    depth — not to prevent a cross-tenant leak, which cannot happen anyway.**
+    depth - not to prevent a cross-tenant leak, which cannot happen anyway.**
     Be accurate about this, because the wrong reason teaches the wrong
     lesson. `staff_id` is a globally unique `uuid` bound to exactly one
     provider by the composite foreign key of rule 5, so `staff_id WITH =`
@@ -206,8 +205,8 @@ it and points back here.
     `provider_id WITH =` regardless: it is the leading key of the GiST index
     and it makes the tenant scope of the constraint self-evident to anyone
     reading the DDL. The separate and genuinely important observation is that
-    **constraint enforcement is not subject to row-level security** — a
-    conflict can be raised against a row the session cannot `SELECT` — and
+    **constraint enforcement is not subject to row-level security** - a
+    conflict can be raised against a row the session cannot `SELECT` - and
     that is safe here precisely because a cross-tenant conflict is impossible
     to construct in the first place. There is no existence oracle.
 18. **The state machine is a set of atomic conditional `UPDATE`s.**
@@ -215,7 +214,7 @@ it and points back here.
     CANCELLED`; terminal states are terminal. Each transition is `UPDATE
     appointments SET status = :next, version = version + 1 WHERE id = :id AND
     status = :expected AND version = :v`, and the affected-row count decides
-    the outcome — never an `if (appointment.status() == EXPECTED)` after a
+    the outcome - never an `if (appointment.status() == EXPECTED)` after a
     separate read. Because the constraint's `WHERE` is partial on
     `('PENDING','CONFIRMED')`, cancelling releases the slot as a side effect
     of the same `UPDATE`, with no second statement and no window in which the
@@ -236,7 +235,7 @@ it and points back here.
     `ServiceOffering` price read inside the transaction is copied into
     `customer_price_amount_minor` / `customer_price_currency`, exposed in Java
     as `customerPrice()`. A later price change never mutates a past booking.
-    The name says whose price it is — what the customer was quoted — so a
+    The name says whose price it is - what the customer was quoted - so a
     platform fee or a payout figure can be added later as new columns without
     making historical rows ambiguous.
 21. **Two concurrency tests are mandatory, both against real PostgreSQL.**
@@ -244,10 +243,10 @@ it and points back here.
     signed test JWT so the interceptor chain, the connection-level RLS
     binding, and the request scope all behave as in production.
     (a) *Same staff:* N parallel threads booking the identical slot with
-    *distinct* idempotency keys — exactly one `201`, exactly N-1
+    *distinct* idempotency keys - exactly one `201`, exactly N-1
     `409 SLOT_UNAVAILABLE`, exactly one active row.
     (b) *Any staff:* a provider with N active staff, N concurrent "any
-    available staff" requests for the same instant — exactly N `201`s, on N
+    available staff" requests for the same instant - exactly N `201`s, on N
     *distinct* `staff_id`s, proving rule 9's retry works. Add a jqwik property
     test asserting that every slot the calculator proposes inserts without
     `23P01`, which is what keeps rule 11 honest. Never H2, never a mocked
@@ -255,7 +254,7 @@ it and points back here.
 
 ## Anti-patterns
 
-- `blocked_from = blocked_until` allowed by the schema — the generated
+- `blocked_from = blocked_until` allowed by the schema - the generated
   `tstzrange` is empty, `&&` is false against every other range, and an
   unbounded number of appointments insert at the same instant while the
   database reports success (verified on PostgreSQL 18.6) → state
@@ -263,100 +262,96 @@ it and points back here.
   `ck_appointments_block_covers` and `duration_minutes > 0` explicitly
   (rule 3).
 - `blocked_range tstzrange GENERATED ALWAYS AS (tstzrange(starts_at -
-  make_interval(mins => …), …)) STORED` — PostgreSQL raises `42P17` and the
+  make_interval(mins => …), …)) STORED` - PostgreSQL raises `42P17` and the
   migration never runs → store `blocked_from`/`blocked_until` as columns and
   generate only the range (rule 2).
 - Relying on "`duration_minutes > 0`, therefore the range is never empty"
-  instead of writing the checks — a Flyway data fix or a future default
+  instead of writing the checks - a Flyway data fix or a future default
   reopens the hole with no error anywhere → each `CHECK` is stated (rule 3).
 - `FOREIGN KEY (provider_id, staff_id) REFERENCES provider_staff (provider_id,
-  id)` with `provider_staff` declaring only `PRIMARY KEY (id)` — the migration
+  id)` with `provider_staff` declaring only `PRIMARY KEY (id)` - the migration
   fails on a fresh database with `42830` (verified) → add
   `UNIQUE (provider_id, id)` to `provider_staff`, `service_offerings`,
   `customers` and `appointments` (rule 5).
 - `CREATE TABLE appointments (… EXCLUDE USING gist (provider_id WITH =, …))`
-  with no `CREATE EXTENSION btree_gist` ahead of it — `uuid =` has no GiST
+  with no `CREATE EXTENSION btree_gist` ahead of it - `uuid =` has no GiST
   operator class and the migration fails on a fresh database → install the
   extension first (rule 5).
 - Mapping every `23P01` straight to `409`, including the server-chosen staff
-  path — five simultaneous requests at a five-chair salon return one booking
+  path - five simultaneous requests at a five-chair salon return one booking
   and four "fully booked" errors with four chairs free → retry the
   server-chosen path against the next candidate in a new transaction
   (rule 9).
-- Retrying the failed transaction instead of opening a new one — it is
+- Retrying the failed transaction instead of opening a new one - it is
   already marked rollback-only and every subsequent statement fails → the
   retry loop sits outside the transaction and each attempt starts its own
   (rule 9).
 - `entityManager.persist(entity); entityManager.flush();` inside a
-  `try/catch` as the idempotent insert — a replayed key and a genuine double
+  `try/catch` as the idempotent insert - a replayed key and a genuine double
   booking arrive as two different SQLSTATEs through the same catch, and the
   transaction is rollback-only even for the harmless replay → `INSERT … ON
   CONFLICT (provider_id, idempotency_key) DO NOTHING` then `SELECT`
   (rule 14).
-- `ON CONFLICT DO NOTHING` with **no** conflict target — an unqualified `DO
+- `ON CONFLICT DO NOTHING` with **no** conflict target - an unqualified `DO
   NOTHING` also arbitrates the exclusion constraint, so a real double booking
   is swallowed and reported to the client as a successful replay → always
   name `(provider_id, idempotency_key)` (rule 14).
-- An `idempotency_key` column with no `idempotency_request_hash` — the same
+- An `idempotency_key` column with no `idempotency_request_hash` - the same
   key sent with a different service or a different time returns the first
   appointment and reports success, so the customer is told they booked
   something they did not → store the hash, `422 IDEMPOTENCY_KEY_REUSED` on a
   mismatch (rule 14).
 - `if (repo.hasOverlap(staffId, from, to)) throw …; repo.insertIfAbsent(a);`
-  as the only guard — both racers read "free" and both insert → the exclusion
+  as the only guard - both racers read "free" and both insert → the exclusion
   constraint decides; keep the pre-check only for the friendly message
   (rule 1).
 - A nullable `staff_id` with `EXCLUDE … (coalesce(staff_id, provider_id) WITH
-  =, …)` — an unassigned booking never compares against a named one and the
+  =, …)` - an unassigned booking never compares against a named one and the
   provider is double-booked with a `201` returned → `staff_id NOT NULL`,
   `OWNER` row on provider creation, staff resolved before insert (rules 6, 7,
   8).
 - Widening the busy ranges by the requested service's buffers before
-  comparing — each stored `blocked_range` already contains its own buffers, so
+  comparing - each stored `blocked_range` already contains its own buffers, so
   the buffer is applied twice and real free time disappears from the public
   page → widen the candidate only (rule 11).
-- Comparing a raw `[starts_at, ends_at)` candidate against busy ranges —
-  the API advertises a slot the constraint immediately rejects with `23P01`
+- Comparing a raw `[starts_at, ends_at)` candidate against busy ranges - the API advertises a slot the constraint immediately rejects with `23P01`
   → widen the candidate by the requested service's buffers (rule 11).
-- `redisLock("slot:" + staffId + ":" + startsAt)` around the insert — outside
+- `redisLock("slot:" + staffId + ":" + startsAt)` around the insert - outside
   the transaction, expirable, lost on restart, unenforced for any other
   writer → delete it; the constraint is the guarantee (rule 16).
-- `SELECT … FROM providers WHERE id = :p FOR UPDATE` to serialise bookings —
-  correctness now depends on every future path taking the same lock, and
+- `SELECT … FROM providers WHERE id = :p FOR UPDATE` to serialise bookings - correctness now depends on every future path taking the same lock, and
   serialises the whole provider besides → remove it (rule 16).
 - Persisting `ends_at` from the request body, or trusting a client-sent
-  `duration_minutes` — a client shrinks its own footprint and books inside an
+  `duration_minutes` - a client shrinks its own footprint and books inside an
   existing appointment → recompute from the `ServiceOffering` (rule 10).
-- `blocked_range` built with `'[]'` bounds — back-to-back appointments at
+- `blocked_range` built with `'[]'` bounds - back-to-back appointments at
   10:00 conflict with each other for no reason → `'[)'` (rule 2).
-- An exclusion constraint with no `WHERE` clause — a cancelled appointment
+- An exclusion constraint with no `WHERE` clause - a cancelled appointment
   keeps blocking its slot forever → partial on
   `status IN ('PENDING','CONFIRMED')` (rules 1, 18).
 - Justifying `provider_id WITH =` as the thing that stops a cross-tenant
-  comparison — it is not, since `staff_id` is globally unique and bound to one
+  comparison - it is not, since `staff_id` is globally unique and bound to one
   provider by a composite FK; the false reason survives until someone tests it
   and then the real reasons get dropped too → keep the key, state selectivity
   and defence in depth (rule 17).
-- Sending the confirmation SMS inside the booking transaction — the gateway's
+- Sending the confirmation SMS inside the booking transaction - the gateway's
   latency becomes lock-hold time, and a rollback after a sent message is a lie
   to the customer → insert a `notifications` row and commit (rule 12).
 - `appointment.setStatus(CANCELLED); repo.save(appointment);` after a separate
-  read — last writer wins silently and a confirm can overwrite a cancel →
+  read - last writer wins silently and a confirm can overwrite a cancel →
   conditional `UPDATE … WHERE status = :expected AND version = :v`, check the
   count (rule 18).
-- Rescheduling as `DELETE` + `INSERT` — new id, broken audit trail, and a
+- Rescheduling as `DELETE` + `INSERT` - new id, broken audit trail, and a
   window where a third party takes the freed slot → conditional `UPDATE` of
   the time columns (rule 19).
 - Mapping `23P01` to `500`, or to a generic `409` with a free-text message
-  and no code — clients cannot distinguish "slot taken" from any other
+  and no code - clients cannot distinguish "slot taken" from any other
   conflict → RFC 7807 with `SLOT_UNAVAILABLE` (rule 15).
-- A conflict message reading "already booked by Aminata for a Coupe Homme" —
-  it leaks another customer's data → a neutral message (rule 15).
-- A booking test on H2 or against a mocked repository — H2 has no
+- A conflict message reading "already booked by Aminata for a Coupe Homme" - it leaks another customer's data → a neutral message (rule 15).
+- A booking test on H2 or against a mocked repository - H2 has no
   `EXCLUDE USING gist`, so the test proves nothing about the invariant →
   Testcontainers PostgreSQL 18 (rule 21).
-- Shipping the any-staff retry with only the same-staff concurrency test —
-  the bug rule 9 fixes is invisible to test (a) → both tests, always
+- Shipping the any-staff retry with only the same-staff concurrency test - the bug rule 9 fixes is invisible to test (a) → both tests, always
   (rule 21).
 
 ## Minimal correct example
@@ -485,7 +480,7 @@ The domain computes the slot from the frozen buffers, mirroring
 `ck_appointments_block_derived` exactly:
 
 ```java
-// booking/domain — framework-free.
+// booking/domain - framework-free.
 public record BookedSlot(Instant startsAt, Instant endsAt,
                          int bufferBeforeMinutes, int bufferAfterMinutes) {
 
@@ -666,7 +661,7 @@ public final class SlotUnavailableException extends DomainException {
 }
 ```
 
-The state machine as one conditional statement — cancelling frees the slot
+The state machine as one conditional statement - cancelling frees the slot
 because the constraint is partial:
 
 ```java
@@ -732,29 +727,29 @@ class AppointmentConcurrencyIT {   // Testcontainers PostgreSQL 18
 
 ## Sibling skills
 
-- `backend-architecture` — why `BookedSlot` and the state machine live in
+- `backend-architecture` - why `BookedSlot` and the state machine live in
   `booking/domain` while the `23P01` translation lives in the persistence
   adapter, and why `shared-kernel` is the one context exempt from the
   four-layer rule.
-- `idempotency-concurrency` — the `Idempotency-Key` header, the request hash,
+- `idempotency-concurrency` - the `Idempotency-Key` header, the request hash,
   `IDEMPOTENCY_KEY_REUSED`, and the `version` column behind the conditional
   `UPDATE`s.
-- `multi-tenant-rls` — `provider_id` is ambient from `TenantContext`, the
+- `multi-tenant-rls` - `provider_id` is ambient from `TenantContext`, the
   `app.provider_id` GUC is bound by a connection-level hook rather than by an
   interceptor, and the composite foreign keys make a cross-tenant reference
   impossible.
-- `temporal-modelling` — `starts_at` as `timestamptz`, availability rules in
+- `temporal-modelling` - `starts_at` as `timestamptz`, availability rules in
   the provider's IANA zone including windows that wrap past midnight, the
   injected `Clock`, and the slot tests that must also run under a DST zone.
-- `outbox-messaging` — the `notifications` rows inserted in the booking
+- `outbox-messaging` - the `notifications` rows inserted in the booking
   transaction, their `scheduled_at` due column, and the dedupe key that embeds
   the target instant.
-- `backend-tests` — Testcontainers PostgreSQL 18 is mandatory here; both
+- `backend-tests` - Testcontainers PostgreSQL 18 is mandatory here; both
   concurrency tests and the mutation gate on `booking` are not optional.
-- `backend-exceptions` — `SlotUnavailableException` as a subclass of the one
+- `backend-exceptions` - `SlotUnavailableException` as a subclass of the one
   `DomainException` base, mapped once at the boundary.
-- `platform-api` — the published error-code catalogue containing
+- `platform-api` - the published error-code catalogue containing
   `SLOT_UNAVAILABLE` and `IDEMPOTENCY_KEY_REUSED`, and the `/v1` route
   prefix with snake_case wire fields.
-- `money-currency` — the frozen `customer_price_amount_minor` /
+- `money-currency` - the frozen `customer_price_amount_minor` /
   `customer_price_currency` pair and the `Money` type behind `customerPrice()`.

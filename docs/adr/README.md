@@ -1,28 +1,28 @@
-# Decisions d'architecture
+# Architecture decisions
 
-Un ADR enregistre **une** decision structurante, son contexte et ses
-consequences. Il n'est jamais reecrit : une decision qui change donne un nouvel
-ADR qui remplace l'ancien, et l'ancien passe en statut `Remplace par ADR-XXXX`.
+An ADR records **one** structural decision, its context and its consequences.
+It is never rewritten: a decision that changes gets a new ADR that supersedes
+the old one, and the old one moves to status `Superseded by ADR-XXXX`.
 
-Format : Contexte, Decision, Consequences, A revisiter quand.
-Nommage : `NNNN-titre-en-kebab-case.md`, numerotation continue.
+Format: Context, Decision, Consequences, Revisit when.
+Naming: `NNNN-title-in-kebab-case.md`, continuous numbering.
 
-| # | Decision | Statut |
+| # | Decision | Status |
 |---|---|---|
-| [0001](0001-monolithe-modulaire-hexagonal.md) | Monolithe modulaire hexagonal plutot que microservices | Accepte |
-| [0002](0002-resolution-du-tenant-en-base.md) | Le tenant est resolu en base, pas depuis un claim JWT | Accepte, amende |
-| [0003](0003-exclusion-postgresql-contre-la-double-reservation.md) | Contrainte d'exclusion PostgreSQL contre la double reservation | Accepte, amende |
-| [0004](0004-outbox-en-table-sans-broker.md) | Outbox en table drainee par un worker, sans broker | Accepte |
-| [0005](0005-perimetre-du-paiement.md) | Aucun paiement construit maintenant, coutures preparees | Accepte |
-| [0006](0006-modele-de-branches.md) | `main` + `develop` + branches de feature | Accepte |
-| [0007](0007-modelisation-du-temps.md) | Instants en UTC, regles recurrentes en heure locale | Accepte |
-| [0008](0008-sql-natif-sans-mapping-orm.md) | SQL natif dans les adaptateurs, sans mapping ORM | Accepte |
-| [0009](0009-inscription-autonome-d-un-prestataire.md) | Inscription autonome : creer un tenant avant qu'un tenant existe | Accepte |
+| [0001](0001-hexagonal-modular-monolith.md) | A hexagonal modular monolith rather than microservices | Accepted |
+| [0002](0002-tenant-resolved-in-the-database.md) | The tenant is resolved in the database, not from a JWT claim | Accepted, amended |
+| [0003](0003-postgresql-exclusion-against-double-booking.md) | A PostgreSQL exclusion constraint against double booking | Accepted, amended |
+| [0004](0004-outbox-table-without-a-broker.md) | An outbox table drained by a worker, with no broker | Accepted |
+| [0005](0005-scope-of-payment.md) | No payment built now, the seams prepared | Accepted |
+| [0006](0006-branch-model.md) | `main` + `develop` + feature branches | Accepted |
+| [0007](0007-modelling-time.md) | Instants in UTC, recurring rules in local time | Accepted |
+| [0008](0008-native-sql-without-orm-mapping.md) | Native SQL in the adapters, with no ORM mapping | Accepted |
+| [0009](0009-self-service-provider-registration.md) | Self-service registration: creating a tenant before a tenant exists | Accepted |
 
-## Amendement plutot que remplacement
+## Amendment rather than supersession
 
-Un ADR n'est normalement jamais reecrit. Les ADR 0002 et 0003 font exception :
-ils ont ete amendes le jour meme de leur redaction, apres une revue
-adversariale et avant toute implementation, alors qu'aucun code n'en dependait.
-Chacun conserve en tete la trace de ce qui a ete corrige et pourquoi. Un ADR
-sur lequel du code repose est remplace, jamais amende.
+An ADR is normally never rewritten. ADR 0002 and 0003 are the exception: they
+were amended on the very day they were written, after an adversarial review and
+before any implementation, while no code depended on them. Each keeps at its top
+the record of what was corrected and why. An ADR that code rests on is
+superseded, never amended.

@@ -30,7 +30,7 @@ INSERT INTO provider_categories (id, slug, label_fr, icon, sort_order) VALUES
     ('ca7e0001-0000-4000-8000-000000000006','maquillage',                'Maquillage',                'brush',      60),
     ('ca7e0001-0000-4000-8000-000000000007','spa-massage',               'Spa et massage',            'lotus',      70),
     ('ca7e0001-0000-4000-8000-000000000008','couture',                   'Couture et retouches',      'needle',     80),
-    -- Ce qu'un mariage demande. Chacun reste un metier a part entiere.
+    -- What a wedding takes. Each one stays a trade in its own right.
     ('ca7e0001-0000-4000-8000-000000000009','photographie',              'Photographie',              'camera',     90),
     ('ca7e0001-0000-4000-8000-00000000000a','video',                     'Video',                     'video',     100),
     ('ca7e0001-0000-4000-8000-00000000000b','dj-animation',              'DJ et animation',           'disc',      110),

@@ -42,6 +42,12 @@ public final class RequestFingerprint {
                 // again would be told it worked while a tradesman drove to the
                 // old address. The note is deliberately not here - a different
                 // message for the salon is cosmetic, a different house is not.
+                //
+                // preferred_channel is out, on the same test. By the time a
+                // retry arrives the confirmation is already written and may
+                // already have gone, so refusing it as a reuse would tell a
+                // customer their booking failed in order to correct which
+                // inbox the message they have already received landed in.
                 address(r));
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256")

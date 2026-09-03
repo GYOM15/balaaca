@@ -1,0 +1,339 @@
+{
+  "uid": "balaaca-beta",
+  "title": "Balaaca beta",
+  "description": "The four questions a beta has to answer: are bookings being taken and refused, is the outbox draining, how long a customer waits, and are both processes alive. Nothing else. Provisioned from infrastructure/observability - edits made in the browser are discarded on the next restart.",
+  "tags": ["balaaca"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Both reactors alive",
+      "description": "Prometheus reached the target on its last scrape. It says the process answers, not that it is doing its job: a worker that is up and wedged still reads 1 here, and the outbox panel below is what catches that.",
+      "datasource": { "type": "prometheus", "uid": "balaaca-prometheus" },
+      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "balaaca-prometheus" },
+          "expr": "up{job=~\"balaaca-api|balaaca-notification-worker\"}",
+          "legendFormat": "{{job}}",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "orientation": "horizontal",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "index": 0 }, "1": { "text": "up", "index": 1 } } }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Outbox: claimable right now",
+      "description": "Rows the worker could pick up on its next pass and has not. This is NOT the count of PENDING rows: a reminder for next Tuesday is pending and perfectly healthy. A handful here between passes is normal. A number that only goes up is a worker that has stopped draining.",
+      "datasource": { "type": "prometheus", "uid": "balaaca-prometheus" },
+      "gridPos": { "h": 5, "w": 8, "x": 8, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "balaaca-prometheus" },
+          "expr": "max(balaaca_outbox_due)",
+          "legendFormat": "due",
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "balaaca-prometheus" },
+          "expr": "max(balaaca_outbox_dead)",
+          "legendFormat": "dead",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "value_and_name",
+        "orientation": "horizontal",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 20 },
+              { "color": "red", "value": 100 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Outbox: how long the oldest one has waited",
+      "description": "Age of the oldest claimable row. A drain pass runs on an interval, so seconds are expected and minutes are not. Hours mean nobody has been told about their appointment.",
+      "datasource": { "type": "prometheus", "uid": "balaaca-prometheus" },
+      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "balaaca-prometheus" },
+          "expr": "max(balaaca_outbox_oldest_due_age_seconds)",
+          "legendFormat": "oldest",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "value",
+        "orientation": "horizontal",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 300 },
+              { "color": "red", "value": 1800 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Bookings taken, in the last hour",
+      "description": "Only 201. A 200 on the same route is an idempotent replay returning the first result, and counting it would inflate the number every time a phone retried on a bad connection. Two lines: the public route a customer used, and the walk-in route a salon typed in at the counter.",
+      "datasource": { "type": "prometheus", "uid": "balaaca-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "balaaca-prometheus" },
+          "expr": "sum by (uri) (increase(http_server_requests_seconds_count{job=\"balaaca-api\",method=\"POST\",uri=~\".*/appointments\",status=\"201\"}[1h]))",
+          "legendFormat": "{{uri}}"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true, "calcs": ["max"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "showPoints": "auto",
+            "spanNulls": true
+          },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Bookings refused, by reason, in the last hour",
+      "description": "409 is the one to read first. It is the exclusion constraint refusing a slot the database had already given away, so a 409 rate that climbs against a flat booking rate means the slot calculator is advertising slots PostgreSQL then rejects. 422 is a mixed bag on purpose: outside published availability, a body that failed validation, and an idempotency key replayed with a different body all land there. Splitting it needs a counter in the code, which does not exist yet.",
+      "datasource": { "type": "prometheus", "uid": "balaaca-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "balaaca-prometheus" },
+          "expr": "sum(increase(http_server_requests_seconds_count{job=\"balaaca-api\",method=\"POST\",uri=~\".*/appointments\",status=\"409\"}[1h]))",
+          "legendFormat": "409 the slot was already taken"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "balaaca-prometheus" },
+          "expr": "sum(increase(http_server_requests_seconds_count{job=\"balaaca-api\",method=\"POST\",uri=~\".*/appointments\",status=\"422\"}[1h]))",
+          "legendFormat": "422 outside availability, or the body was refused"
+        },
+        {
+          "refId": "C",
+          "datasource": { "type": "prometheus", "uid": "balaaca-prometheus" },
+          "expr": "sum(increase(http_server_requests_seconds_count{job=\"balaaca-api\",method=\"POST\",uri=~\".*/appointments\",status=\"429\"}[1h]))",
+          "legendFormat": "429 rate limited"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true, "calcs": ["max"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "showPoints": "auto",
+            "spanNulls": true
+          },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "409 the slot was already taken" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }]
+          }
+        ]
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "The outbox, read from the database",
+      "description": "Measured by scraping PostgreSQL, not the worker: a gauge published by the worker goes silent at the exact moment it matters. 'claimed, not acknowledged' sitting flat and non-zero is a lease the reaper has not released yet. 'dead' only ever goes up, and every step is a message somebody never received.",
+      "datasource": { "type": "prometheus", "uid": "balaaca-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 13 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "balaaca-prometheus" },
+          "expr": "max(balaaca_outbox_due)",
+          "legendFormat": "claimable now"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "balaaca-prometheus" },
+          "expr": "max(balaaca_outbox_scheduled)",
+          "legendFormat": "scheduled for later"
+        },
+        {
+          "refId": "C",
+          "datasource": { "type": "prometheus", "uid": "balaaca-prometheus" },
+          "expr": "max(balaaca_outbox_sending)",
+          "legendFormat": "claimed, not acknowledged"
+        },
+        {
+          "refId": "D",
+          "datasource": { "type": "prometheus", "uid": "balaaca-prometheus" },
+          "expr": "max(balaaca_outbox_dead)",
+          "legendFormat": "dead"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true, "calcs": ["lastNotNull", "max"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "dead" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }]
+          }
+        ]
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "What a customer waits for",
+      "description": "The two reads a customer sits in front of: the provider page, and the slot calculation behind the date picker. Mean and worst, not p95: percentiles need histogram buckets, and buckets need a MeterFilter bean that does not exist yet. The worst-case line is Micrometer's rolling maximum, so it decays on its own once the slow request ages out.",
+      "datasource": { "type": "prometheus", "uid": "balaaca-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 13 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "balaaca-prometheus" },
+          "expr": "sum(rate(http_server_requests_seconds_sum{job=\"balaaca-api\",method=\"GET\",uri=~\"/v1/providers/[^/]+\"}[$__rate_interval])) / sum(rate(http_server_requests_seconds_count{job=\"balaaca-api\",method=\"GET\",uri=~\"/v1/providers/[^/]+\"}[$__rate_interval]))",
+          "legendFormat": "provider page, mean"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "balaaca-prometheus" },
+          "expr": "max(http_server_requests_seconds_max{job=\"balaaca-api\",method=\"GET\",uri=~\"/v1/providers/[^/]+\"})",
+          "legendFormat": "provider page, worst"
+        },
+        {
+          "refId": "C",
+          "datasource": { "type": "prometheus", "uid": "balaaca-prometheus" },
+          "expr": "sum(rate(http_server_requests_seconds_sum{job=\"balaaca-api\",method=\"GET\",uri=~\"/v1/providers/[^/]+/available-slots\"}[$__rate_interval])) / sum(rate(http_server_requests_seconds_count{job=\"balaaca-api\",method=\"GET\",uri=~\"/v1/providers/[^/]+/available-slots\"}[$__rate_interval]))",
+          "legendFormat": "available slots, mean"
+        },
+        {
+          "refId": "D",
+          "datasource": { "type": "prometheus", "uid": "balaaca-prometheus" },
+          "expr": "max(http_server_requests_seconds_max{job=\"balaaca-api\",method=\"GET\",uri=~\"/v1/providers/[^/]+/available-slots\"})",
+          "legendFormat": "available slots, worst"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true, "calcs": ["mean", "max"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": []
+      }
+    }
+  ]
+}

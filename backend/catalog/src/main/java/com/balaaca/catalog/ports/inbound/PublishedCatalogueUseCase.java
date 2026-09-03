@@ -5,6 +5,7 @@ import com.balaaca.sharedkernel.money.Money;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * The catalogue as a stranger sees it.
@@ -40,12 +41,13 @@ public interface PublishedCatalogueUseCase {
                              */
                             Optional<Duration> turnaround,
                             /**
-                             * Whether the provider travels. Published for the
-                             * same reason as the delay: it changes what the
-                             * customer is agreeing to, and the booking form
-                             * asks for an address only when it is a call-out.
+                             * Every way this service can be had. Published for
+                             * the same reason as the delay: it changes what the
+                             * customer is agreeing to - and since a service may
+                             * now be had several ways, this IS the choice the
+                             * booking form puts to them. One value asks nothing.
                              */
-                            ServiceLocation location,
+                            Set<Fulfilment> fulfilments,
                             /**
                              * What it looks like, in the provider's own order.
                              * A customer choosing between two kinds of braids
@@ -55,12 +57,9 @@ public interface PublishedCatalogueUseCase {
                             List<String> photos,
                             Optional<Money> price) {
 
-        public boolean isDropOff() {
-            return turnaround.isPresent();
-        }
-
-        public boolean isCallOut() {
-            return location == ServiceLocation.AT_CUSTOMER;
+        /** The one value the deprecated singular field on the public view carries. */
+        public Fulfilment primaryFulfilment() {
+            return Fulfilment.primaryOf(fulfilments);
         }
     }
 }

@@ -42,11 +42,12 @@ public class NotificationOutboxSqlRepository implements NotificationOutboxPort {
             em.createNativeQuery("""
                     INSERT INTO notifications (
                         id, provider_id, appointment_id, recipient_kind, kind,
-                        dedupe_key, to_phone_e164, to_email, locale, payload,
-                        scheduled_at)
+                        dedupe_key, to_phone_e164, to_email, preferred_channel,
+                        locale, payload, scheduled_at)
                     VALUES (
                         :id, :providerId, :appointmentId, :recipientKind, :kind,
-                        :dedupeKey, :phone, :email, :locale, CAST(:payload AS jsonb),
+                        :dedupeKey, :phone, :email, :preferredChannel,
+                        :locale, CAST(:payload AS jsonb),
                         :scheduledAt)
                     ON CONFLICT (dedupe_key) DO NOTHING
                     """)
@@ -58,6 +59,11 @@ public class NotificationOutboxSqlRepository implements NotificationOutboxPort {
                     .setParameter("dedupeKey", n.dedupeKey())
                     .setParameter("phone", n.toPhoneE164().orElse(null))
                     .setParameter("email", n.toEmail().orElse(null))
+                    // Written beside both addresses rather than instead of the
+                    // one it names. The worker cannot read the appointment or
+                    // the customer, so a row that carried only the chosen
+                    // address would leave it nothing to fall back to.
+                    .setParameter("preferredChannel", n.preferredChannel().name())
                     .setParameter("locale", n.locale())
                     .setParameter("payload", json(n.payload()))
                     .setParameter("scheduledAt", java.sql.Timestamp.from(n.scheduledAt()))

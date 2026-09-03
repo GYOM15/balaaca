@@ -1,8 +1,7 @@
 import Link from "next/link";
-import { Icon } from "@/components/icon";
-import { ActionButton, Avatar, Badge, Button, EmptyState, Notice, SectionHead } from "@/components/ui";
+import { Icon, Scene } from "@/components/icon";
+import { Avatar } from "@/components/ui";
 import { api } from "@/lib/api";
-import { day } from "@/lib/format";
 import type { CustomerPage, CustomerSummary, ProviderProfile } from "@/lib/types";
 
 /** An address book that grows on every booking. Cached, it would miss today's. */
@@ -58,121 +57,131 @@ export default async function Customers({
 
   const zone = provider.timezone;
   const shown = customers.data.length;
+  // The API pages rather than counts, so a full page with a cursor behind it is
+  // "thirty and more" and never "thirty".
+  const more = customers.next_cursor ? "+" : "";
+  // The book itself is empty, which is not the same as a page or a search that
+  // came back with nothing.
+  const book = shown === 0 && !searching && !query.cursor;
+  const many = shown > 1;
 
   return (
     <>
-      <div className="pro-head stack stack-2">
-        <h1 className="pro-head__title">Clientèle</h1>
-        <p className="t-small t-muted">
-          Les personnes que vous avez déjà servies. Chaque réservation en
-          inscrit une&nbsp;: ce fichier se remplit tout seul.
-        </p>
+      <div className="appbar">
+        <div className="appbar__in">
+          <a
+            className="btn btn--ghost btn--icon btn--sm hide-lg"
+            href="#sections"
+            aria-label="Menu"
+          >
+            <Icon name="menu" />
+          </a>
+          <div>
+            <h1 className="appbar__title">Clientèle</h1>
+            <div className="appbar__sub">
+              {book
+                ? "Aucun client pour l’instant"
+                : searching
+                  ? `${shown}${more} résultat${many ? "s" : ""}`
+                  : `${shown}${more} personne${many ? "s" : ""} ${many ? "ont" : "a"} déjà réservé`}
+            </div>
+          </div>
+          <div className="appbar__actions" />
+        </div>
       </div>
 
-      <div className="pro-body stack stack-8" id="contenu">
-        <section className="stack stack-4" aria-labelledby="search-title">
-          <SectionHead label="Rechercher un client" />
-          <form className="card card--pad stack stack-3" method="get" action="/dashboard/customers">
-            {/* The cursor is deliberately absent from this form. A new search
-                starts at the first page; carrying the old cursor would open it
-                in the middle of a result set it does not belong to. */}
-            <h2 className="t-caption t-dim" id="search-title">
-              Un nom ou un numéro — celui des deux dont vous vous souvenez.
-            </h2>
-            <div className="row row-3 row--wrap" style={{ alignItems: "flex-end" }}>
-              <div className="field grow" style={{ minWidth: "14rem" }}>
-                <label className="field__label" htmlFor="customer-q">
-                  Nom ou numéro
-                </label>
-                <input
-                  className="input"
-                  id="customer-q"
-                  type="search"
-                  name="q"
-                  defaultValue={q}
-                  maxLength={MAX_QUERY}
-                  autoComplete="off"
-                  placeholder="Aïssatou, 622…"
-                />
-              </div>
-              <div className="row row-2 row--wrap">
-                <ActionButton
-                  label="Rechercher"
-                  type="submit"
-                  variant="secondary"
-                  icon="search"
-                />
-                {q ? (
-                  <Button label="Tout voir" variant="ghost" href="/dashboard/customers" />
-                ) : null}
+      <main id="contenu" className="app__main has-tabbar">
+        <div className="app__inner">
+          {book ? (
+            <div className="empty">
+              <Scene name="notebook" className="scene-ill" />
+              <div className="empty__title">Vos premiers clients apparaîtront ici</div>
+              <p className="empty__body">
+                Dès qu’une personne réserve, sa fiche est créée automatiquement :
+                historique des rendez-vous et note privée que vous seul voyez.
+              </p>
+              <div className="empty__actions">
+                <Link className="btn btn--primary" href="/dashboard/profile">
+                  <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
+                    <Icon name="share" size={18} />
+                  </span>
+                  <span className="btn__label--idle">Partager ma page</span>
+                </Link>
               </div>
             </div>
-            <p className="field__hint">
-              La recherche trouve un nom comme un numéro, et n’a pas besoin de
-              l’orthographe exacte.
-            </p>
-          </form>
-        </section>
-
-        {/* Said out loud rather than swallowed: one character is not sent, so
-            the list below is the whole book and not a result. */}
-        {q.length > 0 && !searching ? (
-          <Notice tone="warning" title="Recherche trop courte">
-            Il faut au moins {MIN_QUERY} caractères. Toute votre clientèle est
-            affichée en attendant.
-          </Notice>
-        ) : null}
-
-        <section className="stack stack-4">
-          <SectionHead
-            label={searching ? "Résultats" : "Tous vos clients"}
-            aside={
-              shown > 0
-                ? `${shown}${customers.next_cursor ? "+" : ""} personne${shown > 1 ? "s" : ""}`
-                : undefined
-            }
-          />
-
-          {shown === 0 ? (
-            searching ? (
-              <EmptyState
-                compact
-                sketch="notebook"
-                title="Aucun client ne correspond"
-                body="Essayez une autre orthographe, ou les derniers chiffres du numéro."
-                action={<Button label="Tout voir" variant="secondary" href="/dashboard/customers" />}
-              />
-            ) : (
-              <EmptyState
-                sketch="notebook"
-                title="Aucun client pour l’instant"
-                body="Dès qu’une personne réserve, son nom et son numéro arrivent ici. Vous n’avez rien à saisir."
-              />
-            )
           ) : (
-            <div className="stack stack-6">
-              <ul className="list list--boxed">
-                {customers.data.map((customer) => (
-                  <li key={customer.customer_id}>
-                    <Row customer={customer} zone={zone} q={q} />
-                  </li>
-                ))}
-              </ul>
-
-              {customers.next_cursor ? (
-                <div className="row row-3" style={{ justifyContent: "center" }}>
-                  <Button
-                    label="Voir la suite"
-                    variant="secondary"
-                    iconEnd="arrow-right"
-                    href={nextPage(q, customers.next_cursor)}
+            <>
+              {/* The cursor is deliberately absent from this form. A new search
+                  starts at the first page; carrying the old cursor would open it
+                  in the middle of a result set it does not belong to. */}
+              <form
+                className="toolbar"
+                style={{ marginBottom: "var(--s-5)" }}
+                method="get"
+                action="/dashboard/customers"
+              >
+                <div className="input-group" style={{ maxWidth: "360px", flex: 1 }}>
+                  <span className="input-group__icon">
+                    <Icon name="search" size={18} />
+                  </span>
+                  <input
+                    className="input"
+                    type="search"
+                    name="q"
+                    defaultValue={q}
+                    // The design has no room for "recherche trop courte", so the
+                    // field refuses the submission instead of the page
+                    // explaining it afterwards.
+                    minLength={MIN_QUERY}
+                    maxLength={MAX_QUERY}
+                    placeholder="Nom ou numéro de téléphone"
+                    aria-label="Rechercher un client"
                   />
                 </div>
-              ) : null}
-            </div>
+              </form>
+
+              {shown === 0 ? (
+                <div className="empty">
+                  <Scene name="notebook" className="scene-ill" />
+                  <div className="empty__title">Aucun client ne correspond</div>
+                  <p className="empty__body">
+                    Essayez une autre orthographe, ou les derniers chiffres du numéro.
+                  </p>
+                  <div className="empty__actions">
+                    <Link className="btn btn--secondary" href="/dashboard/customers">
+                      <span className="btn__label--idle">Tout voir</span>
+                    </Link>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="panel">
+                    <div className="list" style={{ borderTop: 0 }}>
+                      {customers.data.map((customer) => (
+                        <Row key={customer.customer_id} customer={customer} zone={zone} />
+                      ))}
+                    </div>
+                  </div>
+
+                  {customers.next_cursor ? (
+                    <div className="pager">
+                      <Link
+                        className="btn btn--secondary"
+                        href={nextPage(q, customers.next_cursor)}
+                      >
+                        <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
+                          <Icon name="chevron-down" size={18} />
+                        </span>
+                        <span className="btn__label--idle">Charger la suite</span>
+                      </Link>
+                    </div>
+                  ) : null}
+                </>
+              )}
+            </>
           )}
-        </section>
-      </div>
+        </div>
+      </main>
     </>
   );
 }
@@ -185,43 +194,38 @@ export default async function Customers({
  * exists to answer. It counts every appointment, cancellations included - a
  * count that hid them would make a serial canceller look new.
  */
-function Row({
-  customer,
-  zone,
-  q,
-}: {
-  customer: CustomerSummary;
-  zone: string;
-  q: string;
-}) {
+function Row({ customer, zone }: { customer: CustomerSummary; zone: string }) {
   return (
-    <Link className="list-row" href={detailHref(customer.customer_id, q)}>
-      <Avatar name={customer.full_name} size="sm" tone="client" />
-      <span className="grow stack stack-1">
-        <span className="t-small">{customer.full_name}</span>
-        <span className="t-caption t-dim">
-          <span className="tnum">{customer.phone}</span>
-          {customer.last_visit ? (
-            <>
-              {" · Dernière visite "}
-              {day(customer.last_visit, zone)}
-            </>
-          ) : null}
-        </span>
-      </span>
-      <Badge
-        label={customer.visits > 1 ? `${customer.visits} visites` : `${customer.visits} visite`}
-        tone="neutral"
-      />
-      <Icon name="chevron-right" size={16} />
+    <Link
+      className="list__item list__item--link"
+      href={`/dashboard/customers/${encodeURIComponent(customer.customer_id)}`}
+    >
+      <Avatar name={customer.full_name} />
+      <div className="grow">
+        <div className="row" style={{ gap: "var(--s-2)" }}>
+          <span className="t-strong" style={{ fontSize: "var(--fs-sm)" }}>
+            {customer.full_name}
+          </span>
+        </div>
+        <div className="t-xs" style={{ marginTop: "2px" }}>
+          {customer.phone} · {customer.visits} rendez-vous
+          {customer.last_visit ? ` · dernier le ${longDay(customer.last_visit, zone)}` : ""}
+        </div>
+      </div>
+      <Icon name="chevron-right" size={18} />
     </Link>
   );
 }
 
-/** The search travels into the card so its back link returns to the result. */
-function detailHref(id: string, q: string): string {
-  const path = `/dashboard/customers/${encodeURIComponent(id)}`;
-  return q ? `${path}?q=${encodeURIComponent(q)}` : path;
+/**
+ * A date without its weekday, which is how the design writes one inside a line
+ * of running text. `format.ts` only has the long form, and "dernier le mercredi
+ * 2 septembre 2026" is a mouthful in the middle of a sentence.
+ */
+function longDay(instant: string, timeZone: string): string {
+  return new Intl.DateTimeFormat("fr", { dateStyle: "long", timeZone }).format(
+    new Date(instant),
+  );
 }
 
 /** The next page is this search plus the cursor the last one handed back. */

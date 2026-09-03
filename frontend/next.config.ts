@@ -13,6 +13,16 @@ import type { NextConfig } from "next";
  */
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  /**
+   * A server that carries only what it runs.
+   *
+   * Without this, a production image needs the whole node_modules tree beside
+   * the build - hundreds of megabytes of packages, most of which only ever ran
+   * at build time. Standalone traces what the server actually imports and
+   * writes a self-contained directory next to it, which is what the image
+   * copies. It changes nothing about `next dev`.
+   */
+  output: "standalone",
   // No generated AGENTS.md / CLAUDE.md. This repository states its own
   // conventions, in .claude/, and a second file appearing under frontend/
   // saying something else is a contradiction nobody would notice writing.

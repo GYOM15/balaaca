@@ -1,0 +1,64 @@
+# The outbox, measured from the database.
+#
+# Deliberately not from inside notification-worker. A gauge the worker publishes
+# disappears when the worker does, so the one moment the queue depth matters is
+# the one moment it is not there. Read from PostgreSQL, the number survives the
+# process it is about.
+#
+# The exporter runs with --disable-default-metrics, so this file is everything
+# it publishes: no pg_stat_*, no connection counts, no bloat estimates. That is
+# the floor the observability stack was asked for.
+#
+# A NOTE FOR WHOEVER UPGRADES: --extend.query-path is deprecated upstream from
+# postgres_exporter 0.15 onwards, in favour of compiled-in collectors that
+# cannot express a product's own query. The version is pinned in
+# docker-compose.yml for that reason. If the flag ever goes, the replacement is
+# a Micrometer gauge in the API (not the worker, for the reason above) or
+# burningalchemist/sql_exporter, and the metric NAMES below are the contract the
+# dashboard reads: keep them and nothing else has to change.
+
+balaaca_outbox:
+  # `due` is the number, and it is not `count(*) WHERE status = 'PENDING'`.
+  #
+  # A reminder for next Tuesday is PENDING today and entirely healthy, and so is
+  # a row waiting out its retry backoff. Counting those makes the graph a
+  # measure of how far ahead the salons are booked, which climbs on a good day
+  # and tells nobody anything. What says the worker has stopped is the number of
+  # rows it could claim RIGHT NOW and has not.
+  #
+  # The predicate is therefore a copy of the claim query in
+  # NotificationOutboxSqlRepository.claimDue. If that WHERE clause ever changes,
+  # this one is wrong and silently so.
+  query: |
+    SELECT
+      count(*) FILTER (
+        WHERE status = 'PENDING'
+          AND scheduled_at  <= now()
+          AND retry_after_at <= now())                       AS due,
+      count(*) FILTER (
+        WHERE status = 'PENDING'
+          AND (scheduled_at > now() OR retry_after_at > now())) AS scheduled,
+      count(*) FILTER (WHERE status = 'SENDING')             AS sending,
+      count(*) FILTER (WHERE status = 'DEAD')                AS dead,
+      COALESCE(EXTRACT(EPOCH FROM (
+        now() - min(scheduled_at) FILTER (
+          WHERE status = 'PENDING'
+            AND scheduled_at  <= now()
+            AND retry_after_at <= now()))), 0)               AS oldest_due_age_seconds
+    FROM notifications
+  metrics:
+    - due:
+        usage: "GAUGE"
+        description: "Notification rows the worker could claim now and has not"
+    - scheduled:
+        usage: "GAUGE"
+        description: "Pending rows not yet due: future reminders and retry waits"
+    - sending:
+        usage: "GAUGE"
+        description: "Rows claimed and not yet acknowledged; a stuck lease sits here"
+    - dead:
+        usage: "GAUGE"
+        description: "Rows that exhausted max_attempts and will never be sent"
+    - oldest_due_age_seconds:
+        usage: "GAUGE"
+        description: "How long the oldest claimable row has been waiting, in seconds"

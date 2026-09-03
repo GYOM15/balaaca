@@ -1,104 +1,103 @@
 # Balaaca
 
-Hub de prestataires de services. Un prestataire publie sa page, ses prestations et ses
-disponibilites ; un client le trouve, reserve, et recoit ses rappels.
+A hub of service providers. A provider publishes their page, their service
+offerings and their availability; a customer finds them, books, and gets their
+reminders.
 
-Le nom vient du kissi *balaa* (travail, activite) et de *ca* pour Africa.
+The name comes from the Kissi *balaa* (work, activity) and from *ca* for Africa.
 
-> Statut : en construction. Ce README decrit ce qui existe reellement dans le depot,
-> pas ce qui est prevu. La cible fonctionnelle complete est dans [docs/](docs/).
+> Status: under construction. This README describes what actually exists in the
+> repository, not what is planned. The full functional target is in [docs/](docs/).
 
-## Ce que c'est
+## What this is
 
-Le rendez-vous est une capacite du produit, pas son domaine. Le domaine est le
-prestataire : sa presence en ligne, son catalogue, son agenda, sa relation client, et
-a terme son abonnement a la plateforme.
+The appointment is a capability of the product, not its domain. The domain is the
+provider: their online presence, their catalogue, their diary, their customer
+relationship, and eventually their subscription to the platform.
 
-Marche de lancement : la Guinee (GNF, `Africa/Conakry`). L'architecture ne suppose
-nulle part une devise, un indicatif telephonique ou un fuseau unique.
+Launch market: Guinea (GNF, `Africa/Conakry`). Nowhere does the architecture
+assume a single currency, dialling code or timezone.
 
 ## Stack
 
-| Couche | Choix |
+| Layer | Choice |
 |---|---|
-| Backend | Java 21, Quarkus, monolithe modulaire hexagonal, Maven |
-| Base de donnees | PostgreSQL 16, migrations Flyway, Row-Level Security forcee |
-| Identite | Keycloak (OIDC) — aucun mot de passe n'est stocke par l'application |
-| Cache / limites | Redis (cache, rate limiting, idempotence) |
-| Frontend | Next.js (App Router), TypeScript, BFF a cookie httpOnly |
-| Asynchrone | `notification-worker`, deployable separe |
-| Execution | Docker Compose, images multi-arch (amd64 + arm64) |
+| Backend | Java 21, Quarkus, a hexagonal modular monolith, Maven |
+| Database | PostgreSQL 16, Flyway migrations, forced Row-Level Security |
+| Identity | Keycloak (OIDC) - the application stores no password |
+| Cache / limits | Redis (cache, rate limiting, idempotency) |
+| Frontend | Next.js (App Router), TypeScript, a BFF with an httpOnly cookie |
+| Asynchronous | `notification-worker`, a separate deployable |
+| Runtime | Docker Compose, multi-arch images (amd64 + arm64) |
 
 ## Structure
 
 ```
 balaaca/
-├── backend/              # Quarkus — monolithe modulaire (source de verite metier)
-├── frontend/             # Next.js — pages publiques, tableau de bord, back-office
-├── notification-worker/  # draine la table notifications et envoie
-├── chatbot-service/      # squelette, appelle l'API metier — jamais la base
+├── backend/              # Quarkus - the modular monolith (the business source of truth)
+├── frontend/             # Next.js - public pages, dashboard, back office
+├── notification-worker/  # drains the notifications table and sends
+├── chatbot-service/      # a skeleton, calls the business API - never the database
 ├── infrastructure/       # docker, nginx, keycloak, postgres
-├── docs/                 # architecture, base de donnees, securite, ADR
-└── .claude/skills/       # conventions d'ingenierie appliquees au projet
+├── docs/                 # architecture, database, security, ADRs
+└── .claude/skills/       # the engineering conventions applied to this project
 ```
 
-## Demarrage local
+## Running locally
 
-Prerequis : Docker avec Compose v2. Rien d'autre n'est requis pour la pile
-d'infrastructure.
+Prerequisites: Docker with Compose v2. Nothing else is needed for the
+infrastructure stack.
 
 ```bash
 cp .env.example .env
 docker compose up -d
 ```
 
-`.env` est gitignore. Les valeurs de `.env.example` sont volontairement
-faibles et locales : une fuite ne coute rien. Les secrets de production
-viennent du magasin de secrets de l'hote, jamais d'un fichier du depot.
+`.env` is gitignored. The values in `.env.example` are deliberately weak and
+local: leaking them costs nothing. Production secrets come from the host's secret
+store, never from a file in the repository.
 
-| Service | Hote | Role |
+| Service | Host | Role |
 |---|---|---|
-| PostgreSQL 18.6 | `127.0.0.1:55432` | source de verite, RLS force |
-| Redis 8.2 | `127.0.0.1:56379` | cache, rate limiting, idempotence |
-| Keycloak 26.4 | `http://localhost:8180` | fournisseur d'identite |
+| PostgreSQL 18.6 | `127.0.0.1:55432` | source of truth, RLS forced |
+| Redis 8.2 | `127.0.0.1:56379` | cache, rate limiting, idempotency |
+| Keycloak 26.4 | `http://localhost:8180` | identity provider |
 
-Les ports hote ne sont pas les ports par defaut : une machine de developpement
-fait souvent tourner un PostgreSQL sur 5432, et la collision est silencieuse
-jusqu'a l'echec de `compose`. Tout est bind sur `127.0.0.1`, jamais expose sur
-le reseau.
+The host ports are not the default ones: a development machine often runs a
+PostgreSQL on 5432, and the collision is silent until `compose` fails.
+Everything is bound to `127.0.0.1`, never exposed on the network.
 
-### Roles PostgreSQL
+### PostgreSQL roles
 
-`infrastructure/postgres/bootstrap.sh` s'execute une seule fois, a
-l'initialisation du volume, et cree quatre roles de moindre privilege :
+`infrastructure/postgres/bootstrap.sh` runs once, when the volume is
+initialised, and creates four least-privilege roles:
 
-| Role | Usage | Attributs |
+| Role | Use | Attributes |
 |---|---|---|
-| `balaaca_migrator` | proprietaire du schema, execute Flyway | jamais utilise a l'execution |
-| `balaaca_app` | la connexion applicative | ni proprietaire, ni `BYPASSRLS` — sinon le RLS serait inerte |
-| `balaaca_resolver` | proprietaire des fonctions `SECURITY DEFINER` de resolution de tenant | `NOLOGIN` : jamais connecte, seulement incarne |
-| `balaaca_registrar` | proprietaire de la seule fonction qui cree un prestataire | `NOLOGIN`, et distinct du resolver : « qui peut faire naitre un salon » a une seule reponse |
-| `balaaca_notification_worker` | le worker de notifications | restreint a sa table |
+| `balaaca_migrator` | owns the schema, runs Flyway | never used at runtime |
+| `balaaca_app` | the application connection | neither owner nor `BYPASSRLS` - otherwise RLS would be inert |
+| `balaaca_resolver` | owns the `SECURITY DEFINER` tenant resolution functions | `NOLOGIN`: never connected, only impersonated |
+| `balaaca_registrar` | owns the only function that creates a provider | `NOLOGIN`, and distinct from the resolver: "what can bring a salon into being" has a single answer |
+| `balaaca_notification_worker` | the notification worker | restricted to its own table |
 
-Le script est **idempotent** : chaque role n'est cree que s'il est absent, et le
-mot de passe d'un role existant n'est jamais reapplique. Sur un VPS,
-l'initialisation du conteneur ne s'execute que sur un repertoire de donnees
-vide, donc **il faut le rejouer a la main avant chaque deploiement** — une
-migration qui a besoin d'un role nouveau echoue sinon, et l'application ne
-demarre pas. Voir
+The script is **idempotent**: each role is created only if absent, and an
+existing role's password is never reapplied. On a VPS, container initialisation
+only runs against an empty data directory, so **it has to be replayed by hand
+before every deployment** - otherwise a migration that needs a new role fails,
+and the application does not start. See
 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
-### Arret
+### Stopping
 
 ```bash
-docker compose down        # conserve les donnees
-docker compose down -v     # supprime aussi le volume PostgreSQL
+docker compose down        # keeps the data
+docker compose down -v     # drops the PostgreSQL volume as well
 ```
 
-## Developpement
+## Development
 
-Les hooks Git sont versionnes dans `.githooks/`. Ils ne sont pas actifs tant que
-vous ne les avez pas branches, une fois par clone :
+The Git hooks are versioned in `.githooks/`. They are not active until you wire
+them up, once per clone:
 
 ```bash
 git config core.hooksPath .githooks
@@ -106,53 +105,53 @@ git config core.hooksPath .githooks
 
 | Hook | Role |
 |---|---|
-| `commit-msg` | applique la convention de commit : sujet imperatif capitalise de 50 caracteres maximum, sans prefixe `type(scope):`, corps a 72, aucun trailer `Co-Authored-By` |
-| `pre-push` | bloque les pushs directs sur `main` et sur `develop`. Sans override : GitHub les refuse de toute facon cote serveur, le hook ne fait que l'annoncer plus tot |
-| `pre-commit` | passe `gitleaks` sur le diff indexe **si** l'outil est installe, et se tait sinon. L'installer n'est pas un prerequis : le scan qui fait autorite tourne en CI, sur l'historique complet, a chaque pull request |
+| `commit-msg` | enforces the commit convention: a capitalised imperative subject of at most 50 characters, no `type(scope):` prefix, a body wrapped at 72, no `Co-Authored-By` trailer |
+| `pre-push` | blocks direct pushes to `main` and to `develop`. With no override: GitHub refuses them server-side anyway, the hook only announces it earlier |
+| `pre-commit` | runs `gitleaks` over the staged diff **if** the tool is installed, and stays quiet otherwise. Installing it is not a prerequisite: the authoritative scan runs in CI, over the full history, on every pull request |
 
-Ce sont des pre-filtres, pas des garanties : `--no-verify` les contourne. La
-verification qui fait autorite est la CI, qui rejoue tout cote serveur.
+These are pre-filters, not guarantees: `--no-verify` bypasses them. The
+authoritative check is CI, which replays everything server-side.
 
-### Lancer les tests
+### Running the tests
 
 ```bash
 cd backend
-mvn test      # unitaires seuls, rapide, aucun Docker requis
-mvn verify    # ajoute les suites *IT sur Testcontainers
+mvn test      # unit tests only, fast, no Docker needed
+mvn verify    # adds the *IT suites on Testcontainers
 ```
 
-`notification-worker` est un projet Maven separe, volontairement hors du
-reacteur de `backend` : il ne depend d'aucun artefact Balaaca. Il se construit
-et se teste a part.
+`notification-worker` is a separate Maven project, deliberately outside the
+`backend` reactor: it depends on no Balaaca artifact. It is built and tested on
+its own.
 
 ```bash
 cd notification-worker
 mvn verify
 ```
 
-Il ne demarre pas sans canal nomme explicitement :
+It does not start without a channel named explicitly:
 
 ```bash
 balaaca.notification.channel=console
 ```
 
-Il n'y a pas de valeur par defaut, et c'est voulu. Le seul canal existant
-aujourd'hui ecrit dans le log et n'envoie rien : un worker qui marquerait des
-lignes `SENT` que personne n'a recues serait pire qu'un worker qui refuse de
-demarrer. Aucune passerelle reelle n'est branchee — WhatsApp Business ou
-agregateur SMS est une decision commerciale, pas un detail de code.
+There is no default value, and that is deliberate. The only channel that exists
+today writes to the log and sends nothing: a worker that marked rows `SENT` that
+nobody received would be worse than a worker that refuses to start. No real
+gateway is wired in - WhatsApp Business or an SMS aggregator is a commercial
+decision, not a code detail.
 
-Sur **macOS avec Docker Desktop**, Testcontainers reste bloque a la decouverte
-du socket (`DockerClientProviderStrategy.getFirstValidStrategy`) : il sonde des
-strategies qui n'aboutissent pas, sans echouer franchement, ce qui ressemble a
-un test qui ne repond plus. Lui indiquer le socket regle le probleme :
+On **macOS with Docker Desktop**, Testcontainers hangs on socket discovery
+(`DockerClientProviderStrategy.getFirstValidStrategy`): it probes strategies that
+lead nowhere without failing outright, which looks like a test that stopped
+responding. Pointing it at the socket fixes it:
 
 ```bash
 export DOCKER_HOST="unix://$HOME/.docker/run/docker.sock"
 export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
 ```
 
-Inutile sur les runners Linux, ou le socket est a l'emplacement standard.
+Not needed on Linux runners, where the socket is in the standard place.
 
 ### The frontend
 
@@ -219,114 +218,111 @@ The design is deliberately absent. The interfaces are being produced separately
 and will replace `globals.css` and the markup wholesale; what is here is enough
 to read a page and fill a form while the behaviour is proved.
 
-### Identite
+### Identity
 
-Le realm est un fichier versionne, [`infrastructure/keycloak/realm-balaaca.json`](infrastructure/keycloak/realm-balaaca.json),
-importe par compose au demarrage. Une configuration d'identite que personne ne
-peut recreer pose le meme probleme qu'un schema sans migrations.
+The realm is a versioned file, [`infrastructure/keycloak/realm-balaaca.json`](infrastructure/keycloak/realm-balaaca.json),
+imported by compose at startup. An identity configuration nobody can recreate
+poses the same problem as a schema with no migrations.
 
-Trois clients : `balaaca-backend` (serveur de ressources, ne connecte personne),
-`balaaca-frontend` (confidentiel, pilote par le BFF Next.js — le code n'est
-jamais echange dans le navigateur), et `balaaca-dev-cli` (public, password
-grant, **developpement local uniquement** — un realm de production est
-provisionne separement et ne le porte pas).
+Three clients: `balaaca-backend` (a resource server, signs nobody in),
+`balaaca-frontend` (confidential, driven by the Next.js BFF - the code is never
+exchanged in the browser), and `balaaca-dev-cli` (public, password grant, **local
+development only** - a production realm is provisioned separately and does not
+carry it).
 
-Le fichier est un **template** : `balaaca-frontend` est confidentiel, et un
-secret dans un fichier committe est un secret. `init-realm.sh` remplit les
-marqueurs `__VARIABLE__` depuis l'environnement au demarrage, echoue si une
-variable requise manque, et refuse de demarrer s'il reste un marqueur non
-resolu — sans quoi le realm importerait le marqueur litteral comme secret.
+The file is a **template**: `balaaca-frontend` is confidential, and a secret in a
+committed file is a leaked secret. `init-realm.sh` fills the `__VARIABLE__`
+markers from the environment at startup, fails if a required variable is missing,
+and refuses to start if an unresolved marker is left - without which the realm
+would import the literal marker as a secret.
 
-Le meme script fait ensuite ce que `--import-realm` ne sait pas faire :
+The same script then does what `--import-realm` cannot:
 
-- **Creer les client scopes.** Les declarer dans le fichier de realm
-  **remplace** l'ensemble integre de Keycloak au lieu de s'y ajouter, et le
-  scope integre `basic` porte le claim `sub`. Les creer apres l'import laisse
-  les integres intacts, et evite d'en garder ici une copie qui vieillirait.
-- **Mettre a jour un client existant.** `--import-realm` laisse tel quel un
-  realm deja present, donc le secret et les scopes sont reappliques a chaque
-  demarrage : faire tourner un secret est un redemarrage.
+- **Create the client scopes.** Declaring them in the realm file **replaces**
+  Keycloak's built-in set instead of adding to it, and the built-in `basic` scope
+  carries the `sub` claim. Creating them after the import leaves the built-ins
+  untouched, and avoids keeping a copy of them here that would go stale.
+- **Update an existing client.** `--import-realm` leaves an already present realm
+  as it is, so the secret and the scopes are reapplied on every startup: rotating
+  a secret is a restart.
 
-La sonde du conteneur attend un sentinelle ecrit en toute fin de configuration,
-pas seulement `/health/ready` : celui-ci passe au vert des le demarrage du
-serveur, quelques secondes avant que les scopes existent — assez pour qu'un
-service dependant obtienne un jeton sans scope et le garde en cache pendant
-toute sa duree de vie.
+The container's probe waits on a sentinel written at the very end of
+configuration, not just on `/health/ready`: that one goes green as soon as the
+server boots, seconds before the scopes exist - long enough for a dependent
+service to get a scopeless token and cache it for its whole lifetime.
 
-Apres un `docker compose up`, cette verification dit si le realm delivre un
-jeton que l'API peut reellement utiliser :
+After a `docker compose up`, this check says whether the realm issues a token the
+API can actually use:
 
 ```bash
-./infrastructure/keycloak/smoke.sh <utilisateur> <mot-de-passe>
+./infrastructure/keycloak/smoke.sh <user> <password>
 ```
 
-Elle existe parce qu'un import de realm peut reussir en etant faux. Declarer
-`clientScopes` dans un fichier de realm **remplace** l'ensemble integre de
-Keycloak au lieu de s'y ajouter, et le scope integre `basic` est celui qui porte
-le claim `sub`. Sans lui, chaque jeton est valide, bien signe — et sans sujet,
-donc la resolution du tenant ne trouve personne et tout appel authentifie repond
-403. C'est exactement ce qui s'est passe a la premiere ecriture de ce realm.
+It exists because a realm import can succeed and still be wrong. Declaring
+`clientScopes` in a realm file **replaces** Keycloak's built-in set instead of
+adding to it, and the built-in `basic` scope is the one that carries the `sub`
+claim. Without it every token is valid, well signed - and carries no subject, so
+tenant resolution finds nobody and every authenticated call answers 403. That is
+exactly what happened the first time this realm was written.
 
-### Le contrat public
+### The public contract
 
-`backend/app/src/main/resources/META-INF/openapi.yaml` **est** l'API. Les
-interfaces JAX-RS et les types de la couche transport en sont generes a chaque
-build, dans `target/generated-sources`, et ne sont jamais committes : il n'y a
-donc aucune copie qui puisse deriver, et la seule facon de changer une signature
-est de changer le contrat. Une ressource qui ne colle plus ne compile pas.
+`backend/app/src/main/resources/META-INF/openapi.yaml` **is** the API. The JAX-RS
+interfaces and the transport-layer types are generated from it on every build,
+into `target/generated-sources`, and are never committed: there is therefore no
+copy that can drift, and the only way to change a signature is to change the
+contract. A resource that no longer matches does not compile.
 
-Le scan d'annotations est desactive (`mp.openapi.scan.disable=true`) : ce qui
-est publie est ce fichier, pas ce que le classpath contient.
+Annotation scanning is disabled (`mp.openapi.scan.disable=true`): what is
+published is this file, not what the classpath happens to hold.
 
 ```bash
 npx @stoplight/spectral-cli lint \
   backend/app/src/main/resources/META-INF/openapi.yaml --ruleset .spectral.yaml
 ```
 
-La CI relance ce lint et compare le document a celui de `develop` avec
-`oasdiff` : dans `/v1`, seules les evolutions additives passent.
+CI reruns this lint and compares the document against `develop`'s with `oasdiff`:
+inside `/v1`, only additive changes pass.
 
-## Integration continue
+## Continuous integration
 
-`.github/workflows/ci.yml` s'execute sur chaque pull request vers `develop` ou
-`main`, et sur chaque push vers ces deux branches. La chaine echoue vite : un
-job ne demarre pas si le precedent est rouge.
+`.github/workflows/ci.yml` runs on every pull request to `develop` or `main`, and
+on every push to those two branches. The chain fails fast: a job does not start
+if the previous one is red.
 
-| Job | Verifie |
+| Job | Checks |
 |---|---|
-| `secrets` | `gitleaks` sur l'**historique complet** — un secret retire dans un commit ulterieur reste compromis |
-| `lint` | `shellcheck` sur les hooks et le bootstrap ; validite du `docker-compose.yml` ; **toute variable referencee par compose est presente dans `.env.example`** ; et le hook `commit-msg` applique toujours la convention |
-| `dependencies` | OSV-Scanner, sans cle d'API |
+| `secrets` | `gitleaks` over the **full history** - a secret removed in a later commit stays compromised |
+| `lint` | `shellcheck` on the hooks and the bootstrap; validity of `docker-compose.yml`; **every variable compose references is present in `.env.example`**; and the `commit-msg` hook still enforces the convention |
+| `dependencies` | OSV-Scanner, with no API key |
 
-Chaque action est epinglee a un SHA de commit, jamais a un tag : un tag est
-mutable et son proprietaire peut le repointer silencieusement. L'archive
-`gitleaks` est verifiee par empreinte SHA-256 avant d'etre executee.
+Every action is pinned to a commit SHA, never to a tag: a tag is mutable and its
+owner can silently repoint it. The `gitleaks` archive is verified against a
+SHA-256 digest before it is run.
 
-Les jobs de build Maven, de tests, de couverture, de mutation et d'image
-arriveront avec le code qu'ils verifient. Un job qui ne peut pas echouer n'est
-pas une barriere, et le laisser en place ferait paraitre la CI plus verte
-qu'elle ne l'est.
+The Maven build, test, coverage, mutation and image jobs will arrive with the
+code they check. A job that cannot fail is not a gate, and leaving one in place
+would make CI look greener than it is.
 
-Branches : `main` est la branche de release, `develop` la branche d'integration
-et la branche par defaut. On travaille sur `feature/<slug>` (ou `fix/`, `chore/`,
-`docs/`, `ci/`) coupee depuis `develop`, fusionnee dans `develop` par pull
-request. `develop` est promue vers `main` aux jalons de phase, **par pull
-request egalement**.
+Branches: `main` is the release branch, `develop` the integration branch and the
+default one. Work happens on `feature/<slug>` (or `fix/`, `chore/`, `docs/`,
+`ci/`) cut from `develop` and merged into `develop` by pull request. `develop` is
+promoted to `main` at phase milestones, **by pull request as well**.
 
-Les deux branches sont protegees cote serveur : pull request obligatoire, les
-trois checks de CI exiges, force-push et suppression refuses, et
-`enforce_admins` actif — le proprietaire du depot y est soumis comme tout le
-monde. Un push direct est rejete avec `GH006`, meme avec `--no-verify`.
+Both branches are protected server-side: a pull request is required, the three CI
+checks are required, force-push and deletion are refused, and `enforce_admins` is
+on - the repository owner is subject to it like everybody else. A direct push is
+rejected with `GH006`, even with `--no-verify`.
 
 ## Documentation
 
-| Document | Contenu |
+| Document | Contents |
 |---|---|
-| [docs/adr/](docs/adr/) | les decisions structurantes et leurs raisons |
-| [.claude/skills/CANONICAL.md](.claude/skills/CANONICAL.md) | les symboles epingles : tables, ports, exceptions, codes d'erreur, ordre des migrations, et les comportements PostgreSQL verifies |
-| [.claude/skills/](.claude/skills/) | les conventions d'ingenierie appliquees au projet |
-| [docs/adr/](docs/adr/) | decisions d'architecture et leurs raisons |
+| [docs/adr/](docs/adr/) | the structural decisions and their reasons |
+| [.claude/skills/CANONICAL.md](.claude/skills/CANONICAL.md) | the pinned symbols: tables, ports, exceptions, error codes, migration order, and the verified PostgreSQL behaviours |
+| [.claude/skills/](.claude/skills/) | the engineering conventions applied to this project |
+| [docs/adr/](docs/adr/) | architecture decisions and their reasons |
 
 ## Licence
 
-Proprietaire. Tous droits reserves.
+Proprietary. All rights reserved.

@@ -3,6 +3,9 @@ package com.balaaca.app.rest;
 import com.balaaca.app.api.ModerationApi;
 import com.balaaca.app.api.model.ContestationPage;
 import com.balaaca.app.api.model.ContestationQueueView;
+import com.balaaca.app.api.model.LocalityRef;
+import com.balaaca.app.api.model.ModeratedProviderPage;
+import com.balaaca.app.api.model.ModeratedProviderView;
 import com.balaaca.app.api.model.ModerationView;
 import com.balaaca.app.api.model.ProviderReportPage;
 import com.balaaca.app.api.model.ProviderReportView;
@@ -10,6 +13,7 @@ import com.balaaca.app.api.model.ProviderStatus;
 import com.balaaca.app.api.model.ReportReason;
 import com.balaaca.app.api.model.SuspensionRequest;
 import com.balaaca.providers.ports.inbound.ModerateProvidersUseCase;
+import com.balaaca.providers.ports.inbound.ModerateProvidersUseCase.ModeratedProvider;
 import com.balaaca.providers.ports.inbound.ModerateProvidersUseCase.Moderation;
 import com.balaaca.providers.ports.inbound.ModerateProvidersUseCase.Report;
 import io.quarkus.security.Authenticated;
@@ -41,6 +45,27 @@ public class ModerationResource implements ModerationApi {
 
     public ModerationResource(ModerateProvidersUseCase moderation) {
         this.moderation = moderation;
+    }
+
+    @Override
+    @RolesAllowed("admin:moderation")
+    public Response listAllProviders(String q, ProviderStatus status, String cursor,
+                                     Integer limit) {
+        var page = moderation.providers(
+                Optional.ofNullable(q).filter(v -> !v.isBlank()),
+                Optional.ofNullable(status).map(ProviderStatus::toString),
+                Cursors.directoryPosition(cursor),
+                limit == null ? Cursors.DEFAULT_LIMIT : limit);
+
+        return Response.ok(new ModeratedProviderPage()
+                .data(page.entries().stream().map(ModerationResource::view).toList())
+                .nextCursor(page.next().map(Cursors::encodeDirectory).orElse(null)))
+                // Never cached, for the same reason the queues are not: this is
+                // every business on the platform with its standing beside it,
+                // and an intermediary holding a copy of it is a leak with no
+                // upside.
+                .header("Cache-Control", PublicCaching.NEVER)
+                .build();
     }
 
     @Override
@@ -89,6 +114,28 @@ public class ModerationResource implements ModerationApi {
         m.suspendedAt().ifPresent(at ->
                 view.setSuspendedAt(OffsetDateTime.ofInstant(at, ZoneOffset.UTC)));
         m.reason().ifPresent(view::setSuspensionReason);
+        return view;
+    }
+
+    private static ModeratedProviderView view(ModeratedProvider p) {
+        ModeratedProviderView view = new ModeratedProviderView()
+                .slug(p.slug())
+                .businessName(p.businessName())
+                .published(p.published())
+                .status(ProviderStatus.fromValue(p.status()))
+                .registeredAt(OffsetDateTime.ofInstant(p.registeredAt(), ZoneOffset.UTC))
+                .appointmentCount(p.appointmentCount());
+
+        p.trade().ifPresent(view::setTrade);
+        p.area().ifPresent(view::setArea);
+        p.suspensionReason().ifPresent(view::setSuspensionReason);
+        // Both halves or neither: a reference carrying a slug the caller cannot
+        // display, or a label it cannot pass back to listProviders, is half a
+        // place. The column is nullable and the join is a LEFT one, so this is
+        // the ordinary case for a business that has never been placed.
+        p.localitySlug().flatMap(slug -> p.localityLabel().map(
+                label -> new LocalityRef().slug(slug).labelFr(label)))
+                .ifPresent(view::setLocality);
         return view;
     }
 

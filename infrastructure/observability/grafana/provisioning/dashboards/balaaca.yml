@@ -1,0 +1,21 @@
+# Where Grafana finds the dashboard. One provider, one directory, one file.
+#
+# The directory is /etc/grafana/dashboards and NOT /var/lib/grafana/dashboards:
+# the latter is inside the named volume that holds Grafana's own database, and
+# bind-mounting a read-only directory inside a volume is a mount arrangement
+# that works until somebody wonders why.
+apiVersion: 1
+
+providers:
+  - name: balaaca
+    orgId: 1
+    folder: ""
+    type: file
+    # The file is the source. A dashboard edited in the browser and saved would
+    # otherwise survive as a copy that no longer matches the repository, which
+    # is exactly the state this whole directory exists to prevent.
+    disableDeletion: true
+    allowUiUpdates: false
+    options:
+      path: /etc/grafana/dashboards
+      foldersFromFilesStructure: false

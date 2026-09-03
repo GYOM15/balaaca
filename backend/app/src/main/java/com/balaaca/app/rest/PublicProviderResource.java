@@ -126,7 +126,8 @@ public class PublicProviderResource implements DiscoveryApi {
                     LocalityView view = new LocalityView()
                             .slug(l.slug())
                             .labelFr(l.labelFr())
-                            .kind(LocalityView.KindEnum.fromString(l.kind()));
+                            .kind(LocalityView.KindEnum.fromString(l.kind()))
+                            .providerCount(l.providerCount());
                     l.parentSlug().ifPresent(view::setParentSlug);
                     l.iso31662().ifPresent(view::setIso31662);
                     return view;
@@ -155,16 +156,8 @@ public class PublicProviderResource implements DiscoveryApi {
                 .build();
     }
 
-    /**
-     * One derived value out of two stored ones. A CHECK on the table refuses an
-     * offering that is both dropped off and travelled to, so these cannot
-     * overlap - which is why this reads as a chain rather than a matrix.
-     */
-    private static Fulfilment fulfilmentOf(PublishedService s) {
-        if (s.isCallOut()) {
-            return Fulfilment.AT_CUSTOMER;
-        }
-        return s.isDropOff() ? Fulfilment.DROP_OFF : Fulfilment.ON_SITE;
+    private static Fulfilment wire(com.balaaca.catalog.ports.inbound.Fulfilment mode) {
+        return Fulfilment.valueOf(mode.name());
     }
 
     /** A blank query parameter is an absent one, not a value to match on. */
@@ -270,7 +263,15 @@ public class PublicProviderResource implements DiscoveryApi {
                 .serviceOfferingId(published.id().value())
                 .name(published.name())
                 .durationMinutes((int) published.duration().toMinutes())
-                .fulfilment(fulfilmentOf(published))
+                // Exactly what the booking form must put to the customer: one
+                // value asks nothing, several ask, and the answer comes back on
+                // the booking request.
+                .fulfilments(published.fulfilments().stream()
+                        .map(PublicProviderResource::wire).toList())
+                // Deprecated and still required. A client that branches on it
+                // draws one of the ways this service can be had and hides the
+                // others, which is why the array above exists.
+                .fulfilment(wire(published.primaryFulfilment()))
                 .photos(published.photos().stream().map(name -> MEDIA + name).toList());
 
         // "Ready in 48 h" is what a customer needs before choosing. Without it

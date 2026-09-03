@@ -1,7 +1,7 @@
 package com.balaaca.catalog.adapters.outbound.persistence;
 
-import com.balaaca.catalog.ports.inbound.ServiceLocation;
 import com.balaaca.catalog.domain.DuplicateServiceNameException;
+import com.balaaca.catalog.ports.inbound.Fulfilment;
 import com.balaaca.catalog.ports.inbound.ManageServiceOfferingsUseCase.OfferingDefinition;
 import com.balaaca.catalog.ports.inbound.ManageServiceOfferingsUseCase.ServiceOffering;
 import com.balaaca.catalog.ports.outbound.ServiceOfferingRepository;
@@ -36,7 +36,8 @@ public class ServiceOfferingCatalogueSqlRepository implements ServiceOfferingRep
     private static final String COLUMNS = """
             id, name, description, duration_minutes, buffer_before_minutes,
             buffer_after_minutes, price_amount_minor, price_currency,
-            price_visible, sort_order, active, turnaround_hours, location_kind
+            price_visible, sort_order, active, turnaround_hours,
+            offers_on_site, offers_drop_off, offers_at_customer
             """;
 
     private final EntityManager em;
@@ -82,11 +83,13 @@ public class ServiceOfferingCatalogueSqlRepository implements ServiceOfferingRep
                         id, provider_id, name, description, duration_minutes,
                         buffer_before_minutes, buffer_after_minutes,
                         price_amount_minor, price_currency, price_visible,
-                        sort_order, active, turnaround_hours, location_kind)
+                        sort_order, active, turnaround_hours,
+                        offers_on_site, offers_drop_off, offers_at_customer)
                     VALUES (:id, :providerId, :name, :description, :duration,
                             :bufferBefore, :bufferAfter, :priceMinor, :currency,
                             :priceVisible, :sortOrder, :active,
-                            CAST(:turnaround AS int), :location)
+                            CAST(:turnaround AS int),
+                            :onSite, :dropOff, :atCustomer)
                     RETURNING %s
                     """.formatted(COLUMNS))
                     .setParameter("id", id.value())
@@ -102,7 +105,9 @@ public class ServiceOfferingCatalogueSqlRepository implements ServiceOfferingRep
                     .setParameter("sortOrder", d.sortOrder())
                     .setParameter("active", d.active())
                     .setParameter("turnaround", turnaroundOf(d))
-                    .setParameter("location", d.location().name())
+                    .setParameter("onSite", d.fulfilments().contains(Fulfilment.ON_SITE))
+                    .setParameter("dropOff", d.fulfilments().contains(Fulfilment.DROP_OFF))
+                    .setParameter("atCustomer", d.fulfilments().contains(Fulfilment.AT_CUSTOMER))
                     .getSingleResult();
             return toOffering(row);
         } catch (PersistenceException e) {
@@ -127,7 +132,9 @@ public class ServiceOfferingCatalogueSqlRepository implements ServiceOfferingRep
                            sort_order = :sortOrder,
                            active = :active,
                            turnaround_hours = CAST(:turnaround AS int),
-                           location_kind = :location,
+                           offers_on_site = :onSite,
+                           offers_drop_off = :dropOff,
+                           offers_at_customer = :atCustomer,
                            updated_at = now()
                      WHERE id = :id
                     RETURNING %s
@@ -144,7 +151,9 @@ public class ServiceOfferingCatalogueSqlRepository implements ServiceOfferingRep
                     .setParameter("sortOrder", d.sortOrder())
                     .setParameter("active", d.active())
                     .setParameter("turnaround", turnaroundOf(d))
-                    .setParameter("location", d.location().name())
+                    .setParameter("onSite", d.fulfilments().contains(Fulfilment.ON_SITE))
+                    .setParameter("dropOff", d.fulfilments().contains(Fulfilment.DROP_OFF))
+                    .setParameter("atCustomer", d.fulfilments().contains(Fulfilment.AT_CUSTOMER))
                     .getResultList();
 
             return rows.isEmpty() ? Optional.empty() : Optional.of(toOffering(rows.get(0)));
@@ -189,7 +198,7 @@ public class ServiceOfferingCatalogueSqlRepository implements ServiceOfferingRep
                         Duration.ofMinutes(((Number) r[4]).longValue()),
                         Duration.ofMinutes(((Number) r[5]).longValue()),
                         Optional.ofNullable((Number) r[11]).map(h -> Duration.ofHours(h.longValue())),
-                        ServiceLocation.valueOf((String) r[12]),
+                        OfferedModes.of((Boolean) r[12], (Boolean) r[13], (Boolean) r[14]),
                         Money.ofMinor(((Number) r[6]).longValue(), Currency.of((String) r[7])),
                         (Boolean) r[8],
                         ((Number) r[9]).intValue(),

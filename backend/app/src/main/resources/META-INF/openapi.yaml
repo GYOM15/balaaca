@@ -174,6 +174,12 @@ paths:
 
         The appointment is created `CONFIRMED`: the provider entering it is the
         acceptance, and there is nobody left to accept it afterwards.
+
+        `customer.preferred_channel` works exactly as it does on the public
+        route, and it is the counter's job to ask: the person standing there
+        is the one who knows whether they read e-mail. Omitting it means
+        `WHATSAPP`; choosing `EMAIL` without `customer.email` is `400
+        VALIDATION_FAILED`.
       security:
         - oauth2: [appointments:write]
       parameters:
@@ -1567,6 +1573,8 @@ paths:
                 $ref: '#/components/schemas/CustomerBookingView'
         '404':
           $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
 
   /v1/bookings/{reference}/reschedule:
     post:
@@ -1627,6 +1635,8 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+        '429':
+          $ref: '#/components/responses/RateLimited'
 
   /v1/bookings/{reference}/cancellation:
     post:
@@ -1677,6 +1687,8 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+        '429':
+          $ref: '#/components/responses/RateLimited'
 
   /v1/providers/{slug}/appointments:
     post:
@@ -1700,6 +1712,13 @@ paths:
         The server recomputes the window from the offering's own duration and
         buffers, and freezes the price from the offering. Neither is accepted
         from the client.
+
+        The customer says how they want to hear back, through
+        `customer.preferred_channel`. Omitting it means `WHATSAPP`, so nothing
+        sent before that field existed changes meaning. Choosing `EMAIL`
+        without `customer.email` is `400 VALIDATION_FAILED` and is refused
+        here, at the edge, rather than surfacing hours later as a message
+        addressed to nowhere.
 
         Retry semantics: a `409` means the slot is gone, so re-read
         availability rather than retrying the same body. A `429` and a `5xx`
@@ -1743,6 +1762,27 @@ paths:
                 $ref: '#/components/schemas/AppointmentCreatedView'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '403':
+          description: |
+            `FORBIDDEN` - this provider does not take a booking from this
+            telephone number on the public page. The number is one the provider
+            blocked in their own address book, and no other request can lift it:
+            the caller's recourse is the salon itself.
+
+            `FORBIDDEN` rather than a code of its own. The catalogue is closed,
+            and this is what it means - the server understood, refuses, and
+            nothing the caller can send changes the answer.
+
+            The `title` deliberately does not say the number is blocked, and
+            nothing else in the body does either. This route is
+            unauthenticated, so a response that named the reason would let
+            anybody who can spell the slug read a salon's blocklist one
+            telephone number at a time, which is somebody else's business twice
+            over.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -2006,6 +2046,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '404':
           $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
 
   /v1/provider-profile/contestation:
     get:
@@ -2139,6 +2181,74 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+
+  /v1/admin/providers:
+    get:
+      operationId: listAllProviders
+      tags: [moderation]
+      summary: Every business on the platform
+      description: |
+        The listing the lever always needed. `suspendProvider` is keyed on a
+        slug and nothing published one, so the operator could only act on a
+        business a customer had already named in a complaint - and suspending
+        meant typing a handle he had no way to look up.
+
+        It crosses every provider, which is the whole reason the
+        `admin:moderation` scope exists. It is also the only operation here that
+        shows a business NOBODY has complained about: `listProviderReports` and
+        `listContestations` are inboxes, and an inbox cannot answer "who is on
+        this platform".
+
+        What it shows is what a suspension is decided from, and nothing more.
+        `appointment_count` is the one that changes decisions: suspending does
+        not cancel a single booking already taken, so a salon holding forty of
+        them is forty customers still expected at the door, and the number has
+        to be visible before the lever is pulled rather than after.
+
+        It is not `listProviders` with a wider filter. That operation serves the
+        public, shows only published and active businesses, and carries a card's
+        worth of marketing. This one shows the unpublished and the suspended -
+        precisely the rows the public path hides - and carries no contact
+        details at all.
+
+        Ordered by name, always, for the reason `listProviders` is: a cursor
+        over an ordered sequence is only meaningful while the order holds still.
+
+        Customers are not in it. The operator sees that a business holds
+        appointments, never who is in them; a moderation console that hands out
+        every complainant's name and telephone number is a marketing list with a
+        grievance attached.
+      security: [{ oauth2: [admin:moderation] }]
+      parameters:
+        - name: q
+          in: query
+          required: false
+          description: Part of a business name, or part of its handle. The
+            operator arrives holding one or the other - a name from a telephone
+            call, a slug from a link somebody sent him.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 120
+        - name: status
+          in: query
+          required: false
+          description: Omit for every business, whatever its standing.
+          schema:
+            $ref: '#/components/schemas/ProviderStatus'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: The businesses, by name.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModeratedProviderPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /v1/admin/providers/{slug}/suspension:
     post:
@@ -2386,6 +2496,57 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /v1/customers/{id}/blocking:
+    put:
+      operationId: replaceCustomerBlocking
+      tags: [clientele]
+      summary: Refuse this person a booking on the public page
+      description: |
+        The one lever a provider has against somebody who does not turn up.
+        `blocked` has been on the row since the table was created and nothing
+        ever wrote it, so every customer was welcome for ever and a salon
+        losing an hour a week to the same person could do nothing but answer
+        the telephone.
+
+        It binds the PUBLIC page, and only it. A provider writing a walk-in
+        into their own diary is not restrained by their own refusal: somebody
+        is standing at the counter, the argument was settled, and a diary that
+        refuses to record what is happening is a diary the salon keeps on
+        paper. That is the same line `bookWalkIn` already draws through the
+        booking policy and the published availability.
+
+        It is not retroactive. Appointments already in the book stand, exactly
+        as suspending a business does not cancel the customers who are still
+        coming on Thursday - the block says who may take a NEW slot, and
+        cancelling what was promised is a separate decision with its own
+        operation.
+
+        Blocking somebody who is already blocked, or unblocking somebody who
+        was never blocked, succeeds and changes nothing. The provider pressed
+        a switch and the switch is where they left it.
+      security: [{ oauth2: [dashboard:read] }]
+      parameters:
+        - $ref: '#/components/parameters/CustomerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerBlockingRequest'
+      responses:
+        '200':
+          description: The customer, as they now stand.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerDetailView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /v1/localities:
     get:
       operationId: listLocalities
@@ -2544,6 +2705,36 @@ paths:
           schema:
             type: string
             maxLength: 80
+        - name: fulfilment
+          in: query
+          required: false
+          explode: true
+          description: |
+            Repeat it to ask for several ways of being served at once.
+
+            A business matches when ANY of its currently ACTIVE services offers
+            ANY of the modes asked for - the same source, read the same way,
+            that fills `fulfilments` on the card. Every provider returned
+            therefore carries at least one of the modes asked for, so the filter
+            and the badge can never disagree.
+
+            ANY and not ALL. A customer ticking "a domicile" wants somebody who
+            travels for something, not somebody who travels for everything, and
+            a shop that also has a counter is not a worse answer for having one.
+
+            A service that has been retired offers nothing. It is `active` that
+            decides, exactly as it decides the badge, so a business whose only
+            house-call service was withdrawn stops appearing under
+            `AT_CUSTOMER` on the same day it stops offering it.
+
+            Omitted is no filter, which is not the same as asking for none: a
+            business with no active service publishes no mode at all and is only
+            ever excluded by naming one.
+          schema:
+            type: array
+            maxItems: 3
+            items:
+              $ref: '#/components/schemas/Fulfilment'
         - name: city
           in: query
           required: false
@@ -2773,10 +2964,11 @@ components:
         `admin:moderation` is the single exception, and it is deliberately
         shaped so the exception is obvious. It grants no ordinary provider
         operation at all - it cannot read an agenda, a customer or a catalogue.
-        It grants exactly four things: take a business off the hub, put it back,
-        read what customers have reported, and mark a report seen. It is held by
-        the platform operator and by nobody else, and every use of it writes an
-        audit row.
+        What it grants is the whole of the `/v1/admin` namespace and nothing
+        outside it: list the businesses, take one off the hub, put it back, read
+        what customers reported and what businesses answered, and mark either
+        seen. It is held by the platform operator and by nobody else, and every
+        decision taken with it writes an audit row.
       flows:
         authorizationCode:
           authorizationUrl: /realms/balaaca/protocol/openid-connect/auth
@@ -2789,9 +2981,9 @@ components:
             profile:write: Change the caller's own public page, and publish it.
             staff:write: Add and change the caller's own people.
             admin:moderation: >
-              Suspend and reinstate any business, and read the reports customers
-              have filed. The platform operator's scope, and the only one that
-              crosses providers.
+              List every business, suspend and reinstate any of them, and read
+              what customers reported and what businesses answered. The platform
+              operator's scope, and the only one that crosses providers.
 
   parameters:
     AppointmentId:
@@ -2843,13 +3035,46 @@ components:
       name: reference
       in: path
       required: true
-      description: The capability minted at booking. Opaque, and the only thing
-        that distinguishes the person who booked from a stranger.
+      description: |
+        The capability minted at booking, and the only thing that distinguishes
+        the person who booked from a stranger.
+
+        Canonical form is `AAA-BBBBBB`: three letters taken from the business
+        name, a hyphen, then six symbols drawn from an alphabet of 31 - the
+        digits and the upper-case letters with `0`, `O`, `1`, `I` and `L`
+        removed, because those are the characters a person hears wrong and
+        reads wrong. Display it exactly as it was returned, and never inside
+        anything that transforms case.
+
+        It is ACCEPTED more loosely than it is minted, because it is meant to be
+        said down a telephone and typed back in. Case is ignored and the hyphen
+        is optional, so `sfa-k7m2qp` and `SFAK7M2QP` are the same reference as
+        `SFA-K7M2QP`. Within the three initials - and only there, because the
+        six-symbol alphabet contains none of them - `0` reads as `O`, and `1`
+        and `L` read as `I`. That is why the pattern admits `0` and `1` in the
+        first three positions and nowhere else: `S1L-K7M2QP` is how somebody
+        transcribes `SIL-K7M2QP`, and it resolves.
+
+        The six symbols admit no such tolerance and want none. `0`, `O`, `1`,
+        `I` and `L` are not in that alphabet, so a character heard wrong there
+        has no correct reading and the answer is `400`, not a `404` that leaves
+        the customer wondering whether the booking still exists.
+
+        The initials are a courtesy for a person reading a list of references,
+        and for the salon recognising its own. They are not a secret, they grant
+        nothing, and they are not a key on their own: the whole string is the
+        key, and two references can never differ only in the characters above.
+
+        This replaced 43 characters of base64url. That value was case-sensitive,
+        so no page could display it in a heading without destroying it, and it
+        could not be dictated at all. Every reference of the old shape was
+        reissued when the format changed, so no client holds one that would
+        still have worked.
       schema:
         type: string
-        minLength: 20
-        maxLength: 64
-        pattern: '^[A-Za-z0-9_-]+$'
+        minLength: 9
+        maxLength: 10
+        pattern: '^[A-Za-z01]{3}-?[2-9A-HJKMNP-Za-hjkmnp-z]{6}$'
     ProviderSlug:
       name: slug
       in: path
@@ -2902,6 +3127,29 @@ components:
         `RESOURCE_NOT_FOUND`. One answer for a resource that does not exist and
         for one that is not the caller's, byte for byte: any way to tell them
         apart is an oracle for whether a hidden resource exists.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    RateLimited:
+      description: |
+        `RATE_LIMITED` - too many attempts arrived from one source.
+
+        On the customer booking routes this is not a courtesy to the server, it
+        is the second half of the authorisation. A booking reference is short
+        enough to be read aloud, which is short enough to be enumerated: six
+        symbols from an alphabet of 31 is 887 million per prefix, and a prefix
+        is shared by every business whose initials match. The limit is what
+        makes walking that space cost more than it is worth, and it is the
+        reason the reference is allowed to be that short.
+
+        `Retry-After` says how long to wait. Retrying sooner returns this same
+        answer and counts against the limit.
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying.
+          schema:
+            type: integer
       content:
         application/problem+json:
           schema:
@@ -3011,6 +3259,51 @@ components:
         email:
           type: string
           maxLength: 255
+          description: |
+            Required when `preferred_channel` is `EMAIL`, optional otherwise.
+        preferred_channel:
+          allOf:
+            - $ref: '#/components/schemas/ContactChannel'
+          description: |
+            Which way this customer wants to hear about THIS booking. The
+            person in front of a pharmacy counter is the one who knows what
+            they actually read, so they are asked rather than the business.
+
+            OMIT IT for `WHATSAPP`, which is what every request sent before
+            this field existed means and why it is not required.
+
+            Choosing `EMAIL` with no `email` is `400 VALIDATION_FAILED`,
+            refused here rather than hours later when the message is due: a
+            row addressed to nowhere is a confirmation that never arrives and
+            a customer standing outside a closed salon.
+
+            The choice is FROZEN onto the appointment, not remembered against
+            the telephone number. Every message this booking owes - the
+            confirmation, both reminders, a cancellation days later - carries
+            the answer given when it was made, so booking again another way
+            never rewrites what an earlier booking does.
+
+    ContactChannel:
+      type: string
+      description: |
+        A way to reach a customer.
+
+        `WHATSAPP`: the number they booked with. The default, and what every
+        booking taken before this field existed used.
+        `EMAIL`: the address on the same contact, which then becomes required.
+
+        Only what can actually be delivered is published here. SMS exists in
+        the platform's internal vocabulary and has no adapter and no account
+        behind it, so offering it would be a promise nothing keeps.
+
+        It is a preference and not a guarantee. The platform freezes both
+        addresses it holds onto the message it writes, so one the preferred
+        channel cannot carry is sent by the other where an address for it
+        exists rather than being dropped. What IS guaranteed is the refusal
+        above: `EMAIL` is never accepted without an address to send to.
+
+        A client that does not know a value should treat it as `WHATSAPP`.
+      enum: [WHATSAPP, EMAIL]
 
     PerformerRequest:
       type: object
@@ -3189,11 +3482,17 @@ components:
       allOf:
         - $ref: '#/components/schemas/CustomerSummaryView'
         - type: object
-          required: [history]
+          required: [history, blocked]
           properties:
             notes:
               type: string
               description: The provider's own. Never shown to the customer.
+            blocked:
+              type: boolean
+              description: Whether this person is refused a booking on the
+                public page. False for everybody until a provider says
+                otherwise, and never true of somebody the provider has not
+                blocked themselves.
             history:
               type: array
               items:
@@ -3222,6 +3521,17 @@ components:
           type: string
           maxLength: 2000
           description: Omit or send empty to clear it.
+
+    CustomerBlockingRequest:
+      type: object
+      required: [blocked]
+      properties:
+        blocked:
+          type: boolean
+          description: True refuses this person a booking on the public page;
+            false lets them book again. Required, because a body that omitted
+            it would have to mean one of the two and either reading is a
+            provider's decision taken for them.
 
     CustomerPage:
       type: object
@@ -3310,6 +3620,90 @@ components:
         next_cursor:
           type: string
           nullable: true
+
+    ModeratedProviderView:
+      type: object
+      description: |
+        A business as the platform operator sees it, which is a different thing
+        from `ProviderSummary`. That one draws a card for a customer and is kept
+        deliberately small because a directory is easy to scrape. This one is
+        behind `admin:moderation`, shows what the public path hides - the
+        unpublished and the suspended - and carries no way to contact anybody:
+        not the business, and above all not its customers.
+      required: [slug, business_name, published, status, registered_at,
+                 appointment_count]
+      properties:
+        slug:
+          type: string
+          description: The handle every other moderation operation is keyed on.
+            It is here so the operator can stop typing one he never saw.
+        business_name:
+          type: string
+        trade:
+          type: string
+          description: |
+            The trade's own label, as the taxonomy publishes it. A label rather
+            than a slug: this is a column an operator reads once and acts on, so
+            a second request to turn thirty-five slugs into words would buy
+            nothing.
+
+            Absent when the business has chosen no trade, which is a real state
+            and one of the things worth looking for.
+        locality:
+          allOf:
+            - $ref: '#/components/schemas/LocalityRef'
+          description: Where the business is filed, at the finest level the
+            published map has. Absent when it has never been placed.
+        area:
+          type: string
+          description: The quartier, as the provider wrote it. Absent when they
+            wrote none.
+        published:
+          type: boolean
+          description: |
+            Whether the provider has put their own page live. Not the same
+            question as `status` and never conflated with it: `published` is the
+            business's decision and it can undo it, `status` is the platform's
+            and it cannot. A suspended business keeps `published: true` and
+            still disappears from every public path.
+        status:
+          $ref: '#/components/schemas/ProviderStatus'
+        registered_at:
+          type: string
+          format: date-time
+          description: When the business first appeared. A salon that registered
+            this morning and a salon that has been here two years are not the
+            same complaint.
+        appointment_count:
+          type: integer
+          format: int64
+          description: |
+            How many appointments the business holds, in total and whatever
+            their state.
+
+            The number that changes the decision. Suspending takes the page off
+            the hub and does NOT cancel a single booking already taken, so this
+            is how many customers are still expected at the door after the lever
+            is pulled. It counts appointments and says nothing whatsoever about
+            who is in them.
+        suspension_reason:
+          type: string
+          description: What the operator wrote when they suspended, and what the
+            provider reads on their own dashboard. Absent unless `status` is
+            `SUSPENDED` - a reinstated business stops carrying the accusation.
+
+    ModeratedProviderPage:
+      type: object
+      required: [data, next_cursor]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModeratedProviderView'
+        next_cursor:
+          type: string
+          nullable: true
+          description: Opaque; null on the last page.
 
     ServicePhotoView:
       type: object
@@ -3428,14 +3822,41 @@ components:
           description: The requested start, as a UTC instant.
         customer:
           $ref: '#/components/schemas/CustomerContact'
+        fulfilment:
+          allOf:
+            - $ref: '#/components/schemas/Fulfilment'
+          description: |
+            Which of the service's published `fulfilments` the customer chose.
+            The choice is FROZEN onto the appointment and is not re-derived from
+            the offering afterwards: a braider who stops travelling must not turn
+            Thursday's house call into a chair in her salon.
+
+            OMIT IT when the service publishes exactly one mode - the server
+            takes that one, which is what every request sent before this field
+            existed means and why it is not required. When the service publishes
+            several, omitting it is `400 VALIDATION_FAILED`: there is no
+            defensible default between sitting in a salon and having somebody
+            come to your house, and picking one would send a stranger to an
+            address or leave a customer waiting at home.
+
+            A value the service does not publish is `400 VALIDATION_FAILED` for
+            the same reason a wrong `service_offering_id` is - it names
+            something that is not on offer.
+
+            It does not change the price or the duration. Both are frozen from
+            the offering, which carries one of each whichever mode is chosen.
         service_address:
           allOf:
             - $ref: '#/components/schemas/ServiceAddress'
           description: |
-            Where to come. Required when the offering is `AT_CUSTOMER`, refused
-            otherwise - an appointment that happens at the shop must not carry
-            somebody's home address, and a call-out with no directions is a job
-            nobody can do.
+            Where to come. Required when the chosen `fulfilment` is
+            `AT_CUSTOMER`, refused otherwise - an appointment that happens at
+            the shop must not carry somebody's home address, and a call-out with
+            no directions is a job nobody can do.
+
+            "The chosen one", not "the offering's": a service that publishes
+            both `ON_SITE` and `AT_CUSTOMER` needs an address for one booking
+            and must not hold one for the next.
         customer_note:
           type: string
           maxLength: 500
@@ -3651,6 +4072,40 @@ components:
           minimum: 0
           maximum: 240
           default: 0
+        fulfilments:
+          type: array
+          # NOT minItems. The property is optional - the deprecated `location`
+          # path this document still promises omits it - and jaxrs-spec
+          # initialises an absent array to an empty list, then puts
+          # @Size(min=1) on the getter. An omitted array would therefore be
+          # refused by bean validation before any handler ran, and every
+          # existing caller would answer 400. Proved, not reasoned.
+          #
+          # "At least one" is enforced where it belongs and twice:
+          # ck_service_offerings_offers_one in the schema, and
+          # OfferingDefinition's compact constructor.
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/Fulfilment'
+          description: |
+            Every way this one service can be obtained. At least one, each value
+            at most once, order ignored.
+
+            `turnaround_hours` is required when this contains `DROP_OFF` and
+            refused when it does not: the delay is the promise attached to that
+            mode, and a service that also does `ON_SITE` carries no promise for
+            the customer who stayed in the chair.
+
+            ONE PRICE AND ONE DURATION, whichever mode the customer picks. A
+            surcharge for travelling to somebody's house is a pricing model
+            nobody has decided, and putting one here would change what a
+            customer is charged after they have read a number on the page. A
+            provider who genuinely charges more to travel still publishes two
+            services - which is the same answer as before, now applied only to
+            the case that actually differs.
+
+            Omit it only to keep using the deprecated `location` below. Sending
+            both is refused.
         turnaround_hours:
           type: integer
           format: int32
@@ -3660,27 +4115,23 @@ components:
             The workshop delay, for a service the customer HANDS OVER rather
             than waits for: a garage, a phone repairer, an alteration.
 
-            Exclusive with `location: AT_CUSTOMER`, and refused with it: a
-            drop-off asks the customer to bring the thing in, and asking them to
-            bring it to their own house is not a service anybody sells.
+            Required with `DROP_OFF` in `fulfilments`, refused without it. When
+            the request uses the deprecated `location` instead, its presence is
+            what makes the offering a drop-off, and it stays exclusive with
+            `location: AT_CUSTOMER`.
         location:
+          deprecated: true
           allOf:
             - $ref: '#/components/schemas/ServiceLocation'
           description: |
-            Omit it for the ordinary case - the customer comes to the shop.
-            `AT_CUSTOMER` is the plumber, the electrician, the cleaner and the
-            mover, and it makes the booking form ask where to go.
+            Superseded by `fulfilments`, and refused alongside it - two fields
+            for one fact are two fields that disagree.
 
-            Its presence is what makes the offering a drop-off. There is no
-            second flag to set, because two fields can disagree and one of the
-            two disagreements - a drop-off with no delay announced - is a
-            promise nobody made.
-
-            Omit it for anything performed while the customer is there. And
-            when it IS present, `duration_minutes` stops being the length of
-            the work and becomes the length of the HANDOVER at the counter:
-            the work occupies the workshop, not a chair, and a tailor sews
-            twelve boubous at once.
+            It could name only one shape, so a braider who works in her salon
+            and at her customers' houses had to publish the same service twice.
+            Read as a set of one: absent or `AT_PROVIDER` with no
+            `turnaround_hours` is `[ON_SITE]`, absent or `AT_PROVIDER` with one
+            is `[DROP_OFF]`, and `AT_CUSTOMER` is `[AT_CUSTOMER]`.
         price:
           $ref: '#/components/schemas/Money'
         price_visible:
@@ -3720,9 +4171,24 @@ components:
         turnaround_hours:
           type: integer
           format: int32
-          description: Absent on an on-site service.
+          description: Present exactly when `fulfilments` contains `DROP_OFF`.
+        fulfilments:
+          type: array
+          minItems: 1
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/Fulfilment'
+          description: Every way this service can be obtained. At least one.
         fulfilment:
-          $ref: '#/components/schemas/Fulfilment'
+          deprecated: true
+          allOf:
+            - $ref: '#/components/schemas/Fulfilment'
+          description: |
+            Superseded by `fulfilments`. Kept because it is published and
+            required, and it now answers a question a single value cannot: for a
+            service offering several modes it is the first of `ON_SITE`,
+            `DROP_OFF`, `AT_CUSTOMER` that the service publishes, which is not
+            the same thing as what the service is.
         price:
           $ref: '#/components/schemas/Money'
         price_visible:
@@ -3736,8 +4202,7 @@ components:
     Fulfilment:
       type: string
       description: |
-        The shape of the transaction. Three, and they are mutually exclusive -
-        the database refuses any pairing of them.
+        How the work reaches the customer.
 
         `ON_SITE`: the customer sits down and waits, and `duration_minutes` is
         how long.
@@ -3747,11 +4212,18 @@ components:
         `AT_CUSTOMER`: the provider travels, and the appointment carries the
         address. `duration_minutes` is the visit.
 
-        Required on every view and never accepted on a request: the server
-        derives it from `turnaround_hours` and `location`. A client must not
-        have to branch on the absence of a field, and a request that carried
-        both the inputs and the derived value would carry two sources of truth
-        for one fact.
+        These were mutually exclusive and are no longer. A service may publish
+        SEVERAL of them - braids in the salon or at your house is one service,
+        one price and one duration, and making a provider list it twice gave the
+        catalogue two rows to keep in step and a customer two entries to choose
+        between for no reason. See `fulfilments` on the offering schemas for the
+        set, and `fulfilment` on `BookAppointmentRequest` for the customer's
+        choice among them.
+
+        The set is unordered. Where one value has to stand for a service that
+        offers more than one - the deprecated singular `fulfilment` on the
+        views - it is the first of `ON_SITE`, `DROP_OFF`, `AT_CUSTOMER` that the
+        service publishes.
 
         A client that does not know a value should treat it as `ON_SITE`, which
         is what every service created before this enum grew actually is.
@@ -3860,6 +4332,15 @@ components:
             because this is the only screen it was ever for - it was accepted
             by the booking request and discarded, so the box said "Message for
             the salon" and the message went nowhere.
+        fulfilment:
+          allOf:
+            - $ref: '#/components/schemas/Fulfilment'
+          description: |
+            How this booking is being fulfilled, as the customer chose it and as
+            it was frozen. It can no longer be inferred from the presence of
+            `ready_by` or `service_address`, because the service it was booked
+            from may publish all three modes and this appointment is only one of
+            them.
         ready_by:
           type: string
           format: date-time
@@ -3969,6 +4450,14 @@ components:
           type: string
         service_name:
           type: string
+        fulfilment:
+          allOf:
+            - $ref: '#/components/schemas/Fulfilment'
+          description: |
+            What the customer chose when they booked, frozen. The one field on
+            this view that says whether to go to the salon, drop something off,
+            or wait at home - and since a service may now publish all three, it
+            cannot be worked out from the service name.
         timezone:
           type: string
           description: |
@@ -4029,8 +4518,17 @@ components:
           format: uuid
         reference:
           type: string
-          description: Keep it. It is the only way back to this appointment
-            without an account, and it is returned once.
+          description: |
+            Keep it. It is the only way back to this appointment without an
+            account, and it is returned once.
+
+            Canonical `AAA-BBBBBB`, ten characters, and it is meant to be read
+            aloud and written down. Upper case throughout, deliberately: the
+            previous format was mixed-case base64url, the page rendered it
+            inside an element carrying `text-transform: uppercase`, and what
+            every customer copied off the screen was therefore not their
+            reference. A format a stylesheet cannot damage was the fix, rather
+            than a rule about which element it may be put in.
         status:
           $ref: '#/components/schemas/AppointmentStatus'
 
@@ -4252,10 +4750,32 @@ components:
         turnaround_hours:
           type: integer
           format: int32
-          description: Absent on an on-site service. "Ready in 48 h" is what a
-            customer needs before choosing, which is why it is published.
+          description: Present exactly when `fulfilments` contains `DROP_OFF`.
+            "Ready in 48 h" is what a customer needs before choosing, which is
+            why it is published.
+        fulfilments:
+          type: array
+          minItems: 1
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/Fulfilment'
+          description: |
+            Every way this service can be obtained, and therefore exactly what
+            the booking form must offer the customer as a choice. One value
+            means no choice to make and nothing to ask; more than one means the
+            form asks, and `fulfilment` on the booking request carries the
+            answer.
+
+            The price and the duration above apply to all of them.
         fulfilment:
-          $ref: '#/components/schemas/Fulfilment'
+          deprecated: true
+          allOf:
+            - $ref: '#/components/schemas/Fulfilment'
+          description: |
+            Superseded by `fulfilments`. For a service publishing several modes
+            this is the first of `ON_SITE`, `DROP_OFF`, `AT_CUSTOMER` among
+            them, so a client that branches on it will draw one of the ways this
+            service can be had and hide the others.
         photos:
           type: array
           maxItems: 5
@@ -4365,7 +4885,7 @@ components:
 
     LocalityView:
       type: object
-      required: [slug, label_fr, kind]
+      required: [slug, label_fr, kind, provider_count]
       properties:
         slug:
           type: string
@@ -4391,6 +4911,35 @@ components:
             codes to fill a column nothing reads yet would be inventing data
             that looks authoritative. They can be added by an update the day
             something needs them.
+        provider_count:
+          type: integer
+          format: int32
+          description: |
+            How many providers `listProviders` returns for this slug. The
+            number a place tile shows, and the reason it is here: a tile that
+            says 8 has to lead to 8 results.
+
+            So it is counted DOWN THE TREE, exactly as the `locality` filter
+            matches. A commune counts the businesses filed against it; a
+            prefecture counts its own plus every commune beneath it; a region
+            counts everything under it. Conakry is the sum of its ten communes
+            rather than zero, even though almost nobody files a business
+            against the region itself.
+
+            The alternative - counting only rows filed at exactly this level -
+            was rejected because it makes every level above the commune read as
+            empty while the filter behind it returns dozens, which is the
+            number contradicting the list it labels.
+
+            The consequence, and a client must not get it wrong: THESE DO NOT
+            SUM. A region already contains its prefectures and a prefecture its
+            communes, so adding the column up counts one business as many as
+            three times. This is not a breakdown of a total and there is no
+            total of the country here.
+
+            Counted over published, active providers, which is the same set
+            every public operation can see. A business that has not published,
+            or that the platform has suspended, is in nobody's tile.
 
     AreaList:
       type: object
@@ -4443,6 +4992,37 @@ components:
           description: The quartier, as the provider wrote it.
         logo_url:
           type: string
+        fulfilments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Fulfilment'
+          description: |
+            Every way this business can be reached, as a set, DERIVED from the
+            modes its currently ACTIVE service offerings publish. Not a field
+            the provider fills in: a business that offers house calls says so by
+            publishing a service that does, and stops saying so by retiring it.
+
+            Unordered, and each value appears once. It may be EMPTY - a business
+            with no active service publishes nothing to aggregate, and that is a
+            real state a directory card has to draw. Treat empty as "not stated"
+            rather than as "none", and show nothing rather than a badge saying
+            so.
+        price_from:
+          allOf:
+            - $ref: '#/components/schemas/Money'
+          nullable: true
+          description: |
+            The lowest price among the same active offerings, counting only
+            those whose price the provider chose to publish. DERIVED, like
+            `fulfilments`, and `null` whenever there is nothing to derive it
+            from - no active service, or none with a visible price. Null and
+            zero are different answers and a client must not render one as the
+            other.
+
+            It is a floor and it is presented as one - "dès 90 000 GNF". It is
+            not what this customer will pay, because what they pay depends on
+            the service they pick, and a card that showed it as a price would be
+            quoting a number nobody agreed to.
 
     LocalityRef:
       type: object
@@ -4457,7 +5037,7 @@ components:
 
     ProviderSummaryPage:
       type: object
-      required: [data, next_cursor]
+      required: [data, next_cursor, total]
       properties:
         data:
           type: array
@@ -4467,6 +5047,25 @@ components:
           type: string
           nullable: true
           description: Opaque; null on the last page.
+        total:
+          type: integer
+          format: int32
+          description: |
+            How many providers match, across every page - what a toolbar means
+            by "23 professionnels" rather than "6 sur cette page".
+
+            It counts the same filters the page does and IGNORES the cursor, so
+            it is the size of the answer and not what is left of it. Paging
+            forward does not make it shrink.
+
+            EXACT, never capped or rounded. That is a cost and a deliberate
+            one: it is a second aggregate over the matching set on every page,
+            where `next_cursor` costs only the one extra row the page already
+            reads. A capped total makes every client render one number two ways
+            and turns "23" into a promise nobody checks; the directory of one
+            country is not large enough to be worth that. The day it is, cap it
+            and publish the ceiling beside it rather than letting the number
+            quietly stop being true.
 
     StaffRequest:
       type: object

@@ -1,20 +1,18 @@
 package com.balaaca.notificationworker.application;
 
+import com.balaaca.notificationworker.application.NotificationRouter.UndeliverableException;
 import com.balaaca.notificationworker.domain.Backoff;
 import com.balaaca.notificationworker.domain.Channel;
 import com.balaaca.notificationworker.domain.ClaimedNotification;
 import com.balaaca.notificationworker.ports.Alerter;
-import com.balaaca.notificationworker.ports.NotificationChannel;
 import com.balaaca.notificationworker.ports.NotificationChannel.ChannelException;
 import com.balaaca.notificationworker.ports.NotificationOutbox;
-import io.quarkus.runtime.StartupEvent;
 import io.quarkus.scheduler.Scheduled;
 import io.quarkus.scheduler.Scheduled.ConcurrentExecution;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.enterprise.event.Observes;
-import jakarta.enterprise.inject.Instance;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.Map;
 import java.util.random.RandomGenerator;
 import org.jboss.logging.Logger;
 import org.jboss.logging.MDC;
@@ -39,33 +37,20 @@ public class NotificationDrainJob {
     private static final Duration LEASE = Duration.ofMinutes(5);
 
     private final NotificationOutbox outbox;
-    private final Instance<NotificationChannel> channel;
+    private final NotificationRouter router;
     private final Backoff backoff;
     private final Clock clock;
     private final Alerter alerts;
 
     public NotificationDrainJob(NotificationOutbox outbox,
-                                Instance<NotificationChannel> channel,
+                                NotificationRouter router,
                                 Clock clock,
                                 Alerter alerts) {
         this.outbox = outbox;
-        this.channel = channel;
+        this.router = router;
         this.backoff = new Backoff(RandomGenerator.getDefault());
         this.clock = clock;
         this.alerts = alerts;
-    }
-
-    /**
-     * Fail at startup rather than at the first drain. A worker with no channel
-     * would otherwise run happily, claim rows, throw on each, and burn every
-     * attempt until the whole backlog is DEAD.
-     */
-    void requireAChannel(@Observes StartupEvent startup) {
-        if (!channel.isResolvable()) {
-            throw new IllegalStateException(
-                    "balaaca.notification.channel names no available channel; "
-                    + "the worker will not run without one");
-        }
     }
 
     @Scheduled(every = "{balaaca.notification.drain-interval:5s}",
@@ -85,9 +70,9 @@ public class NotificationDrainJob {
 
     /**
      * A row left SENDING is a row nothing will ever pick up again. Releasing
-     * the lease may replay a send that had in fact gone out, and on WhatsApp
-     * nothing suppresses that: the API takes no idempotency key, so the
-     * customer reads the message twice. The trade is deliberate - a duplicate
+     * the lease may replay a send that had in fact gone out, and nothing
+     * suppresses that: neither the Graph API nor SMTP takes an idempotency key,
+     * so the customer reads the message twice. The trade is deliberate - a duplicate
      * confirmation is an annoyance, a confirmation that never arrives is a
      * customer standing outside a closed salon.
      */
@@ -103,50 +88,62 @@ public class NotificationDrainJob {
     private void dispatch(ClaimedNotification n) {
         try {
             // The dedupe key travels as the channel's idempotency key where a
-            // channel has one. WhatsApp does not, so a crash between its
-            // acknowledgement and markSent costs a real duplicate. The key still
-            // does the job it can: it stops a notification being PLANNED twice,
-            // which is the likelier mistake by far.
-            Channel used = channel.get().send(n, n.dedupeKey());
+            // channel has one. Neither WhatsApp nor SMTP does, so a crash
+            // between an acknowledgement and markSent costs a real duplicate.
+            // The key still does the job it can: it stops a notification being
+            // PLANNED twice, which is the likelier mistake by far.
+            //
+            // The router answers with the transport the message actually went
+            // out on, which is not always the one the customer asked for: a
+            // choice with no address behind it falls back to the other, and the
+            // row has to record what happened rather than what was wanted.
+            Channel used = router.dispatch(n);
             outbox.markSent(n.id(), used, clock.instant());
+        } catch (UndeliverableException e) {
+            // No transport has an address, so no later attempt can differ.
+            // Sixteen tries against nothing would only delay this by an hour.
+            outbox.markDead(n.id(), e.failureCode());
+            died(n, e.failureCode());
         } catch (ChannelException e) {
-            boolean died = outbox.scheduleRetry(n.id(),
-                                 backoff.nextAttemptAt(n.attempts(), clock.instant()),
-                                 e.failureCode());
-            if (died) {
-                // ERROR, not WARN, and said differently: every other failure is
-                // a retry that will happen, and this one is a message that will
-                // never be sent to a customer who is expecting it. The outbox
-                // doctrine asks for an alert here and there was none - the row
-                // simply stopped moving and nothing said so.
-                //
-                // provider_id and the dedupe key, never the recipient: an
-                // operator needs to know whose message died and which one, and
-                // a phone number in a log line is a phone number in a log
-                // aggregator for as long as it is retained.
-                LOG.errorf("notification.dead id=%s provider_id=%s kind=%s "
-                           + "dedupe_key=%s code=%s attempts=%d",
-                           n.id(), n.providerId(), n.kind(), n.dedupeKey(),
-                           e.failureCode(), n.attempts() + 1);
-
-                // And now it also reaches somebody. The log line above is what
-                // an operator finds when they already know to look; this is
-                // what tells them to. Throttled by kind, so a channel outage
-                // sends one message saying how many rather than four hundred
-                // saying one each - which is how an alert channel gets muted.
-                //
-                // No recipient in the details, ever: an alert lands in whatever
-                // the operator pointed it at, and a customer's telephone number
-                // does not belong there.
-                alerts.raise("notification.dead",
-                        "Un message ne partira jamais : " + n.kind(),
-                        java.util.Map.of("provider_id", String.valueOf(n.providerId()),
-                                         "kind", String.valueOf(n.kind()),
-                                         "failure", String.valueOf(e.failureCode())));
+            boolean terminal = outbox.scheduleRetry(n.id(),
+                                   backoff.nextAttemptAt(n.attempts(), clock.instant()),
+                                   e.failureCode());
+            if (terminal) {
+                died(n, e.failureCode());
             } else {
                 LOG.warnf("notification.send.failed id=%s code=%s attempt=%d",
                           n.id(), e.failureCode(), n.attempts() + 1);
             }
         }
+    }
+
+    /**
+     * A message that will never be sent to somebody who is expecting it.
+     *
+     * <p>ERROR, not WARN, and said differently: every other failure is a retry
+     * that will happen. The outbox doctrine asks for an alert here and there
+     * was none - the row simply stopped moving and nothing said so.
+     *
+     * <p>provider_id and the dedupe key, never the recipient. An operator needs
+     * to know whose message died and which one; a phone number in a log line is
+     * a phone number in a log aggregator for as long as it is retained, and an
+     * alert lands in whatever the operator pointed it at.
+     */
+    private void died(ClaimedNotification n, String failureCode) {
+        LOG.errorf("notification.dead id=%s provider_id=%s kind=%s "
+                   + "dedupe_key=%s code=%s attempts=%d",
+                   n.id(), n.providerId(), n.kind(), n.dedupeKey(),
+                   failureCode, n.attempts() + 1);
+
+        // And now it also reaches somebody. The log line above is what an
+        // operator finds when they already know to look; this is what tells
+        // them to. Throttled by kind, so a channel outage sends one message
+        // saying how many rather than four hundred saying one each, which is
+        // how an alert channel gets muted.
+        alerts.raise("notification.dead",
+                "Un message ne partira jamais : " + n.kind(),
+                Map.of("provider_id", String.valueOf(n.providerId()),
+                       "kind", String.valueOf(n.kind()),
+                       "failure", String.valueOf(failureCode)));
     }
 }

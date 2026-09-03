@@ -76,4 +76,44 @@ class BookingSourceTest {
                     .isNotEqualTo(source.arrivesAccepted());
         }
     }
+
+    @Nested
+    @DisplayName("Whom the provider refused")
+    class Blocking {
+
+        @Test
+        @DisplayName("A block binds the page it was declared on")
+        void bindsThePage() {
+            // A block is the provider saying "not this person, not on my page".
+            // The chatbot answers strangers on that same page, so it is bound
+            // by the same refusal.
+            assertThat(BookingSource.PUBLIC.honoursCustomerBlocking()).isTrue();
+            assertThat(BookingSource.CHATBOT.honoursCustomerBlocking()).isTrue();
+        }
+
+        @Test
+        @DisplayName("It does not bind the counter")
+        void doesNotBindTheCounter() {
+            // The same somebody may be standing in the salon with the argument
+            // settled. Blocking keeps them off the page, not out of the shop,
+            // and a diary that will not record what is happening is a diary
+            // the salon keeps on paper instead.
+            assertThat(BookingSource.DASHBOARD.honoursCustomerBlocking()).isFalse();
+            assertThat(BookingSource.ADMIN.honoursCustomerBlocking()).isFalse();
+        }
+
+        @Test
+        @DisplayName("Every source answers all three questions")
+        void everySourceIsPartitioned() {
+            // The three questions share a partition today and are written apart
+            // because the day a source moves on one axis it will not move on
+            // all three. This is what would fail on that day, loudly, rather
+            // than a booking quietly being accepted that should not have been.
+            for (BookingSource source : BookingSource.values()) {
+                assertThat(source.honoursCustomerBlocking())
+                        .as("%s blocks like it publishes", source)
+                        .isEqualTo(source.honoursPublishedAvailability());
+            }
+        }
+    }
 }

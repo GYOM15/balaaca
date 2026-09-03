@@ -20,6 +20,8 @@ export async function book(formData: FormData): Promise<void> {
   const staffId = text(formData, "staff_id");
   const date = text(formData, "date");
   const note = text(formData, "customer_note");
+  const email = text(formData, "email");
+  const channel = text(formData, "preferred_channel");
   const address = addressFrom(formData);
 
   let created: AppointmentCreated;
@@ -49,6 +51,20 @@ export async function book(formData: FormData): Promise<void> {
           customer: {
             full_name: text(formData, "full_name"),
             phone: text(formData, "phone"),
+            // Sent whenever it was typed, whatever the choice: the island
+            // hides that field, it does not remove it, so a customer who
+            // filled it in and then picked WhatsApp still posts an address.
+            // Keeping it is the kinder read - it is what reaches them if the
+            // appointment is cancelled a month later - and the contract makes
+            // it optional for exactly that.
+            ...(email ? { email } : {}),
+            // Absent means WhatsApp, which is what every booking made before
+            // this question existed already meant, so an empty field is
+            // omitted rather than filled in here. A value that is neither of
+            // the two is passed on untouched: a client that quietly corrected
+            // a tampered body would be answering for the customer, and the
+            // API's own refusal is the honest answer.
+            ...(channel ? { preferred_channel: channel } : {}),
           },
           // Present only on a call-out. The contract refuses an address on a
           // service performed at the shop, and it is right to: an appointment

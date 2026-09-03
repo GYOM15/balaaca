@@ -60,7 +60,11 @@ class StaffInvitationIT {
     void mintsACode() {
         String code = inviteANewChair("Mariama");
 
-        assertThat(code).isNotBlank().hasSize(43);
+        // 256 bits of base64url. Asserted as a shape as well as a length: a
+        // hasSize() alone would pass for anything, and V045 briefly made this
+        // eight characters before V046 put it back for the reasons written
+        // there.
+        assertThat(code).isNotBlank().hasSize(43).matches("^[A-Za-z0-9_-]{43}$");
     }
 
     @Test

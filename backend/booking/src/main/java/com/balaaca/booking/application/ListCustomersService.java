@@ -59,4 +59,13 @@ public class ListCustomersService implements ListCustomersUseCase {
         // wrong the first time somebody books between the two statements.
         return detail(id);
     }
+
+    @Override
+    @Transactional(Transactional.TxType.REQUIRED)
+    public CustomerDetail setBlocked(CustomerId id, boolean blocked) {
+        if (!customers.setBlocked(id, blocked)) {
+            throw new CustomerNotFoundException(id.value());
+        }
+        return detail(id);
+    }
 }

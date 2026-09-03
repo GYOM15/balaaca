@@ -97,9 +97,20 @@ class DirectorySearchIT {
         var body = given().queryParam("q", "tresses").when().get("/v1/providers")
                 .then().statusCode(200).extract().body().asString();
 
-        // The row is MATCHED, never returned. A directory card carries a slug
-        // and a name; the catalogue belongs to the provider's own page.
-        assertThat(body).doesNotContain("Tresses").doesNotContain("price");
+        // The row is MATCHED, never returned. A directory card carries a slug,
+        // a name, the modes on offer and the lowest visible price; the
+        // CATALOGUE - which service, at what price, for how long - belongs to
+        // the provider's own page.
+        //
+        // Not `doesNotContain("price")` any more. That was a substring over the
+        // whole body, and it passed only for as long as the card published no
+        // money at all: `price_from` now contains it. What must not appear is
+        // the matched SERVICE, so that is what is asserted, plus the fields
+        // that would name one.
+        assertThat(body)
+                .doesNotContain("Tresses")
+                .doesNotContain("service_offering")
+                .doesNotContain("duration_minutes");
     }
 
     @Test

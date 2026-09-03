@@ -46,9 +46,11 @@ public final class BookingExceptions {
     }
 
     /**
-     * Two transactions deadlocked competing for the slot. Retryable, and
-     * deliberately NOT a conflict: PostgreSQL broke a wait cycle, which says
-     * nothing about whether the slot is free. Never surfaced to a client.
+     * This attempt lost for a reason that says nothing about the slot: either
+     * two transactions deadlocked competing for it, or the reference drawn for
+     * it is one somebody already holds. Retryable, and deliberately NOT a
+     * conflict - the answer is a new transaction rather than a refusal, and the
+     * mint happens again on the way through. Never surfaced to a client.
      */
     public static final class TransientBookingConflictException extends DomainException {
         public TransientBookingConflictException(Throwable cause) {
@@ -110,6 +112,39 @@ public final class BookingExceptions {
     }
 
     /**
+     * The service can be had several ways and the request named none.
+     *
+     * <p>400 rather than a default. There is no defensible one between sitting
+     * in a salon and having somebody come to your house: picking the first would
+     * send a stranger to an address, and picking the last would leave a customer
+     * waiting at home for nobody.
+     *
+     * <p>The modes travel as names rather than as the enum: this is a domain
+     * type, and a domain that mentions another context makes every reshape over
+     * there ripple in here.
+     */
+    public static final class FulfilmentNotChosenException extends DomainException {
+        public FulfilmentNotChosenException(java.util.List<String> offered) {
+            super("VALIDATION_FAILED", 400, "Choose how this service is to be carried out",
+                  Map.of("fulfilments", offered));
+        }
+    }
+
+    /**
+     * A mode the service does not publish.
+     *
+     * <p>A client that has gone stale - the provider stopped travelling between
+     * the page being drawn and the form being sent - so it names something that
+     * is not on offer, exactly like an unknown service would.
+     */
+    public static final class FulfilmentNotOfferedException extends DomainException {
+        public FulfilmentNotOfferedException(String chosen, java.util.List<String> offered) {
+            super("VALIDATION_FAILED", 400, "This service is not carried out that way",
+                  Map.of("fulfilment", chosen, "fulfilments", offered));
+        }
+    }
+
+    /**
      * A call-out with nowhere to go, or a shop appointment carrying an address.
      *
      * <p>Both directions are refused, and the second matters as much as the
@@ -118,13 +153,18 @@ public final class BookingExceptions {
      * into a list of where its customers live.
      *
      * <p>422 rather than 400: the body is well formed, and whether an address
-     * is owed depends on the offering, which only the server knows.
+     * is owed depends on the mode chosen, which only the server can check
+     * against what the offering publishes.
+     *
+     * <p>It is the CHOICE that decides, not the service. A service offering
+     * both shapes needs an address for one booking of it and must not hold one
+     * for the next.
      */
     public static final class ServiceAddressMismatchException extends DomainException {
         public ServiceAddressMismatchException(boolean callOut) {
             super("VALIDATION_FAILED", 422,
-                  callOut ? "This service is performed at the customer's address"
-                          : "This service is performed at the provider's address",
+                  callOut ? "This booking is at the customer's address"
+                          : "This booking is at the provider's address",
                   Map.of("service_address", callOut ? "required" : "not accepted"));
         }
     }
@@ -140,6 +180,62 @@ public final class BookingExceptions {
         public CustomerNotFoundException(UUID id) {
             super("RESOURCE_NOT_FOUND", 404, "No such customer",
                   Map.of("customer_id", String.valueOf(id)));
+        }
+    }
+
+    /**
+     * The provider will not take a booking from this number on their page.
+     *
+     * <p>{@code customers.blocked} existed from V007 and nothing ever wrote it,
+     * so a salon losing an hour a week to the same no-show had no lever at all.
+     * This is the lever, and it is deliberately narrow: it refuses a NEW public
+     * booking, it leaves appointments already in the book alone, and it does
+     * not restrain the provider entering the same person at the counter.
+     *
+     * <p>{@code FORBIDDEN} rather than a code of its own. The catalogue is
+     * closed and this is what a 403 means - the server understood, refuses, and
+     * nothing the caller can send changes the answer. A new code would also have
+     * to be published, and publishing one whose only job is to say "you are
+     * blocked" hands the fact to every client that never needed it.
+     *
+     * <p>Nothing identifying is carried. The message reaches the caller verbatim
+     * and says only that the booking cannot be taken online: this route is
+     * unauthenticated, and a message that named the reason would let anybody who
+     * can spell the slug read a salon's blocklist one telephone number at a
+     * time. The details map is empty for the same reason - it is the audit
+     * trail's, and a refused stranger's number is more personal data than the
+     * action needs to be reconstructible.
+     */
+    public static final class CustomerBlockedException extends DomainException {
+        public CustomerBlockedException() {
+            super("FORBIDDEN", 403,
+                  "This booking cannot be taken online", Map.of());
+        }
+    }
+
+    /**
+     * E-mail was chosen and no address was given.
+     *
+     * <p>400 and at the edge, because the alternative is the failure this is
+     * here to prevent: the booking succeeds, four notification rows are written
+     * with nothing in {@code to_email}, and the worker discovers it hours later
+     * on a scheduled thread with nobody to answer. What the customer sees is a
+     * confirmation that never arrives.
+     *
+     * <p>{@code VALIDATION_FAILED} rather than a code of its own. The catalogue
+     * is closed, and this is what it means: the body is internally inconsistent
+     * and the caller can fix it by sending an address or by not asking for
+     * e-mail.
+     *
+     * <p>Nothing identifying is carried. The refusal is about a field that is
+     * missing, and naming the address that is not there would be repeating a
+     * personal datum for no diagnostic gain.
+     */
+    public static final class EmailChannelWithoutAddressException extends DomainException {
+        public EmailChannelWithoutAddressException() {
+            super("VALIDATION_FAILED", 400,
+                  "An email address is required to be contacted by email",
+                  Map.of("preferred_channel", "EMAIL"));
         }
     }
 

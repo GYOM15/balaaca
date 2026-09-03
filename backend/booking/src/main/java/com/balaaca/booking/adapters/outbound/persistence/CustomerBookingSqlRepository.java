@@ -20,6 +20,13 @@ import java.util.UUID;
  * reference before the read, so RLS confines all three tables to it. A reference
  * belonging to another provider is not filtered out here - the binding never
  * happened and the request stopped earlier.
+ *
+ * <p>The reference is matched through {@code app_booking_reference_key} and
+ * never with {@code =}, on BOTH sides of the comparison. It is a fold, not a
+ * normalisation: it maps 0 onto O and 1 and L onto I, so folding only what the
+ * customer typed would stop a correctly typed reference from matching its own
+ * row. The unique index is built on the same expression, which is what makes it
+ * impossible for two references to fold together and land on each other.
  */
 @ApplicationScoped
 public class CustomerBookingSqlRepository implements CustomerBookingRepository {
@@ -44,7 +51,8 @@ public class CustomerBookingSqlRepository implements CustomerBookingRepository {
                   JOIN providers p ON p.id = a.provider_id
                   JOIN provider_staff s
                     ON s.provider_id = a.provider_id AND s.id = a.staff_id
-                 WHERE a.public_reference = :reference
+                 WHERE app_booking_reference_key(a.public_reference)
+                     = app_booking_reference_key(CAST(:reference AS varchar))
                 """).setParameter("reference", reference).getResultList();
 
         return rows.stream().findFirst().map(r -> new BookingSnapshot(

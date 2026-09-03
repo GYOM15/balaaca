@@ -139,6 +139,7 @@ public class ProviderProfileSqlRepository implements ProviderProfileRepository {
         return swapImage("cover_url", name);
     }
 
+
     /**
      * One statement, returning what it replaced. A read-then-write would leave a
      * window in which two uploads each believe they replaced the other's file,

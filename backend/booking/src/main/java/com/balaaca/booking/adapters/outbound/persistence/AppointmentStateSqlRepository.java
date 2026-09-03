@@ -4,10 +4,12 @@ import com.balaaca.booking.domain.AppointmentStatus;
 import com.balaaca.booking.domain.BookedSlot;
 import com.balaaca.booking.domain.BookingExceptions.SlotUnavailableException;
 import com.balaaca.booking.domain.BookingExceptions.TransientBookingConflictException;
+import com.balaaca.booking.domain.ContactChannel;
 import com.balaaca.booking.domain.CustomerContact;
 import com.balaaca.booking.domain.ServiceAddress;
 import com.balaaca.booking.ports.inbound.ListAppointmentsUseCase.AgendaEntry;
 import com.balaaca.booking.ports.outbound.AppointmentStateRepository;
+import com.balaaca.catalog.ports.inbound.Fulfilment;
 import com.balaaca.sharedkernel.ids.AppointmentId;
 import com.balaaca.sharedkernel.ids.ServiceOfferingId;
 import com.balaaca.sharedkernel.ids.StaffId;
@@ -69,7 +71,8 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                 RETURNING id, starts_at, ends_at, status, service_name,
                           customer_price_amount_minor, customer_price_currency,
                           customer_id, customer_note, staff_id, ready_by, ready_at,
-                          service_locality_id, service_area, service_directions
+                          service_locality_id, service_area, service_directions,
+                          service_fulfilment, preferred_channel
                 """)
                 .setParameter("id", id.value())
                 .setParameter("reason", reason.orElse(null))
@@ -137,7 +140,8 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                 RETURNING id, starts_at, ends_at, status, service_name,
                           customer_price_amount_minor, customer_price_currency,
                           customer_id, customer_note, staff_id, ready_by, ready_at,
-                          service_locality_id, service_area, service_directions
+                          service_locality_id, service_area, service_directions,
+                          service_fulfilment, preferred_channel
                 """)
                 .setParameter("id", id.value())
                 .setParameter("startsAt", Timestamp.from(slot.startsAt()))
@@ -192,7 +196,8 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                 RETURNING id, starts_at, ends_at, status, service_name,
                           customer_price_amount_minor, customer_price_currency,
                           customer_id, customer_note, staff_id, ready_by, ready_at,
-                          service_locality_id, service_area, service_directions
+                          service_locality_id, service_area, service_directions,
+                          service_fulfilment, preferred_channel
                 """)
                 .setParameter("id", id.value())
                 .setParameter("at", Timestamp.from(at))
@@ -220,7 +225,8 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                 RETURNING id, starts_at, ends_at, status, service_name,
                           customer_price_amount_minor, customer_price_currency,
                           customer_id, customer_note, staff_id, ready_by, ready_at,
-                          service_locality_id, service_area, service_directions
+                          service_locality_id, service_area, service_directions,
+                          service_fulfilment, preferred_channel
                 """)
                 .setParameter("id", id.value())
                 .setParameter("readyBy", Timestamp.from(readyBy))
@@ -270,7 +276,8 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                 RETURNING id, starts_at, ends_at, status, service_name,
                           customer_price_amount_minor, customer_price_currency,
                           customer_id, customer_note, staff_id, ready_by, ready_at,
-                          service_locality_id, service_area, service_directions
+                          service_locality_id, service_area, service_directions,
+                          service_fulfilment, preferred_channel
                 """)
                 .setParameter("id", id.value())
                 .setParameter("to", to.name())
@@ -326,11 +333,17 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                 StaffId.of((UUID) r[9]),
                 staffName,
                 new CustomerContact((String) c[0], new PhoneNumber((String) c[1]),
-                                    Optional.ofNullable((String) c[2])),
+                                    Optional.ofNullable(text(c[2]))),
+                Fulfilment.valueOf((String) r[15]),
                 Optional.ofNullable((String) r[8]).filter(n -> !n.isBlank()),
                 Optional.ofNullable(r[10]).map(AppointmentStateSqlRepository::instant),
                 Optional.ofNullable(r[11]).map(AppointmentStateSqlRepository::instant),
-                address(r[12], (String) r[13], (String) r[14]));
+                address(r[12], (String) r[13], (String) r[14]),
+                // From the appointment the statement just wrote, so a
+                // cancellation or a reschedule is announced the way THIS
+                // booking asked for rather than the way its customer's most
+                // recent one did.
+                ContactChannel.valueOf((String) r[16]));
     }
 
     /**
@@ -365,5 +378,19 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
             return i;
         }
         return ((Timestamp) value).toInstant();
+    }
+
+    /**
+     * A citext column, which the driver hands back as its own object rather
+     * than as a String.
+     *
+     * <p>{@code customers.email} is the only one on this path, and a cast to
+     * String had stood there since the column was written because no test ever
+     * stored an address: every cancellation and every reschedule for a customer
+     * who HAD given one answered 500. The same driver-shape hazard {@link
+     * #instant} exists for, and the same cost ADR-0008 names for native SQL.
+     */
+    private static String text(Object value) {
+        return value == null ? null : value.toString();
     }
 }

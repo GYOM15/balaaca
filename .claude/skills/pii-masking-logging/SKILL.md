@@ -1,6 +1,6 @@
 ---
 name: pii-masking-logging
-description: Use when interpolating any dynamic value — customer phone, email, name, user or appointment id, token, exception message, request payload — into a log line, when binding fields to the structured-logging context at a REST, notification-worker, chatbot or scheduled-job boundary, when writing or editing a logging/audit interceptor, or when reviewing a PR that adds Log.* or System.out.
+description: Use when interpolating any dynamic value - customer phone, email, name, user or appointment id, token, exception message, request payload - into a log line, when binding fields to the structured-logging context at a REST, notification-worker, chatbot or scheduled-job boundary, when writing or editing a logging/audit interceptor, or when reviewing a PR that adds Log.* or System.out.
 ---
 
 # pii-masking-logging
@@ -15,35 +15,34 @@ Every log line is **structured JSON**, carries a `correlation_id` and a
 shared masking utility first. The customer's phone number is the primary
 identifier of a person in this system and is **never** logged raw. Secrets and
 tokens are never logged in any form. Money amounts, by contrast, are fine to
-log — a price is not PII, and an audit trail needs it readable. So are the two
+log - a price is not PII, and an audit trail needs it readable. So are the two
 operational identifiers that make the logs usable at all.
 
 ## When to use
 
-- About to interpolate any value — customer phone, email, name, user id,
-  appointment reference, token, exception message, request payload — into
+- About to interpolate any value - customer phone, email, name, user id,
+  appointment reference, token, exception message, request payload - into
   a log call.
 - Writing or editing a logging/audit CDI interceptor or an event listener
   (see `cdi-interceptors`).
 - Adding a field to the structured-logging context (MDC-equivalent) at a
   boundary: a REST resource, the `notification-worker` drain loop, a
   `chatbot-service` call, a scheduled job.
-- Reviewing a PR that adds `Log.*` / `System.out` — check masking,
+- Reviewing a PR that adds `Log.*` / `System.out` - check masking,
   correlation id, provider id, event name, and JSON format.
 
 ## The rules
 
 1. **Logs are JSON, one event per line, and the message is a dotted
    lowercase event name.** Enable Quarkus JSON logging
-   (`quarkus.log.console.json=true`). The message is a stable identifier —
-   `appointment.booked`, `appointment.book.slot_unavailable`,
-   `notification.dispatch.failed` — not a sentence with values baked in.
+   (`quarkus.log.console.json=true`). The message is a stable identifier - `appointment.booked`, `appointment.book.slot_unavailable`,
+   `notification.dispatch.failed` - not a sentence with values baked in.
    Values are MDC keys in `snake_case`; prose lines are not parseable and not
    greppable.
 2. **Every line carries `correlation_id` and `provider_id`, and both are
    logged RAW.** Bind them to the logging MDC at the boundary: the correlation
    id from the incoming trace header, the provider id from
-   `TenantContext.require()` — resolved from the database, not from a JWT
+   `TenantContext.require()` - resolved from the database, not from a JWT
    claim, so it is the same value RLS is running under. Clear them in
    `finally`. These two are **operational identifiers, not PII**: neither
    resolves to a natural person, and masking them destroys the only thing they
@@ -60,18 +59,18 @@ operational identifiers that make the logs usable at all.
    only those.** `customer_id`, `user_id`, `appointment_id` all lead back to
    one human being through a single indexed lookup, so they are masked.
    `provider_id` and `correlation_id` are not: a provider is a business, and a
-   correlation id is a per-request token with no subject at all — see rule 2.
+   correlation id is a per-request token with no subject at all - see rule 2.
    This is the whole boundary; there is no third category and no judgement
    call at the call site.
 5. **Never log a secret, JWT, OIDC token, Keycloak client secret, API key,
-   or secret-store value — masked or not.** If the field is a credential,
+   or secret-store value - masked or not.** If the field is a credential,
    drop it entirely; there is no acceptable masked form of a secret in a
    log. The application never sees a password or a reset token at all, and
    nothing may reintroduce one into a log line.
 6. **Never log a raw phone number, and never use one as a log key or a
    correlation value.** The phone is how a customer is identified across every
    provider on the platform, so a leaked log line is a re-identification across
-   tenants, not just one record. `maskPhone` always — in production, in dev, in
+   tenants, not just one record. `maskPhone` always - in production, in dev, in
    a test fixture that prints. To correlate two lines about the same person,
    log `maskId(customerId)`; masked phones collide by design.
    This rule is about **logging and correlation values only**. The phone
@@ -80,8 +79,7 @@ operational identifiers that make the logs usable at all.
    carries as a recipient. Keying the domain on it is the design; keying a log
    field, an MDC entry, a metric label or a trace attribute on it is the leak.
 7. **`maskPhone` has exactly one contract.** Given an E.164 string, it returns
-   `"+"` followed by one `*` per hidden digit and the final two digits —
-   `+224622000123` becomes `+**********23`. For `null`, or fewer than four
+   `"+"` followed by one `*` per hidden digit and the final two digits - `+224622000123` becomes `+**********23`. For `null`, or fewer than four
    digits after the optional `+`, it returns `"***"`. No calling prefix is
    preserved, so the masked form does not disclose the customer's country
    either, and it is region-agnostic by construction. Every file that
@@ -194,7 +192,7 @@ public final class LogMasking {
 ```
 
 The boundary binds the two mandatory operational identifiers, **raw**, and
-clears them in `finally`. This runs once per request, in the REST filter — not
+clears them in `finally`. This runs once per request, in the REST filter - not
 in any business class:
 
 ```java
@@ -272,19 +270,19 @@ LOG.info("appointment.confirmed");
 
 ## Sibling skills
 
-- `cdi-interceptors` — logging/audit is an interceptor concern; masking is
+- `cdi-interceptors` - logging/audit is an interceptor concern; masking is
   its second step.
-- `code-language` — logs, keys, and event names are English; only user-facing
+- `code-language` - logs, keys, and event names are English; only user-facing
   text is French-first from the i18n catalogue.
-- `code-comments` — no emoji in a log line; the level and an `outcome` field
+- `code-comments` - no emoji in a log line; the level and an `outcome` field
   carry the status.
-- `multi-tenant-rls` — `provider_id` on every line is the same value
+- `multi-tenant-rls` - `provider_id` on every line is the same value
   `TenantContext` hands to `set_config('app.provider_id', …)` on the
   connection.
-- `money-currency` — `Money` is loggable; `PhoneNumber` never masks itself,
+- `money-currency` - `Money` is loggable; `PhoneNumber` never masks itself,
   because a masked recipient breaks every reminder.
-- `outbox-messaging` — a notification row holds a recipient phone and a
+- `outbox-messaging` - a notification row holds a recipient phone and a
   `last_error`; both are masked or sanitized before they reach a log.
-- `backend-exceptions` — thrown exceptions become masked audit lines;
+- `backend-exceptions` - thrown exceptions become masked audit lines;
   client-facing errors are RFC 7807 and carry no PII either.
-- `backend-srp` — masking plus structured logging is one concern, one home.
+- `backend-srp` - masking plus structured logging is one concern, one home.

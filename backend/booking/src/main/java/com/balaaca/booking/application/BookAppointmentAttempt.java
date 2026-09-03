@@ -1,10 +1,13 @@
 package com.balaaca.booking.application;
 
 import com.balaaca.booking.domain.BookedSlot;
+import com.balaaca.booking.domain.BookingExceptions.CustomerBlockedException;
+import com.balaaca.booking.domain.BookingExceptions.FulfilmentNotChosenException;
+import com.balaaca.booking.domain.BookingExceptions.FulfilmentNotOfferedException;
 import com.balaaca.booking.domain.BookingExceptions.ServiceAddressMismatchException;
 import com.balaaca.booking.domain.BookingExceptions.UnknownServiceLocalityException;
 import com.balaaca.booking.domain.ServiceAddress;
-import com.balaaca.catalog.ports.inbound.ServiceLocation;
+import com.balaaca.catalog.ports.inbound.Fulfilment;
 import com.balaaca.providers.ports.inbound.ListLocalitiesUseCase;
 import com.balaaca.booking.domain.BookingExceptions.NoEligibleStaffException;
 import com.balaaca.booking.ports.inbound.BookAppointmentUseCase.BookAppointmentCommand;
@@ -27,6 +30,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.transaction.Transactional;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -81,6 +85,26 @@ public class BookAppointmentAttempt {
             return replay.get();
         }
 
+        // Before anything is computed about the slot, and before the customer
+        // row is touched. Asked of the page and not of the counter: a provider
+        // entering the same person at the till has settled it with them, and
+        // their own refusal is not something to enforce against them.
+        //
+        // Ahead of every rule below on purpose. Each of those answers something
+        // about the diary - what is open, who is free, which modes are offered -
+        // and a caller this provider will not serve has no business being told
+        // any of it.
+        //
+        // After the replay check, though, and for the same reason availability
+        // is: a retry is not a new request. A booking that was accepted before
+        // the provider blocked the number stands, and its retry must be handed
+        // the appointment rather than a refusal that leaves the caller believing
+        // nothing was booked.
+        if (command.source().honoursCustomerBlocking()
+                && appointments.isBlocked(command.customer().phone())) {
+            throw new CustomerBlockedException();
+        }
+
         // Checked inside the transaction, against the same calculation that
         // produced the public list. The exclusion constraint stops a slot being
         // sold twice; nothing else stops one being sold at 3am on a closed day.
@@ -100,7 +124,8 @@ public class BookAppointmentAttempt {
 
         // After the replay check, for the same reason as availability: a retry
         // is not a new request and must not be judged as one.
-        Optional<ServiceAddress> address = addressFor(command, offering);
+        Fulfilment fulfilment = chosenFrom(command, offering);
+        Optional<ServiceAddress> address = addressFor(command, fulfilment);
 
         StaffId staffId = command.staffId().orElseGet(() -> pick(command, excluded));
 
@@ -129,8 +154,10 @@ public class BookAppointmentAttempt {
                 offering,
                 slot,
                 customerId,
+                fulfilment,
                 address,
                 command.source(),
+                command.preferredChannel(),
                 command.customerNote(),
                 command.idempotency().map(i -> i.key()),
                 command.idempotency().map(i -> i.requestHash())));
@@ -141,7 +168,8 @@ public class BookAppointmentAttempt {
         // already there, and their dedupe keys would absorb them anyway.
         if (!outcome.replayed()) {
             notifications.planFor(outcome.appointmentId(), outcome.reference(),
-                                  command.startsAt(), offering, command.customer());
+                                  command.startsAt(), offering, command.customer(),
+                                  command.preferredChannel());
         }
         return outcome;
     }
@@ -190,8 +218,41 @@ public class BookAppointmentAttempt {
     }
 
     /**
-     * The address, checked against the offering rather than against what the
+     * Which of the published modes this booking is, resolved before anything is
+     * decided from it.
+     *
+     * <p>Not defaulted when the service publishes several: the two answers are
+     * a customer sitting in a salon and a stranger arriving at their house, and
+     * a server that guesses between them gets one of the two wrong.
+     */
+    private static Fulfilment chosenFrom(BookAppointmentCommand command,
+                                         BookableOffering offering) {
+        Set<Fulfilment> offered = offering.fulfilments();
+        Optional<Fulfilment> chosen = command.fulfilment();
+
+        if (chosen.isEmpty()) {
+            if (offered.size() != 1) {
+                throw new FulfilmentNotChosenException(names(offered));
+            }
+            return offered.iterator().next();
+        }
+        if (!offered.contains(chosen.get())) {
+            throw new FulfilmentNotOfferedException(chosen.get().name(), names(offered));
+        }
+        return chosen.get();
+    }
+
+    private static List<String> names(Set<Fulfilment> offered) {
+        return offered.stream().map(Fulfilment::name).sorted().toList();
+    }
+
+    /**
+     * The address, checked against what was CHOSEN rather than against what the
      * client sent.
+     *
+     * <p>Against the choice and no longer against the service: one that
+     * publishes both shapes needs an address for this booking and must not hold
+     * one for the next.
      *
      * <p>Both directions are refused. A call-out with no directions is a job
      * nobody can do; a shop appointment carrying an address is a customer's home
@@ -199,8 +260,8 @@ public class BookAppointmentAttempt {
      * of where its customers live.
      */
     private Optional<ServiceAddress> addressFor(BookAppointmentCommand command,
-                                                BookableOffering offering) {
-        boolean callOut = offering.location() == ServiceLocation.AT_CUSTOMER;
+                                                Fulfilment fulfilment) {
+        boolean callOut = fulfilment == Fulfilment.AT_CUSTOMER;
         if (callOut != command.serviceAddress().isPresent()) {
             throw new ServiceAddressMismatchException(callOut);
         }

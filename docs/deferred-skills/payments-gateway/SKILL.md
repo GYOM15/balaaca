@@ -4,8 +4,7 @@ The `payments` domain depends on a `PaymentGatewayPort`; Flutterwave is the
 first outbound adapter behind it and is never imported by the domain. The port
 is provider-agnostic by construction: a second gateway (Stripe, Adyen, another
 PSP) is added as another adapter, with zero change to the domain. Money is
-collected through a saga by outbox — never a distributed ACID transaction —
-and every "success" is re-verified against the gateway's own API before a
+collected through a saga by outbox - never a distributed ACID transaction - and every "success" is re-verified against the gateway's own API before a
 sale is captured.
 
 ## When to use
@@ -33,7 +32,7 @@ sale is captured.
    guarded state machine) → `PaymentTransaction` (created only after API
    verification, holds the `provider_reference` returned by the gateway,
    immutable). Never collapse them into a single `Payment` you flip in place.
-   **Both reference fields are provider-neutral names** — a gateway's own
+   **Both reference fields are provider-neutral names** - a gateway's own
    wording (Flutterwave `tx_ref`/`flw_ref`, Stripe `payment_intent`, …) is
    mapped inside its adapter and never leaks into the domain or a column
    name.
@@ -41,8 +40,7 @@ sale is captured.
    signature with the mechanism of the gateway that sent it (each adapter
    owns its own scheme), is idempotent, and its only job is to trigger a
    server-side re-verification via that gateway's verify API, keyed by our
-   `attempt_reference`. The verified API response — not the webhook payload —
-   decides success, amount, and currency. Signature mismatch → reject
+   `attempt_reference`. The verified API response - not the webhook payload - decides success, amount, and currency. Signature mismatch → reject
    (RFC 7807).
 4. **Verify amount + currency + reference against what we initiated.** A
    charge the gateway calls "successful" whose amount, currency, or
@@ -50,7 +48,7 @@ sale is captured.
    captured. The GNF representation at the gateway is pinned by integration
    tests before prod
    (never assume "cents"). See `money-currency`.
-5. **The flow is a saga by outbox — never a distributed ACID transaction.**
+5. **The flow is a saga by outbox - never a distributed ACID transaction.**
    `[TX#1]` Order + `PaymentIntent` + `Outbox(InitiatePayment)` commit → a
    worker calls Flutterwave *outside any DB transaction* → customer confirms
    → webhook → API verification (idempotent) → `[TX#2]` `PaymentAttempt`
@@ -61,17 +59,17 @@ sale is captured.
    intent (a duplicate initiate returns the existing intent);
    `attempt_reference` / `provider_reference` dedupe verification and capture
    (a duplicate webhook does not
-   double-book). Every transition is atomic and guarded — optimistic
+   double-book). Every transition is atomic and guarded - optimistic
    `version` or `UPDATE ... WHERE status = :expected`. See
    `idempotency-concurrency`.
 7. **Fault Tolerance on the outbound adapter, retry only the idempotent
    call.** `@Retry` + `@CircuitBreaker` (+ `@Timeout`) wrap gateway calls on
    the adapter. Retry *verification* (idempotent by design); never retry a
-   capture in a way that could book the ledger twice — capture is guarded by
+   capture in a way that could book the ledger twice - capture is guarded by
    `attempt_reference`/`provider_reference` uniqueness. See `cdi-interceptors`.
 8. **Never touch a PAN. PCI is out of scope.** The gateway hosts the payment
    page and collects the card; we store only tokens and our neutral references
-   (`attempt_reference`, `provider_reference`) — never a card number, CVV, or
+   (`attempt_reference`, `provider_reference`) - never a card number, CVV, or
    expiry, in any table or log. See `pii-masking-logging`.
 9. **Platform commission via subaccounts/split; the sale is booked at
    capture.** Commission is configured as a split on the charge, not
@@ -81,7 +79,7 @@ sale is captured.
 10. **Secrets come from injected config, never the repo.** The gateway keys
     and webhook secret are injected configuration; sandbox first, then prod.
     gitleaks gates the pipeline. See `ci-workflow`.
-11. **No provider concept in the domain — ever.** `payments/domain` and
+11. **No provider concept in the domain - ever.** `payments/domain` and
     `payments/application` contain no gateway SDK type, no provider-specific
     field, no provider name in an enum that drives business logic. Provider
     selection (country, currency, method, availability, cost) is a *routing
@@ -133,14 +131,14 @@ sale is captured.
 ## Minimal correct example
 
 ```java
-// payments/ports/outbound — the domain depends on THIS, never on a gateway.
+// payments/ports/outbound - the domain depends on THIS, never on a gateway.
 // Provider-neutral vocabulary only: no tx_ref, no flw_ref, no SDK type.
 public interface PaymentGatewayPort {
     GatewayInitiation initiate(PaymentAttempt attempt, Split commission);
     VerifiedCharge verify(String attemptReference); // idempotent; source of truth
 }
 
-// payments/adapters/outbound/gateway — the ONLY place Flutterwave exists.
+// payments/adapters/outbound/gateway - the ONLY place Flutterwave exists.
 @ApplicationScoped
 public class FlutterwaveGatewayAdapter implements PaymentGatewayPort {
 
@@ -154,7 +152,7 @@ public class FlutterwaveGatewayAdapter implements PaymentGatewayPort {
     @Override
     @Retry(maxRetries = 3) @CircuitBreaker(requestVolumeThreshold = 8) @Timeout
     public VerifiedCharge verify(String attemptReference) {
-        // Flutterwave calls it tx_ref / flw_ref — the mapping stops HERE.
+        // Flutterwave calls it tx_ref / flw_ref - the mapping stops HERE.
         FlwVerifyResponse r = flw.verifyByReference(attemptReference);
         return new VerifiedCharge(
             r.txRef(),                                   // -> attemptReference
@@ -166,7 +164,7 @@ public class FlutterwaveGatewayAdapter implements PaymentGatewayPort {
 ```
 
 ```java
-// payments/adapters/inbound/rest — verify the signature, then RE-VERIFY via API.
+// payments/adapters/inbound/rest - verify the signature, then RE-VERIFY via API.
 @POST @Path("/webhooks/flutterwave")
 public Response onWebhook(@HeaderParam("verif-hash") String signature, String body) {
     if (!webhookVerifier.matches(signature)) {
@@ -179,7 +177,7 @@ public Response onWebhook(@HeaderParam("verif-hash") String signature, String bo
 ```
 
 ```java
-// payments/application — saga TX#2. Verification (network) happens OUTSIDE the tx;
+// payments/application - saga TX#2. Verification (network) happens OUTSIDE the tx;
 // the transactional step only persists, and stays a distinct bean so the network
 // call is never held inside a DB transaction (rule 5).
 @ApplicationScoped
@@ -243,21 +241,21 @@ idempotent and booked exactly once.
 
 ## Sibling skills
 
-- `money-currency` — the typed `Money`/`Currency` the adapter maps into (GNF
+- `money-currency` - the typed `Money`/`Currency` the adapter maps into (GNF
   scale 0), pinned by integration tests before prod.
-- `ledger-double-entry` — the sale entry the capture books, at capture.
-- `outbox-messaging` — the saga-by-outbox that replaces a distributed
+- `ledger-double-entry` - the sale entry the capture books, at capture.
+- `outbox-messaging` - the saga-by-outbox that replaces a distributed
   transaction; `InitiatePayment` / `OrderPaid`.
-- `idempotency-concurrency` — `idempotency_key` UNIQUE, `provider_reference`
+- `idempotency-concurrency` - `idempotency_key` UNIQUE, `provider_reference`
   dedupe, and the
   guarded state transitions.
-- `backend-architecture` — the port in the domain, the Flutterwave adapter at
+- `backend-architecture` - the port in the domain, the Flutterwave adapter at
   the edge.
-- `backend-di` — how CDI wires `PaymentGatewayPort` to the Flutterwave adapter.
-- `cdi-interceptors` — Fault-Tolerance annotations compose on the adapter; money
+- `backend-di` - how CDI wires `PaymentGatewayPort` to the Flutterwave adapter.
+- `cdi-interceptors` - Fault-Tolerance annotations compose on the adapter; money
   logic stays explicit in the service.
-- `backend-exceptions` — `InvalidWebhookSignatureException` and mismatch errors
+- `backend-exceptions` - `InvalidWebhookSignatureException` and mismatch errors
   as RFC 7807.
-- `pii-masking-logging` — never log a PAN or an unmasked payment reference.
-- `ci-workflow` — Flutterwave sandbox first; secret scanning; secrets out of the
+- `pii-masking-logging` - never log a PAN or an unmasked payment reference.
+- `ci-workflow` - Flutterwave sandbox first; secret scanning; secrets out of the
   repo.

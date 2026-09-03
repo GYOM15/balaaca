@@ -6,7 +6,7 @@ import com.balaaca.app.api.model.ServiceOfferingPage;
 import com.balaaca.app.api.model.ServiceOfferingRequest;
 import com.balaaca.app.api.model.Fulfilment;
 import com.balaaca.app.api.model.ServiceOfferingView;
-import com.balaaca.catalog.ports.inbound.ServiceLocation;
+import com.balaaca.app.api.model.ServiceLocation;
 import com.balaaca.app.api.model.PerformerList;
 import com.balaaca.app.api.model.ServicePhotoList;
 import com.balaaca.app.api.model.ServicePhotoView;
@@ -27,6 +27,7 @@ import jakarta.ws.rs.core.Response;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -126,14 +127,11 @@ public class ServiceOfferingsResource implements CatalogueApi {
                 Duration.ofMinutes(r.getDurationMinutes()),
                 Duration.ofMinutes(Optional.ofNullable(r.getBufferBeforeMinutes()).orElse(0)),
                 Duration.ofMinutes(Optional.ofNullable(r.getBufferAfterMinutes()).orElse(0)),
-                // Its presence is the whole discriminant. No fulfilment field is
-                // accepted here: two sources of truth for one fact is one
-                // source of truth fewer.
+                // The delay attached to the drop-off mode. Whether the two agree
+                // is a rule about a service, so it is stated once, inward, where
+                // every caller meets it.
                 Optional.ofNullable(r.getTurnaroundHours()).map(Duration::ofHours),
-                // Same reasoning as the buffers: the contract's default is
-                // applied here rather than trusted to the generated model.
-                r.getLocation() == null ? ServiceLocation.AT_PROVIDER
-                        : ServiceLocation.valueOf(r.getLocation().name()),
+                fulfilments(r),
                 com.balaaca.sharedkernel.money.Money.ofMinor(
                         r.getPrice().getAmountMinor(), Currency.of(r.getPrice().getCurrency())),
                 Optional.ofNullable(r.getPriceVisible()).orElse(true),
@@ -142,15 +140,33 @@ public class ServiceOfferingsResource implements CatalogueApi {
     }
 
     /**
-     * One derived value out of two stored ones, and the database is what makes
-     * that safe: a CHECK refuses an offering that is both dropped off and
-     * travelled to, so the three cases below cannot overlap.
+     * The modes the request published, in whichever of the two spellings it
+     * used.
+     *
+     * <p>Translated here and judged inward: this method knows how a client
+     * writes the set down, and nothing about what makes one legal. The
+     * deprecated {@code location} becomes a set of one - which is all it could
+     * ever name, and the reason it was superseded.
      */
-    private static Fulfilment fulfilmentOf(OfferingDefinition d) {
-        if (d.isCallOut()) {
-            return Fulfilment.AT_CUSTOMER;
-        }
-        return d.isDropOff() ? Fulfilment.DROP_OFF : Fulfilment.ON_SITE;
+    private static Set<com.balaaca.catalog.ports.inbound.Fulfilment>
+            fulfilments(ServiceOfferingRequest r) {
+        List<com.balaaca.catalog.ports.inbound.Fulfilment> stated =
+                Optional.ofNullable(r.getFulfilments()).orElseGet(List::of).stream()
+                        .map(f -> com.balaaca.catalog.ports.inbound.Fulfilment
+                                .valueOf(f.name()))
+                        // Not a set yet: a repeat is refused rather than
+                        // absorbed, and only a list still carries the evidence.
+                        .toList();
+
+        return com.balaaca.catalog.ports.inbound.Fulfilment.published(
+                stated,
+                Optional.ofNullable(r.getLocation()).map(l -> l == ServiceLocation.AT_CUSTOMER),
+                r.getTurnaroundHours() != null);
+    }
+
+    private static List<Fulfilment> wire(
+            Set<com.balaaca.catalog.ports.inbound.Fulfilment> offered) {
+        return offered.stream().map(f -> Fulfilment.valueOf(f.name())).toList();
     }
 
     private static ServiceOfferingView toView(ServiceOffering o) {
@@ -166,9 +182,11 @@ public class ServiceOfferingsResource implements CatalogueApi {
                         .amountMinor(d.price().amountMinor())
                         .currency(d.price().currency().name()))
                 .turnaroundHours(d.turnaround().map(t -> (int) t.toHours()).orElse(null))
-                // Derived, never accepted: a client must not have to branch on
-                // the absence of a field to know which kind of service it is.
-                .fulfilment(fulfilmentOf(d))
+                .fulfilments(wire(d.fulfilments()))
+                // Deprecated and still required, so still answered. One value
+                // standing for a set is not what the service is, which is why
+                // the array beside it exists.
+                .fulfilment(Fulfilment.valueOf(d.primaryFulfilment().name()))
                 .priceVisible(d.priceVisible())
                 .sortOrder(d.sortOrder())
                 .active(d.active());

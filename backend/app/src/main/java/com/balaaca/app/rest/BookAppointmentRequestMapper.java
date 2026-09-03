@@ -2,6 +2,7 @@ package com.balaaca.app.rest;
 
 import com.balaaca.app.api.model.BookAppointmentRequest;
 import com.balaaca.booking.domain.BookingSource;
+import com.balaaca.booking.domain.ContactChannel;
 import com.balaaca.booking.domain.CustomerContact;
 import com.balaaca.booking.domain.ServiceAddress;
 import com.balaaca.booking.ports.inbound.BookAppointmentUseCase.BookAppointmentCommand;
@@ -45,7 +46,18 @@ public class BookAppointmentRequestMapper {
                 // place the two meet.
                 request.getStartsAt().toInstant(),
                 toContact(request, defaultRegion),
+                // Parsed, not judged. Whether this is one of the modes the
+                // service publishes - and whether omitting it is an answer at
+                // all - depends on the offering, which this class does not read.
+                Optional.ofNullable(request.getFulfilment())
+                        .map(f -> com.balaaca.catalog.ports.inbound.Fulfilment.valueOf(f.name())),
                 toAddress(request),
+                // Resolved here and refused here, which is the whole point of
+                // asking at the edge: an absent field becomes WHATSAPP, and
+                // EMAIL with no address is 400 rather than four notification
+                // rows addressed to nowhere that a worker discovers hours later
+                // with nobody to answer.
+                ContactChannel.chosen(preferredChannel(request), emailOf(request)),
                 // Published since the contract was written and dropped here
                 // ever since: the box said "Message for the salon" and the
                 // message went nowhere.
@@ -75,7 +87,29 @@ public class BookAppointmentRequestMapper {
         return new CustomerContact(
                 request.getCustomer().getFullName().trim(),
                 PhoneNumber.parse(request.getCustomer().getPhone(), defaultRegion),
-                Optional.ofNullable(request.getCustomer().getEmail()).filter(e -> !e.isBlank()));
+                emailOf(request));
+    }
+
+    /**
+     * Blank reads as absent, here and in the contact above, and the two must
+     * agree: an empty string would otherwise satisfy "an email was given" while
+     * the stored contact carried nothing, and the refusal this pairs with would
+     * accept a booking it exists to stop.
+     */
+    private static Optional<String> emailOf(BookAppointmentRequest request) {
+        return Optional.ofNullable(request.getCustomer().getEmail()).filter(e -> !e.isBlank());
+    }
+
+    /**
+     * What the customer asked for, parsed and not yet judged.
+     *
+     * <p>The wire enum and the domain one are two types with one name, which is
+     * exactly the boundary this class exists to be: the contract may grow a
+     * value the domain does not have, and the compiler is what will say so.
+     */
+    private static Optional<ContactChannel> preferredChannel(BookAppointmentRequest request) {
+        return Optional.ofNullable(request.getCustomer().getPreferredChannel())
+                .map(c -> ContactChannel.valueOf(c.name()));
     }
 
     /**

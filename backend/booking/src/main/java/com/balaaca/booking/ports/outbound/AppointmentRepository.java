@@ -3,13 +3,16 @@ package com.balaaca.booking.ports.outbound;
 import com.balaaca.booking.domain.AppointmentStatus;
 import com.balaaca.booking.domain.BookedSlot;
 import com.balaaca.booking.domain.BookingSource;
+import com.balaaca.booking.domain.ContactChannel;
 import com.balaaca.booking.domain.CustomerContact;
 import com.balaaca.booking.domain.ServiceAddress;
 import com.balaaca.catalog.ports.inbound.BookableOffering;
+import com.balaaca.catalog.ports.inbound.Fulfilment;
 import com.balaaca.sharedkernel.ids.AppointmentId;
 import com.balaaca.sharedkernel.ids.CustomerId;
 import com.balaaca.sharedkernel.ids.ServiceOfferingId;
 import com.balaaca.sharedkernel.ids.StaffId;
+import com.balaaca.sharedkernel.phone.PhoneNumber;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -100,6 +103,20 @@ public interface AppointmentRepository {
     /** Upserts on (provider_id, phone_e164) without overwriting the provider's own edits. */
     CustomerId upsertCustomer(CustomerContact contact);
 
+    /**
+     * Whether this provider has refused this number.
+     *
+     * <p>By number rather than by customer id, because at booking time there is
+     * no id yet: the caller is a stranger holding a telephone, and the row is
+     * upserted on the number a moment later. Asked BEFORE that upsert, so a
+     * refused attempt writes nothing at all.
+     *
+     * <p>False for a number the provider has never seen, which is the same
+     * answer as for one they have and have not blocked. There is nothing to tell
+     * apart: neither is refused.
+     */
+    boolean isBlocked(PhoneNumber phone);
+
     record NewAppointment(
             AppointmentId id,
             StaffId staffId,
@@ -107,12 +124,27 @@ public interface AppointmentRepository {
             BookedSlot slot,
             CustomerId customerId,
             /**
-             * Resolved and validated before it gets here: present iff the
-             * offering travels, and its locality slug already checked against
-             * the published map.
+             * The customer's choice among the modes the offering publishes,
+             * already resolved and already checked against them. Frozen onto the
+             * row, because the offering can no longer answer the question: it
+             * may publish all three, and this booking is one of them.
+             */
+            Fulfilment fulfilment,
+            /**
+             * Resolved and validated before it gets here: present iff the CHOSEN
+             * mode travels, and its locality slug already checked against the
+             * published map.
              */
             Optional<ServiceAddress> serviceAddress,
             BookingSource source,
+            /**
+             * The customer's own answer to "how shall we reach you about
+             * this", frozen onto the row for the same reason the fulfilment
+             * is: the messages it governs fall due days later, and the place
+             * it could otherwise be re-derived from holds one row per
+             * telephone number and moves with every later booking.
+             */
+            ContactChannel preferredChannel,
             Optional<String> customerNote,
             Optional<String> idempotencyKey,
             Optional<String> idempotencyRequestHash) {

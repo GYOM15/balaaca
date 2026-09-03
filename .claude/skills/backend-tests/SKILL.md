@@ -12,20 +12,19 @@ description: Use when adding or reviewing a test for any bounded-context class -
 
 The enforcement backbone of the Definition of Done. Every unit is proven by a
 real-database integration test, invariants by property-based tests, and
-architecture by ArchUnit — with mutation and coverage gates that fail the build,
+architecture by ArchUnit - with mutation and coverage gates that fail the build,
 not just warn.
 
 ## When to use
 
 - Adding any class in a bounded-context module (identity, providers, catalog,
   scheduling, booking, billing, shared-kernel) or in a satellite deployable
-  (notification-worker, chatbot-service) — it ships with its tests in the same
+  (notification-worker, chatbot-service) - it ships with its tests in the same
   PR, never "later".
 - Touching Money, slot calculation, the appointment state machine, idempotency,
-  entitlements, or tenant scoping — these carry mandatory property-based and/or
+  entitlements, or tenant scoping - these carry mandatory property-based and/or
   integration coverage.
-- Writing or changing any adapter that talks to PostgreSQL, Redis, or Keycloak —
-  the test must exercise the real thing via Testcontainers, not a hand-rolled
+- Writing or changing any adapter that talks to PostgreSQL, Redis, or Keycloak - the test must exercise the real thing via Testcontainers, not a hand-rolled
   mock.
 - Any PR: it must keep JaCoCo coverage and the PIT mutation score at or above the
   gate, and keep every ArchUnit rule green.
@@ -44,7 +43,7 @@ not just warn.
 3. **NEVER mock the database in an integration test.** Persistence, RLS, unique
    constraints, the GiST exclusion constraint, the `ck_appointments_*` CHECKs and
    optimistic-lock version bumps are tested against a **real PostgreSQL 18**
-   through Testcontainers — in Quarkus this is Dev Services (zero-config
+   through Testcontainers - in Quarkus this is Dev Services (zero-config
    container) or an explicit `@QuarkusTestResource`. No H2, no in-memory fake, no
    mocked `EntityManager`, no mocked repository when the thing under test *is*
    the persistence behavior. A constraint that only PostgreSQL enforces cannot be
@@ -54,13 +53,12 @@ not just warn.
    against a Keycloak container or a signed test JWT minted with the test realm's
    key. Tenant resolution is never faked at the claim level: the test seeds
    `users` and `provider_staff` and lets the real resolution chain run, because
-   the database — not the token — is the source of truth for membership. There is
+   the database - not the token - is the source of truth for membership. There is
    no membership cache to prime or evict; the resolver is a two-join lookup on
    primary-key paths (see `multi-tenant-rls`). A user with no `ACTIVE` row must
    produce `NoProviderMembershipException`, and that case gets its own test.
 5. **Tests enter a tenant exactly the way production does.** Drive the three
-   mandatory suites through the **real HTTP surface with a signed test JWT** —
-   RestAssured against the `@QuarkusTest` port — so the whole chain runs as
+   mandatory suites through the **real HTTP surface with a signed test JWT** - RestAssured against the `@QuarkusTest` port - so the whole chain runs as
    deployed: the interceptor chain, `ProviderMembershipResolver`, the
    request-scoped `TenantContext`, and the **connection-level RLS binding** that
    issues `SELECT set_config('app.provider_id', ?, true)` as the first statement
@@ -73,16 +71,16 @@ not just warn.
    argument to a service method that has no such parameter.
 6. **Property-based tests (jqwik) guard Money arithmetic AND slot calculation.**
    For `Money`: arithmetic never overflows, never loses minor units, rejects
-   mixed-currency operations, respects the currency's own scale — GNF has scale
-   0, so no example may assume "cents" — and `allocate` distributes a total with
+   mixed-currency operations, respects the currency's own scale - GNF has scale
+   0, so no example may assume "cents" - and `allocate` distributes a total with
    no minor unit created or destroyed. Commutativity properties must generate
    both operands from the *same* currency, or they assert the mixed-currency
    rejection instead. For scheduling: a generated set of `AvailabilityRule` plus
    `AvailabilityOverride` plus booked appointments yields slots that are always
    inside an opening window, never overlap an existing appointment once buffers
    are applied, and are always a whole number of the service's granularity apart.
-   The rule generator must produce windows where `end_time < start_time` — a
-   provider open 22:00–01:00 wraps into the next local date and is legal — and
+   The rule generator must produce windows where `end_time < start_time` - a
+   provider open 22:00–01:00 wraps into the next local date and is legal - and
    must assert that an equal pair is rejected rather than read as 24 hours.
    Slot properties run under `Africa/Conakry`, a northern DST zone
    (`Europe/Paris`) **and** a southern one (`America/Santiago`): Guinea is UTC+0
@@ -93,24 +91,22 @@ not just warn.
    already carries that appointment's own frozen buffers and is never widened
    again; the calculator widens only the *candidate* slot, by the *requested*
    service's buffers. A mandatory property test closes the loop: every slot the
-   calculator proposes is then INSERTed against real PostgreSQL and must succeed
-   — no `23P01`. If that property is red, the API is advertising slots the
+   calculator proposes is then INSERTed against real PostgreSQL and must succeed - no `23P01`. If that property is red, the API is advertising slots the
    exclusion constraint rejects (see `booking-integrity`).
 8. **Three suites are mandatory, by name, and none may be deleted.**
    - **Tenant non-leak**, one test per tenant-scoped aggregate (Provider,
      ProviderStaff, ServiceOffering, AvailabilityRule, AvailabilityOverride,
      Appointment, Customer, Subscription), run under the unprivileged
-     application role — never as the owner, which silently bypasses RLS. Assert
+     application role - never as the owner, which silently bypasses RLS. Assert
      the three distinct behaviors precisely: a SELECT under provider A returns
      zero of provider B's rows; an UPDATE or DELETE naming B's row **affects
-     zero rows and raises nothing** — the USING predicate filters it before the
+     zero rows and raises nothing** - the USING predicate filters it before the
      write, so assert `0` affected and that B's row is unchanged afterwards; an
      INSERT that names B's `provider_id` **does** raise, because it fails the
      policy's WITH CHECK.
    - **IDOR/BOLA matrix**, a parameterised table of every tenant-scoped REST
      resource: provider A's token against provider B's resource must return
-     **404 with code `RESOURCE_NOT_FOUND`**, byte-identical to a genuine miss —
-     never 403, never a per-resource code, or the response is an existence
+     **404 with code `RESOURCE_NOT_FOUND`**, byte-identical to a genuine miss - never 403, never a per-resource code, or the response is an existence
      oracle. A companion test asserts the matrix covers every tenant-scoped path
      in the OpenAPI document, so adding a resource without adding its row fails
      the build rather than quietly shipping an unguarded endpoint.
@@ -120,7 +116,7 @@ not just warn.
      `starts_at` yield exactly one 201 and N-1 409 carrying `SLOT_UNAVAILABLE`.
      (b) *Any available staff*: a provider with N eligible staff receives N
      concurrent requests that name **no** `staff_id`, and must yield **N
-     successes on N distinct `staff_id` values** — the server-chosen path
+     successes on N distinct `staff_id` values** - the server-chosen path
      retries the unit of work against the next candidate on `23P01`, so a
      spurious 409 while a chair sits empty is a bug, not contention (see
      `booking-integrity`).
@@ -142,7 +138,7 @@ not just warn.
     means the compiler cannot enforce a ports-only boundary and ArchUnit is the
     only thing that can; the **deployable list is closed**, covering the seven
     contexts *and* the two satellites, so a stray package under `com.balaaca`
-    fails; and **no gRPC and no broker type appears anywhere** — no `io.grpc`,
+    fails; and **no gRPC and no broker type appears anywhere** - no `io.grpc`,
     no `.proto`, no Kafka or Redpanda client. Intra-core calls go through Java
     inbound ports; asynchronous work goes through the notifications outbox table
     (see `backend-architecture`, `outbox-messaging`).
@@ -161,7 +157,7 @@ not just warn.
     JaCoCo enforces the line/branch threshold at `verify`; PIT enforces the
     mutation score. Both are scoped to `domain/` and `application/` in the seven
     contexts **plus** `com/balaaca/sharedkernel/{money,time,logging}/**`, which
-    has no `domain/` segment to be caught by a wildcard — `LocalWindows` is the
+    has no `domain/` segment to be caught by a wildcard - `LocalWindows` is the
     most DST-critical class in the product and an include pattern that misses it
     leaves the gate wide open exactly where it matters. Adapters, generated
     OpenAPI interfaces, MapStruct output and Flyway migrations are excluded:
@@ -172,7 +168,7 @@ not just warn.
 13. **Assertions are behavioral, not log-sniffing.** Assert on returned values,
     persisted state, rows in `notifications`, and RFC 7807 problem bodies
     including the stable error code and its snake_case wire fields. Logging,
-    audit, tracing and metrics are interceptor concerns — do not assert on
+    audit, tracing and metrics are interceptor concerns - do not assert on
     stdout (see `cdi-interceptors`, `pii-masking-logging`).
 
 ## Anti-patterns
@@ -475,15 +471,15 @@ mvn -pl scheduling,booking,shared-kernel org.pitest:pitest-maven:mutationCoverag
 
 ## Sibling skills
 
-- `backend-architecture` — the hexagonal boundaries and closed deployable list ArchUnit enforces.
-- `booking-integrity` — the exclusion constraint and the any-staff retry the concurrency suite proves.
-- `multi-tenant-rls` — the connection-level `app.provider_id` binding a test must exercise, not fake.
-- `money-currency` — the `Money`/`Currency` invariants property-tested here.
-- `temporal-modelling` — why slot properties run under both hemispheres' DST.
-- `idempotency-concurrency` — the fingerprint replay and `IDEMPOTENCY_KEY_REUSED` asserted here.
-- `outbox-messaging` — the notifications rows and dedupe keys asserted in the same transaction.
-- `platform-api` — the closed error-code catalogue the IDOR matrix asserts against.
-- `contract-first` — the OpenAPI document the IDOR matrix checks itself against.
-- `ci-workflow` — where these gates run and block the merge.
-- `backend-naming` — the `*Test` / `*IT` suffix convention.
-- `cdi-interceptors` — why logging, audit and tracing are not asserted in tests.
+- `backend-architecture` - the hexagonal boundaries and closed deployable list ArchUnit enforces.
+- `booking-integrity` - the exclusion constraint and the any-staff retry the concurrency suite proves.
+- `multi-tenant-rls` - the connection-level `app.provider_id` binding a test must exercise, not fake.
+- `money-currency` - the `Money`/`Currency` invariants property-tested here.
+- `temporal-modelling` - why slot properties run under both hemispheres' DST.
+- `idempotency-concurrency` - the fingerprint replay and `IDEMPOTENCY_KEY_REUSED` asserted here.
+- `outbox-messaging` - the notifications rows and dedupe keys asserted in the same transaction.
+- `platform-api` - the closed error-code catalogue the IDOR matrix asserts against.
+- `contract-first` - the OpenAPI document the IDOR matrix checks itself against.
+- `ci-workflow` - where these gates run and block the merge.
+- `backend-naming` - the `*Test` / `*IT` suffix convention.
+- `cdi-interceptors` - why logging, audit and tracing are not asserted in tests.

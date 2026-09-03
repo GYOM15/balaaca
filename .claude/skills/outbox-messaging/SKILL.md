@@ -21,7 +21,7 @@ gives the transactional safety that a broker would have been bought for.
 ## When to use
 
 - A booking, cancellation, or reschedule must produce a confirmation, a
-  reminder, or a staff alert — anything leaving the process.
+  reminder, or a staff alert - anything leaving the process.
 - Any state change must trigger an effect the current transaction cannot
   own atomically (send an SMS, send an email, push a reminder later).
 - Writing or reviewing the `notification-worker` drain loop, its retry
@@ -36,7 +36,7 @@ gives the transactional safety that a broker would have been bought for.
 1. **Core module to core module stays an in-process port call; only work
    that must outlive the transaction becomes a notification row.** `booking`
    asking `scheduling` for slots, or `billing` for a plan entitlement, is a
-   plain Java call through the callee's inbound port — never a row, never a
+   plain Java call through the callee's inbound port - never a row, never a
    network hop. The table exists for effects that leave the process. All the
    classic outbox rules apply to it; only the transport differs.
 2. **The notification row is written in the same transaction as the state
@@ -47,7 +47,7 @@ gives the transactional safety that a broker would have been bought for.
 3. **No network I/O ever happens inside a business transaction.** The
    application layer depends on a `NotificationOutboxPort` that only appends
    and cancels rows. No SMS gateway, no SMTP client, no webhook call inside
-   `@Transactional` — a hung socket would hold a row lock and, on the booking
+   `@Transactional` - a hung socket would hold a row lock and, on the booking
    path, an exclusion-constraint range with it.
 4. **A separate deployable drains the table, with `SELECT … FOR UPDATE SKIP
    LOCKED`, under its own least-privilege database role.**
@@ -55,17 +55,17 @@ gives the transactional safety that a broker would have been bought for.
    workers never fight over the same row. The worker role is **not** the
    application role, holds no `BYPASSRLS` and owns no table; it is granted
    `SELECT` and `UPDATE` on `notifications` and nothing else, and a dedicated
-   RLS policy — written for that role by name — lets it see every provider's
+   RLS policy - written for that role by name - lets it see every provider's
    rows. Cross-tenant draining is a policy decision in SQL, not a privilege
    escape hatch.
 5. **The worker never binds a tenant, and never reads a tenant table.**
    `TenantContext` is `@RequestScoped`, and a scheduled drain has no request:
    trying to bind it there either fails or, worse, leaves a stale value on a
    pooled thread. So the worker's connection never sets `app.provider_id`, and
-   it does not need to — its own policy (rule 4) is what admits the rows. It
+   it does not need to - its own policy (rule 4) is what admits the rows. It
    resolves nothing: the row already carries everything the send needs
    (rule 10). For observability it puts the row's `provider_id` into the MDC
-   raw — an operational identifier, not PII — and never logs the recipient.
+   raw - an operational identifier, not PII - and never logs the recipient.
 6. **Every RLS predicate on this table uses the null-safe form, and the owner
    gets its own policy.** Write
    `provider_id = nullif(current_setting('app.provider_id', true), '')::uuid`:
@@ -80,8 +80,7 @@ gives the transactional safety that a broker would have been bought for.
    `SENT`, and nobody ever finds out. Ack first, mark second, in that order.
 8. **Delivery is at-least-once, so everything dedupes on a UNIQUE
    `dedupe_key`, and the key embeds the instant the message is owed for.**
-   The shape is `appointment:{uuid}:{TYPE}:{scheduled_at_epoch_seconds}` —
-   for example
+   The shape is `appointment:{uuid}:{TYPE}:{scheduled_at_epoch_seconds}` - for example
    `appointment:9f1c…:REMINDER_24H:1772445600`. That is deterministic (a
    replayed transaction recomputes the identical key and the UNIQUE index
    absorbs it) and collision-free across reschedules (the new time is a new
@@ -89,8 +88,8 @@ gives the transactional safety that a broker would have been bought for.
    cancelled by rule 9). There is no plan-version column and no counter:
    anything that has to be incremented is state that two racing transactions
    can disagree about. For this to hold, `scheduled_at` must be derived from
-   domain instants — `starts_at` minus 24 hours, the recorded cancellation
-   instant — never from a fresh clock read at planning time. The same key is
+   domain instants - `starts_at` minus 24 hours, the recorded cancellation
+   instant - never from a fresh clock read at planning time. The same key is
    passed to the channel as its own idempotency key, so a crash between the
    send and the `SENT` update costs a suppressed duplicate, not a second SMS.
 9. **Cancelling or rescheduling an appointment cancels its pending
@@ -102,8 +101,7 @@ gives the transactional safety that a broker would have been bought for.
 10. **A notification row is a self-contained snapshot, never a pointer.** It
     carries the recipient (E.164 phone or email, as frozen at planning time),
     the locale, and the template variables under stable English keys. The
-    worker never joins `appointments`, `customers`, or `service_offerings` —
-    it could not anyway, since its role cannot read them. This is what makes
+    worker never joins `appointments`, `customers`, or `service_offerings` - it could not anyway, since its role cannot read them. This is what makes
     rule 4's least privilege and rule 5's tenant-free worker possible, and it
     keeps a message truthful about the moment it was owed.
 11. **Retry is exponential backoff with jitter, a bounded attempt count, and a
@@ -111,7 +109,7 @@ gives the transactional safety that a broker would have been bought for.
     `scheduled_at` forward, and leaves the row `PENDING`; at the cap the row
     becomes `DEAD` and is alerted on, never retried forever. No retry loop
     ever runs on a request thread. `last_error` holds a **stable failure code**
-    produced by the channel adapter — not a provider payload, and not the
+    produced by the channel adapter - not a provider payload, and not the
     result of a masking call sprinkled through business code. Sanitising is
     the adapter's and the log boundary's job.
 
@@ -157,7 +155,7 @@ gives the transactional safety that a broker would have been bought for.
 
 ## Minimal correct example
 
-The outbox table (Flyway) — tenant-scoped, self-contained, deduped. The
+The outbox table (Flyway) - tenant-scoped, self-contained, deduped. The
 composite foreign key works because `appointments` declares
 `UNIQUE (provider_id, id)`; see `booking-integrity` for that table.
 
@@ -255,7 +253,7 @@ public class CancelAppointmentService implements CancelAppointmentUseCase {
 }
 ```
 
-The dedupe key is intent plus the instant the message is owed for — no
+The dedupe key is intent plus the instant the message is owed for - no
 counter, no version:
 
 ```java
@@ -376,23 +374,23 @@ UPDATE notifications
 
 ## Sibling skills
 
-- `booking-integrity` — the appointment state machine that produces these
+- `booking-integrity` - the appointment state machine that produces these
   rows, and the `appointments` table whose `UNIQUE (provider_id, id)` this
   foreign key needs; the exclusion constraint is exactly why no network call
   may sit inside the booking transaction.
-- `idempotency-concurrency` — `SKIP LOCKED` claiming, the `UNIQUE`
+- `idempotency-concurrency` - `SKIP LOCKED` claiming, the `UNIQUE`
   `dedupe_key`, and why at-least-once forces dedupe on both sides.
-- `multi-tenant-rls` — `notifications` carries `provider_id` and is RLS
+- `multi-tenant-rls` - `notifications` carries `provider_id` and is RLS
   FORCEd; the tenant GUC is bound on the connection for the API and left
   unbound for the worker, which gets a named policy and a least-privilege
   role, never `BYPASSRLS`.
-- `cdi-interceptors` — why a `@RequestScoped` `TenantContext` and a
+- `cdi-interceptors` - why a `@RequestScoped` `TenantContext` and a
   `@Scheduled` drain cannot meet, and what runs where.
-- `temporal-modelling` — `scheduled_at` is `timestamptz` in UTC, and a
+- `temporal-modelling` - `scheduled_at` is `timestamptz` in UTC, and a
   24-hour reminder is computed from the appointment's instant, not from a
   local wall clock.
-- `backend-architecture` — why core-to-core is an in-process port call and
+- `backend-architecture` - why core-to-core is an in-process port call and
   only core-to-satellite leaves the process.
-- `pii-masking-logging` — the recipient on a notification row is a phone
+- `pii-masking-logging` - the recipient on a notification row is a phone
   number and is never logged; `provider_id` is logged raw; `last_error` holds
   a code, not a payload.

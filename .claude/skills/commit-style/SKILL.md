@@ -11,7 +11,7 @@ description: Balaaca's house commit convention. Use when drafting a commit messa
 > CANONICAL.md disagree, CANONICAL.md wins and this file is a bug.
 
 How commit messages must look on Balaaca. This mirrors the owner's established
-convention — **plain imperative, capitalized, <= 50-char subject** — NOT the
+convention - **plain imperative, capitalized, <= 50-char subject** - NOT the
 Conventional Commits `type(scope):` shape. Commits are **signed** and **never**
 carry a co-author trailer.
 
@@ -25,20 +25,19 @@ carry a co-author trailer.
 
 ## The rules
 
-1. **Subject <= 50 characters.** Hard limit — phrase tightly, drop articles if
+1. **Subject <= 50 characters.** Hard limit - phrase tightly, drop articles if
    needed.
 2. **Start with a capital letter and a present-tense verb.** "Add", "Fix",
-   "Update", "Remove", "Refactor", "Harden" — never "Added", "Adds", "Adding".
+   "Update", "Remove", "Refactor", "Harden" - never "Added", "Adds", "Adding".
    The subject reads as a command completing "this commit will ...".
-3. **No `type(scope):` prefix.** Plain imperative — no `feat:`, no `fix(...)`,
+3. **No `type(scope):` prefix.** Plain imperative - no `feat:`, no `fix(...)`,
    no scope segment. This is deliberately NOT Conventional Commits.
 4. **No trailing period.** The subject ends on its last word.
-5. **Body (optional), <= 72 characters per line.** Explain *why*, not *what* —
-   the diff already shows what. Separate it from the subject with one blank
+5. **Body (optional), <= 72 characters per line.** Explain *why*, not *what* - the diff already shows what. Separate it from the subject with one blank
    line; reference the ADR when the change follows one.
 6. **Commits are signed, and signing is enforced locally only.** Sign every
    commit: `git commit -S`, or set `commit.gpgsign=true` once for the clone.
-   Be honest about what enforces it — **nothing server-side does**. GitHub
+   Be honest about what enforces it - **nothing server-side does**. GitHub
    branch protection and required signature checks are unavailable on a private
    repository without a paid plan, and the CI gate (`ci-workflow`) runs no
    signature check. The only guard is client-side: local `commit-msg` /
@@ -52,7 +51,7 @@ carry a co-author trailer.
 9. **English** for subject and body (see `code-language`). User-facing French
    lives in the i18n catalogue, never in a commit message.
 10. **Breaking API/contract changes** are called out in the body (a
-    `BREAKING CHANGE:` note) — the hand-authored OpenAPI document is the seam
+    `BREAKING CHANGE:` note) - the hand-authored OpenAPI document is the seam
     other code depends on, and a published error code is never renamed.
 11. **No emoji, anywhere in the message.** Subject, body, and trailers stay
     plain text.
@@ -152,8 +151,7 @@ exit 0
 
 ## Note on commitlint
 
-If commitlint is introduced, its DEFAULT preset enforces Conventional Commits —
-which this convention does NOT use. Configure it to THESE rules instead
+If commitlint is introduced, its DEFAULT preset enforces Conventional Commits - which this convention does NOT use. Configure it to THESE rules instead
 (`subject-case: sentence-case`, `header-max-length: 50`, `type-enum` disabled,
 `subject-full-stop` off, `body-max-line-length: 72`), or skip the dependency
 entirely and enforce the subject rules with the local `commit-msg` hook above. A
@@ -166,10 +164,10 @@ commits that already exist, and the CI gate as specified in `ci-workflow` does
 not check messages or signatures at all. Do not describe these checks as a gate.
 When the repository becomes public, or the plan changes, add required signature
 verification and a commit-message check to branch protection, and update this
-section then — not before.
+section then - not before.
 
 ## Sibling skills
 
-- `branch-naming` — the `feature/<slug>` branch these commits live on, and the single authoritative `pre-push` hook.
-- `ci-workflow` — the keyless gate, which checks build, tests and scans; it does not check signatures or messages.
-- `code-language` — English for subject and body.
+- `branch-naming` - the `feature/<slug>` branch these commits live on, and the single authoritative `pre-push` hook.
+- `ci-workflow` - the keyless gate, which checks build, tests and scans; it does not check signatures or messages.
+- `code-language` - English for subject and body.

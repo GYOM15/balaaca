@@ -1,16 +1,16 @@
 /* ---------------------------------------------------------------------------
-   Ce que la page publique ajoute au système, et rien de plus.
+   What the public page adds to the system, and nothing more.
 
-   globals.css porte déjà .pub, .pub-cover, .pub-id, .pub-meta, .pub-aside,
-   .svc-row et .hours-row. Ce fichier ne redéfinit aucune d'elles : il couvre
-   les trois cas que la maquette ne pouvait pas connaître, parce qu'elle
-   dessinait un monogramme faute de savoir qu'on stockait des images, et parce
-   que ses services avaient tous un prix.
+   globals.css already carries .pub, .pub-cover, .pub-id, .pub-meta,
+   .pub-aside, .svc-row and .hours-row. This file redefines none of them: it
+   covers the three cases the mockup could not know about, because it drew a
+   monogram not knowing images were stored, and because every one of its
+   services had a price.
    ------------------------------------------------------------------------ */
 
-/* Une photo de couverture est claire ou sombre selon la photo, et le texte
-   posé dessus est blanc dans les deux cas. Le voile rend l'en-tête lisible
-   quel que soit le cliché, sans l'assombrir au point d'en faire un aplat. */
+/* A cover photo is light or dark depending on the photo, and the text laid
+   over it is white either way. The veil keeps the header legible whatever the
+   picture, without darkening it into a flat block. */
 .pub-cover__scrim {
   position: absolute;
   inset: 0;
@@ -22,16 +22,16 @@
   pointer-events: none;
 }
 
-/* La ligne de service est un lien ici, pas un bouton : elle mène à la page de
-   réservation, donc elle s'ouvre dans un onglet sur appui long et le clavier
-   l'annonce comme un lien. globals.css ne teinte au survol que le bouton. */
+/* The service row is a link here, not a button: it leads to the booking page,
+   so a long press opens it in a tab and the keyboard announces it as a link.
+   globals.css tints only the button on hover. */
 a.svc-row:hover {
   background: var(--brand-tint-04);
 }
 
-/* Un prix que le prestataire n'a pas publié n'est pas un prix : il se lit
-   comme une note, pas comme un montant. Même emplacement dans la ligne pour
-   que la colonne reste droite, mais ni gras ni chiffres tabulaires. */
+/* A price the provider has not published is not a price: it reads as a note
+   and not as an amount. Same place in the row so the column stays straight,
+   but neither bold nor tabular figures. */
 .svc-row__price--ask {
   font-weight: var(--weight-medium);
   color: var(--text-tertiary);

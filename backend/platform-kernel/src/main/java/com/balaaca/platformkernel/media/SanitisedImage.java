@@ -77,7 +77,32 @@ public record SanitisedImage(byte[] content, String contentType, String extensio
         return content.clone();
     }
 
-    public static SanitisedImage of(byte[] raw) {
+    /**
+     * The square a logo becomes, on a side.
+     *
+     * <p>Smaller than {@link #STORED_LONG_EDGE} on purpose: the largest place
+     * this product draws a mark is seventy-two points, so eight hundred covers
+     * a three-times display and nothing beyond it. A logo is fetched on every
+     * card of every listing, which is exactly where bytes nobody can see are
+     * paid for over and over.
+     */
+    public static final int SQUARE_SIDE = 800;
+
+    /**
+     * The band, in the proportion it is drawn at.
+     *
+     * <p>Four to one is a choice and it is the only number here worth arguing
+     * about, because it IS the height of every provider's page: the band is as
+     * wide as the window, so its ratio decides how much of a screen the picture
+     * takes before the name appears. It was a fluid width against a capped
+     * height before, which is not a ratio at all - it ran from 2.4:1 on a
+     * telephone to 6.7:1 on a wide monitor, so no stored shape could have
+     * matched it and every screen cropped differently.
+     */
+    public static final int BANNER_WIDTH = 1600;
+    public static final int BANNER_HEIGHT = 400;
+
+    public static SanitisedImage of(byte[] raw, ImageStore.Shape shape) {
         if (raw == null || raw.length == 0) {
             throw new ImageRejectedException("the body is empty");
         }
@@ -93,9 +118,73 @@ public record SanitisedImage(byte[] content, String contentType, String extensio
         String format = png ? "png" : "jpeg";
         refuseIfTooLargeToDecode(raw, format);
 
-        BufferedImage decoded = downscale(decode(raw));
-        return new SanitisedImage(reencode(decoded, format), "image/" + format,
+        BufferedImage shaped = shape(decode(raw), shape);
+        return new SanitisedImage(reencode(shaped, format), "image/" + format,
                                  png ? "png" : "jpg");
+    }
+
+    private static BufferedImage shape(BufferedImage image, ImageStore.Shape shape) {
+        return switch (shape) {
+            case FREE -> downscale(image, STORED_LONG_EDGE);
+            case SQUARE -> downscale(padToSquare(image), SQUARE_SIDE);
+            case BANNER -> downscale(cropToRatio(image, BANNER_WIDTH, BANNER_HEIGHT),
+                                     BANNER_WIDTH);
+        };
+    }
+
+    /**
+     * The whole image, centred on a square canvas.
+     *
+     * <p>Transparent where the source has an alpha channel and white where it
+     * does not, which is not a detail: most logos arrive as a JPEG that already
+     * carries its own white background, and padding one with anything else
+     * draws a coloured frame around a white square. Keeping a PNG's
+     * transparency lets the same mark sit on any ground the design chooses.
+     */
+    private static BufferedImage padToSquare(BufferedImage image) {
+        int side = Math.max(image.getWidth(), image.getHeight());
+        if (side == image.getWidth() && side == image.getHeight()) {
+            return image;
+        }
+        boolean alpha = image.getColorModel().hasAlpha();
+        BufferedImage square = new BufferedImage(side, side,
+                alpha ? BufferedImage.TYPE_INT_ARGB : BufferedImage.TYPE_INT_RGB);
+        java.awt.Graphics2D canvas = square.createGraphics();
+        try {
+            if (!alpha) {
+                canvas.setColor(java.awt.Color.WHITE);
+                canvas.fillRect(0, 0, side, side);
+            }
+            canvas.drawImage(image, (side - image.getWidth()) / 2,
+                             (side - image.getHeight()) / 2, null);
+        } finally {
+            canvas.dispose();
+        }
+        return square;
+    }
+
+    /**
+     * The largest centred rectangle of the wanted proportion that FITS INSIDE
+     * the source.
+     *
+     * <p>Cropping inward rather than scaling to fill, so nothing is ever
+     * enlarged: a band built by stretching a small photograph up to sixteen
+     * hundred pixels is a blurred band, and the provider did not ask for one.
+     * A picture already in the right proportion comes back untouched.
+     */
+    private static BufferedImage cropToRatio(BufferedImage image, int rw, int rh) {
+        int width = image.getWidth();
+        int height = image.getHeight();
+        // Compared as a cross product: two integer divisions would round the
+        // decision itself, and an image one pixel off would crop by hundreds.
+        int wanted = Math.min(width, (int) ((long) height * rw / rh));
+        int tall = Math.min(height, (int) ((long) width * rh / rw));
+        if (wanted == width && tall == height) {
+            return image;
+        }
+        return image.getSubimage(Math.max(0, (width - wanted) / 2),
+                                 Math.max(0, (height - tall) / 2),
+                                 Math.max(1, wanted), Math.max(1, tall));
     }
 
     /**
@@ -149,13 +238,13 @@ public record SanitisedImage(byte[] content, String contentType, String extensio
      * braids, fabric, tiling - and a picture of braids that looks wrong is
      * worse than no picture.
      */
-    private static BufferedImage downscale(BufferedImage image) {
+    private static BufferedImage downscale(BufferedImage image, int bound) {
         int longEdge = Math.max(image.getWidth(), image.getHeight());
-        if (longEdge <= STORED_LONG_EDGE) {
+        if (longEdge <= bound) {
             return image;
         }
 
-        double factor = (double) STORED_LONG_EDGE / longEdge;
+        double factor = (double) bound / longEdge;
         int width = Math.max(1, (int) Math.round(image.getWidth() * factor));
         int height = Math.max(1, (int) Math.round(image.getHeight() * factor));
 

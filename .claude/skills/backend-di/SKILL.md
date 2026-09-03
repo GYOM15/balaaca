@@ -26,7 +26,7 @@ managed beans, correct scopes, no hidden collaborators inside the domain.
    its collaborators as `final` fields set by a single constructor; CDI
    selects it automatically. No `@Inject` on the constructor is required when
    it is the only one. This makes the bean instantiable in a plain unit test
-   with hand-built collaborators — no container needed. Interceptors are
+   with hand-built collaborators - no container needed. Interceptors are
    production beans and follow the same rule (see `cdi-interceptors`).
 2. **Never field injection (`@Inject` on a field) in production beans.** Not
    "just for now", and not in pure (non-container) unit tests. Field injection
@@ -34,16 +34,15 @@ managed beans, correct scopes, no hidden collaborators inside the domain.
    construct the object even in a plain unit test. The one exception is a
    `@QuarkusTest` integration-test class, where `@Inject` on a field is the
    idiomatic way to obtain a container-managed collaborator (see
-   `backend-tests`) — it stays banned in production beans and pure unit tests.
+   `backend-tests`) - it stays banned in production beans and pure unit tests.
 3. **Never setter injection.** Same reasons: it makes the bean mutable and
    hard to construct fully-formed.
 4. **Choose the scope deliberately, default `@ApplicationScoped`.** Stateless
    services, application use cases, ports' adapters, gateways and repositories
    are `@ApplicationScoped` (one instance, thread-safe). Per-request state such
    as `TenantContext` is `@RequestScoped` and is populated ONLY by the
-   `TenantBoundInterceptor`, which resolves the tenant from the DATABASE —
-   verified JWT `sub` -> `users.keycloak_user_id` -> `users.id` ->
-   `provider_staff.user_id` -> `provider_id` — on every request, uncached, so
+   `TenantBoundInterceptor`, which resolves the tenant from the DATABASE - verified JWT `sub` -> `users.keycloak_user_id` -> `users.id` ->
+   `provider_staff.user_id` -> `provider_id` - on every request, uncached, so
    that removing a `provider_staff` row takes effect on the very next call. It
    is never parsed from a JWT claim and never injected as a business parameter
    (see `multi-tenant-rls`). Never use `@Singleton` as a substitute for
@@ -52,7 +51,7 @@ managed beans, correct scopes, no hidden collaborators inside the domain.
    replaced/mocked in `@QuarkusTest`. `@Singleton` is an eagerly constructed
    pseudo-scope with no client proxy. (Injected normal-scoped collaborators
    such as the `@RequestScoped` `TenantContext` are reached through their own
-   proxies either way, so that is not the difference — and interceptors apply
+   proxies either way, so that is not the difference - and interceptors apply
    to `@Singleton` too, so they are not the reason either.)
 5. **No static mutable state.** No `static` service locators, no `static`
    caches holding provider/appointment/money data, no mutable `public static`
@@ -77,12 +76,12 @@ managed beans, correct scopes, no hidden collaborators inside the domain.
    `Instant.now()` or `LocalDateTime.now()` inside a bean (see
    `temporal-modelling`).
 8. **When a collaborator is genuinely optional, inject `Instance<T>` and
-   resolve it explicitly** — do not scatter null checks. When two
+   resolve it explicitly** - do not scatter null checks. When two
    implementations of a port exist, disambiguate with a `@Named`/qualifier
    annotation, not by `instanceof`.
 9. **A constructor with too many collaborators is an SRP smell, not a DI
    problem.** Five-plus injected ports usually means the bean does more than
-   one thing — split it (see `backend-srp`), do not "solve" it with field
+   one thing - split it (see `backend-srp`), do not "solve" it with field
    injection or a god-service.
 
 ## Anti-patterns
@@ -91,7 +90,7 @@ managed beans, correct scopes, no hidden collaborators inside the domain.
   constructor `private final` field.
 - `void setSmsSender(SmsSenderPort s) { this.smsSender = s; }` -> rule 3.
 - `private static Map<String, Appointment> CACHE = new HashMap<>();` -> rule 5,
-  put it behind an `@ApplicationScoped` bean, Redis, or Postgres — a static
+  put it behind an `@ApplicationScoped` bean, Redis, or Postgres - a static
   cache keyed without the tenant is also a cross-tenant leak.
 - A Redis cache of `keycloak sub -> provider_id` consulted by
   `TenantBoundInterceptor` -> rule 4; a stale positive keeps a removed staff
@@ -112,7 +111,7 @@ managed beans, correct scopes, no hidden collaborators inside the domain.
 
 ```java
 // The bean is the *Service; the inbound port is the interface. No *ServiceImpl.
-// NOTE: `booking` injects NO SMS gateway — it writes the notifications row in
+// NOTE: `booking` injects NO SMS gateway - it writes the notifications row in
 // the same transaction and the notification-worker deployable sends it.
 @ApplicationScoped
 public class BookAppointmentService implements BookAppointmentUseCase {
@@ -145,7 +144,7 @@ public class BookAppointmentService implements BookAppointmentUseCase {
 }
 ```
 
-**Canonical `TenantContext`** — this is THE definition for the whole codebase
+**Canonical `TenantContext`** - this is THE definition for the whole codebase
 (it lives in `com.balaaca.sharedkernel.tenancy`, together with the interceptor
 that fills it; every other skill refers to this one, none redefines it). The
 tenant is the **provider**, and it is resolved from the database, not from a
@@ -215,16 +214,16 @@ public interface SmsSenderConfig {
 
 ## Sibling skills
 
-- `backend-architecture` — inward dependencies; the core depends on ports, CDI
+- `backend-architecture` - inward dependencies; the core depends on ports, CDI
   wires adapters at the edge, and `shared-kernel` is the one context exempt
   from the four-layer rule.
-- `backend-srp` — a bloated constructor means too many responsibilities.
-- `backend-naming` — port `*UseCase` + bean `*Service` (never `*ServiceImpl`),
+- `backend-srp` - a bloated constructor means too many responsibilities.
+- `backend-naming` - port `*UseCase` + bean `*Service` (never `*ServiceImpl`),
   `*Repository`, `*Adapter` and final-field naming.
-- `cdi-interceptors` — why `@ApplicationScoped` (proxy) matters for
+- `cdi-interceptors` - why `@ApplicationScoped` (proxy) matters for
   `@TenantBound`/`@Idempotent`/`@RateLimited`, and why the database GUC is
   bound by a connection hook rather than by the interceptor.
-- `multi-tenant-rls` — `TenantContext` is `@RequestScoped`, resolved from the
+- `multi-tenant-rls` - `TenantContext` is `@RequestScoped`, resolved from the
   database, never a business parameter.
-- `temporal-modelling` — why the `Clock` is injected rather than called.
-- `code-language` — bean, field and config-key identifiers are English.
+- `temporal-modelling` - why the `Clock` is injected rather than called.
+- `code-language` - bean, field and config-key identifiers are English.

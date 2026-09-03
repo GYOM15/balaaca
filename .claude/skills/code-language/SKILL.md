@@ -1,6 +1,6 @@
 ---
 name: code-language
-description: Use when naming anything the machine reads — class, method, package, file, DB table or column, Flyway migration, REST route slug, OpenAPI schema, event or log event name, metric, span, config key, environment variable — when writing a user-facing string or a notification template key, or when reviewing a PR that mixes French and English.
+description: Use when naming anything the machine reads - class, method, package, file, DB table or column, Flyway migration, REST route slug, OpenAPI schema, event or log event name, metric, span, config key, environment variable - when writing a user-facing string or a notification template key, or when reviewing a PR that mixes French and English.
 ---
 
 # code-language
@@ -40,11 +40,10 @@ directions, no drift.
    which costs less than the waiver.
 1. **Code is English. Always.** Class, method, variable, package, and file
    names; comments and Javadoc; log event names and exception messages; RFC
-   7807 `title`/`detail` written by the server; metric, span, and config keys —
-   all English. The ubiquitous language of the domain is English: `Provider`,
+   7807 `title`/`detail` written by the server; metric, span, and config keys - all English. The ubiquitous language of the domain is English: `Provider`,
    `ProviderStaff`, `ServiceOffering`, `AvailabilityRule`,
    `AvailabilityOverride`, `AvailabilitySlot`, `Appointment`, `Customer`,
-   `Subscription`, `PlanEntitlements`, `TenantContext` — never `Prestataire`,
+   `Subscription`, `PlanEntitlements`, `TenantContext` - never `Prestataire`,
    `Prestation`, `Disponibilite`, `RendezVous`, `Abonnement`.
 2. **Domain terms are English and shared.** The word used in the code is the
    word used in the OpenAPI schema, the DB table and column, the notification
@@ -58,7 +57,7 @@ directions, no drift.
    `*Service` is reserved by `backend-naming` for application-layer CDI beans,
    and a `Service` aggregate sitting next to a `BookAppointmentService` bean
    makes every import ambiguous. The choice is made once and then holds
-   everywhere — class `ServiceOffering`, table `service_offerings`, foreign key
+   everywhere - class `ServiceOffering`, table `service_offerings`, foreign key
    `service_offering_id`, OpenAPI schema `ServiceOffering`, wire field
    `service_offering_id`, route `/v1/service-offerings`.
 3. **User-facing strings resolve from the i18n catalogue, never hardcoded.**
@@ -74,7 +73,7 @@ directions, no drift.
    inside.** Amounts live as `Money(amountMinor, Currency)` in the domain
    (English, numeric); instants are `Instant`/`timestamptz`; phones are E.164
    `PhoneNumber`. Only the presentation layer formats them per locale and per
-   the provider's timezone — never store or log a pre-formatted string as the
+   the provider's timezone - never store or log a pre-formatted string as the
    source of truth.
 5. **URLs and route slugs are English kebab plural nouns behind a version
    segment.** `/v1/providers`, `/v1/service-offerings`,
@@ -82,8 +81,8 @@ directions, no drift.
    `/v1/subscriptions`. No verbs, no locale in the path segment, and no tenant
    identifier: the same slug serves every language and every provider.
 6. **The wire is English and `snake_case`.** Every JSON property and every
-   query parameter — `service_offering_id`, `starts_at`, `staff_id`,
-   `amount_minor`, `next_cursor` — is an English term in `snake_case`. Never a
+   query parameter - `service_offering_id`, `starts_at`, `staff_id`,
+   `amount_minor`, `next_cursor` - is an English term in `snake_case`. Never a
    French property name, and never `camelCase` on the wire.
 7. **Tests may name behaviour in French; identifiers stay English.**
    `@DisplayName("refuse un rendez-vous qui chevauche un créneau confirmé")` is
@@ -143,7 +142,7 @@ public class BookAppointmentService implements BookAppointmentUseCase {
 }
 ```
 
-The wire contract for the same operation — English terms, `snake_case`
+The wire contract for the same operation - English terms, `snake_case`
 properties, a versioned kebab-plural route:
 
 ```yaml
@@ -169,18 +168,18 @@ slot.unavailable=Ce creneau n'est plus libre  # slot.unavailable=This slot is no
 
 ## Sibling skills
 
-- `backend-naming` — English suffix/term conventions for the same identifiers,
+- `backend-naming` - English suffix/term conventions for the same identifiers,
   the plural snake_case tables, and the `*Service` suffix that forces the
   `ServiceOffering` choice.
-- `contract-first` — OpenAPI schema names, `snake_case` wire fields, and error
+- `contract-first` - OpenAPI schema names, `snake_case` wire fields, and error
   codes stay English and shared with the code.
-- `money-currency` — `Money`/`Currency` and `PhoneNumber` typing; formatting
+- `money-currency` - `Money`/`Currency` and `PhoneNumber` typing; formatting
   happens only at the edge.
-- `temporal-modelling` — instants and the provider timezone are typed inside;
+- `temporal-modelling` - instants and the provider timezone are typed inside;
   only the edge renders a local date for a human.
-- `outbox-messaging` — a `notifications` row carries an English template key
+- `outbox-messaging` - a `notifications` row carries an English template key
   and parameters, not rendered prose.
-- `pii-masking-logging` — log event names are English, dotted and lowercase,
+- `pii-masking-logging` - log event names are English, dotted and lowercase,
   and business code does not log at all.
-- `code-comments` — comments and Javadoc are English and earn their place.
-- `commit-style` — commit messages are English too.
+- `code-comments` - comments and Javadoc are English and earn their place.
+- `commit-style` - commit messages are English too.

@@ -23,6 +23,24 @@ import java.util.UUID;
 public interface ModerateProvidersUseCase {
 
     /**
+     * Every business on the platform, by name, whatever its standing.
+     *
+     * <p>The read the lever was missing. {@link #suspend} is keyed on a slug and
+     * nothing published one, so the operator could reach a salon only after a
+     * customer had named it in a complaint - the two queues are inboxes, and an
+     * inbox cannot answer "who is on this platform".
+     *
+     * <p>It crosses every tenant, which is the whole reason the moderator role
+     * exists, and it does so the way the rest of this interface does: a
+     * privileged function, never a widened tenant query.
+     *
+     * @param search part of a business name or of its handle. The operator
+     *               arrives holding one or the other
+     */
+    ModeratedProviderPage providers(Optional<String> search, Optional<String> status,
+                                    Optional<SearchProvidersUseCase.Position> after, int limit);
+
+    /**
      * Takes a business off the hub. Its page, its slug, its booking route and
      * its listing all stop answering together.
      *
@@ -82,6 +100,43 @@ public interface ModerateProvidersUseCase {
 
     record Moderation(String slug, String status,
                       Optional<Instant> suspendedAt, Optional<String> reason) {
+    }
+
+    /**
+     * What a suspension is decided from, and nothing beside it.
+     *
+     * <p>{@code appointmentCount} is the field that changes decisions.
+     * Suspending takes the page off the hub and cancels no booking already
+     * taken, so this is how many customers are still expected at the door
+     * afterwards. It counts appointments and says nothing about who is in them:
+     * the moderator has never been granted {@code customers} and this does not
+     * grant it.
+     *
+     * <p>{@code published} and {@code status} are kept apart on purpose. The
+     * first is the business's own decision and it can undo it; the second is the
+     * platform's and it cannot.
+     */
+    record ModeratedProvider(String slug,
+                             String businessName,
+                             Optional<String> trade,
+                             Optional<String> localitySlug,
+                             Optional<String> localityLabel,
+                             Optional<String> area,
+                             boolean published,
+                             String status,
+                             Instant registeredAt,
+                             long appointmentCount,
+                             Optional<String> suspensionReason,
+                             SearchProvidersUseCase.Position position) {
+    }
+
+    /**
+     * @param next the directory's own position record, because this is the same
+     *             sequence read by a different reader: ordered by name, broken
+     *             by slug, and never carrying a row id
+     */
+    record ModeratedProviderPage(List<ModeratedProvider> entries,
+                                 Optional<SearchProvidersUseCase.Position> next) {
     }
 
     /**

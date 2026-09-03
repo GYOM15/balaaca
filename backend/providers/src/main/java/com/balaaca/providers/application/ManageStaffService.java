@@ -16,10 +16,10 @@ import com.balaaca.sharedkernel.ids.StaffId;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.transaction.Transactional;
 import java.security.SecureRandom;
+import java.util.Base64;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.List;
 
 /**
@@ -159,9 +159,20 @@ public class ManageStaffService implements ListStaffUseCase {
     }
 
     /**
-     * 256 bits, like a booking reference and for the same reason: it is the
-     * whole authorisation for a seat at a business, and it is not derived from
-     * anything a guesser could know.
+     * 256 bits. It is the whole authorisation for a seat at a business, and it
+     * is not derived from anything a guesser could know.
+     *
+     * <p>V045 cut this to eight characters so an owner could say it out loud,
+     * and V046 put it back. The two codes this product mints are not the same
+     * object: a booking reference opens one appointment and may genuinely have
+     * to be read out, while this opens the diary, the clientele and the
+     * catalogue, and is pasted into WhatsApp. Length costs the person using it
+     * nothing, and the screen sends a LINK carrying it, so a colleague types
+     * nothing at all.
+     *
+     * <p>The attempt limiter in AcceptStaffInvitationService stays. At this
+     * length it is no longer what makes the code safe - it is what makes a
+     * code that has leaked and is being shared around cost something.
      */
     private static String mintCode() {
         byte[] raw = new byte[32];

@@ -1,10 +1,10 @@
 /* -----------------------------------------------------------------------------
-   L'inscription, et rien d'autre.
+   Registration, and nothing else.
 
-   Deux règles, parce que globals.css n'a pas eu ce cas : son .input-group a été
-   écrit pour « +224 » et « GNF », deux préfixes de quatre caractères. Celui-ci
-   porte un nom d'hôte, et sous 400 px il ne laisserait au champ que la moitié
-   d'une adresse à lire. On l'empile donc au lieu de le comprimer.
+   Two rules, because globals.css never had this case: its .input-group was
+   written for "+224" and "GNF", two prefixes of four characters. This one
+   carries a host name, and under 400 px it would leave the field only half an
+   address to read. So it stacks instead of compressing.
    -------------------------------------------------------------------------- */
 
 @media (max-width: 400px) {

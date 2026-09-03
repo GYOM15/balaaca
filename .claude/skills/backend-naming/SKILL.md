@@ -41,7 +41,7 @@ in, never a vague technical role.
    `TenantContext`, the `ProviderMembershipResolver` port and
    `NoProviderMembershipException`; `error` the single `DomainException` base
    (see `backend-exceptions`). shared-kernel holds no business RULES, but it
-   MAY declare cross-cutting ports — `ProviderMembershipResolver` is declared
+   MAY declare cross-cutting ports - `ProviderMembershipResolver` is declared
    in `sharedkernel.tenancy` and implemented in `providers`. The root is
    `com.balaaca.sharedkernel`; `com.balaaca.shared.*` does not exist and any
    occurrence is a typo to fix.
@@ -50,7 +50,7 @@ in, never a vague technical role.
    `AvailabilitySlot`, `ServiceOffering`, `Provider`, `ProviderStaff`,
    `Customer`, `Subscription`, `PlanEntitlements`, `Money`, `Currency`,
    `PhoneNumber`. They live in `<context>.domain/`. Never suffix them with
-   `Entity`, `Dto`, `Model` or `Vo` — the domain type is the canonical name.
+   `Entity`, `Dto`, `Model` or `Vo` - the domain type is the canonical name.
    The calendar-exception aggregate is `AvailabilityOverride`, never
    `AvailabilityException`: a non-throwable whose name ends in `Exception` is a
    trap for every reader and every `catch` block (rule 10). The catalogue
@@ -66,10 +66,8 @@ in, never a vague technical role.
    `<context>.ports.outbound` holds what the core needs: persistence =
    `*Repository` (`AppointmentRepository`, `AvailabilityRuleRepository`),
    gateway = `*Port` (`SmsSenderPort`, `ObjectStoragePort`,
-   `IdentityProviderPort`). The `inbound`/`outbound` split is not cosmetic —
-   the ArchUnit rules are written against it (see `backend-architecture`). The
-   port name describes intent, never the technology behind it —
-   `SmsSenderPort`, never `TwilioPort`. A port lives in the context that OWNS
+   `IdentityProviderPort`). The `inbound`/`outbound` split is not cosmetic - the ArchUnit rules are written against it (see `backend-architecture`). The
+   port name describes intent, never the technology behind it - `SmsSenderPort`, never `TwilioPort`. A port lives in the context that OWNS
    the capability: quota checks are `billing`'s `CheckEntitlementUseCase`,
    called in-process by `catalog`, never a second entitlement port re-declared
    inside `catalog`; the catalogue read that `booking` needs is `catalog`'s
@@ -84,7 +82,7 @@ in, never a vague technical role.
    `ServiceOfferingResource`, `AvailabilityResource`. Every path carries a
    version segment and kebab-case plural nouns: `/v1/appointments`,
    `/v1/service-offerings`, `/v1/providers/{slug}/available-slots`. No business
-   logic, no `Impl` suffix — see `contract-first`.
+   logic, no `Impl` suffix - see `contract-first`.
 6. **The wire is snake_case, everywhere, with no exceptions.** Every JSON
    property and every query parameter is snake_case: `service_offering_id`,
    `starts_at`, `staff_id`, `amount_minor`, `next_cursor`. Java fields stay
@@ -96,10 +94,9 @@ in, never a vague technical role.
    bean is `*Service`.** Exactly two types per use case, never three:
    `BookAppointmentUseCase` (interface, `ports/inbound`) and
    `BookAppointmentService implements BookAppointmentUseCase` (CDI bean,
-   `application/`). **No `*ServiceImpl`** — the port already IS the
+   `application/`). **No `*ServiceImpl`** - the port already IS the
    abstraction, so a second interface adds indirection without abstraction,
-   and CDI proxies the class anyway (see `backend-di`). Orchestration only —
-   money, slot and state-machine logic stays explicit in the domain, never in
+   and CDI proxies the class anyway (see `backend-di`). Orchestration only - money, slot and state-machine logic stays explicit in the domain, never in
    an interceptor (see `cdi-interceptors`).
 8. **Adapters: named for the technology they bring, never `*Impl`.** An
    adapter's name must say WHICH implementation it is, because one day there
@@ -110,8 +107,7 @@ in, never a vague technical role.
    information and blocks the next implementation from having a meaningful
    name. Sub-packages follow the direction and the edge:
    `adapters/inbound/{rest}` and `adapters/outbound/{persistence,gateway,
-   messaging}`. There is no `grpc` sub-package and no `.proto` file anywhere —
-   core modules talk through inbound ports (rule 4), and satellites talk HTTP
+   messaging}`. There is no `grpc` sub-package and no `.proto` file anywhere - core modules talk through inbound ports (rule 4), and satellites talk HTTP
    to the business API.
 9. **Persistence rows are not mapped types: there is no `*Entity` and no
    `*Mapper`.** ADR-0008 decides it - the schema's invariants are PostgreSQL
@@ -136,7 +132,7 @@ in, never a vague technical role.
     snake_case PLURAL.** Double underscore after the version, lowercase
     snake_case, imperative description, version zero-padded to three digits so
     a directory listing sorts in migration order. Versions are globally
-    distinct — the appointments DDL is `V014__create_appointments.sql` and
+    distinct - the appointments DDL is `V014__create_appointments.sql` and
     booking-integrity owns it; every other skill quotes an excerpt and points
     there. The canonical tables are:
     `users`, `providers`, `provider_staff`, `provider_categories`,
@@ -146,8 +142,7 @@ in, never a vague technical role.
     `_id`: `service_offering_id`, `provider_id`, `staff_id`, `customer_id`.
     Every tenant-scoped table carries `provider_id uuid NOT NULL`. A monetary
     amount is always the pair `<name>_amount_minor bigint` +
-    `<name>_currency varchar(3) CHECK (<name>_currency ~ '^[A-Z]{3}$')` —
-    `varchar(3)`, never `char(3)`, whose blank padding breaks exact-match
+    `<name>_currency varchar(3) CHECK (<name>_currency ~ '^[A-Z]{3}$')` - `varchar(3)`, never `char(3)`, whose blank padding breaks exact-match
     comparison. The frozen booking price is exactly
     `customer_price_amount_minor` / `customer_price_currency`, read in Java
     through `customerPrice()` (see `money-currency`). One logical change per
@@ -158,12 +153,12 @@ in, never a vague technical role.
     `AppointmentNotFoundException`, `AppointmentConflictException`,
     `SlotUnavailableException`, `PlanLimitReachedException`,
     `NoProviderMembershipException`, `UnknownCurrencyException`. Always end in
-    `Exception`, and — the converse, which matters more — **nothing that is not
+    `Exception`, and - the converse, which matters more - **nothing that is not
     a `Throwable` may end in `Exception`**. All of them extend the single
     `com.balaaca.sharedkernel.error.DomainException`; a per-context base would
     leave `ExceptionMapper<DomainException>` unable to catch most of them (see
     `backend-exceptions`). The class name is internal vocabulary; the PUBLISHED
-    `code` is separate and coarser — every lookup miss, cross-tenant read
+    `code` is separate and coarser - every lookup miss, cross-tenant read
     included, answers `RESOURCE_NOT_FOUND`.
 13. **CDI interceptor bindings: `@<DomainNoun>` annotations, interceptor class
     `*Interceptor`.** `@TenantBound` + `TenantBoundInterceptor` (priority
@@ -262,7 +257,7 @@ com.balaaca.booking
         └── AppointmentSqlRepository.java     # implements AppointmentRepository,
                                               # native SQL, no @Entity (ADR-0008)
 
-# NOTE: no SmsSenderPort and no TwilioSmsAdapter here — `booking` never sends a
+# NOTE: no SmsSenderPort and no TwilioSmsAdapter here - `booking` never sends a
 # message. It writes a row to the notifications table in the SAME transaction
 # (rule 10) and the notification-worker deployable drains it. Nor is there an
 # entitlement port: the quota check is billing's CheckEntitlementUseCase, and
@@ -296,21 +291,21 @@ customer_price_currency      varchar(3) NOT NULL
 
 ## Sibling skills
 
-- `backend-architecture` — where each named type belongs across
+- `backend-architecture` - where each named type belongs across
   domain/application/ports/adapters, the inward dependency rule, and
   shared-kernel's exemption from it.
-- `backend-srp` — a name must mirror one single responsibility.
-- `backend-di` — constructor injection and final-field naming.
-- `backend-exceptions` — the single `DomainException` base and the published
+- `backend-srp` - a name must mirror one single responsibility.
+- `backend-di` - constructor injection and final-field naming.
+- `backend-exceptions` - the single `DomainException` base and the published
   code catalogue these class names map onto.
-- `code-language` — identifiers, comments and messages are English (user-facing
+- `code-language` - identifiers, comments and messages are English (user-facing
   text is French first via i18n).
-- `contract-first` — `*Resource` implements the OpenAPI-generated `*Api`, and
+- `contract-first` - `*Resource` implements the OpenAPI-generated `*Api`, and
   the snake_case wire names are part of the published contract.
-- `cdi-interceptors` — `@<Noun>` binding + `*Interceptor` naming and priority.
-- `outbox-messaging` — `*Event` payloads written to the notifications table.
-- `multi-tenant-rls` — why no name ever carries `provider_id`.
-- `money-currency` — the `*_amount_minor` / `*_currency` column pair and
+- `cdi-interceptors` - `@<Noun>` binding + `*Interceptor` naming and priority.
+- `outbox-messaging` - `*Event` payloads written to the notifications table.
+- `multi-tenant-rls` - why no name ever carries `provider_id`.
+- `money-currency` - the `*_amount_minor` / `*_currency` column pair and
   `customerPrice()`.
-- `booking-integrity` — `Appointment`, `SlotUnavailableException` and the
+- `booking-integrity` - `Appointment`, `SlotUnavailableException` and the
   `V014__create_appointments.sql` migration they map to.

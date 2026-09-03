@@ -216,7 +216,12 @@ public class AppointmentsResource implements AgendaApi {
                 // returned nor filterable - so a salon with five chairs got one
                 // undifferentiated stream and could not label a row.
                 .staffId(e.staffId().value())
-                .staffName(e.staffName());
+                .staffName(e.staffName())
+                // What the customer chose, frozen. It can no longer be read off
+                // ready_by or service_address: the service this was booked from
+                // may publish all three modes.
+                .fulfilment(com.balaaca.app.api.model.Fulfilment
+                        .valueOf(e.fulfilment().name()));
 
         // The one screen this was ever for. It was accepted by the booking
         // request and discarded, so the box said "Message for the salon" and

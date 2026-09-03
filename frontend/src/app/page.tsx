@@ -1,275 +1,203 @@
-import Link from "next/link";
 import { publicApi } from "@/lib/api";
-import { Icon, TradeIcon } from "@/components/icon";
-import { ProviderCard } from "@/components/provider-card";
-import { SiteFooter, SiteHeader } from "@/components/site";
-import { ActionButton, Button, EmptyState, SectionHead } from "@/components/ui";
+import { SiteFooter, SiteHeader, TabBar } from "@/components/site";
+import { Collections } from "@/components/home/collections";
+import { Directory } from "@/components/home/directory";
+import { ForPros } from "@/components/home/for-pros";
+import { Fulfilments } from "@/components/home/fulfilments";
+import { Hero } from "@/components/home/hero";
+import { HowItWorks } from "@/components/home/how-it-works";
+import { Newcomers } from "@/components/home/newcomers";
+import { Places } from "@/components/home/places";
+import { Trades } from "@/components/home/trades";
+import { byFamily } from "@/components/home/taxonomy";
+import type { Asked } from "@/components/home/query";
 import type {
   AreaList,
   CategoryList,
   LocalityList,
-  LocalityView,
   ProviderSummaryPage,
 } from "@/lib/types";
-import { groupLocalities, localityLabel } from "@/lib/localities";
 
 /** The directory changes when a provider publishes. A stale hub hides a new business. */
 export const dynamic = "force-dynamic";
 
-/**
- * What people actually type. Not decoration: each one is a real query, and the
- * point is to teach in four words that the box takes a trade, a place, or a
- * need - which no placeholder can say on its own.
- */
-const EXAMPLES = [
-  "Tresses à Ratoma",
-  "Photographe mariage",
-  "Traiteur 50 couverts",
-  "Location de salle Kindia",
-];
+/** How many trades the hub shows before "Voir les N métiers" takes over. */
+const TRADES_SHOWN = 12;
 
+/** How many trades the filter panel offers before the same link takes over. */
+const TRADES_FILTERED = 14;
+
+/** How many businesses the hub puts on the page. The directory shows the page. */
+const PROVIDERS_SHOWN = 6;
 
 type Search = {
   q?: string;
   category_slug?: string | string[];
   locality?: string;
   area?: string;
+  /**
+   * The opaque cursor of the page being asked for. It was missing, and
+   * `nextPage` has always minted one - so "Charger la suite" built a correct
+   * link, the page ignored it, and the reader got page one again, for ever.
+   */
+  cursor?: string;
 };
 
 export default async function Home({ searchParams }: { searchParams: Promise<Search> }) {
   const params = await searchParams;
-  const q = params.q?.trim() ?? "";
-  const selected = toList(params.category_slug);
-  const locality = params.locality?.trim() ?? "";
-  const area = params.area?.trim() ?? "";
+  const asked: Asked = {
+    q: params.q?.trim() ?? "",
+    selected: toList(params.category_slug),
+    locality: params.locality?.trim() ?? "",
+    area: params.area?.trim() ?? "",
+  };
 
   const [categories, localities, areas, results] = await Promise.all([
     publicApi<CategoryList>("/v1/categories"),
     publicApi<LocalityList>("/v1/localities"),
-    // Les quartiers déjà écrits, restreints à la localité choisie : proposer
-    // ceux de tout le pays quand on cherche à Ratoma serait illisible.
+    // The quartiers already written, narrowed to the locality asked for:
+    // offering the whole country's while searching Ratoma would be unreadable.
     publicApi<AreaList>("/v1/areas", {
-      query: { locality: locality || undefined },
+      query: { locality: asked.locality || undefined },
     }),
     publicApi<ProviderSummaryPage>("/v1/providers", {
       query: {
         // Below two characters the API refuses, and rightly: one letter matches
         // most of the directory and answers nothing.
-        q: q.length >= 2 ? q : undefined,
-        category_slug: selected.length > 0 ? selected : undefined,
-        locality: locality || undefined,
-        area: area || undefined,
+        q: asked.q.length >= 2 ? asked.q : undefined,
+        category_slug: asked.selected.length > 0 ? asked.selected : undefined,
+        locality: asked.locality || undefined,
+        area: asked.area || undefined,
+        cursor: params.cursor || undefined,
         limit: 24,
       },
     }),
   ]);
 
   const labels = new Map(categories.data.map((c) => [c.slug, c.label_fr]));
-  const asked =
-    q.length >= 2 || selected.length > 0 || locality.length > 0 || area.length > 0;
-  const shown = results.data.slice(0, 9);
+  const searching =
+    asked.q.length >= 2 ||
+    asked.selected.length > 0 ||
+    asked.locality.length > 0 ||
+    asked.area.length > 0;
+
+  // Ranked by how many providers actually hold the trade, which is the only
+  // ordering the contract publishes anything for. Alphabetical on a tie.
+  //
+  // Trades nobody holds are no longer filtered out, they are ranked last and
+  // drawn as `.trade--empty`: six businesses in the seed meant six tiles and a
+  // band designed for twelve stood half empty. What is never done is padding -
+  // the slice takes what the taxonomy holds and stops, so a shorter taxonomy
+  // gets a shorter band rather than placeholder boxes.
+  const busiest = [...categories.data]
+    .sort(
+      (a, b) => b.provider_count - a.provider_count || a.label_fr.localeCompare(b.label_fr, "fr"),
+    )
+    .slice(0, TRADES_SHOWN);
+
+  // The panel offers the head of the published taxonomy, and any trade already
+  // being filtered on - a checked box that is not drawn is a filter the next
+  // submission would silently drop.
+  const shortlist = [
+    ...categories.data.slice(0, TRADES_FILTERED),
+    ...categories.data
+      .slice(TRADES_FILTERED)
+      .filter((t) => asked.selected.includes(t.slug)),
+  ];
+
+  const families = byFamily(categories.data);
+  const places = [...areas.data]
+    .sort((a, b) => b.provider_count - a.provider_count || a.label.localeCompare(b.label, "fr"))
+    .slice(0, 8);
+  const settlements = localities.data.filter((l) => l.kind !== "REGION").length;
+  const localityName = localities.data.find((l) => l.slug === asked.locality)?.label_fr;
+  const place = asked.area || localityName;
 
   return (
-    <div className="site">
+    <>
       <SiteHeader />
 
-      <main id="contenu">
-        <section className="search-band on-dark" aria-labelledby="hub-lead">
-          <div className="container container--landing stack stack-6">
-            {/* An h1, and the biggest thing on the page. The mockup's hub had
-                neither: its two headings were 12 px and 79 % of its characters
-                sat at 12 or 14, so nothing was larger than anything. */}
-            <h1 className="search-band__lead search-band__lead--display" id="hub-lead">
-              Trouvez un professionnel près de chez vous et réservez votre
-              créneau en ligne.
-            </h1>
-
-            {/* GET, so a search is a URL: it can be shared, bookmarked, and the
-                back button returns to the results rather than to an empty box. */}
-            <form className="stack stack-3" method="get" action="/">
-              <div className="searchbox">
-                <div className="searchbox__field">
-                  <span className="searchbox__icon" aria-hidden="true">
-                    <Icon name="search" size={20} />
-                  </span>
-                  <input
-                    className="searchbox__input"
-                    type="search"
-                    name="q"
-                    defaultValue={q}
-                    autoComplete="off"
-                    aria-label="Métier, nom ou quartier"
-                    placeholder="Tresses, photographe, Kaloum…"
-                  />
-                </div>
-                <div className="searchbox__row">
-                  <select
-                    className="select"
-                    name="locality"
-                    defaultValue={locality}
-                    aria-label="Région, préfecture ou commune"
-                  >
-                    <option value="">Partout en Guinée</option>
-                    {groupLocalities(localities.data).map(({ region, children }) => (
-                      <optgroup key={region.slug} label={region.label_fr}>
-                        {children.map((l) => (
-                          <option key={l.slug} value={l.slug}>
-                            {localityLabel(l)}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </select>
-
-                  {/* Un datalist et pas un select : le quartier est du texte
-                      libre côté serveur, parce que les quartiers de Guinée se
-                      comptent par milliers et que la plateforme ne les écrit
-                      pas. On propose ce qui existe déjà sans interdire le
-                      reste - ce qui est exactement ce que fait le serveur. */}
-                  <input
-                    className="input"
-                    type="text"
-                    name="area"
-                    list="quartiers"
-                    defaultValue={area}
-                    autoComplete="off"
-                    aria-label="Quartier"
-                    placeholder="Quartier"
-                  />
-                  <datalist id="quartiers">
-                    {areas.data.map((a) => (
-                      <option key={a.label} value={a.label} />
-                    ))}
-                  </datalist>
-
-                  <ActionButton label="Rechercher" variant="accent" type="submit" icon="search" />
-                </div>
-              </div>
-              <p className="searchbox__hint">
-                Un métier, un nom d’entreprise ou une prestation.
-              </p>
-            </form>
-
-            <div className="examples" role="group" aria-label="Exemples de recherche">
-              <span className="examples__label">Par exemple</span>
-              {EXAMPLES.map((e) => (
-                <Link key={e} className="example" href={`/?q=${encodeURIComponent(e)}`}>
-                  <Icon name="search" size={13} />
-                  {e}
-                </Link>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {asked ? null : (
-          <section
-            className="container container--landing section stack stack-6"
-            aria-labelledby="hub-trades"
-          >
-            <div className="row row--between row-4 row--wrap">
-              <div className="row row-3">
-                <span className="rule-accent" aria-hidden="true" />
-                <h2 className="t-label" id="hub-trades">Parcourir par métier</h2>
-              </div>
-              <span className="t-caption t-dim tnum">{categories.data.length} métiers</span>
-            </div>
-            <div className="trade-grid">
-              {categories.data.map((t) => (
-                <Link
-                  key={t.slug}
-                  className="trade"
-                  href={`/?category_slug=${encodeURIComponent(t.slug)}`}
-                >
-                  <span className="trade__icon" aria-hidden="true">
-                    <TradeIcon slug={t.slug} size={28} />
-                  </span>
-                  <span className="trade__label">{t.label_fr}</span>
-                </Link>
-              ))}
-            </div>
-          </section>
-        )}
-
-        <section
-          className="container container--landing section stack stack-6"
-          style={asked ? undefined : { paddingTop: 0 }}
-          aria-labelledby="hub-prov"
-        >
-          <SectionHead
-            label={asked ? "Résultats" : "Prestataires inscrits"}
-            aside={
-              results.data.length > 0
-                ? `${results.data.length} page${results.data.length > 1 ? "s" : ""} publiée${results.data.length > 1 ? "s" : ""}`
-                : undefined
-            }
+      <main id="contenu" className="has-tabbar">
+        {searching ? (
+          <Directory
+            asked={asked}
+            heading={heading(asked, labels, place)}
+            place={place}
+            localityName={localityName}
+            results={results}
+            labels={labels}
+            shortlist={shortlist}
+            total={categories.data.length}
+            localities={localities}
+            areas={areas}
           />
-
-          {results.data.length === 0 ? (
-            <EmptyState
-              sketch="storefront"
-              title={asked ? "Rien ne correspond" : "L’annuaire ouvre bientôt"}
-              body={
-                asked
-                  ? "Essayez un autre mot, une autre ville, ou parcourez les métiers."
-                  : "Aucun professionnel n’est encore inscrit. Les métiers ci-dessus vous diront lesquels arrivent en premier."
-              }
-              action={
-                asked ? (
-                  <Button label="Voir tous les métiers" variant="secondary" href="/" />
-                ) : (
-                  <Button
-                    label="Inscrire mon activité"
-                    variant="primary"
-                    href="/inscription"
-                    iconEnd="arrow-right"
-                  />
-                )
-              }
+        ) : (
+          <>
+            <Hero
+              q={asked.q}
+              trade={asked.selected[0] ?? ""}
+              locality={asked.locality}
+              families={families}
+              localities={localities}
             />
-          ) : (
-            <div className="stack stack-6">
-              <div className="prov-grid">
-                {shown.map((p) => (
-                  <ProviderCard
-                    key={p.slug}
-                    provider={p}
-                    tradeLabel={p.category_slug ? labels.get(p.category_slug) : undefined}
-                  />
-                ))}
-              </div>
-              {results.next_cursor ? (
-                <div className="row row-3" style={{ justifyContent: "center" }}>
-                  <Button
-                    label="Voir la suite"
-                    variant="secondary"
-                    iconEnd="arrow-right"
-                    href={nextPage(params, results.next_cursor)}
-                  />
-                </div>
-              ) : null}
-            </div>
-          )}
-        </section>
+            <Fulfilments />
+            {/* Same reasoning as the band below, and the empty database is what
+                showed it: the heading says "where there are already people" and
+                the sentence under it promises a list. With nobody registered
+                there is no such place, and the section rendered a title, a
+                promise and a family rail over nothing at all. The test is now
+                whether ONE trade holds somebody, not whether the slice is
+                non-empty - the slice is never empty any more. */}
+            {busiest.some((t) => t.provider_count > 0) ? (
+              <Trades busiest={busiest} families={families} total={categories.data.length} />
+            ) : null}
+            {/* Nothing published yet is the state on the first day, and a band
+                headed "newly registered" with an empty grid under it says less
+                than no band at all. */}
+            {results.data.length > 0 ? (
+              <Newcomers
+                providers={results.data.slice(0, PROVIDERS_SHOWN)}
+                labels={labels}
+              />
+            ) : null}
+            <Collections labels={labels} />
+            <HowItWorks />
+            {places.length > 0 ? <Places places={places} /> : null}
+            <ForPros trades={categories.data.length} settlements={settlements} />
+          </>
+        )}
       </main>
 
       <SiteFooter />
-    </div>
+      {/* The one screen that was reserving the bar's height with `has-tabbar`
+          and drawing no bar. Accueil and Rechercher are the design's two
+          screens, served here by one route, so the state of the page says
+          which of them the reader is on. */}
+      <TabBar active={searching ? "recherche" : "accueil"} />
+    </>
   );
 }
 
-/** The contract repeats the parameter rather than joining it. */
+/* --- Plumbing ------------------------------------------------------------- */
+
+/**
+ * The contract repeats the parameter rather than joining it.
+ *
+ * <p>Empty values are dropped. A `<select>` always submits, so leaving the hero
+ * on "Tous les métiers" sent `category_slug=`, which counted as a trade being
+ * asked for: the hub answered its own search form with an empty result page.
+ */
 function toList(value: string | string[] | undefined): string[] {
-  return value === undefined ? [] : Array.isArray(value) ? value : [value];
+  if (value === undefined) return [];
+  return (Array.isArray(value) ? value : [value]).map((one) => one.trim()).filter(Boolean);
 }
 
-/** The next page is this query plus the cursor the last one handed back. */
-function nextPage(params: Search, cursor: string): string {
-  const next = new URLSearchParams();
-  if (params.q) next.set("q", params.q);
-  if (params.locality) next.set("locality", params.locality);
-  if (params.area) next.set("area", params.area);
-  for (const slug of toList(params.category_slug)) next.append("category_slug", slug);
-  next.set("cursor", cursor);
-  return `/?${next.toString()}`;
+/** What the reader asked for, said back to them as the page's one heading. */
+function heading(asked: Asked, labels: Map<string, string>, place: string | undefined): string {
+  const one = asked.selected.length === 1 ? labels.get(asked.selected[0]!) : undefined;
+  const what =
+    asked.q.length >= 2
+      ? `Recherche « ${asked.q} »`
+      : (one ?? (asked.selected.length > 1 ? `${asked.selected.length} métiers` : "Professionnels"));
+  return place ? `${what} à ${place}` : what;
 }

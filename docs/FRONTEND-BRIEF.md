@@ -1,4 +1,4 @@
-# Balaaca — brief for a rebuilt front end
+# Balaaca - brief for a rebuilt front end
 
 This document exists to be handed to somebody who has never seen this
 repository, so they can design and build the whole interface from nothing. It
@@ -20,9 +20,9 @@ A hub of service providers in Guinea. Two audiences that never meet:
 - **A customer** looking for a hairdresser, a mechanic, a caterer or a plumber
   near them. They arrive from a search, a WhatsApp link or a QR code on a
   shopfront. They do not have an account and never will.
-- **A provider** — a salon, a garage, a tailor — running their own diary. They
+- **A provider** - a salon, a garage, a tailor - running their own diary. They
   sign in, publish a page, and take bookings.
-- **The platform operator** — one person — who can take a business off the hub
+- **The platform operator** - one person - who can take a business off the hub
   and read what customers reported. There is exactly one such account.
 
 The market matters to every decision: **mid-range Android telephones on 3G, in
@@ -30,7 +30,7 @@ Conakry and in the interior**. A page that does not finish loading costs the
 provider a customer.
 
 Customer-facing copy is **French**. That is not negotiable and it is not a
-translation of English — write it in French first.
+translation of English - write it in French first.
 
 ---
 
@@ -60,7 +60,7 @@ Semantic, each with a subtle and a border tone:
 | Info | `#1F5F86` | `#E8EFF4` | `#A8C4D6` |
 
 Green and gold is the identity. It should read as **trustworthy and warm**, not
-corporate — the whole product exists because people do not know whom to trust.
+corporate - the whole product exists because people do not know whom to trust.
 
 ### Type
 
@@ -74,10 +74,10 @@ Nothing was more important than anything else. Sizes must carry hierarchy.
 ### Radii, shadows, spacing
 
 Radii 4 / 8 / 12 / 9999 px. Shadows are near-flat (`0 1px 2px rgba(23,32,30,.05)`
-plus a wider soft one) — this is not a shadow-heavy design. Spacing is a 4 px
+plus a wider soft one) - this is not a shadow-heavy design. Spacing is a 4 px
 scale.
 
-### Illustration — the important part
+### Illustration - the important part
 
 There is an existing SVG set, **all single-path, currentColor, no raster**:
 
@@ -119,7 +119,7 @@ what a provider picks (exactly one).
 | **savoir** | cours-langues, cours-particuliers, formation-professionnelle |
 
 Each trade carries a live `provider_count`. A design that shows every trade
-equally will show 30 empty ones at launch — show what holds somebody, and put
+equally will show 30 empty ones at launch - show what holds somebody, and put
 the rest behind "voir tout".
 
 **"Mariage" is not a trade.** A wedding section is one query over several
@@ -132,7 +132,7 @@ photographer shoots weddings *and* corporate events *and* portraits.
 
 Two levels, modelled differently on purpose.
 
-- **A closed map**: 8 regions, 33 prefectures, the 10 communes of Conakry — 51
+- **A closed map**: 8 regions, 33 prefectures, the 10 communes of Conakry - 51
   rows covering the whole country, changed only by migration. A `<select>` with
   the prefectures under their region and Conakry's communes under it. Filtering
   matches **down the tree**: asking for `conakry` finds a business filed under
@@ -151,11 +151,11 @@ none of it.
 
 | Shape | What the customer does | Extra field |
 | --- | --- | --- |
-| `ON_SITE` | Sits down and waits | — |
-| `DROP_OFF` | Hands the work over, comes back | `turnaround_hours` — "prêt sous 48 h" |
+| `ON_SITE` | Sits down and waits | - |
+| `DROP_OFF` | Hands the work over, comes back | `turnaround_hours` - "prêt sous 48 h" |
 | `AT_CUSTOMER` | The provider travels to them | An address on the booking |
 
-They are **mutually exclusive** — the database refuses any pairing.
+They are **mutually exclusive** - the database refuses any pairing.
 
 On a `DROP_OFF`, `duration_minutes` is the handover at the counter, **not the
 work**. A page that shows it as the length of the job tells somebody a repair
@@ -164,18 +164,18 @@ takes ten minutes.
 On an `AT_CUSTOMER`, the booking form **must** ask for an address: commune
 (optional), quartier (optional), and directions (required, e.g. *« derrière la
 mosquée de Nongo, portail bleu »*). There are no coordinates and there will be
-none — a latitude and longitude is a surveillance-grade fact about a private
+none - a latitude and longitude is a surveillance-grade fact about a private
 home and nothing in the product reads one.
 
 ---
 
 ## 6. Every page the product needs
 
-### Public — no account
+### Public - no account
 
 | Page | What it must do |
 | --- | --- |
-| **Home / directory** | Search by words, trade (several at once), commune (down the tree) and quartier. Results are cards. Ordered by name, always — a relevance ranking breaks the cursor. |
+| **Home / directory** | Search by words, trade (several at once), commune (down the tree) and quartier. Results are cards. Ordered by name, always - a relevance ranking breaks the cursor. |
 | **Provider page** `/p/{slug}` | Cover, logo, name, trade, place, contact, opening hours, the team, and the catalogue: each service with its price, its shape, and up to 5 photographs. **Each service row must lead straight into booking that service.** |
 | **Booking** `/p/{slug}/reserver` | Service → person (optional) → date → slot → details. State lives in the URL so the back button works. Address block only for `AT_CUSTOMER`. |
 | **My booking** `/bookings/{reference}` | What was booked, when, with whom, the price, the promise on a drop-off. Reschedule, cancel, report a problem. |
@@ -183,7 +183,7 @@ home and nothing in the product reads one.
 | **Sign up** `/inscription` | Handle, business name, trade. |
 | **Marketing** | For providers: what it is, how it works, pricing. |
 
-### Provider — signed in
+### Provider - signed in
 
 | Page | What it must do |
 | --- | --- |
@@ -195,7 +195,7 @@ home and nothing in the product reads one.
 | **Team** | Add, invite, deactivate, hand the business over. |
 | **Contestation** | Only when suspended: why, and a way to answer. |
 
-### Operator — one account
+### Operator - one account
 
 | Page | What it must do |
 | --- | --- |
@@ -211,7 +211,7 @@ user cannot act on.
 1. **Publishing needs three things**: an active service, opening hours, and
    somebody bookable. `GET /v1/provider-profile/readiness` answers all three
    with the same predicates the gate uses. **Do not offer the publish switch
-   when it would be refused — say what is missing, with a link to each.**
+   when it would be refused - say what is missing, with a link to each.**
 2. **A slug never changes.** It is on the QR code and in every message already
    sent.
 3. **Only bookable slots are published.** There is no grid of taken slots: a
@@ -226,7 +226,7 @@ user cannot act on.
 7. **Images**: JPEG and PNG only, 5 MB max, scaled to 1600 px on the long edge,
    metadata stripped.
 8. **A suspended business** disappears from every public path at once but keeps
-   its diary — bookings already made stand.
+   its diary - bookings already made stand.
 9. **Errors** come back as a closed set of codes. Every one a screen shows must
    be one of: `VALIDATION_FAILED`, `IDEMPOTENCY_KEY_REQUIRED`, `UNAUTHENTICATED`,
    `FORBIDDEN`, `RESOURCE_NOT_FOUND`, `SLOT_UNAVAILABLE`,
@@ -244,14 +244,14 @@ Found by using the product, not by a test.
 1. **There is almost no success feedback.** Eleven error redirects, zero
    success redirects. Saving a page, creating a service, uploading a photo, and
    adding a note all say nothing at all. A user who cannot tell whether
-   something worked does it again — which is exactly what happened.
+   something worked does it again - which is exactly what happened.
 2. **Navigation is a flat list of six items with no order and no state.**
    Nothing says that services and hours come before publishing. Two screens
    (contestation, moderation) are in no navigation at all.
 3. **The booking reference is 43 characters**, case-sensitive, with dashes and
    underscores: `QTE8_RAsgf-_wvAqtiWyYEiMqeFKlgNq9F2vqdoE46g`. A customer
    cannot read it over the telephone, copy it, or dictate it. It should be
-   short and unambiguous — the length is being changed; assume something like
+   short and unambiguous - the length is being changed; assume something like
    **8 characters** a person can say out loud.
 4. **No onboarding thread.** Registration used to drop a provider on a form
    with no idea what was required. A checklist now exists; the rebuild should
@@ -281,7 +281,7 @@ Everything else is free: this is HTML and CSS, and the port is mechanical.
 
 ## 10. Known gap outside the interface
 
-**Keycloak does not verify e-mail addresses** — `verifyEmail: false` in the
+**Keycloak does not verify e-mail addresses** - `verifyEmail: false` in the
 realm. Anybody can register with an address they do not own. The rebuild is a
 good moment to turn it on, which also means the Keycloak login, registration
 and e-mail templates should be themed to match this identity rather than left

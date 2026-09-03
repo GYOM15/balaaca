@@ -1,76 +1,102 @@
-import { TRADE_ICONS, UI_ICONS } from "./icon-paths";
+import { TRADE_GLYPHS } from "./sprite";
 
 /**
- * One icon, on the mockup's 24 grid.
+ * One glyph, drawn from the sprite the root layout laid down.
  *
- * <p>The stroke width is computed rather than fixed, which is the detail that
- * makes the set look like one set: a 1.55 px line at 24 would read as a hairline
- * at 40 and as a slab at 14, so the width is scaled to keep the OPTICAL weight
- * constant. The formula is the mockup's, kept to the digit.
+ * <p>A `use` and not a path: the sprite is parsed once and every icon after it
+ * is a reference. On the telephones this is built for that is the difference
+ * between eighty inline SVGs and one.
  *
- * <p>`aria-hidden` always. An icon here never carries meaning on its own - every
- * one of them sits beside a label, or inside a control that has an accessible
- * name of its own. An icon that needed announcing would be a missing label.
+ * <p>Always `aria-hidden`. An icon in this product sits beside the word it
+ * illustrates and never carries a name of its own - one that needed announcing
+ * would be a missing label.
  */
+
+/**
+ * The stylesheet's four sizes, reachable by the pixel figure a caller has in
+ * mind. Anything else lands on the base size rather than inventing a width -
+ * a one-off dimension is how a set of icons stops being a set.
+ */
+const SIZES: Record<number, string> = {
+  16: "ico--xs",
+  18: "ico--sm",
+  24: "ico--lg",
+  32: "ico--xl",
+};
+
+/** Interface glyphs: `i-search`, `i-calendar`, `i-check`… */
 export function Icon({
   name,
-  size = 20,
-  className,
+  size,
+  className = "",
 }: {
   name: string;
   size?: number;
   className?: string;
 }) {
-  const body = UI_ICONS[name];
-  if (!body) return null;
   return (
     <svg
-      className={className ? `icon ${className}` : "icon"}
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={strokeFor(size)}
-      strokeLinecap="round"
-      strokeLinejoin="round"
+      className={`ico ${size ? SIZES[size] ?? "" : ""} ${className}`.replace(/\s+/g, " ").trim()}
       aria-hidden="true"
       focusable="false"
-      dangerouslySetInnerHTML={{ __html: body }}
-    />
+    >
+      <use href={`#i-${name}`} />
+    </svg>
   );
 }
 
 /**
- * The icon of a trade, by the slug the API publishes.
+ * A trade's own glyph.
  *
- * <p>Returns the `layout` icon for a slug it does not know, rather than
- * nothing: the taxonomy is served by `GET /v1/categories` and is meant to grow,
- * so a trade added by a migration must render a tile the same day - a hole in
- * the grid would be a worse answer than a generic mark.
+ * <p>Falls back to the storefront when a trade has none. Seventeen of the
+ * thirty-five have no glyph yet - every trade V025 added, which is the whole of
+ * mechanics, plumbing, cleaning and tuition - and a broken reference draws
+ * nothing at all, which reads as a layout bug rather than as a missing
+ * drawing.
  */
-export function TradeIcon({ slug, size = 22 }: { slug: string; size?: number }) {
-  const body = TRADE_ICONS[slug] ?? UI_ICONS.layout;
-  if (!body) return null;
+export function TradeIcon({
+  slug,
+  size,
+  className = "",
+}: {
+  slug: string;
+  size?: number;
+  className?: string;
+}) {
   return (
-    <svg
-      className="icon"
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={strokeFor(size)}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      focusable="false"
-      dangerouslySetInnerHTML={{ __html: body }}
-    />
+    <svg className={`ico ${size ? SIZES[size] ?? "" : ""} ${className}`.replace(/\s+/g, " ").trim()} aria-hidden="true" focusable="false">
+      <use href={`#t-${TRADE_GLYPHS.has(slug) ? slug : "default"}`} />
+    </svg>
   );
 }
 
-/** ~1.55 px of rendered line whatever the size, clamped so it stays a line. */
-function strokeFor(size: number): number {
-  return Number(Math.min(2.4, Math.max(1.1, (1.55 * 24) / size)).toFixed(2));
+/**
+ * A scene: the larger drawings that carry an empty state or sit behind a
+ * section. `storefront`, `chair`, `braiding`, `mechanic`, `notebook`,
+ * `photographer`, `tailor`, `tools`.
+ *
+ * <p>Its own component because a scene is not an icon: it lives on a 200x150
+ * grid, and the stylesheet gives it a stroke that does not scale so the line
+ * stays the same weight at 148 px and at 460.
+ */
+export function Scene({
+  name,
+  className = "",
+  style,
+}: {
+  name: string;
+  className?: string;
+  style?: React.CSSProperties;
+}) {
+  return (
+    <svg
+      className={className}
+      style={style}
+      viewBox="0 0 200 150"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <use href={`#s-${name}`} />
+    </svg>
+  );
 }
