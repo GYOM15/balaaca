@@ -1906,6 +1906,10 @@ a.choice { text-decoration: none; color: inherit; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .shot-browser__body { padding: 0; }
+/* Le tableau de bord : une barre laterale et la journee. La grille est ici et
+   non en ligne dans le composant, sinon rien ne peut la reprendre - une regle
+   en ligne bat la feuille de style, quelle que soit la specificite. */
+.shot-dash { display: grid; grid-template-columns: 116px 1fr; }
 
 /* Cadre téléphone : le contexte réel de la plupart des visites */
 .shot-phone {
@@ -1953,7 +1957,14 @@ a.choice { text-decoration: none; color: inherit; }
 /* Empilement d'aperçus : une composition, pas un alignement */
 .shot-stack { position: relative; display: flex; align-items: flex-end; justify-content: center; gap: var(--s-6); }
 .shot-stack .shot-phone { margin-bottom: var(--s-8); }
-@media (max-width: 767px) { .shot-stack { flex-direction: column; align-items: center; gap: var(--s-8); } .shot-stack .shot-phone { margin-bottom: 0; } }
+/* 600 et non 768 : une tablette a la place de poser l'affiche et la carte cote
+   a cote, et c'est la composition qui raconte le geste - on scanne l'affiche,
+   la confirmation arrive. Empilees, ce sont deux images sans rapport. Seul un
+   telephone n'a pas la largeur. */
+@media (max-width: 599px) {
+  .shot-stack { flex-direction: column; align-items: center; gap: var(--s-8); }
+  .shot-stack .shot-phone { margin-bottom: 0; }
+}
 
 /* --------------------------------------------------------------------------
    8. COMPOSITIONS ÉDITORIALES
@@ -2124,11 +2135,16 @@ a.choice { text-decoration: none; color: inherit; }
     bottom: calc(-1 * var(--feat-pad) - 1.5rem);
   }
   /* La meme largeur pour les deux formes : a 34 rem la pile s'arretait
-     soixante-quatre pixels avant le bord, donc elle ne debordait pas du tout.
-     Ce qui sort est la carte de confirmation, a droite ; l'affiche, qui porte
-     le QR code et le message, reste entiere. */
+     soixante-quatre pixels avant le bord, donc elle ne debordait pas du tout. */
   .feat__art > .shot,
   .feat__art > .shot-stack { width: 44rem; }
+  /* Mais une largeur de boite ne suffit pas a la pile : ses objets sont a
+     taille fixe et se contentaient de se centrer dedans, 310 px de vide
+     au-dessus d'eux et rien qui touche le bord. On les met a l'echelle de la
+     rangee, et la composition remonte d'autant. */
+  .feat__art > .shot-stack .poster { width: 300px; }
+  .feat__art > .shot-stack .shot-phone--sm { width: 252px; }
+  .feat__art > .shot-stack { bottom: calc(-1 * var(--feat-pad)); }
   /* VITRINE : ancree a gauche de sa colonne, elle grandit vers la droite et
      sort par la droite et par le bas. Ces deux bordures n'existent pas. */
   .feat .feat__art > .shot,
@@ -2167,12 +2183,22 @@ a.choice { text-decoration: none; color: inherit; }
     margin-bottom: calc(-1 * var(--feat-pad) - 1rem);
   }
   .feat__art > .shot { width: min(30rem, 108%); }
-  .feat__art > .shot-stack { width: min(26rem, 100%); }
+  /* 32 et non 26 : l'affiche et la carte font 484 px cote a cote, donc a
+     26 rem la composition debordait de sa propre boite. La boite suit le
+     contenu, elle ne le contraint pas. */
+  .feat__art > .shot-stack { width: min(32rem, 100%); }
   .feat .shot { left: 8%; }
   .feat--flip .shot { left: auto; right: 8%; }
-  /* A 390 px les deux colonnes du tableau de bord cote a cote rendent les
-     rendez-vous illisibles, et un menu n'apprend rien a qui n'a pas de compte. */
-  .feat--flip .shot-browser__body > div:first-child { display: none; }
+
+  /* Le contenu d'une maquette est dessine pour une colonne de lecture, pas
+     pour la largeur du cadre. Etale sur les 460 px du cadre, le prix part a
+     l'autre bout de la carte et la ligne se lit en deux temps : le nom, un
+     vide, le montant. On lui rend sa colonne - ce que fait aussi la vraie
+     page, qui n'etale pas son contenu sur un ecran large. */
+  .feat__art .mini__body { max-width: 21rem; margin-inline: auto; }
+  /* Et la barre laterale reprend sa part : a 116 px dans un cadre qui n'en
+     fait plus que 460, elle se lisait comme un liseré. */
+  .feat__art .shot-dash { grid-template-columns: 132px 1fr; }
 }
 
 /* --- LES MARQUEURS, valides ---------------------------------------------- */

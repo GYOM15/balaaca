@@ -621,10 +621,10 @@ function DashboardShot() {
         <span className="shot-browser__dot" />
         <span className="shot-browser__url">balaaca.com/dashboard</span>
       </div>
-      <div
-        className="shot-browser__body mini"
-        style={{ display: "grid", gridTemplateColumns: "116px 1fr" }}
-      >
+      {/* La grille est dans la feuille de style et non ici : en ligne, elle
+          etait impossible a reprendre au point d'arret, ou la barre laterale
+          doit reprendre de la largeur. */}
+      <div className="shot-browser__body mini shot-dash">
         <div
           style={{
             background: "var(--surface-inverse)",
