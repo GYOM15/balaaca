@@ -176,9 +176,8 @@ export default async function Team({
                 title="Le code est prêt, à vous de le transmettre"
                 icon="shield"
               >
-                Rien n’est envoyé, personne n’a été prévenu. Copiez ce lien et
-                envoyez-le à {query.name ?? "cette personne"} vous-même : par
-                WhatsApp, par SMS, ou de vive voix.
+                Rien n’a été envoyé. Copiez ce lien et donnez-le à{" "}
+                {query.name ?? "cette personne"}.
                 {/* One link, not a code and an address. It carries the code in
                     its query, so the person receiving it taps once and types
                     nothing - which is the whole reason the code stayed long.
@@ -341,10 +340,9 @@ export default async function Team({
                 <input type="hidden" name="active" value="on" />
                 <div className="dialog__body">
                   <p>
-                    <strong className="t-strong">Rien ne lui sera envoyé.</strong> Vous
-                    l’ajoutez ici, puis vous créez son code depuis sa ligne et vous le
-                    lui transmettez vous-même : WhatsApp, SMS, de vive voix. Elle le
-                    saisira sur {JOIN}.
+                    <strong className="t-strong">Rien ne lui sera envoyé.</strong>{" "}
+                    Ajoutez la personne ici, puis créez son code depuis sa ligne et
+                    transmettez-le. À saisir sur {JOIN}.
                   </p>
                   <div style={{ marginTop: "var(--s-5)" }}>
                     <div className="field">
