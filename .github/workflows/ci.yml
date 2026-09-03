@@ -317,3 +317,61 @@ jobs:
           scan --recursive --allow-no-lockfiles ./
           scan --sbom=backend/target/bom.json
           scan --sbom=notification-worker/target/bom.json
+
+  images:
+    name: container images
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Nothing built these until they were pushed by hand, and the header of
+      # this file said as much: the container-image job was to arrive "with the
+      # code it verifies". It did not. All three shipped with a healthcheck
+      # aimed at the management port - 404 on every poll, both Java containers
+      # permanently unhealthy, and `web` in docker-compose.prod.yml waiting on
+      # `api: condition: service_healthy` for a condition that could not come.
+      #
+      # Plain `docker build`, no actions: buildx is already on the runner, and
+      # every action added here is another SHA to pin and another supply chain
+      # to trust for something two lines of shell already do.
+      #
+      # linux/amd64 and not arm64, deliberately. What this job checks is that
+      # the recipes still build; the artefact is thrown away. Cross-building
+      # arm64 means QEMU, which means a Maven reactor under emulation and a job
+      # measured in tens of minutes to prove what a native build proves in
+      # three. The image that SHIPS is built on the machine that deploys it -
+      # see docs/DEPLOYMENT.md.
+      - name: Build the three images
+        run: |
+          set -euo pipefail
+          for image in api worker web; do
+            echo "::group::$image"
+            docker build -f "docker/$image.Dockerfile" -t "balaaca-$image:ci" .
+            echo "::endgroup::"
+          done
+
+      # A built image is not a working one, and that distinction is the whole
+      # reason this job exists. Booting the API needs PostgreSQL with its five
+      # roles and a Keycloak realm, which is a bigger job than this one and is
+      # worth writing; until it is, this at least proves each image has an
+      # entrypoint that starts and a JVM that finds its jar - the API refuses at
+      # the database it cannot reach, which means it got that far.
+      - name: Each image starts far enough to name what it is missing
+        run: |
+          set -euo pipefail
+          for image in api worker; do
+            echo "::group::$image"
+            # It cannot reach a database, so it must FAIL - but it must fail
+            # having started the JVM and read its configuration, not on a
+            # missing class or an unreadable jar.
+            docker run --rm --name "smoke-$image" "balaaca-$image:ci" \
+              > "$image.log" 2>&1 || true
+            if ! grep -q "Quarkus\|quarkus" "$image.log"; then
+              echo "::error::balaaca-$image never reached Quarkus - the jar or the entrypoint is wrong"
+              tail -30 "$image.log"
+              exit 1
+            fi
+            echo "$image: the runtime started"
+            echo "::endgroup::"
+          done
