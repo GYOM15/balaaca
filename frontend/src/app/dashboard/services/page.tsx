@@ -683,6 +683,10 @@ function Essentials({
 
         <div className="cols cols--2" style={{ gap: "var(--s-5)" }}>
           <div className="field">
+            {/* "Prix" et non "prix de depart": c'est le prix ferme de CETTE
+                prestation. La carte du hub, elle, affiche "des X" parce qu'elle
+                montre le moins cher de toutes - deux verites differentes que
+                rien ne reliait, et le prestataire lisait une incoherence. */}
             <label className="field__label" htmlFor="f-amount">
               Prix
               <span className="field__req" aria-hidden="true">
@@ -704,6 +708,10 @@ function Essentials({
                 {service?.price.currency ?? currency}
               </span>
             </div>
+            <p className="field__hint">
+              <Icon name="info" size={16} /> Le plus bas de vos prix apparaît
+              sur votre carte, précédé de «&nbsp;dès&nbsp;».
+            </p>
             <p className="field__hint">
               Modifier ce prix n’affecte aucune réservation déjà prise.
             </p>

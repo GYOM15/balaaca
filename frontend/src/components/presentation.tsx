@@ -3,6 +3,7 @@
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { boot } from "./presentation-script";
+import { shrinkBeforeUpload } from "./shrink-before-upload";
 
 /**
  * The presentation layer, and nothing else.
@@ -39,6 +40,12 @@ export function Presentation() {
   // Once. The listeners are delegated on `document` and the observer is one
   // for the session, so re-running this per render only rebuilt what already
   // worked - and left the previous observer alive, still holding its nodes.
+  // A photograph from a telephone, sent whole, failed with a bare 403 that
+  // nothing logged and nothing explained. It is resized before it is sent now -
+  // see shrink-before-upload.ts. Product-owned, so it survives the next time
+  // presentation-script.ts is replaced wholesale by the design source.
+  useEffect(shrinkBeforeUpload, []);
+
   useEffect(() => {
     const teardown: Array<() => void> = [];
     islands.current = boot(teardown) as Islands;
