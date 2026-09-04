@@ -122,8 +122,13 @@ services:
       # The key that seals the session cookie. Rotating it signs everybody out,
       # which is correct and worth knowing before you rotate it.
       BALAACA_SESSION_SECRET: ${BALAACA_SESSION_SECRET}
+    # Loopback, like Keycloak above and for the same reason: cloudflared is on
+    # this host. Published to the network it would be exposure with no benefit -
+    # APP_PUBLIC_ORIGIN is https, so the session cookie is Secure and a browser
+    # will not send it over http://the-pi:3000. What the LAN would get is the
+    # public pages and a sign-in that cannot complete.
     ports:
-      - "${WEB_HOST_PORT:-3000}:3000"
+      - "127.0.0.1:${WEB_HOST_PORT:-3000}:3000"
     depends_on:
       api:
         condition: service_healthy
@@ -151,11 +156,23 @@ services:
       KC_SPI_THEME_STATIC_MAX_AGE: "2592000"
       KC_SPI_THEME_CACHE_THEMES: "true"
       KC_SPI_THEME_CACHE_TEMPLATES: "true"
-    # Published on every interface, not only loopback. The browser is redirected
-    # here by address; bound to 127.0.0.1 on the Pi, every sign-in from any
-    # other machine fails at the redirect with nothing in any log to say why.
-    ports:
-      - "${KEYCLOAK_PORT:-8180}:8080"
+    # !override, and it is load bearing. Compose APPENDS `ports` across files -
+    # it does not replace them - so this stanza used to leave the base file's
+    # 127.0.0.1:8180 in place and add a second publication of the same port.
+    # Docker bound the first and refused the second:
+    #
+    #     failed to bind host port 127.0.0.1:8180/tcp: address already in use
+    #
+    # which reads like something else is on 8180 and sends you hunting for it.
+    # Nothing was: the stack was fighting itself.
+    #
+    # Loopback, and not every interface as this once tried to do. cloudflared
+    # runs ON this host and dials localhost:8180, so the browser reaches
+    # Keycloak through the tunnel and nothing needs to listen on the network.
+    # Drop the 127.0.0.1 prefix only if you serve the LAN directly, without a
+    # tunnel - and know that you are then serving sign-in over plain HTTP.
+    ports: !override
+      - "127.0.0.1:${KEYCLOAK_PORT:-8180}:8080"
 
   prometheus:
     # The application targets are containers now, reached by name. The base
