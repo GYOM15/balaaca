@@ -2343,3 +2343,81 @@ a.choice { text-decoration: none; color: inherit; }
   .shot, .feat__art:hover .shot { transition: none; transform: none; }
 }
 
+
+/* ==========================================================================
+   Les avis
+   ==========================================================================
+   Une note est deux choses et pas une : cinq formes, qui se lisent d'un coup
+   d'oeil, et un nombre, qui dit de combien d'avis la moyenne est faite. Quatre
+   virgule six sur trois personnes et sur trois cents ne sont pas la meme
+   affirmation, et seul le nombre le dit. Les deux voyagent donc toujours
+   ensemble, ici comme dans le contrat. */
+.stars { display: inline-flex; align-items: center; gap: var(--s-2); }
+.stars__glyphs { display: inline-flex; gap: 1px; }
+/* L'etoile vide reste dessinee : sans elle, trois etoiles sur cinq et trois sur
+   trois se ressemblent, et le lecteur compte au lieu de voir. */
+.star { color: var(--border-strong); fill: none; }
+.star--on { color: var(--accent-strong); fill: currentColor; }
+.stars__figure { font-size: var(--fs-sm); font-weight: var(--fw-bold);
+  color: var(--text-secondary); white-space: nowrap; }
+.stars__count { font-weight: var(--fw-regular); color: var(--text-tertiary);
+  margin-left: 0.2em; }
+
+/* Sur une carte, la note se pose sur le pied, a cote du prix plancher. */
+.pcard__rating { margin-right: auto; }
+
+/* Le bandeau de la fiche : la moyenne en grand, puis la liste. */
+.rating-hero { display: flex; align-items: center; gap: var(--s-4);
+  flex-wrap: wrap; }
+.rating-hero__figure { font-family: var(--font-display); font-weight: 600;
+  font-size: clamp(1.75rem, 1.4rem + 1.4vw, 2.5rem); line-height: 1;
+  letter-spacing: -0.02em; }
+.rating-hero__of { font-size: var(--fs-sm); color: var(--text-tertiary); }
+
+.reviews { display: grid; gap: var(--s-5); }
+.review { display: grid; gap: var(--s-3); padding: var(--s-5) 0;
+  border-top: 1px solid var(--border-subtle); }
+.review:first-child { border-top: 0; padding-top: 0; }
+.review__head { display: flex; align-items: center; gap: var(--s-3);
+  flex-wrap: wrap; }
+/* Le service et le mois, jamais un nom. Dans un marche ou tout le monde se
+   connait, un prenom plus une prestation plus un quartier est une identite. */
+.review__about { font-size: var(--fs-sm); color: var(--text-tertiary); }
+.review__text { line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.review__photos { display: flex; gap: var(--s-3); flex-wrap: wrap; }
+.review__photos img { width: 96px; height: 96px; object-fit: cover;
+  border-radius: var(--r-sm); border: 1px solid var(--border-subtle);
+  background: var(--bg-sunken); }
+
+/* --------------------------------------------------------------------------
+   Le formulaire de notation
+   --------------------------------------------------------------------------
+   Cinq boutons radio, et rien d'autre. Un curseur ou un composant qui exige du
+   JavaScript laisserait sans note tous ceux dont le telephone a fini de charger
+   la page mais pas le script - c'est-a-dire une bonne part du marche. */
+.rate { display: flex; gap: var(--s-2); }
+.rate__option { position: relative; }
+.rate__option input { position: absolute; inset: 0; opacity: 0; margin: 0;
+  width: 100%; height: 100%; cursor: pointer; }
+.rate__option span { display: grid; place-items: center; width: 44px; height: 44px;
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--surface); color: var(--border-strong);
+  transition: border-color var(--dur-fast) var(--ease-out),
+              background var(--dur-fast) var(--ease-out); }
+.rate__option span .ico { fill: none; }
+/* Rempli au survol ET au parcours clavier : sans le focus-within, la note se
+   choisit a l'aveugle des qu'on lache la souris. */
+.rate__option:hover span,
+.rate__option:focus-within span { border-color: var(--brand-border);
+  background: var(--brand-soft); }
+.rate__option:focus-within span { box-shadow: 0 0 0 3px var(--brand-soft); }
+.rate__option input:checked + span { border-color: var(--accent-strong);
+  color: var(--accent-strong); background: var(--surface); }
+.rate__option input:checked + span .ico { fill: currentColor; }
+
+/* La pellicule deja deposee, sous le formulaire. */
+.shots { display: flex; gap: var(--s-3); flex-wrap: wrap; align-items: flex-start; }
+.shots__one { position: relative; }
+.shots__one img { width: 88px; height: 88px; object-fit: cover;
+  border-radius: var(--r-sm); border: 1px solid var(--border-subtle); display: block; }
+.shots__drop { position: absolute; top: -6px; right: -6px; }

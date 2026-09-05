@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { cache } from "react";
 import { Icon, Scene, TradeIcon } from "@/components/icon";
 import { SiteFooter, SiteHeader, TabBar } from "@/components/site";
+import { StarRow, Stars } from "@/components/stars";
 import { Avatar, initials } from "@/components/ui";
 import { ApiError, publicApi } from "@/lib/api";
 import { env } from "@/lib/env";
@@ -16,6 +17,8 @@ import type {
   PublicProvider,
   PublicServiceOffering,
   PublicStaffList,
+  Review as ReviewType,
+  ReviewPage,
 } from "@/lib/types";
 
 /**
@@ -93,15 +96,19 @@ type Segment = PublicOpeningHours["data"][number];
 const load = cache(async (slug: string) => {
   const at = `/v1/providers/${encodeURIComponent(slug)}`;
   try {
-    const [provider, hours, staff, categories] = await Promise.all([
+    const [provider, hours, staff, categories, reviews] = await Promise.all([
       publicApi<PublicProvider>(at),
       publicApi<PublicOpeningHours>(`${at}/opening-hours`),
       publicApi<PublicStaffList>(`${at}/staff`),
       // The trade travels as a slug. `dj-animation` is not a word to print at
       // a customer, and this is the only operation that carries the label.
       publicApi<CategoryList>("/v1/categories"),
+      // The first page only. Somebody deciding whether to book reads a handful
+      // and stops; loading every review a busy salon has ever collected would
+      // cost every visitor on a 3G connection for the benefit of nobody.
+      publicApi<ReviewPage>(`${at}/reviews?limit=6`),
     ]);
-    return { provider, hours, staff, categories };
+    return { provider, hours, staff, categories, reviews };
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) return null;
     throw error;
@@ -171,7 +178,7 @@ export default async function ProviderPage({
   // carries the 404 the address deserves.
   if (!data) notFound();
 
-  const { provider, hours, staff, categories } = data;
+  const { provider, hours, staff, categories, reviews } = data;
   const category = provider.category_slug;
   const trade = tradeLabel(categories, category);
   const cover = mediaUrl(provider.cover_url);
@@ -227,6 +234,21 @@ export default async function ProviderPage({
               <h1 className="t-h1" style={{ marginTop: "var(--s-2)" }}>
                 {provider.business_name}
               </h1>
+
+              {/* Under the name, where somebody deciding whether to book looks
+                  first. Absent rather than nought out of five: a business
+                  nobody has been to has no opinion attached to it, and drawing
+                  one would mean every new salon opens with the worst score it
+                  can hold. */}
+              {provider.rating ? (
+                <a
+                  className="row"
+                  href="#avis"
+                  style={{ marginTop: "var(--s-3)", gap: "var(--s-2)" }}
+                >
+                  <Stars rating={provider.rating} size={18} />
+                </a>
+              ) : null}
 
               {place || staff.data.length > 0 ? (
                 <div className="t-meta" style={{ marginTop: "var(--s-3)" }}>
@@ -456,6 +478,56 @@ export default async function ProviderPage({
           </section>
         ) : null}
 
+        {/* Only when there is something to show. An "Avis" heading over
+            "Aucun avis pour le moment" on every new business is a section that
+            says the hub is empty, on the page whose job is to say the
+            opposite. */}
+        {provider.rating && reviews.data.length > 0 ? (
+          <section className="section" id="avis" style={{ paddingBlock: "var(--s-10)" }}>
+            <div className="page">
+              <h2 className="t-h3" style={{ marginBottom: "var(--s-5)" }}>
+                Ce que disent les client&eacute;s
+              </h2>
+
+              <div className="rating-hero" style={{ marginBottom: "var(--s-6)" }}>
+                <span className="rating-hero__figure">
+                  {provider.rating.average.toFixed(1).replace(".", ",")}
+                </span>
+                <span className="rating-hero__of">sur 5</span>
+                <Stars rating={provider.rating} size={18} />
+              </div>
+
+              <div className="reviews">
+                {reviews.data.map((review, index) => (
+                  <Review key={index} review={review} />
+                ))}
+              </div>
+
+              {/* Said rather than left to be worked out from the difference
+                  between the count in the stars and the number of paragraphs
+                  under them. There is no "voir plus": this page is static so
+                  that Cloudflare can serve it from the edge, which is what
+                  makes it bearable from a Raspberry Pi on a domestic line, and
+                  a paged section would make every visit dynamic to show a
+                  seventh opinion. */}
+              {reviews.next_cursor ? (
+                <p className="t-sm" style={{ marginTop: "var(--s-5)" }}>
+                  Les {reviews.data.length} plus r&eacute;cents, sur{" "}
+                  {provider.rating.count} avis.
+                </p>
+              ) : null}
+
+              {/* Said out loud rather than left to be inferred from the badge.
+                  It is the reason a star here is worth more than a star on a
+                  form anybody can fill in. */}
+              <p className="t-xs" style={{ marginTop: "var(--s-6)" }}>
+                <Icon name="lock" size={16} /> Seules les personnes qui ont
+                r&eacute;serv&eacute; ici peuvent laisser un avis.
+              </p>
+            </div>
+          </section>
+        ) : null}
+
         <section className="section atmo tex-rules" style={{ paddingBlock: "var(--s-10)" }}>
           <div className="page">
             <div className="cols cols--2" style={{ gap: "var(--s-10)" }} data-reveal-group>
@@ -583,6 +655,56 @@ export default async function ProviderPage({
  * 3G: a catalogue of twenty services would pull a hundred images to show a
  * price list. The badge says how many the booking page will show.
  */
+/**
+ * One published review.
+ *
+ * <p>It names nobody, and it carries a month rather than a day. Both are the
+ * contract's decisions rather than this page's: public availability publishes
+ * bookable slots, so an exact date laid over that day's gaps names one person
+ * at a one-chair salon, and a first name plus a service plus a quartier is an
+ * identity in this market.
+ */
+function Review({ review }: { review: ReviewType }) {
+  return (
+    <article className="review">
+      <div className="review__head">
+        <StarRow value={review.rating} />
+        <span className="review__about">
+          {review.service_name} &middot; {monthLabel(review.visited_month)}
+        </span>
+      </div>
+
+      {review.comment ? <p className="review__text">{review.comment}</p> : null}
+
+      {review.photo_urls.length > 0 ? (
+        <div className="review__photos">
+          {review.photo_urls.map((url) => (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img key={url} src={url} alt="" loading="lazy" width={96} height={96} />
+          ))}
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+const MONTHS = [
+  "janvier", "février", "mars", "avril", "mai", "juin",
+  "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+];
+
+/**
+ * `2026-09` as "septembre 2026".
+ *
+ * <p>Parsed by hand rather than through `Date`: `new Date("2026-09")` is
+ * midnight UTC, which is August in every timezone west of Greenwich - and this
+ * page is read from one.
+ */
+function monthLabel(month: string): string {
+  const [year, index] = month.split("-");
+  return `${MONTHS[Number(index) - 1] ?? month} ${year}`;
+}
+
 function ServiceRow({
   service,
   bookHref,

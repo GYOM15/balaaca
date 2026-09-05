@@ -18,6 +18,11 @@ import com.balaaca.platformkernel.tenancy.PublicTenantBinder;
 import com.balaaca.providers.ports.inbound.LookupPublicProviderUseCase;
 import com.balaaca.providers.ports.inbound.LookupPublicProviderUseCase.PublicProvider;
 import com.balaaca.providers.ports.inbound.LookupPublicStaffUseCase;
+import com.balaaca.providers.ports.inbound.PublishedReviewsUseCase;
+import com.balaaca.providers.ports.inbound.PublishedReviewsUseCase.PublishedReview;
+import com.balaaca.app.api.model.ReviewPage;
+import com.balaaca.app.api.model.ReviewSummary;
+import com.balaaca.app.api.model.ReviewView;
 import com.balaaca.app.api.model.CategoryFamily;
 import com.balaaca.app.api.model.AreaList;
 import com.balaaca.app.api.model.AreaView;
@@ -68,6 +73,7 @@ public class PublicProviderResource implements DiscoveryApi {
     private final ImageStore images;
     private final ListCategoriesUseCase categories;
     private final ListLocalitiesUseCase localities;
+    private final PublishedReviewsUseCase reviews;
 
     public PublicProviderResource(PublicTenantBinder tenants,
                                   LookupPublicProviderUseCase providers,
@@ -76,7 +82,8 @@ public class PublicProviderResource implements DiscoveryApi {
                                   ManageAvailabilityUseCase availability,
                                   ImageStore images,
                                   ListCategoriesUseCase categories,
-                                  ListLocalitiesUseCase localities) {
+                                  ListLocalitiesUseCase localities,
+                                  PublishedReviewsUseCase reviews) {
         this.tenants = tenants;
         this.providers = providers;
         this.staff = staff;
@@ -85,6 +92,7 @@ public class PublicProviderResource implements DiscoveryApi {
         this.images = images;
         this.categories = categories;
         this.localities = localities;
+        this.reviews = reviews;
     }
 
     /**
@@ -184,9 +192,20 @@ public class PublicProviderResource implements DiscoveryApi {
 
     @Override
     public Response getPublicProvider(String slug) {
+        // BEFORE the binding, and that is not an ordering accident. With a
+        // tenant bound the policy that applies to reviews is the provider's own,
+        // which admits the ones an operator took down - so an average read
+        // there would count reviews the page does not show. The figure a
+        // stranger sees has to be the average of what a stranger can read.
+        //
+        // It costs one indexed aggregate on a slug that turns out not to exist,
+        // which is cheaper than clearing and rebinding around the read - and
+        // rebinding in a finally would throw from a finally.
+        var rating = reviews.ratingOf(slug);
+
         tenants.bindPublished(slug);
         try {
-            return Response.ok(view(providers.publicPage(), catalogue.published()))
+            return Response.ok(view(providers.publicPage(), catalogue.published(), rating))
                     .header("Cache-Control", PublicCaching.DIRECTORY)
                     .build();
         } finally {
@@ -233,8 +252,47 @@ public class PublicProviderResource implements DiscoveryApi {
         }
     }
 
+    /**
+     * What customers said, as a stranger reads it.
+     *
+     * <p>No tenant is bound and none is wanted: the public-read policy admits
+     * visible reviews of published, active businesses and nothing else, so this
+     * route cannot see a takedown even by accident.
+     */
+    @Override
+    public Response listProviderReviews(String slug, String cursor, Integer limit) {
+        var page = reviews.page(slug, Cursors.rawId(cursor),
+                                limit == null ? Cursors.DEFAULT_LIMIT : limit);
+
+        return Response.ok(new ReviewPage()
+                .data(page.reviews().stream().map(this::review).toList())
+                .nextCursor(page.next().map(Cursors::encodeRawId).orElse(null)))
+                .header("Cache-Control", PublicCaching.DIRECTORY)
+                .build();
+    }
+
+    private ReviewView review(PublishedReview r) {
+        ReviewView view = new ReviewView()
+                .rating(r.rating())
+                .serviceName(r.serviceName())
+                // The month, exactly as the column holds it. Nothing here
+                // truncates a date, because no date reached this far.
+                .visitedMonth(r.visitedMonth().toString())
+                // The stored name becomes a URL here and only here, the way it
+                // does for every other image on this platform.
+                .photoUrls(r.photoNames().stream().map(n -> MEDIA + n).toList());
+
+        r.comment().ifPresent(view::setComment);
+        return view;
+    }
+
+    private static ReviewSummary summary(PublishedReviewsUseCase.Rating rating) {
+        return new ReviewSummary().average(rating.average()).count(rating.count());
+    }
+
     private static PublicProviderView view(PublicProvider provider,
-                                           List<PublishedService> services) {
+                                           List<PublishedService> services,
+                                           Optional<PublishedReviewsUseCase.Rating> rating) {
         PublicProviderView view = new PublicProviderView()
                 .slug(provider.slug())
                 .businessName(provider.businessName())
@@ -242,6 +300,10 @@ public class PublicProviderResource implements DiscoveryApi {
                 .services(services.stream()
                         .map(PublicProviderResource::service)
                         .toList());
+
+        // Absent rather than zero. A business nobody has reviewed has no
+        // opinion attached to it, and nought out of five is an opinion.
+        rating.map(PublicProviderResource::summary).ifPresent(view::setRating);
 
         provider.description().ifPresent(view::setDescription);
         provider.categorySlug().ifPresent(view::setCategorySlug);

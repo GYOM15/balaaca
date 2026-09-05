@@ -37,6 +37,20 @@ no producer breaks the build.
 
 ## Decided, scoped, not yet done
 
+### A provider's right of reply to a review
+Reviews ship without one. A business that receives an unfair review can ask for
+a takedown and can say nothing publicly, which is a real gap: in this market a
+one-line answer ("la cliente n'est pas venue, le rendez-vous a été noté comme
+honoré par erreur") is often the whole truth of it.
+
+Deliberately not built with the first version, because a reply is a second
+piece of public text with its own moderation surface, and because a takedown
+lever had to exist before any of it. The shape is a nullable `reply` and
+`replied_at` on `provider_reviews`, written under the tenant policy - which is
+the one write a business may make on that table and would have to be granted
+explicitly, since it currently has none.
+
+
 ### ~~Rate-limit registrations~~ (done)
 `V020` closed the oracle for any account that already has a salon. What remains
 is that an account **without** a salon can probe the handles, exactly like any

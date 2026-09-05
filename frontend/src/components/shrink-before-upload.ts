@@ -1,7 +1,8 @@
 /**
  * Resizes a chosen photograph in the browser, before the form sends it.
  *
- * <p>A cover uploaded from a telephone is three to five megabytes. It failed
+ * <p>A cover uploaded from a telephone is three to five megabytes, and a
+ * review carries up to three of them. It failed
  * with a bare `403` on the server action, with nothing logged anywhere and no
  * message on screen - so the provider was told the upload had worked (by a
  * toast that fired on CHOOSING the file), then dropped on a page saying the
@@ -85,27 +86,40 @@ export function shrinkBeforeUpload(): () => void {
     }
 
     const input = form.querySelector<HTMLInputElement>("input[type=file][data-shrink]");
-    const file = input?.files?.[0];
-    if (!input || !file || file.size <= LEAVE_ALONE) return;
+    const chosen = Array.from(input?.files ?? []);
+    // EVERY file, not the first: a review carries up to three, and shrinking one
+    // of three is the same wall three times smaller. That was the bug this
+    // whole file exists to prevent, reintroduced by an index.
+    if (!input || chosen.length === 0) return;
+    if (!chosen.some((file) => file.size > LEAVE_ALONE)) return;
     if (typeof DataTransfer === "undefined" || typeof createImageBitmap === "undefined") {
       return;
     }
 
     // Capture phase, so this runs before the framework's own submit handler and
-    // the action never sees the original file.
+    // the action never sees the original files.
     event.preventDefault();
     event.stopPropagation();
 
-    void shrink(file)
-      .then((smaller) => {
-        if (smaller !== file) {
-          const carrier = new DataTransfer();
-          carrier.items.add(smaller);
-          input.files = carrier.files;
-        }
+    // allSettled and not all: one photograph the canvas cannot decode must not
+    // drop the other two, and `shrink` already returns the original on failure.
+    void Promise.allSettled(
+      chosen.map((file) => (file.size > LEAVE_ALONE ? shrink(file) : Promise.resolve(file))),
+    )
+      .then((results) => {
+        const carrier = new DataTransfer();
+        results.forEach((result, index) => {
+          // The fallback is indexed off the same array the promises were built
+          // from, so it is never undefined - stated for the compiler, which
+          // cannot know that, rather than asserted away.
+          const original = chosen[index];
+          const file = result.status === "fulfilled" ? result.value : original;
+          if (file) carrier.items.add(file);
+        });
+        input.files = carrier.files;
       })
       .catch(() => {
-        // Left as it arrived. The server still has the last word on size.
+        // Left as they arrived. The server still has the last word on size.
       })
       .finally(() => {
         resubmitting.add(form);

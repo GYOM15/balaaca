@@ -68,3 +68,4 @@ V046__put_the_staff_code_back_to_full_length.sql 970434937
 V047__accent_the_copy_without_losing_the_search.sql -941524025
 V048__let_the_operator_see_who_he_moderates.sql -775388195
 V049__let_the_customer_say_how_to_reach_them.sql 1300448472
+V050__let_a_customer_say_how_it_went.sql -263487871

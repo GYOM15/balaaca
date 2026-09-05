@@ -66,9 +66,13 @@ public class BookingFixtures {
     private final String jdbcUrl;
     private final io.quarkus.redis.datasource.RedisDataSource redis;
 
+    private final String appPassword;
+
     public BookingFixtures(@ConfigProperty(name = "quarkus.datasource.jdbc.url") String jdbcUrl,
+                           @ConfigProperty(name = "quarkus.datasource.password") String appPassword,
                            io.quarkus.redis.datasource.RedisDataSource redis) {
         this.jdbcUrl = jdbcUrl;
+        this.appPassword = appPassword;
         this.redis = redis;
     }
 
@@ -363,6 +367,41 @@ public class BookingFixtures {
         } catch (SQLException e) {
             throw new IllegalStateException("fixture failed: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * A write attempted as {@code balaaca_app} itself, with a tenant bound -
+     * the exact connection a provider's dashboard runs on.
+     *
+     * <p>Every other fixture here connects as the superuser, which is right for
+     * placing decor and useless for proving what a role may not do. This one
+     * exists for the properties that are enforced by the ABSENCE of a grant or
+     * of a policy, because absence is what silently comes back.
+     *
+     * @return how many rows the statement changed, or -1 when the database
+     *         refused it outright. Both are a refusal, and the difference
+     *         matters: a missing GRANT raises, while a missing POLICY quietly
+     *         matches nothing - and this table leans on both
+     */
+    public long writeAsProvider(UUID providerId, String sql) {
+        try (Connection c = DriverManager.getConnection(jdbcUrl, "balaaca_app", appPassword)) {
+            c.setAutoCommit(false);
+            try (Statement s = c.createStatement()) {
+                s.execute("SET LOCAL app.provider_id = '" + providerId + "'");
+                return s.executeUpdate(sql);
+            } catch (SQLException refused) {
+                return -1;
+            } finally {
+                c.rollback();
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** One number, off the superuser connection, for a test that needs to count. */
+    public long count(String sql) {
+        return query(sql);
     }
 
     private Connection admin() throws SQLException {

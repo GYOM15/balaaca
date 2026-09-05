@@ -1,5 +1,6 @@
 package com.balaaca.providers.adapters.outbound.persistence;
 
+import com.balaaca.providers.ports.inbound.PublishedReviewsUseCase;
 import com.balaaca.providers.ports.inbound.SearchProvidersUseCase;
 import com.balaaca.sharedkernel.money.Currency;
 import com.balaaca.sharedkernel.money.Money;
@@ -182,7 +183,8 @@ public class ProviderDirectorySqlRepository implements SearchProvidersUseCase {
                 WITH page AS (
                 SELECT p.id, p.slug, p.business_name, p.description,
                        c.slug AS category_slug, p.city,
-                       p.logo_url, l.slug AS locality_slug, l.label_fr, p.area
+                       p.logo_url, p.cover_url,
+                       l.slug AS locality_slug, l.label_fr, p.area
                 """ + FROM_DIRECTORY + MATCHING + """
                    AND (CAST(:afterName AS varchar) IS NULL
                         OR (p.business_name, p.slug)
@@ -206,6 +208,28 @@ public class ProviderDirectorySqlRepository implements SearchProvidersUseCase {
                 -- connection may SEE, and the contract decides what the card
                 -- AGGREGATES, which is the offerings a customer could book
                 -- today. They coincide, and they answer to different owners.
+                -- The stars, in one grouped pass over the reviews of the
+                -- providers already on the page - the same shape the foot takes
+                -- and for the same reason: a subquery in the select list is this
+                -- statement issued again once per card, on every page, for every
+                -- visitor.
+                --
+                -- No `status = 'VISIBLE'` and no `published` predicate, because
+                -- provider_reviews_public_read already decides what this
+                -- connection may see. A review an operator took down is not
+                -- filtered out here, it does not exist - which is what makes
+                -- this average and the list on the provider's own page
+                -- incapable of disagreeing.
+                rated AS (
+                SELECT r.provider_id,
+                       -- Rounded in SQL, once. The card, the page and the API
+                       -- print one figure because one statement decides it.
+                       round(avg(r.rating)::numeric, 1) AS average,
+                       count(*)::int                    AS reviews
+                  FROM provider_reviews r
+                  JOIN page ON page.id = r.provider_id
+                 GROUP BY r.provider_id
+                ),
                 offered AS (
                 SELECT so.provider_id,
                        bool_or(so.offers_on_site)     AS on_site,
@@ -234,15 +258,22 @@ public class ProviderDirectorySqlRepository implements SearchProvidersUseCase {
                 -- one value the public wire does not carry, and a card is as
                 -- public as a cursor.
                 SELECT page.slug, page.business_name, page.description,
-                       page.category_slug, page.city, page.logo_url,
+                       page.category_slug, page.city,
+                       page.logo_url, page.cover_url,
                        page.locality_slug, page.label_fr, page.area,
                        -- A provider with nothing active has no row here, and
                        -- absent means offers nothing - not unknown.
                        coalesce(o.on_site, false), coalesce(o.drop_off, false),
                        coalesce(o.at_customer, false),
-                       o.price_from_minor, o.price_from_currency
+                       o.price_from_minor, o.price_from_currency,
+                       -- A provider nobody has reviewed has no row here either,
+                       -- and absent means "no opinion yet" - not nought out of
+                       -- five, which every new business on the hub would open
+                       -- with if this were coalesced.
+                       rt.average, rt.reviews
                   FROM page
                   LEFT JOIN offered o ON o.provider_id = page.id
+                  LEFT JOIN rated rt ON rt.provider_id = page.id
                  ORDER BY page.business_name, page.slug
                 """, query)
                 .setParameter("afterName", query.after().map(Position::businessName).orElse(null))
@@ -255,10 +286,11 @@ public class ProviderDirectorySqlRepository implements SearchProvidersUseCase {
         for (Object[] r : rows.stream().limit(query.limit()).toList()) {
             cards.add(new ProviderCard(
                     (String) r[0], (String) r[1],
-                    text(r[2]), text(r[3]), text(r[4]), text(r[5]),
-                    text(r[6]), text(r[7]), text(r[8]),
-                    new Fulfilments((Boolean) r[9], (Boolean) r[10], (Boolean) r[11]),
-                    money(r[12], r[13]),
+                    text(r[2]), text(r[3]), text(r[4]), text(r[5]), text(r[6]),
+                    text(r[7]), text(r[8]), text(r[9]),
+                    new Fulfilments((Boolean) r[10], (Boolean) r[11], (Boolean) r[12]),
+                    money(r[13], r[14]),
+                    rating(r[15], r[16]),
                     new Position((String) r[1], (String) r[0])));
         }
 
@@ -267,6 +299,18 @@ public class ProviderDirectorySqlRepository implements SearchProvidersUseCase {
                 : Optional.empty();
 
         return new Directory(List.copyOf(cards), next, count(query));
+    }
+
+    /**
+     * Absent rather than zero, which is the whole point of the LEFT JOIN above:
+     * a business nobody has reviewed has no opinion attached to it, and a card
+     * that drew that as nought out of five would be the platform inventing one.
+     */
+    private static Optional<PublishedReviewsUseCase.Rating> rating(Object average, Object count) {
+        return count == null || ((Number) count).intValue() == 0
+                ? Optional.empty()
+                : Optional.of(new PublishedReviewsUseCase.Rating(
+                        (java.math.BigDecimal) average, ((Number) count).intValue()));
     }
 
     /**
