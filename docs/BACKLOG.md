@@ -37,6 +37,27 @@ no producer breaks the build.
 
 ## Decided, scoped, not yet done
 
+### Previewing a page that is not published yet
+`/p/{slug}` resolves through a published-only lookup, so an unpublished
+business has no page there. Four dashboard screens linked to it anyway - the
+sidebar, the account panel, the hours aside, and a "Prévisualiser" button on a
+card that only renders WHILE the page is unpublished. Every one of them opened a
+404 on the provider's own dashboard, which reads as a broken product rather than
+as an unpublished page. The links are now conditional and
+`public-link.test.mts` fails if a fifth one appears.
+
+What is still owed is the thing the button promised: seeing the page as a
+customer would, before publishing it. The shape that does not drift is **one
+authenticated operation returning the same projection the public route
+returns** - `GET /v1/provider-profile/preview`, `dashboard:read`, tenant bound
+from the token as usual, calling the same `publicPage()` and
+`published()` the public resource calls. Building the preview instead out of
+the dashboard's own endpoints would be a second source of truth for the same
+page, and the two would disagree on the first change either side.
+
+The front end then needs the page body extracted out of `p/[slug]/page.tsx` so
+that both routes render it, which is the larger half of the work.
+
 ### A provider's right of reply to a review
 Reviews ship without one. A business that receives an unfair review can ask for
 a takedown and can say nothing publicly, which is a real gap: in this market a
