@@ -349,14 +349,19 @@ export default async function Hours({
                     créneaux libres</strong> sont proposés à la réservation :
                     personne ne peut voir ce que vous faites de votre journée.
                   </p>
-                  <div style={{ marginTop: "var(--s-5)" }}>
-                    <Link className="btn btn--secondary btn--block" href={`/p/${profile.slug}`}>
-                      <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
-                        <Icon name="external" size={18} />
-                      </span>
-                      <span className="btn__label--idle">Voir ma page publique</span>
-                    </Link>
-                  </div>
+                  {/* Only while the page exists: it resolves through a
+                      published-only lookup, and this button on an unpublished
+                      business opened a 404. */}
+                  {profile.published ? (
+                    <div style={{ marginTop: "var(--s-5)" }}>
+                      <Link className="btn btn--secondary btn--block" href={`/p/${profile.slug}`}>
+                        <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
+                          <Icon name="external" size={18} />
+                        </span>
+                        <span className="btn__label--idle">Voir ma page publique</span>
+                      </Link>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </aside>

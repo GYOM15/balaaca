@@ -105,6 +105,17 @@ public interface SearchProvidersUseCase {
      * services whose price is visible, so it is empty when there is nothing to
      * take a floor of - which is not zero, and a card that drew it as zero
      * would read as free.
+     *
+     * <p>{@code coverUrl} is what the band across the top should draw, and
+     * {@code logoUrl} is the fallback for a business that has not uploaded one.
+     * The card was showing the logo - a square mark drawn to be read at the size
+     * of a favicon - floating in the middle of a strip four times wider than
+     * tall. Both are optional, and both being absent is a card the illustration
+     * fills, which is what a brand-new business looks like.
+     *
+     * <p>{@code rating} is empty rather than zero for the same reason
+     * {@code priceFrom} is: a business nobody has reviewed has no opinion
+     * attached to it, and nought out of five is an opinion.
      */
     record ProviderCard(String slug,
                         String businessName,
@@ -112,11 +123,13 @@ public interface SearchProvidersUseCase {
                         Optional<String> categorySlug,
                         Optional<String> city,
                         Optional<String> logoUrl,
+                        Optional<String> coverUrl,
                         Optional<String> localitySlug,
                         Optional<String> localityLabel,
                         Optional<String> area,
                         Fulfilments fulfilments,
                         Optional<Money> priceFrom,
+                        Optional<PublishedReviewsUseCase.Rating> rating,
                         Position position) {
     }
 

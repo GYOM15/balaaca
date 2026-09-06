@@ -1378,6 +1378,39 @@ a.choice { text-decoration: none; color: inherit; }
 .search__control::placeholder { color: var(--text-placeholder); font-weight: var(--fw-medium); }
 .search__control:focus-visible { outline: none; }
 .search__cell:focus-within { background: var(--bg); box-shadow: inset 0 0 0 1px var(--brand-border); }
+/* Les deux listes portent un chevron qui les annonce ; le champ texte n'avait
+   rien - pas de bordure, pas de fond, pas d'icone - donc il se lisait comme un
+   intitule suivi de gris, et non comme quelque chose ou l'on ecrit. Meme
+   technique que le chevron ci-dessous, pour que les trois cellules se
+   repondent : une image de fond, aucun balisage en plus. */
+.search input.search__control[type="search"] {
+  /* Une bordure et un fond clair, que les deux listes n'ont pas: c'est ce qui
+     distingue "on ecrit ici" de "on choisit dedans". Le chevron nu suffit a
+     une liste, il ne suffisait pas a un champ vide. */
+  background-color: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 6px 10px 6px 1.9rem;
+  min-height: 34px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236B716E' stroke-width='1.8' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.6-3.6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: left 0.6rem center;
+  background-size: 1rem;
+  transition: border-color var(--dur-fast) var(--ease-out),
+              box-shadow var(--dur-fast) var(--ease-out);
+}
+.search input.search__control[type="search"]:focus-visible {
+  border-color: var(--brand-border);
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+/* La cellule ne se re-teinte plus au survol ni au focus quand elle contient ce
+   champ: deux fonds emboites, l'un dans l'autre, salissaient la bordure. */
+.search__cell:has(input.search__control[type="search"]):hover,
+.search__cell:has(input.search__control[type="search"]):focus-within {
+  background: transparent;
+  box-shadow: none;
+}
+
 .search select.search__control { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236B716E' stroke-width='1.8' stroke-linecap='round'%3E%3Cpath d='m5.5 9.5 6.5 6.4 6.5-6.4'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 0 center; background-size: 1rem; padding-right: 1.4rem; cursor: pointer; }
 .search__submit { align-self: stretch; }
 @media (max-width: 899px) { .search__submit { margin-top: var(--s-1); } }
@@ -2310,3 +2343,126 @@ a.choice { text-decoration: none; color: inherit; }
   .shot, .feat__art:hover .shot { transition: none; transform: none; }
 }
 
+
+/* ==========================================================================
+   Les avis
+   ==========================================================================
+   Une note est deux choses et pas une : cinq formes, qui se lisent d'un coup
+   d'oeil, et un nombre, qui dit de combien d'avis la moyenne est faite. Quatre
+   virgule six sur trois personnes et sur trois cents ne sont pas la meme
+   affirmation, et seul le nombre le dit. Les deux voyagent donc toujours
+   ensemble, ici comme dans le contrat. */
+.stars { display: inline-flex; align-items: center; gap: var(--s-2); }
+.stars__glyphs { display: inline-flex; gap: 1px; }
+/* L'etoile vide reste dessinee : sans elle, trois etoiles sur cinq et trois sur
+   trois se ressemblent, et le lecteur compte au lieu de voir.
+   Le remplissage vient du SYMBOLE i-star-filled, pas d'ici : `fill` est un
+   attribut de presentation clone dans l'arbre fantome du `use`, et aucune regle
+   ecrite sur le svg exterieur ne peut le battre. Ici on ne pose que la
+   couleur. */
+.star { color: var(--border-strong); }
+.star--on { color: var(--accent-strong); }
+.stars__figure { font-size: var(--fs-sm); font-weight: var(--fw-bold);
+  color: var(--text-secondary); white-space: nowrap; }
+.stars__count { font-weight: var(--fw-regular); color: var(--text-tertiary);
+  margin-left: 0.2em; }
+
+/* Sur une carte, la note se pose sur le pied, a cote du prix plancher. */
+.pcard__rating { margin-right: auto; }
+
+/* Le bandeau de la fiche : la moyenne en grand, puis la liste. */
+.rating-hero { display: flex; align-items: center; gap: var(--s-4);
+  flex-wrap: wrap; }
+.rating-hero__figure { font-family: var(--font-display); font-weight: 600;
+  font-size: clamp(1.75rem, 1.4rem + 1.4vw, 2.5rem); line-height: 1;
+  letter-spacing: -0.02em; }
+.rating-hero__of { font-size: var(--fs-sm); color: var(--text-tertiary); }
+
+.reviews { display: grid; gap: var(--s-5); }
+.review { display: grid; gap: var(--s-3); padding: var(--s-5) 0;
+  border-top: 1px solid var(--border-subtle); }
+.review:first-child { border-top: 0; padding-top: 0; }
+.review__head { display: flex; align-items: center; gap: var(--s-3);
+  flex-wrap: wrap; }
+/* Le service et le mois, jamais un nom. Dans un marche ou tout le monde se
+   connait, un prenom plus une prestation plus un quartier est une identite. */
+.review__about { font-size: var(--fs-sm); color: var(--text-tertiary); }
+.review__text { line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.review__photos { display: flex; gap: var(--s-3); flex-wrap: wrap; }
+.review__photos img { width: 96px; height: 96px; object-fit: cover;
+  border-radius: var(--r-sm); border: 1px solid var(--border-subtle);
+  background: var(--bg-sunken); }
+
+/* --------------------------------------------------------------------------
+   Le formulaire de notation
+   --------------------------------------------------------------------------
+   Cinq boutons radio, et rien d'autre. Un curseur ou un composant qui exige du
+   JavaScript laisserait sans note tous ceux dont le telephone a fini de charger
+   la page mais pas le script - c'est-a-dire une bonne part du marche. */
+/* Une note dit "j'en ai donne quatre", jamais "la quatrieme". On allume donc
+   l'etoile choisie ET toutes celles qui la precedent, avec :has(~ …) : "une
+   option suivie d'une option cochee". L'ordre du DOM reste 1 a 5, ce qui compte
+   pour autre chose que l'oeil - les fleches du clavier parcourent un groupe de
+   boutons radio dans l'ordre du DOM, et un DOM inverse ferait aller la fleche
+   droite vers la gauche a l'ecran. */
+.rate { display: flex; gap: var(--s-2); }
+.rate__option { position: relative; }
+.rate__option input { position: absolute; inset: 0; opacity: 0; margin: 0;
+  width: 100%; height: 100%; cursor: pointer; }
+.rate__option span { display: grid; place-items: center; width: 44px; height: 44px;
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--surface); color: var(--border-strong);
+  transition: border-color var(--dur-fast) var(--ease-out),
+              background var(--dur-fast) var(--ease-out); }
+/* L'etoile pleine est un SYMBOLE, pas une couleur : `fill` voyage avec le
+   symbole dans l'arbre fantome du `use` et aucune regle ne l'y rejoint. Les
+   deux sont posees, une seule est montree. */
+.rate__on { display: none; }
+
+/* Le socle, sans :has() - un navigateur trop ancien allume au moins celle qui
+   est choisie plutot que rien du tout. */
+.rate__option input:checked + span .rate__off { display: none; }
+.rate__option input:checked + span .rate__on { display: block; }
+.rate__option input:checked + span { border-color: var(--accent-strong);
+  color: var(--accent-strong); }
+
+/* Et la note entiere : celle qui est choisie, plus toutes celles qui la
+   precedent. */
+.rate__option:has(~ .rate__option input:checked) span {
+  border-color: var(--accent-strong); color: var(--accent-strong); }
+.rate__option:has(~ .rate__option input:checked) .rate__off { display: none; }
+.rate__option:has(~ .rate__option input:checked) .rate__on { display: block; }
+
+/* Le survol et le parcours clavier previsualisent une AUTRE note, donc ils
+   eteignent d'abord ce qui est choisi : sans cela, survoler deux etoiles en
+   laisserait cinq allumees et la previsualisation ne dirait rien. */
+.rate:has(input:hover) .rate__on,
+.rate:has(input:focus-visible) .rate__on { display: none; }
+.rate:has(input:hover) .rate__off,
+.rate:has(input:focus-visible) .rate__off { display: block; }
+.rate:has(input:hover) span,
+.rate:has(input:focus-visible) span { border-color: var(--border);
+  color: var(--border-strong); }
+
+.rate__option:has(input:hover) span,
+.rate__option:has(~ .rate__option input:hover) span,
+.rate__option:has(input:focus-visible) span,
+.rate__option:has(~ .rate__option input:focus-visible) span {
+  border-color: var(--brand-border); background: var(--brand-soft);
+  color: var(--accent-strong); }
+.rate__option:has(input:hover) .rate__off,
+.rate__option:has(~ .rate__option input:hover) .rate__off,
+.rate__option:has(input:focus-visible) .rate__off,
+.rate__option:has(~ .rate__option input:focus-visible) .rate__off { display: none; }
+.rate__option:has(input:hover) .rate__on,
+.rate__option:has(~ .rate__option input:hover) .rate__on,
+.rate__option:has(input:focus-visible) .rate__on,
+.rate__option:has(~ .rate__option input:focus-visible) .rate__on { display: block; }
+.rate__option:has(input:focus-visible) span { box-shadow: 0 0 0 3px var(--brand-soft); }
+
+/* La pellicule deja deposee, sous le formulaire. */
+.shots { display: flex; gap: var(--s-3); flex-wrap: wrap; align-items: flex-start; }
+.shots__one { position: relative; }
+.shots__one img { width: 88px; height: 88px; object-fit: cover;
+  border-radius: var(--r-sm); border: 1px solid var(--border-subtle); display: block; }
+.shots__drop { position: absolute; top: -6px; right: -6px; }

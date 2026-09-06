@@ -26,6 +26,11 @@ import org.junit.jupiter.api.Test;
  * headline number, and a business with nothing published must produce an empty
  * foot rather than a wrong one.
  *
+ * <p>The band across the top is here too, for the same reason: it is drawn from
+ * what the summary carries, and the summary carried only a logo - a square mark
+ * made to be read at the size of a favicon, floating in a strip four times
+ * wider than tall.
+ *
  * <p>Separate from {@link ProviderDirectoryIT}, which is about finding a
  * business at all - paging, filtering and the cursor. Nothing here touches
  * those, and a failure in one should not read as a failure in the other.
@@ -62,6 +67,32 @@ class DirectoryCardIT {
                 UPDATE service_offerings SET active = false WHERE provider_id = '%s';
                 """.formatted(BookingFixtures.SALON, BookingFixtures.SALON,
                               BookingFixtures.SOLO));
+    }
+
+    @Test
+    @DisplayName("The card carries the cover it should have been drawing all along")
+    void theCardShowsTheBanner() {
+        // A logo is a square mark drawn to be read at the size of a favicon;
+        // the card's band is four times wider than tall, and the card was
+        // drawing the square in the strip. Both travel now, so a client can
+        // prefer the one that fits and fall back to the other.
+        fixtures.execute("""
+                UPDATE providers
+                   SET cover_url = 'bandeau.jpg', logo_url = 'marque.jpg'
+                 WHERE slug = 'salon-fatou'
+                """);
+
+        given().when().get("/v1/providers?q=fatou").then().statusCode(200)
+                .body("data[0].slug", equalTo("salon-fatou"))
+                .body("data[0].cover_url", equalTo("bandeau.jpg"))
+                .body("data[0].logo_url", equalTo("marque.jpg"));
+
+        // Absent rather than empty when the business has published neither: the
+        // card draws its trade's illustration instead, and a blank string would
+        // be an image element pointing at nothing.
+        fixtures.execute("UPDATE providers SET cover_url = NULL WHERE slug = 'salon-fatou'");
+        given().when().get("/v1/providers?q=fatou").then().statusCode(200)
+                .body("data[0].cover_url", nullValue());
     }
 
     @Test

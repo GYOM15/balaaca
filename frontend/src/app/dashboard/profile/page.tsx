@@ -226,6 +226,7 @@ export default async function Profile({
                         type="file"
                         id={COVER_INPUT}
                         name="image"
+                        data-shrink
                         accept="image/jpeg,image/png"
                         data-preview={COVER_PREVIEW}
                       />
@@ -304,6 +305,7 @@ export default async function Profile({
                             type="file"
                             id={LOGO_INPUT}
                             name="image"
+                            data-shrink
                             accept="image/jpeg,image/png"
                             data-preview={LOGO_PREVIEW}
                           />

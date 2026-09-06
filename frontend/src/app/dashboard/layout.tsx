@@ -194,10 +194,17 @@ export default async function DashboardLayout({
           ))}
 
           <div className="side__foot">
-            <Link className="side__link" href={`/p/${provider.slug}`}>
-              <Icon name="external" size={18} />
-              <span className="grow">Voir ma page publique</span>
-            </Link>
+            {/* Only while the page exists. `/p/{slug}` resolves through a
+                published-only lookup, so this link on an unpublished business
+                was a link to a 404 - shown to every provider on every screen,
+                from the day they signed up until the day they published. The
+                badge above already says which of the two states they are in. */}
+            {provider.published ? (
+              <Link className="side__link" href={`/p/${provider.slug}`}>
+                <Icon name="external" size={18} />
+                <span className="grow">Voir ma page publique</span>
+              </Link>
+            ) : null}
             {/* Styled as a nav row rather than as a button: it sits on the dark
                 green, where a light-surface button would be the only thing on
                 the panel that does not belong to it. POST, because a sign-out
@@ -255,13 +262,15 @@ export default async function DashboardLayout({
                   </div>
                   <div className="panel">
                     <div className="list" style={{ borderTop: 0 }}>
-                      <Link className="list__item list__item--link" href={`/p/${provider.slug}`}>
-                        <span className="choice__icon" style={{ width: 34, height: 34 }}>
-                          <Icon name="external" size={18} />
-                        </span>
-                        <span className="grow t-sm t-strong">Voir ma page</span>
-                        <Icon name="chevron-right" size={18} />
-                      </Link>
+                      {provider.published ? (
+                        <Link className="list__item list__item--link" href={`/p/${provider.slug}`}>
+                          <span className="choice__icon" style={{ width: 34, height: 34 }}>
+                            <Icon name="external" size={18} />
+                          </span>
+                          <span className="grow t-sm t-strong">Voir ma page</span>
+                          <Icon name="chevron-right" size={18} />
+                        </Link>
+                      ) : null}
                       <form method="post" action="/api/auth/logout">
                         <button
                           type="submit"

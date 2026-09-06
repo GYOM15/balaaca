@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Icon } from "@/components/icon";
 import { Sketch, sketchForTrade } from "@/components/sketch";
+import { Stars } from "@/components/stars";
 import { mediaUrl, money } from "@/lib/format";
 import type { Fulfilment, ProviderSummary } from "@/lib/types";
 
@@ -24,10 +25,16 @@ const MODE_ORDER: Fulfilment[] = ["ON_SITE", "DROP_OFF", "AT_CUSTOMER"];
 /**
  * A provider, as the directory shows them.
  *
- * <p>The cover band is illustrated: the drawing that stands for the trade, on
- * the warm ground the stylesheet gives `.pcard__cover`. A business that
- * published a logo gets its logo there instead - that is its own picture of
- * itself, and it is the only image `ProviderSummary` carries.
+ * <p>The cover band shows, in order: the business's own COVER photograph, then
+ * its logo, then the drawing that stands for its trade on the warm ground the
+ * stylesheet gives `.pcard__cover`.
+ *
+ * <p>The cover comes first because it is the only one of the three that was
+ * drawn for a band. A logo is a square mark made to be read at the size of a
+ * favicon, and this strip is four times wider than tall; putting the logo first
+ * meant every card showed a small square floating in the middle of a space it
+ * was never made for. `ProviderSummary` carried nothing else at the time, which
+ * is why - the contract now carries `cover_url` too, additively.
  *
  * <p>The trade is shown by its label, resolved by the caller from
  * `GET /v1/categories`. The card carries the slug, and `dj-animation` is not
@@ -50,6 +57,7 @@ export function ProviderTile({
   provider: ProviderSummary;
   tradeLabel?: string;
 }) {
+  const cover = mediaUrl(provider.cover_url);
   const logo = mediaUrl(provider.logo_url);
   // `city` is the deprecated field the earliest rows carry, and nothing else.
   const place =
@@ -62,17 +70,27 @@ export function ProviderTile({
   return (
     <Link className="pcard" href={`/p/${provider.slug}`}>
       <span
-        className={`pcard__cover${logo ? " pcard__cover--mark" : ""}`}
+        className={`pcard__cover${!cover && logo ? " pcard__cover--mark" : ""}`}
         style={{ display: "grid", placeItems: "center" }}
       >
-        {logo ? (
-          // Plain img, not next/image: the bytes come through this server's own
-          // /media route and are already immutable and sized by the API.
+        {/* Plain img, not next/image: the bytes come through this server's own
+            /media route and are already immutable and sized by the API. */}
+        {cover ? (
+          // The API stores a cover at 1600x400; this band is 16/9. So it IS
+          // cropped, centrally, to a little under half its width - stated here
+          // rather than glossed, because the alternative was worse either way:
+          // a 4:1 strip across a 253 px card is 63 px of photograph, and
+          // letterboxing it leaves more empty ground than picture. A centred
+          // crop of a banner is what a directory card is.
           //
-          // The intrinsic size said 640x360, which no logo is: it described the
-          // 16/9 slot rather than the file, and the stylesheet then cropped a
-          // square mark to fit that lie. Square is the honest guess for a logo,
-          // and the --mark rules contain it either way.
+          // The intrinsic size is the FILE's and not the slot's. The wrong one
+          // here is what taught the stylesheet to crop a square mark to fit a
+          // lie, which is the defect this whole branch exists to undo.
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={cover} alt="" loading="lazy" width={1600} height={400} />
+        ) : logo ? (
+          // Square is the honest guess for a logo, and the --mark rules contain
+          // it either way.
           // eslint-disable-next-line @next/next/no-img-element
           <img src={logo} alt="" loading="lazy" width={640} height={640} />
         ) : (
@@ -96,8 +114,14 @@ export function ProviderTile({
           </span>
         ) : null}
       </span>
-      {modes.length > 0 || from ? (
+      {modes.length > 0 || from || provider.rating ? (
         <span className="pcard__foot">
+          {/* The stars lead the foot: it is the first thing somebody comparing
+              two salons looks at, and absent is not nought out of five - a
+              business nobody has reviewed simply has no line here. */}
+          {provider.rating ? (
+            <Stars rating={provider.rating} className="pcard__rating" />
+          ) : null}
           {modes.length > 0 ? (
             <span className="pcard__modes">
               {modes.map((mode) => (

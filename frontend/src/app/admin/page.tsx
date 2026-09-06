@@ -9,6 +9,8 @@ import { dateTime, day } from "@/lib/format";
 import type {
   ContestationPage,
   ContestationQueueView,
+  ModeratedReview,
+  ModeratedReviewPage,
   ProviderReportPage,
   ProviderReportView,
 } from "@/lib/types";
@@ -16,6 +18,7 @@ import {
   markContestationRead,
   reinstateProvider,
   reviewReport,
+  setReviewVisibility,
   suspendProvider,
 } from "./actions";
 
@@ -87,7 +90,23 @@ const REASONS: Record<string, string> = {
 const QUEUES: [string, string][] = [
   ["REPORTS", "Signalements"],
   ["CONTESTATIONS", "Contestations"],
+  ["REVIEWS", "Avis"],
   ["BUSINESSES", "Établissements"],
+];
+
+/**
+ * The reviews queue's three views.
+ *
+ * <p>Not a queue in the sense the other two are: nothing here is owed an
+ * answer, and the useful ordering is what has just appeared on the hub rather
+ * than what has waited longest. It exists so that a takedown is a button
+ * instead of a database session, which is the whole of what has to exist before
+ * launch - the route from a complaint to this list comes with the complaints.
+ */
+const REVIEW_VIEWS: [string, string][] = [
+  ["", "Tous"],
+  ["VISIBLE", "En ligne"],
+  ["HIDDEN", "Retirés"],
 ];
 
 /** The reports queue's three views, in the design's order. */
@@ -149,6 +168,7 @@ type Query = {
  */
 type Loaded =
   | { kind: "REPORTS"; page: ProviderReportPage }
+  | { kind: "REVIEWS"; page: ModeratedReviewPage }
   | { kind: "CONTESTATIONS"; page: ContestationPage }
   | { kind: "BUSINESSES"; page: ModeratedProviderPage };
 
@@ -175,6 +195,10 @@ export default async function Moderation({
   // and `SUSPENDED` is not one the reports endpoint has.
   const view = REPORT_VIEWS.find(([value]) => value === query.status)?.[0] ?? "PENDING";
   const state = BUSINESS_STATES.find(([value]) => value === query.status)?.[0] ?? "";
+  // The same fallback for the same reason: `PENDING` is not a value the reviews
+  // endpoint's enum has, and it arrives whenever somebody switches lists with a
+  // filter already applied.
+  const seen = REVIEW_VIEWS.find(([value]) => value === query.status)?.[0] ?? "";
   const search = (query.q ?? "").trim();
 
   // A provider who finds this address gets a plain sentence rather than a
@@ -183,7 +207,12 @@ export default async function Moderation({
   // complaints against them, so it must not half-render on the way to failing.
   let loaded: Loaded;
   try {
-    loaded = await load(queue, queue === "BUSINESSES" ? state : view, search, query.cursor);
+    loaded = await load(
+      queue,
+      queue === "BUSINESSES" ? state : queue === "REVIEWS" ? seen : view,
+      search,
+      query.cursor,
+    );
   } catch (error) {
     if (error instanceof ApiError && error.status === 403) {
       return (
@@ -202,7 +231,11 @@ export default async function Moderation({
 
   // Carried through every lever so an action pressed on page two of the
   // reviewed list comes back to page two of the reviewed list.
-  const back = carry(queue, queue === "BUSINESSES" ? state : view, query.cursor);
+  const back = carry(
+    queue,
+    queue === "BUSINESSES" ? state : queue === "REVIEWS" ? seen : view,
+    query.cursor,
+  );
 
   return (
     <Shell queue={queue}>
@@ -210,6 +243,8 @@ export default async function Moderation({
         <Reports page={loaded.page} view={view} back={back} error={query.error} />
       ) : loaded.kind === "CONTESTATIONS" ? (
         <Contestations page={loaded.page} back={back} error={query.error} />
+      ) : loaded.kind === "REVIEWS" ? (
+        <Reviews page={loaded.page} view={seen} back={back} error={query.error} />
       ) : (
         <Businesses
           page={loaded.page}
@@ -673,6 +708,160 @@ function Contestation({
   );
 }
 
+/* --- Avis ---------------------------------------------------------------- */
+
+/**
+ * What has just been published about the businesses on the hub.
+ *
+ * <p>Newest first, and no "à examiner" count: unlike the two queues beside it,
+ * nothing here is waiting for the operator. This screen exists so that a
+ * photograph or a sentence that should never have been published can be taken
+ * down in one press, and so that the same press can be undone.
+ */
+function Reviews({
+  page,
+  view,
+  back,
+  error,
+}: {
+  page: ModeratedReviewPage;
+  view: string;
+  back: string;
+  error?: string;
+}) {
+  return (
+    <>
+      <div style={{ marginBottom: "1.5rem" }}>
+        <h1 className="t-h2">Avis</h1>
+        <p className="t-body" style={{ marginTop: ".35rem" }}>
+          Les plus récents en premier, tous établissements confondus. Retirer un
+          avis le fait disparaître de la page du prestataire, de sa moyenne et de
+          son compte, immédiatement et ensemble.
+        </p>
+      </div>
+
+      <Refusal code={error} />
+
+      <div className="toolbar" style={{ marginBottom: "var(--s-5)" }}>
+        <span className="segmented">
+          {REVIEW_VIEWS.map(([value, label]) => (
+            <Link
+              key={value || "ALL"}
+              className={value === view ? "segmented__item is-active" : "segmented__item"}
+              href={viewHref(value, "REVIEWS")}
+              aria-current={value === view ? "page" : undefined}
+            >
+              {label}
+            </Link>
+          ))}
+        </span>
+        <span className="toolbar__spacer"></span>
+      </div>
+
+      {page.data.length === 0 ? (
+        <div className="empty">
+          <Scene name="notebook" className="scene-ill" />
+          <div className="empty__title">Aucun avis dans cette vue</div>
+          <p className="empty__body">
+            Les avis arrivent quand des clients notent une prestation déjà passée.
+          </p>
+        </div>
+      ) : (
+        <>
+          <div className="stack" style={{ "--stack-gap": "var(--s-4)" } as CSSProperties}>
+            {page.data.map((review) => (
+              <ReviewRow key={review.review_id} review={review} back={back} />
+            ))}
+          </div>
+
+          {page.next_cursor ? (
+            <div className="row" style={{ marginTop: "var(--s-6)" }}>
+              <Button
+                label="Voir la suite"
+                variant="secondary"
+                size="sm"
+                iconEnd="arrow-right"
+                href={nextPage("REVIEWS", view, page.next_cursor)}
+              />
+            </div>
+          ) : null}
+        </>
+      )}
+    </>
+  );
+}
+
+/**
+ * One review, with the one lever it has.
+ *
+ * <p>The photographs are a COUNT and not the pictures. An operator deciding
+ * whether something should come down opens the business's page and looks at it
+ * there, in the place it is actually published - a grid of thumbnails in a
+ * console is a moderation queue that has to render other people's photographs
+ * to everybody who opens it.
+ */
+function ReviewRow({ review, back }: { review: ModeratedReview; back: string }) {
+  const hidden = review.status === "HIDDEN";
+
+  return (
+    <article className="panel">
+      <div className="panel__head">
+        <div className="row" style={{ gap: "var(--s-3)", flexWrap: "wrap" }}>
+          {hidden ? (
+            <Badge label="Retiré" tone="neutral" icon="eye-off" />
+          ) : (
+            <Badge label="En ligne" tone="success" icon="check-circle" />
+          )}
+          <span className="panel__title">{review.provider_name}</span>
+          <span className="t-xs">
+            {review.rating}/5 &middot; {review.service_name} &middot; {review.visited_month}
+          </span>
+        </div>
+      </div>
+
+      <div className="panel__body">
+        {review.comment ? (
+          <p className="review__text">{review.comment}</p>
+        ) : (
+          <p className="t-sm">Note seule, sans commentaire.</p>
+        )}
+
+        <p className="t-xs" style={{ marginTop: "var(--s-3)" }}>
+          {review.photo_count > 0
+            ? `${review.photo_count} photo${review.photo_count > 1 ? "s" : ""} · `
+            : ""}
+          Publié le {day(review.created_at, OPERATOR_ZONE)}
+          {review.hidden_at ? ` · retiré le ${day(review.hidden_at, OPERATOR_ZONE)}` : ""}
+        </p>
+
+        <div className="row row--wrap" style={{ marginTop: "var(--s-5)", gap: "var(--s-3)" }}>
+          <Button
+            label="Voir sur la page"
+            variant="ghost"
+            size="sm"
+            iconEnd="external"
+            href={`/p/${encodeURIComponent(review.provider_slug)}#avis`}
+          />
+          <span className="grow" />
+          <form action={setReviewVisibility}>
+            <input type="hidden" name="review_id" value={review.review_id} />
+            <input type="hidden" name="hidden" value={hidden ? "0" : "1"} />
+            <input type="hidden" name="back" value={back} />
+            <button className={hidden ? "btn btn--secondary btn--sm" : "btn btn--danger btn--sm"} type="submit">
+              <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
+                <Icon name={hidden ? "refresh" : "eye-off"} size={18} />
+              </span>
+              <span className="btn__label--idle">
+                {hidden ? "Remettre en ligne" : "Retirer cet avis"}
+              </span>
+            </button>
+          </form>
+        </div>
+      </div>
+    </article>
+  );
+}
+
 /* --- Établissements ------------------------------------------------------ */
 
 /**
@@ -1131,6 +1320,15 @@ async function load(
     };
   }
 
+  if (queue === "REVIEWS") {
+    return {
+      kind: "REVIEWS",
+      page: await api<ModeratedReviewPage>("/v1/admin/reviews", {
+        query: { status: view || undefined, cursor: cursor || undefined, limit: PAGE },
+      }),
+    };
+  }
+
   if (queue === "BUSINESSES") {
     return {
       kind: "BUSINESSES",
@@ -1164,9 +1362,15 @@ function root(queue: string): string {
   return `/admin?${new URLSearchParams({ queue }).toString()}`;
 }
 
-/** A view of the reports queue, from its first page. */
-function viewHref(view: string): string {
-  return `/admin?${new URLSearchParams({ queue: "REPORTS", status: view }).toString()}`;
+/** A view of a queue, from its first page. Reports unless told otherwise. */
+function viewHref(view: string, queue = "REPORTS"): string {
+  const params = new URLSearchParams({ queue });
+  // The reviews queue's "Tous" is the ABSENCE of a filter, so an empty value
+  // must not become `status=` - the loader would then look it up in the list
+  // and fall back to the same thing, but the address would carry a key that
+  // means nothing.
+  if (view) params.set("status", view);
+  return `/admin?${params.toString()}`;
 }
 
 /**

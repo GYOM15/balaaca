@@ -2,6 +2,7 @@ import Link from "next/link";
 import { CurrentLink } from "./current-link";
 import { Icon } from "./icon";
 import { Mark } from "./ui";
+import { SignedInLabel } from "./signed-in-label";
 
 /**
  * The chrome around every public page.
@@ -53,16 +54,19 @@ function LogoWord() {
  * door a phone cannot see is not a door.
  */
 function SignIn() {
+  // The destination is the same for both wordings, and that is what makes this
+  // safe to decide in the browser: /dashboard sends a stranger to the sign-in
+  // and a member to their diary. Only the word changes.
   return (
     <>
       <Link className="hdr__link hide-sm" href="/dashboard">
-        Se connecter
+        <SignedInLabel out="Se connecter" in="Mon espace" />
       </Link>
       <Link
         className="btn btn--secondary btn--sm btn--icon show-sm-only"
         href="/dashboard"
-        aria-label="Se connecter"
-        title="Se connecter"
+        aria-label="Se connecter ou ouvrir mon espace"
+        title="Se connecter ou ouvrir mon espace"
       >
         <Icon name="user" />
       </Link>

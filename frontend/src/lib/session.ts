@@ -64,7 +64,8 @@ export type CookieReader = { get(name: string): { value: string } | undefined };
 
 /** Anything that can set and delete cookies on an outgoing response. */
 export type CookieWriter = {
-  set(name: string, value: string, options: ReturnType<typeof cookieOptions>): unknown;
+  set(name: string, value: string,
+      options: ReturnType<typeof cookieOptions> & { httpOnly?: boolean }): unknown;
   delete(name: string): unknown;
 };
 
@@ -102,12 +103,17 @@ export function writeSealed(jar: CookieWriter, session: Session): void {
       jar.delete(`${COOKIE_PREFIX}.${i}`);
     }
   }
+  // Written with the session and never apart from it, so the two cannot
+  // disagree: a hint that outlives the session it describes is a header that
+  // lies for as long as the browser is open.
+  jar.set(SIGNED_IN_HINT, "1", { ...options, httpOnly: false });
 }
 
 export function clearSealed(jar: CookieWriter): void {
   for (let i = 0; i < MAX_CHUNKS; i++) {
     jar.delete(`${COOKIE_PREFIX}.${i}`);
   }
+  jar.delete(SIGNED_IN_HINT);
 }
 
 /** Whether a session cookie is present at all, without opening it. */
@@ -117,3 +123,21 @@ export function hasSessionCookie(jar: CookieReader): boolean {
 
 /** The short-lived cookie holding the PKCE verifier between authorize and callback. */
 export const PKCE_COOKIE = "balaaca_pkce";
+
+/**
+ * Whether somebody is signed in. NOT the session, and readable by scripts.
+ *
+ * <p>The header said "Se connecter" to a person already signed in, whose own
+ * diary was one tap behind that same link. Reading the real session to decide
+ * would mean reading a cookie in the root layout, which makes EVERY page
+ * dynamic - and the marketing pages are static on purpose, because Cloudflare
+ * caching them is what makes this bearable from a Raspberry Pi on a domestic
+ * connection.
+ *
+ * <p>So a second cookie carries the one bit the header needs. It is written and
+ * cleared with the session, it is not httpOnly because a script has to read it,
+ * and it is worth exactly nothing on its own: it names nobody, opens nothing,
+ * and forging it changes a word in a header and no permission anywhere. Every
+ * decision that matters is still taken on the server against the sealed one.
+ */
+export const SIGNED_IN_HINT = "balaaca_signed_in";

@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import type { CSSProperties, ReactNode } from "react";
 import { Icon, Scene } from "@/components/icon";
 import { SiteFooter, SiteHeader, TabBar } from "@/components/site";
+import { StarRow } from "@/components/stars";
 import { Avatar, Wordmark } from "@/components/ui";
 import { ApiError, publicApi } from "@/lib/api";
 import { dateTime, day, mediaUrl, money, time } from "@/lib/format";
@@ -16,7 +17,13 @@ import type {
   PublicStaffList,
   ReportReason,
 } from "@/lib/types";
-import { cancelBooking, reportProvider, rescheduleBooking } from "./actions";
+import {
+  cancelBooking,
+  removeReviewPhoto,
+  reportProvider,
+  rescheduleBooking,
+  submitReview,
+} from "./actions";
 
 /** A live appointment. Cached, this page would show a rendezvous already called off. */
 export const dynamic = "force-dynamic";
@@ -67,6 +74,30 @@ const REPORT_REFUSALS: Record<string, string> = {
   VALIDATION_FAILED:
     "Choisissez un motif, et tenez le détail en mille caractères au plus.",
   RESOURCE_NOT_FOUND: "Cette référence ne correspond à aucun rendez-vous.",
+  RATE_LIMITED: "Trop de demandes d’un coup. Réessayez dans un instant.",
+};
+
+/**
+ * What a review can be refused for, said in a sentence rather than a code.
+ *
+ * <p>`INVALID_STATE_TRANSITION` covers three situations the API deliberately
+ * does not tell apart - not yet happened, cancelled, or taken down - so this
+ * sentence has to be true of all three without guessing which.
+ */
+const REVIEW_REFUSALS: Record<string, string> = {
+  NO_RATING: "Choisissez une note, de une à cinq étoiles.",
+  VALIDATION_FAILED: "Tenez votre commentaire en mille caractères au plus.",
+  INVALID_STATE_TRANSITION:
+    "Cet avis ne peut plus être déposé : la prestation n’a pas eu lieu, ou "
+    + "votre avis a été retiré par l’équipe Balaaca.",
+  RESOURCE_NOT_FOUND: "Cette référence ne correspond à aucun rendez-vous.",
+  RATE_LIMITED: "Trop de demandes d’un coup. Réessayez dans un instant.",
+};
+
+/** The photographs are the second half of the submission, and can fail alone. */
+const PHOTO_REFUSALS: Record<string, string> = {
+  VALIDATION_FAILED:
+    "Trois photos au maximum, et seulement des images (JPEG, PNG ou WebP).",
   RATE_LIMITED: "Trop de demandes d’un coup. Réessayez dans un instant.",
 };
 
@@ -188,6 +219,10 @@ type Search = {
   report?: string;
   reported?: string;
   report_error?: string;
+  review?: string;
+  reviewed?: string;
+  review_error?: string;
+  photo_error?: string;
 };
 
 /**
@@ -258,9 +293,21 @@ export default async function BookingPage({
   const open = booking.status === "PENDING" || booking.status === "CONFIRMED";
   const changeable = open && Boolean(deadline);
 
-  const view: "detail" | "move" | "cancel" | "report" =
+  // The API decides this, and it is carried on the booking for exactly that
+  // reason: the rule is "it has ended, it was not cancelled, it was not a
+  // no-show, and no review of it has been taken down", and a second copy of
+  // that in a browser is a form that answers 409 when it is pressed.
+  const reviewable = booking.reviewable === true;
+
+  const view: "detail" | "move" | "cancel" | "report" | "review" =
     query.report === "1"
       ? "report"
+      // Reachable while there is something to say OR something already said:
+      // somebody whose review was taken down opens this screen to be told so,
+      // and closing it would leave them refreshing a page that lost their words
+      // with no explanation.
+      : query.review === "1" && (reviewable || booking.review)
+        ? "review"
       : changeable && query.move === "1"
         ? "move"
         : // Not gated on `changeable`, unlike the move: the deadline passing
@@ -318,6 +365,17 @@ export default async function BookingPage({
     );
   }
 
+  if (view === "review") {
+    return (
+      <>
+        <FocusHeader back={hrefOf(booking.reference)} label="Revenir" />
+        <main id="contenu">
+          <ReviewView booking={booking} query={query} />
+        </main>
+      </>
+    );
+  }
+
   return (
     <>
       <SiteHeader />
@@ -330,6 +388,7 @@ export default async function BookingPage({
           deadline={deadline}
           open={open}
           changeable={changeable}
+          reviewable={reviewable}
         />
       </main>
       <SiteFooter />
@@ -357,6 +416,7 @@ function DetailView({
   deadline,
   open,
   changeable,
+  reviewable,
 }: {
   booking: CustomerBooking;
   provider: PublicProvider | null;
@@ -365,6 +425,7 @@ function DetailView({
   deadline: string | undefined;
   open: boolean;
   changeable: boolean;
+  reviewable: boolean;
 }) {
   const base = hrefOf(booking.reference);
   const providerPage = `/p/${encodeURIComponent(booking.provider_slug)}`;
@@ -414,6 +475,28 @@ function DetailView({
           <Alert tone="success" icon="check-circle" title="C’est déplacé.">
             Le rendez-vous ci-dessous porte la nouvelle heure, et le professionnel
             a été prévenu. L’ancien créneau a été rendu.
+          </Alert>
+        ) : null}
+
+        {query.reviewed ? (
+          <Alert tone="success" icon="check-circle" title="Merci, votre avis est en ligne.">
+            Il appara&icirc;t d&egrave;s maintenant sur la page de{" "}
+            {booking.provider_name}, sans votre nom et sans la date exacte de
+            votre rendez-vous. Vous pouvez le modifier quand vous voulez.
+          </Alert>
+        ) : null}
+
+        {/* The review is saved and the photographs are not: the second half of
+            the submission failed on its own, and saying "l'avis n'est pas
+            parti" would send somebody to write it again for nothing. */}
+        {query.photo_error ? (
+          <Alert
+            tone="warning"
+            icon="alert-triangle"
+            title="Votre avis est enregistr&eacute;, mais pas les photos"
+            code={query.photo_error}
+          >
+            {PHOTO_REFUSALS[query.photo_error] ?? "Réessayez dans un instant."}
           </Alert>
         ) : null}
 
@@ -632,6 +715,84 @@ function DetailView({
             empêchement, appelez-le : son numéro est sur sa page, et prévenir vaut
             mieux que ne pas venir.
           </Alert>
+        ) : null}
+
+        {/* After the visit, and only then. A rating invitation printed over an
+            appointment that has not happened is a page asking somebody what
+            they thought of Thursday. */}
+        {reviewable && !booking.review ? (
+          <div className="panel" style={{ marginTop: "var(--s-8)" }}>
+            <div className="panel__body">
+              <p className="t-h4">Comment s&rsquo;est pass&eacute;e votre prestation&nbsp;?</p>
+              <p className="t-sm" style={{ marginTop: "var(--s-2)" }}>
+                Votre avis aide les prochains clients de {booking.provider_name}
+                {" "}&mdash; et il aide {booking.provider_name} à se faire
+                conna&icirc;tre. Une note, un mot si vous voulez, et jusqu&rsquo;à
+                trois photos.
+              </p>
+              <Link
+                className="btn btn--primary"
+                href={`${base}?review=1`}
+                style={{ marginTop: "var(--s-5)" }}
+              >
+                <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
+                  <Icon name="star" size={18} />
+                </span>
+                <span className="btn__label--idle">Donner mon avis</span>
+              </Link>
+            </div>
+          </div>
+        ) : null}
+
+        {booking.review ? (
+          <div className="panel" style={{ marginTop: "var(--s-8)" }}>
+            <div className="panel__body">
+              <div className="row row--between" style={{ gap: "var(--s-4)", flexWrap: "wrap" }}>
+                <StarRow value={booking.review.rating} size={18} />
+                {/* Only while it stands. A review an operator removed is
+                    terminal, and offering "Modifier" would be a button that
+                    answers 409 the moment it is pressed. */}
+                {reviewable ? (
+                  <Link className="btn btn--ghost btn--sm" href={`${base}?review=1`}>
+                    <span className="btn__label--idle">Modifier mon avis</span>
+                  </Link>
+                ) : null}
+              </div>
+
+              {booking.review.comment ? (
+                <p className="review__text" style={{ marginTop: "var(--s-3)" }}>
+                  {booking.review.comment}
+                </p>
+              ) : null}
+
+              {booking.review.photos.length > 0 ? (
+                <div className="review__photos" style={{ marginTop: "var(--s-4)" }}>
+                  {booking.review.photos.map((photo) => (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      key={photo.photo_id}
+                      // The API answers with its own /v1/media/<name>; this
+                      // server serves the bytes at /media/<name>.
+                      src={mediaUrl(photo.url)}
+                      alt=""
+                      width={96}
+                      height={96}
+                    />
+                  ))}
+                </div>
+              ) : null}
+
+              {/* Said plainly. A review that silently vanished from a page
+                  teaches its author that the site is broken. */}
+              {booking.review.status === "HIDDEN" ? (
+                <p className="t-xs" style={{ marginTop: "var(--s-4)" }}>
+                  <Icon name="eye-off" size={16} /> Cet avis a &eacute;t&eacute;
+                  retir&eacute; par l&rsquo;&eacute;quipe Balaaca et n&rsquo;appara&icirc;t
+                  plus sur la page du professionnel.
+                </p>
+              ) : null}
+            </div>
+          </div>
         ) : null}
 
         {/* The report is secondary and stays that way: a quiet line under
@@ -1317,6 +1478,196 @@ function ReportView({ booking, query }: { booking: CustomerBooking; query: Searc
               <Icon name="check" size={18} />
             </span>
             <span className="btn__label--done">Envoyé</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+/**
+ * The review form.
+ *
+ * <p>Stars, a sentence and up to three photographs in ONE submission. Three
+ * screens was the other shape, and it is the one where most people who start
+ * never finish: this is somebody standing in the street with a telephone, not
+ * somebody at a desk.
+ *
+ * <p>Five radio buttons and nothing cleverer. A slider or a widget that needs
+ * JavaScript would leave without a rating everybody whose phone finished
+ * loading the page but not the script - which in this market is a real share of
+ * the people who came to say something.
+ *
+ * <p>The photographs are shrunk in the browser before they leave, by the same
+ * listener the dashboard's cover upload uses. Three photographs straight off a
+ * telephone is fifteen megabytes, which is the wall this product already hit
+ * once and answered with a bare 403 and no message at all.
+ */
+function ReviewView({ booking, query }: { booking: CustomerBooking; query: Search }) {
+  const base = hrefOf(booking.reference);
+  const existing = booking.review;
+  const room = 3 - (existing?.photos.length ?? 0);
+
+  return (
+    <div className="page page--narrow" style={{ paddingBlock: "var(--s-10) var(--s-16)" }}>
+      <h1 className="t-h2">
+        {existing ? "Modifier mon avis" : "Donner mon avis"}
+      </h1>
+      <p className="t-body" style={{ marginTop: "var(--s-3)" }}>
+        Sur {booking.service_name} chez {booking.provider_name}. Votre avis
+        appara&icirc;t sur sa page <strong>sans votre nom</strong> et avec le mois
+        seulement, jamais la date exacte de votre rendez-vous.
+      </p>
+
+      {query.review_error ? (
+        <Alert
+          tone="danger"
+          icon="alert-circle"
+          title="L&rsquo;avis n&rsquo;est pas parti"
+          code={query.review_error}
+        >
+          {REVIEW_REFUSALS[query.review_error] ?? "Réessayez dans un instant."}
+        </Alert>
+      ) : null}
+
+      {existing && existing.photos.length > 0 ? (
+        <div style={{ marginTop: "var(--s-8)" }}>
+          <p className="field__label">Vos photos</p>
+          <div className="shots" style={{ marginTop: "var(--s-3)" }}>
+            {existing.photos.map((photo) => (
+              <div className="shots__one" key={photo.photo_id}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={mediaUrl(photo.url)} alt="" width={88} height={88} />
+                {/* Its own form, because a nested one is not valid HTML and a
+                    button inside the review form would submit the review. */}
+                <form action={removeReviewPhoto} className="shots__drop">
+                  <input type="hidden" name="reference" value={booking.reference} />
+                  <input type="hidden" name="photo_id" value={photo.photo_id} />
+                  <button
+                    className="btn btn--ghost btn--icon btn--sm"
+                    type="submit"
+                    aria-label="Retirer cette photo"
+                  >
+                    <Icon name="x" size={16} />
+                  </button>
+                </form>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      <form
+        action={submitReview}
+        className="stack"
+        style={{ marginTop: "var(--s-8)", "--stack-gap": "var(--s-6)" } as CSSProperties}
+      >
+        <input type="hidden" name="reference" value={booking.reference} />
+
+        <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
+          <legend className="field__label" style={{ padding: 0, marginBottom: "var(--s-3)" }}>
+            Votre note
+            <span className="field__req" aria-hidden="true">
+              *
+            </span>
+          </legend>
+          {/* One to five, in that order, and the stylesheet lights the ones
+              BEFORE the chosen star with :has(~ …). Reversing the DOM was the
+              obvious way to do it and it is the wrong one: arrow keys walk a
+              radio group in DOM order, so the right arrow would have moved the
+              selection leftwards on screen.
+
+              Lighting them all matters. Lit one at a time, the widget says
+              "the fourth star", which is not a rating anybody gives. */}
+          <div className="rate">
+            {[1, 2, 3, 4, 5].map((value) => (
+              <label className="rate__option" key={value}>
+                <input
+                  type="radio"
+                  name="rating"
+                  value={value}
+                  required
+                  defaultChecked={existing?.rating === value}
+                  // The only label a screen reader gets: the glyphs beside it
+                  // are aria-hidden like every icon here.
+                  aria-label={value === 1 ? "1 étoile" : `${value} étoiles`}
+                />
+                {/* Both glyphs, one hidden. A `use` clones its symbol's own
+                    fill into a shadow tree no rule can reach, so a filled star
+                    is a different SYMBOL and not a different colour - and
+                    swapping symbols on click would need JavaScript, which this
+                    form deliberately does without. */}
+                <span>
+                  <Icon name="star" size={18} className="rate__off" />
+                  <Icon name="star-filled" size={18} className="rate__on" />
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
+        <div className="field">
+          <label className="field__label" htmlFor="review-comment">
+            Votre commentaire
+          </label>
+          <textarea
+            className="textarea"
+            id="review-comment"
+            name="comment"
+            maxLength={1000}
+            defaultValue={existing?.comment ?? ""}
+            style={{ minHeight: 140 }}
+            aria-describedby="review-comment-hint"
+          />
+          <p className="field__hint" id="review-comment-hint">
+            Facultatif. Ce qui aide vraiment&nbsp;: la prestation, l&rsquo;accueil,
+            le respect de l&rsquo;heure.
+          </p>
+        </div>
+
+        {room > 0 ? (
+          <div className="field">
+            <label className="field__label" htmlFor="review-photos">
+              Vos photos
+            </label>
+            <input
+              className="input"
+              id="review-photos"
+              name="photos"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              multiple
+              // Shrunk in the browser before the form is sent. See
+              // components/shrink-before-upload.ts.
+              data-shrink
+              aria-describedby="review-photos-hint"
+            />
+            <p className="field__hint" id="review-photos-hint">
+              {room === 3 ? "Jusqu’à trois photos." : `Encore ${room} photo${room > 1 ? "s" : ""}.`}{" "}
+              Elles sont r&eacute;duites avant l&rsquo;envoi, et les informations
+              que votre t&eacute;l&eacute;phone y inscrit &mdash; dont le lieu de
+              la prise de vue &mdash; sont retir&eacute;es.
+            </p>
+          </div>
+        ) : null}
+
+        <div className="row row--wrap" style={{ gap: "var(--s-3)" }}>
+          <Link className="btn btn--ghost" href={base}>
+            <span className="btn__label--idle">Retour</span>
+          </Link>
+          <span className="grow" />
+          <button className="btn btn--primary" type="submit">
+            <span className="btn__label--idle">
+              {existing ? "Enregistrer les modifications" : "Publier mon avis"}
+            </span>
+            <span className="btn__icon--busy">
+              <Icon name="loader" size={18} className="ico--spin" />
+            </span>
+            <span className="btn__label--busy">Envoi…</span>
+            <span className="btn__icon--done">
+              <Icon name="check" size={18} />
+            </span>
+            <span className="btn__label--done">Publié</span>
           </button>
         </div>
       </form>
