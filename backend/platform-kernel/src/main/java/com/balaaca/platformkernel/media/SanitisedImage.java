@@ -91,16 +91,28 @@ public record SanitisedImage(byte[] content, String contentType, String extensio
     /**
      * The band, in the proportion it is drawn at.
      *
-     * <p>Four to one is a choice and it is the only number here worth arguing
-     * about, because it IS the height of every provider's page: the band is as
-     * wide as the window, so its ratio decides how much of a screen the picture
-     * takes before the name appears. It was a fluid width against a capped
-     * height before, which is not a ratio at all - it ran from 2.4:1 on a
-     * telephone to 6.7:1 on a wide monitor, so no stored shape could have
-     * matched it and every screen cropped differently.
+     * <p>The only number here worth arguing about, because it IS the height of
+     * every provider's page: the band is as wide as the window, so its ratio
+     * decides how much of a screen the picture takes before the name appears.
+     * It was a fluid width against a capped height before, which is not a ratio
+     * at all - it ran from 2.4:1 on a telephone to 6.7:1 on a wide monitor, so
+     * no stored shape could have matched it and every screen cropped
+     * differently.
+     *
+     * <p>1600x608 is 2.63:1, and it is chosen from what businesses ALREADY
+     * have rather than from what looks right in a mock. A Facebook cover is
+     * 820x312, which is 2.628:1; a banner made for one is reused here losing
+     * nothing. It was 4:1 before, and the arithmetic of that is the whole
+     * argument: a Facebook cover cropped to 4:1 loses 34% of its height, and
+     * what sits in the top and bottom of a designed banner is the name and the
+     * telephone number.
+     *
+     * <p>The cost, stated rather than discovered: a cover already stored keeps
+     * the shape it was cropped to. A 4:1 file drawn in a 2.63:1 band loses its
+     * SIDES until the provider uploads it again.
      */
     public static final int BANNER_WIDTH = 1600;
-    public static final int BANNER_HEIGHT = 400;
+    public static final int BANNER_HEIGHT = 608;
 
     public static SanitisedImage of(byte[] raw, ImageStore.Shape shape) {
         if (raw == null || raw.length == 0) {
