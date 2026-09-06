@@ -5384,6 +5384,14 @@ components:
           type: boolean
         status:
           $ref: '#/components/schemas/ProviderStatus'
+        links:
+          type: array
+          maxItems: 7
+          items:
+            $ref: '#/components/schemas/SocialHandle'
+          description: |
+            As the owner typed them, so the form can put them back in the
+            fields they came from. Empty until the provider adds one.
         public_url:
           type: string
           description: |
@@ -5421,6 +5429,64 @@ components:
         by the provider, and already hides the page. Both are gone rather than
         left as states nothing can produce.
       enum: [ACTIVE, SUSPENDED]
+
+    SocialNetwork:
+      type: string
+      description: |
+        Where else a business can be found. Closed, and closed in the database
+        too: a value this list does not hold has no icon and would render as a
+        gap.
+
+        There is no `WHATSAPP`. `whatsapp_phone_e164` already holds that number
+        and the public page already draws the button; a value here would be a
+        second place holding one fact.
+      enum: [FACEBOOK, INSTAGRAM, TIKTOK, YOUTUBE, LINKEDIN, X, WEBSITE]
+
+    SocialLink:
+      type: object
+      description: |
+        One place this business also lives, ready to render.
+
+        `url` is composed by the server from the network's own base and the
+        handle the provider gave, which is why a client can put it straight
+        into an `href`. A provider-supplied URL could not be: the scheme would
+        be theirs to choose, and an Instagram icon could lead anywhere.
+      required: [kind, url]
+      properties:
+        kind:
+          $ref: '#/components/schemas/SocialNetwork'
+        url:
+          type: string
+          description: Absolute, and always `https`.
+          example: https://www.instagram.com/salon.awa
+
+    SocialHandle:
+      type: object
+      description: |
+        The same link as the owner typed it: a handle for a network, or the
+        whole address for `WEBSITE`, which has no base to compose from.
+
+        Its own shape rather than `SocialLink` because a form has to put back
+        what was entered, and because the two are not the same value - one is
+        a fragment, the other a URL.
+      required: [kind, value]
+      properties:
+        kind:
+          $ref: '#/components/schemas/SocialNetwork'
+        value:
+          type: string
+          maxLength: 200
+          description: |
+            A handle - `salon.awa`, `@salonawa`, `channel/UCxxxx` - or, for
+            `WEBSITE`, an `https` address.
+
+            The pattern here is a coarse gate: it admits no scheme but `https`,
+            no whitespace, no query and no fragment. The exact rule is per
+            network and lives in the database, which is what enforces it; a
+            handle that is well formed for the wrong network is refused there
+            with `VALIDATION_FAILED`.
+          pattern: '^(@?[A-Za-z0-9][A-Za-z0-9._-]{0,63}(/[A-Za-z0-9][A-Za-z0-9._-]{0,63}){0,3}|https://[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+(/[^\s?#]*)?)$'
+          example: salon.awa
 
     ProviderProfileRequest:
       type: object
@@ -5480,6 +5546,19 @@ components:
           maxLength: 64
         published:
           type: boolean
+        links:
+          type: array
+          maxItems: 7
+          items:
+            $ref: '#/components/schemas/SocialHandle'
+          description: |
+            Replaced whole, like the rest of this body and for the same reason:
+            a list this request omitted would be a list the save cleared, and
+            reconciling entry by entry leaves the question of what happened to
+            the ones nobody mentioned.
+
+            At most one entry per network. A second `INSTAGRAM` is refused with
+            `VALIDATION_FAILED`.
 
     PublicServiceOffering:
       type: object
@@ -5601,6 +5680,14 @@ components:
             Absent until somebody has reviewed. Same rule, same reviews and
             same rounding as the directory card, because both read one
             aggregate over what `listProviderReviews` returns.
+        links:
+          type: array
+          maxItems: 7
+          items:
+            $ref: '#/components/schemas/SocialLink'
+          description: |
+            Where else this business can be found, ready to render. Ordered by
+            `kind` so two clients cannot draw them differently.
 
     PublicOpeningHoursSegment:
       type: object

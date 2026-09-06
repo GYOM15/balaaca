@@ -1,6 +1,10 @@
 package com.balaaca.providers.adapters.outbound.persistence;
 
+import com.balaaca.providers.domain.DuplicateSocialLinkException;
 import com.balaaca.providers.domain.ProviderStatus;
+import com.balaaca.providers.domain.SocialLink;
+import com.balaaca.providers.domain.SocialNetwork;
+import com.balaaca.providers.domain.UnusableSocialHandleException;
 import com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase.BookingPolicy;
 import com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase.LocalityRef;
 import com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase.ProfileEdit;
@@ -8,6 +12,8 @@ import com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase.Provider
 import com.balaaca.providers.ports.outbound.ProviderProfileRepository;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceException;
+import java.sql.SQLException;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
@@ -29,6 +35,9 @@ import java.util.UUID;
  */
 @ApplicationScoped
 public class ProviderProfileSqlRepository implements ProviderProfileRepository {
+
+    private static final String CHECK_VIOLATION = "23514";
+    private static final String UNIQUE_VIOLATION = "23505";
 
     private final EntityManager em;
 
@@ -57,6 +66,7 @@ public class ProviderProfileSqlRepository implements ProviderProfileRepository {
                 locality(r[4], r[5]), text(r[6]), text(r[7]), text(r[8]),
                 text(r[9]), text(r[10]), text(r[11]),
                 text(r[12]), text(r[13]),
+                links(),
                 ZoneId.of((String) r[14]),
                 (Boolean) r[15],
                 ProviderStatus.valueOf((String) r[16]),
@@ -101,10 +111,96 @@ public class ProviderProfileSqlRepository implements ProviderProfileRepository {
                 .setParameter("published", edit.published())
                 .executeUpdate();
 
+        replaceLinks(edit.links());
+
         // Read back rather than reconstruct: status and slug are not the
         // caller's to set, and returning what was sent would state them wrong
         // the first time either changes anywhere else.
         return current();
+    }
+
+    /**
+     * The row of icons, ordered by network.
+     *
+     * <p>Alphabetically, and that is the point rather than a shrug: this query
+     * and the public one both order the same way, so the page a provider
+     * previews cannot draw them in a different order from the page a customer
+     * reads. A hand-picked order would be two lists to keep in step.
+     */
+    @SuppressWarnings("unchecked")
+    private List<SocialLink> links() {
+        List<Object[]> rows = em.createNativeQuery("""
+                SELECT kind, value
+                  FROM provider_links
+                 WHERE provider_id = app_current_provider()
+                 ORDER BY kind
+                """).getResultList();
+
+        return rows.stream()
+                .map(r -> new SocialLink(SocialNetwork.valueOf((String) r[0]), (String) r[1]))
+                .toList();
+    }
+
+    /**
+     * Delete then insert, inside the caller's transaction, exactly as a week of
+     * opening hours is replaced.
+     *
+     * <p>Reconciling entry by entry would leave a moment where the page shows
+     * neither the old set nor the new one, and it would need a rule for the
+     * entries the request did not mention - which is the question "replaced
+     * whole" exists to not have to answer.
+     *
+     * <p>Nothing here validates the shape of a value. {@code provider_links}
+     * carries a CHECK per kind and it is what refuses; the violation surfaces as
+     * a SQLSTATE the edge translates. A regular expression here would be a
+     * second definition of the same rule, and the two would drift.
+     */
+    private void replaceLinks(List<SocialLink> links) {
+        em.createNativeQuery(
+                "DELETE FROM provider_links WHERE provider_id = app_current_provider()")
+                .executeUpdate();
+
+        // One statement per entry rather than one multi-row INSERT, and that is
+        // what makes a refusal nameable: the loop knows which link the database
+        // rejected, so the message can say which field to correct instead of
+        // "one of these is wrong".
+        for (SocialLink link : links) {
+            try {
+                em.createNativeQuery("""
+                        INSERT INTO provider_links (id, provider_id, kind, value)
+                        VALUES (:id, app_current_provider(), CAST(:kind AS varchar),
+                                CAST(:value AS varchar))
+                        """)
+                        .setParameter("id", UUID.randomUUID())
+                        .setParameter("kind", link.kind().name())
+                        .setParameter("value", link.value())
+                        .executeUpdate();
+            } catch (PersistenceException e) {
+                // No further database work here: the transaction is already
+                // rollback-only, so a second statement would fail on top of
+                // this one. The whole save rolls back with it, which is right -
+                // a profile half-written because the third link was malformed
+                // is worse than one that refused.
+                String state = sqlState(e);
+                if (CHECK_VIOLATION.equals(state)) {
+                    throw new UnusableSocialHandleException(link.kind());
+                }
+                if (UNIQUE_VIOLATION.equals(state)) {
+                    throw new DuplicateSocialLinkException(link.kind());
+                }
+                throw e;
+            }
+        }
+    }
+
+    /** The cause chain: the driver's exception is wrapped by the time it arrives. */
+    private static String sqlState(Throwable e) {
+        for (Throwable t = e; t != null && t.getCause() != t; t = t.getCause()) {
+            if (t instanceof SQLException sql && sql.getSQLState() != null) {
+                return sql.getSQLState();
+            }
+        }
+        return null;
     }
 
     private static java.time.Instant instant(Object value) {

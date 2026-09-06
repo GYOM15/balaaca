@@ -10,9 +10,12 @@ import com.balaaca.app.api.model.BookingPolicyView;
 import com.balaaca.app.api.model.LocalityRef;
 import com.balaaca.app.api.model.ProviderProfileRequest;
 import com.balaaca.app.api.model.ProviderProfileView;
+import com.balaaca.app.api.model.SocialHandle;
+import com.balaaca.app.api.model.SocialNetwork;
 import com.balaaca.app.api.model.ProviderStatus;
 import com.balaaca.app.api.model.ReadinessView;
 import com.balaaca.platformkernel.tenancy.TenantBound;
+import com.balaaca.providers.domain.SocialLink;
 import com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase;
 import com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase.BookingPolicy;
 import com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase.ProfileEdit;
@@ -31,6 +34,7 @@ import jakarta.annotation.security.RolesAllowed;
 import jakarta.ws.rs.core.Response;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -185,6 +189,7 @@ public class ProviderProfileResource implements ProfileApi {
                 Optional.ofNullable(request.getPublicPhoneE164()),
                 Optional.ofNullable(request.getPublicEmail()),
                 Optional.ofNullable(request.getWhatsappPhoneE164()),
+                handles(request.getLinks()),
                 zone(request.getTimezone()),
                 Boolean.TRUE.equals(request.getPublished()))))).build();
     }
@@ -289,7 +294,37 @@ public class ProviderProfileResource implements ProfileApi {
 
         profile.logoUrl().ifPresent(name -> view.setLogoUrl(MEDIA + name));
         profile.coverUrl().ifPresent(name -> view.setCoverUrl(MEDIA + name));
+
+        // The handle as it was typed, not the composed address: this is the
+        // read the form fills its own fields from, and a URL put back into a
+        // field that wants a handle would be refused on the next save.
+        view.setLinks(profile.links().stream()
+                .map(link -> new SocialHandle()
+                        .kind(SocialNetwork.fromValue(link.kind().name()))
+                        .value(link.value()))
+                .toList());
         return view;
+    }
+
+    /**
+     * What the request said the links are, whole.
+     *
+     * <p>Null and empty mean the same thing here and both clear the set, which
+     * is the same rule every other field in this body follows. A client that
+     * omits the list is stating that there are none, exactly as a client that
+     * omits `area` is stating that there is no quartier.
+     *
+     * <p>Nothing validates the shape. The database carries a CHECK per network
+     * and a UNIQUE per provider, and the violations arrive as SQLSTATEs this
+     * application translates - so there is one definition of what a handle is,
+     * in the only place that can enforce it for every writer.
+     */
+    private static List<SocialLink> handles(List<SocialHandle> links) {
+        return links == null ? List.of() : links.stream()
+                .map(l -> new SocialLink(
+                        com.balaaca.providers.domain.SocialNetwork.valueOf(l.getKind().name()),
+                        l.getValue()))
+                .toList();
     }
 
     /**

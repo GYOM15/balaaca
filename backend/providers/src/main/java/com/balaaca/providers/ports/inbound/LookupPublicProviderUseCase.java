@@ -1,7 +1,9 @@
 package com.balaaca.providers.ports.inbound;
 
-import java.time.ZoneId;
+import com.balaaca.providers.domain.SocialLink;
 import com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase.LocalityRef;
+import java.time.ZoneId;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -38,6 +40,13 @@ public interface LookupPublicProviderUseCase {
                           Optional<String> coverUrl,
                           Optional<String> publicPhoneE164,
                           Optional<String> whatsappPhoneE164,
+                          /**
+                           * Where else this business can be found. Ordered by
+                           * network, the same way the owner's own read orders
+                           * them, so a preview cannot draw them differently
+                           * from the page it previews.
+                           */
+                          List<SocialLink> links,
                           ZoneId timezone) {
     }
 }

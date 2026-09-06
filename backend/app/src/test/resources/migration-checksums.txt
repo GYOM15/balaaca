@@ -70,3 +70,4 @@ V048__let_the_operator_see_who_he_moderates.sql -775388195
 V049__let_the_customer_say_how_to_reach_them.sql 1300448472
 V050__let_a_customer_say_how_it_went.sql -263487871
 V051__let_a_business_answer_a_review.sql -2053833339
+V052__let_a_business_be_found_elsewhere.sql -1735004490

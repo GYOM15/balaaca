@@ -1,7 +1,9 @@
 package com.balaaca.providers.ports.inbound;
 
 import com.balaaca.providers.domain.ProviderStatus;
+import com.balaaca.providers.domain.SocialLink;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -80,6 +82,12 @@ public interface ManageProviderProfileUseCase {
                            Optional<String> whatsappPhoneE164,
                            Optional<String> logoUrl,
                            Optional<String> coverUrl,
+                           /**
+                            * As the owner typed them, ordered by network so
+                            * the form and the page cannot draw them in two
+                            * different orders. Empty, never null.
+                            */
+                           List<SocialLink> links,
                            ZoneId timezone,
                            boolean published,
                            ProviderStatus status,
@@ -148,6 +156,12 @@ public interface ManageProviderProfileUseCase {
                        Optional<String> publicPhoneE164,
                        Optional<String> publicEmail,
                        Optional<String> whatsappPhoneE164,
+                       /**
+                        * Replaced whole, like everything else in this command.
+                        * An empty list clears them; there is no way to edit one
+                        * without stating the rest, on purpose.
+                        */
+                       List<SocialLink> links,
                        ZoneId timezone,
                        boolean published) {
     }

@@ -4,6 +4,7 @@ import { StarRow, Stars } from "@/components/stars";
 import { Avatar, initials } from "@/components/ui";
 import { env } from "@/lib/env";
 import { mediaUrl, money } from "@/lib/format";
+import { NETWORK_LABELS, networkIcon } from "@/lib/social";
 import type {
   CategoryList,
   Fulfilment,
@@ -14,6 +15,7 @@ import type {
   PublicStaffList,
   Review as ReviewType,
   ReviewPage,
+  SocialLink,
 } from "@/lib/types";
 
 /** ISO numbering, as `PublicOpeningHoursSegment.day_of_week` uses it: 1 is Monday. */
@@ -556,6 +558,8 @@ export function PublicPageBody({
                   <span className="dl__val">{pageLabel(slug)}</span>
                 </div>
               </div>
+
+              <Social links={provider.links ?? []} />
             </div>
           </div>
         </div>
@@ -595,6 +599,50 @@ export function PublicPageBody({
 }
 
 /* --- Pieces --------------------------------------------------------------- */
+
+
+/**
+ * Where else this business can be found.
+ *
+ * <p>The `href` is what the API sent and nothing is built here. That is the
+ * whole point of the server composing it: a provider stores a handle, the
+ * platform decides the scheme and the host, and this component never has to
+ * decide whether a string it was given is safe to put in an attribute. A page
+ * that did the composing would be a second place holding the rule.
+ *
+ * <p>`rel` carries three tokens and each one earns its place. `noopener` and
+ * `noreferrer` because the target is a page this platform does not control and
+ * `window.opener` is a handle on this one. `nofollow` because a directory that
+ * passed its ranking to every address a provider typed would be worth spamming.
+ *
+ * <p>The network is named in text rather than only drawn. An icon carries no
+ * name for a screen reader, and "Instagram" beside the mark is also what makes
+ * the row readable on a telephone where the marks are 18 px.
+ */
+function Social({ links }: { links: SocialLink[] }) {
+  if (links.length === 0) return null;
+  return (
+    <div className="social">
+      <h3 className="social__title">Aussi sur</h3>
+      <ul className="social__list">
+        {links.map((link) => (
+          <li key={link.kind}>
+            <a
+              className="social__link"
+              href={link.url}
+              target="_blank"
+              rel="nofollow noopener noreferrer"
+            >
+              <Icon name={networkIcon(link.kind)} size={18} />
+              <span>{NETWORK_LABELS[link.kind]}</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 
 
 /**

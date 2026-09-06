@@ -7,6 +7,8 @@ import com.balaaca.app.api.model.PublicOpeningHours;
 import com.balaaca.app.api.model.PublicOpeningHoursSegment;
 import com.balaaca.app.api.model.PublicProviderView;
 import com.balaaca.app.api.model.PublicServiceOffering;
+import com.balaaca.app.api.model.SocialLink;
+import com.balaaca.app.api.model.SocialNetwork;
 import com.balaaca.app.api.model.PublicStaffList;
 import com.balaaca.app.api.model.PublicStaffMember;
 import com.balaaca.app.api.model.ReviewSummary;
@@ -71,6 +73,16 @@ final class PublicPage {
         provider.coverUrl().ifPresent(name -> view.setCoverUrl(MEDIA + name));
         provider.publicPhoneE164().ifPresent(view::setPublicPhoneE164);
         provider.whatsappPhoneE164().ifPresent(view::setWhatsappPhoneE164);
+
+        // Composed here, once, on the way out. The database holds a handle and
+        // the domain holds the base, so the wire carries an address a client
+        // can put straight into an href without distrusting it - which is the
+        // property that makes an icon on this page mean what it says.
+        view.setLinks(provider.links().stream()
+                .map(link -> new SocialLink()
+                        .kind(SocialNetwork.fromValue(link.kind().name()))
+                        .url(link.url()))
+                .toList());
         return view;
     }
 

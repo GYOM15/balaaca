@@ -4,7 +4,9 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { ApiError, api } from "@/lib/api";
 import { succeed, type SuccessCode } from "@/lib/feedback";
-import type { ProviderProfile } from "@/lib/types";
+import { asRequest } from "@/lib/profile-request";
+import { NETWORKS } from "@/lib/social";
+import type { ProviderProfile, SocialHandle } from "@/lib/types";
 
 /**
  * The public page, replaced whole.
@@ -44,6 +46,7 @@ export async function saveProfile(formData: FormData): Promise<void> {
         public_phone_e164: optional("public_phone_e164"),
         public_email: optional("public_email"),
         whatsapp_phone_e164: optional("whatsapp_phone_e164"),
+        links: links(formData),
         timezone: String(formData.get("timezone")),
         published: formData.get("published") === "on",
       },
@@ -56,6 +59,34 @@ export async function saveProfile(formData: FormData): Promise<void> {
   }
   revalidatePath("/dashboard/profile");
   succeed("/dashboard/profile", "PROFILE_SAVED");
+}
+
+/**
+ * The networks the form filled in, in the shape the API takes.
+ *
+ * <p>The form carries one field per network - `link_FACEBOOK`, `link_X` - so a
+ * network cannot be listed twice, which is a refusal the API has and this form
+ * can never trigger. An empty field is an absent network, exactly as an empty
+ * `area` is an absent quartier: the body is replaced whole, so what is not here
+ * is cleared.
+ *
+ * <p>`WEBSITE` is trimmed of a scheme the provider may have typed in lower or
+ * upper case, and nothing else is normalised. This is an affordance, not a
+ * rule: the rule is a CHECK in the database, and a second one here would be a
+ * second definition. What it buys is that a provider who types `HTTPS://` or
+ * pastes a trailing space gets a saved link instead of a refusal.
+ */
+function links(formData: FormData): SocialHandle[] {
+  const found: SocialHandle[] = [];
+  for (const kind of NETWORKS) {
+    let value = String(formData.get(`link_${kind}`) ?? "").trim();
+    if (!value) continue;
+    if (kind === "WEBSITE" && /^https:\/\//i.test(value)) {
+      value = "https://" + value.slice("https://".length);
+    }
+    found.push({ kind, value });
+  }
+  return found;
 }
 
 /**
@@ -100,30 +131,6 @@ export async function setPublished(formData: FormData): Promise<void> {
     "/dashboard/profile",
     published ? "PROFILE_PUBLISHED" : "PROFILE_UNPUBLISHED",
   );
-}
-
-/**
- * The profile as the API takes it back.
- *
- * <p>Every field of the request, because the request replaces the resource and
- * one left out here is a column cleared on the next publication. The view
- * answers a locality object where the request takes its slug; everything else
- * is the same name on both sides.
- */
-function asRequest(profile: ProviderProfile) {
-  return {
-    business_name: profile.business_name,
-    description: profile.description,
-    category_slug: profile.category_slug,
-    locality_slug: profile.locality?.slug,
-    area: profile.area,
-    city: profile.city,
-    address_line: profile.address_line,
-    public_phone_e164: profile.public_phone_e164,
-    public_email: profile.public_email,
-    whatsapp_phone_e164: profile.whatsapp_phone_e164,
-    timezone: profile.timezone,
-  };
 }
 
 /**

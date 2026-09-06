@@ -724,6 +724,52 @@ hr { border: 0; border-top: 1px solid var(--border); margin: var(--s-8) 0; }
   color: var(--text-tertiary); font-size: var(--fs-sm); font-weight: var(--fw-bold); pointer-events: none;
 }
 
+/* Un identifiant derrière son site : le préfixe est du texte, pas un ornement.
+   Pas `.input-group`, qui positionne son icône en absolu et repousse le texte
+   de l'input : ici le préfixe occupe sa place et l'input prend le reste. */
+.handle { display: flex; align-items: stretch; min-width: 0; }
+.handle__base {
+  flex: none; display: grid; place-items: center;
+  padding-inline: var(--s-3);
+  border: 1.6px solid var(--border-strong); border-right: 0;
+  border-radius: var(--r-sm) 0 0 var(--r-sm);
+  background: var(--bg-sunken);
+  color: var(--text-tertiary); font-size: var(--fs-xs); white-space: nowrap;
+}
+.handle__base + .input { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.handle .input { min-width: 0; }
+
+/* Les réseaux d'un prestataire, sous ses infos pratiques.
+   Des puces avec le nom écrit à côté de la marque : une icône seule n'a pas de
+   nom pour un lecteur d'écran, et à 18 px sur un téléphone elle n'en a pas non
+   plus pour un œil. */
+.social { margin-top: var(--s-6); }
+.social__title {
+  font-size: var(--fs-sm); font-weight: var(--fw-bold);
+  color: var(--text-secondary); margin-bottom: var(--s-3);
+}
+.social__list {
+  list-style: none; padding: 0; margin: 0;
+  display: flex; flex-wrap: wrap; gap: var(--s-2);
+}
+.social__link {
+  display: inline-flex; align-items: center; gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  border: 1.6px solid var(--border); border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--text-secondary); font-size: var(--fs-sm); text-decoration: none;
+  transition: border-color var(--dur-fast) var(--ease-out),
+              color var(--dur-fast) var(--ease-out);
+}
+.social__link:hover { border-color: var(--border-strong); color: var(--text); }
+
+/* Un groupe de champs qui va ensemble, avec son titre. */
+.fieldset { border: 0; padding: 0; margin: 0; }
+.fieldset__legend {
+  padding: 0; margin-bottom: var(--s-2);
+  font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text);
+}
+
 /* Case à cocher et radio : dessinées, jamais natives */
 .check { display: flex; align-items: flex-start; gap: var(--s-3); cursor: pointer; }
 .check input { position: absolute; opacity: 0; width: 0; height: 0; }
