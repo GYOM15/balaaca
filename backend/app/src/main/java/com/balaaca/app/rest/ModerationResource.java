@@ -145,6 +145,14 @@ public class ModerationResource implements ModerationApi {
                 .build();
     }
 
+    @Override
+    @RolesAllowed("admin:moderation")
+    public Response clearReviewReply(UUID id) {
+        return Response.ok(view(reviews.clearReply(id)))
+                .header("Cache-Control", PublicCaching.NEVER)
+                .build();
+    }
+
     private static ModeratedReviewView view(ModeratedReview r) {
         ModeratedReviewView view = new ModeratedReviewView()
                 .reviewId(r.id())
@@ -161,6 +169,7 @@ public class ModerationResource implements ModerationApi {
                 .photoCount(r.photoCount());
 
         r.comment().ifPresent(view::setComment);
+        r.reply().ifPresent(view::setReply);
         r.hiddenAt().ifPresent(at -> view.setHiddenAt(at.atOffset(ZoneOffset.UTC)));
         return view;
     }

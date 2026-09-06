@@ -78,6 +78,16 @@ public class ReviewModerationSqlRepository implements ModerateReviewsUseCase {
                 .orElseThrow(() -> new ReviewNotFoundException(reviewId));
     }
 
+    @Override
+    @Transactional(Transactional.TxType.REQUIRED)
+    public ModeratedReview clearReply(UUID reviewId) {
+        return rows("SELECT * FROM app_clear_review_reply(CAST(:id AS uuid))",
+                    q -> q.setParameter("id", reviewId))
+                .stream().findFirst()
+                .map(ReviewModerationSqlRepository::toReview)
+                .orElseThrow(() -> new ReviewNotFoundException(reviewId));
+    }
+
     private static ModeratedReview toReview(Object[] r) {
         return new ModeratedReview(
                 (UUID) r[0], (String) r[1], (String) r[2],
@@ -88,7 +98,8 @@ public class ReviewModerationSqlRepository implements ModerateReviewsUseCase {
                 (String) r[7],
                 instant(r[8]),
                 Optional.ofNullable(r[9]).map(ReviewModerationSqlRepository::instant),
-                ((Number) r[10]).intValue());
+                ((Number) r[10]).intValue(),
+                Optional.ofNullable((String) r[11]));
     }
 
     @SuppressWarnings("unchecked")

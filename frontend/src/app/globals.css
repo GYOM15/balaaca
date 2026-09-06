@@ -2466,3 +2466,10 @@ a.choice { text-decoration: none; color: inherit; }
 .shots__one img { width: 88px; height: 88px; object-fit: cover;
   border-radius: var(--r-sm); border: 1px solid var(--border-subtle); display: block; }
 .shots__drop { position: absolute; top: -6px; right: -6px; }
+
+/* La reponse du professionnel : SOUS l'avis et en retrait, jamais a cote. Une
+   reponse repond a quelque chose ; posee au meme niveau, elle se lit comme un
+   second avis de meme poids, ce qu'elle n'est pas. */
+.review__reply { margin-left: var(--s-5); padding-left: var(--s-4);
+  border-left: 2px solid var(--border); display: grid; gap: var(--s-2); }
+.review__reply .t-overline { color: var(--text-tertiary); }

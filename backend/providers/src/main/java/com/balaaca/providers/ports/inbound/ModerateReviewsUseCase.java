@@ -29,6 +29,20 @@ public interface ModerateReviewsUseCase {
     ModeratedReview setVisibility(UUID reviewId, boolean hidden);
 
     /**
+     * Remove a business's answer and leave the review standing.
+     *
+     * <p>A separate lever from the takedown, and it has to be. Hiding was the
+     * only one there was, and it is the wrong tool for a business that answers
+     * a fair complaint with an insult: it would deal with that by removing the
+     * CUSTOMER's words too, punishing the person who was wronged in order to
+     * reach the person who wronged them.
+     *
+     * @throws com.balaaca.providers.domain.ReviewNotFoundException when no
+     *         review carries that id
+     */
+    ModeratedReview clearReply(UUID reviewId);
+
+    /**
      * @param photoCount how many pictures hang off it, and not the pictures. The
      *                   queue is a list; an operator deciding whether to remove
      *                   something opens the page and looks at it
@@ -46,6 +60,7 @@ public interface ModerateReviewsUseCase {
                            String status,
                            Instant createdAt,
                            Optional<Instant> hiddenAt,
-                           int photoCount) {
+                           int photoCount,
+                           Optional<String> reply) {
     }
 }

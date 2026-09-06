@@ -45,12 +45,17 @@ public interface PublishedReviewsUseCase {
      * plus a service plus a small neighbourhood is an identity here, and an
      * exact date laid over the gaps in published availability names one person
      * at a one-chair salon.
+     *
+     * <p>{@code reply} is the only text on this record the BUSINESS wrote. It
+     * carries no date of its own: the review is dated to a month, and an answer
+     * dated to a day is a mismatch a reader notices and cannot explain.
      */
     record PublishedReview(int rating,
                            Optional<String> comment,
                            String serviceName,
                            YearMonth visitedMonth,
-                           List<String> photoNames) {
+                           List<String> photoNames,
+                           Optional<String> reply) {
 
         public PublishedReview {
             photoNames = List.copyOf(photoNames);

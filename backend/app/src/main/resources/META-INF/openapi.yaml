@@ -624,6 +624,154 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
+  /v1/reviews:
+    get:
+      operationId: listOwnReviews
+      tags: [profile]
+      summary: What customers said about you
+      description: |
+        Newest first, including the ones an operator has taken down - a business
+        that cannot see what was said about it cannot answer the customer or ask
+        for a takedown.
+
+        Reading is all this surface allows beyond a reply. There is no operation
+        anywhere that lets a business write, raise or delete a review of itself,
+        and the reason is not that one was left out: the database role has no
+        such privilege, so no route could be built that did it.
+      security: [{ oauth2: [dashboard:read] }]
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: The reviews, newest first.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderReviewPage'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/reviews/{id}/reply:
+    post:
+      operationId: replyToReview
+      tags: [profile]
+      summary: Answer a review
+      description: |
+        A hub that publishes the accusation and refuses the answer is not
+        neutral, it is quieter about which side it takes. In this market a
+        single line is often the whole truth of a bad review.
+
+        Sending it again replaces it: these are the business's own words about
+        its own page, and a public typo it cannot fix is worse than the branch
+        that costs.
+
+        Only on a review that is still published. One an operator took down is
+        inert, and a reply attached to it would be writing into a page nobody
+        reads - that is `409`.
+
+        What this operation may touch is decided by a COLUMN privilege and not
+        by this description: the role holds `UPDATE` on the reply and its date
+        and on nothing else, so a request that tried to carry a rating would be
+        refused by the database before any handler saw it.
+      security: [{ oauth2: [profile:write] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewReplyRequest'
+      responses:
+        '200':
+          description: The review, with the answer under it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderReviewView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: |
+            `INVALID_STATE_TRANSITION` - this review was taken down, so there is
+            nothing published to answer.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+    delete:
+      operationId: withdrawReviewReply
+      tags: [profile]
+      summary: Withdraw your answer
+      description: The business's own words, taken back. The review stands.
+      security: [{ oauth2: [profile:write] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The review, with nothing under it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderReviewView'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/provider-profile/preview:
+    get:
+      operationId: previewOwnPage
+      tags: [profile]
+      summary: Your page as a customer will see it
+      description: |
+        The same projections `getProvider`, `listOpeningHours` and
+        `listProviderStaff` return, for the caller's OWN business, published or
+        not. That is the whole point: `/v1/providers/{slug}` resolves through a
+        published-only lookup, so until a business publishes there is nothing
+        there to look at - and four dashboard screens used to link to it anyway,
+        which is four buttons opening a 404 on the provider's own dashboard.
+
+        One operation rather than three, and the SAME projections rather than
+        the dashboard's own shapes. A preview assembled out of
+        `getProviderProfile`, `getOpeningHours` and `listStaff` would be a
+        second source of truth for one page, and the two would disagree on the
+        first change either side.
+
+        Reviews are not carried. A published review is a published review, and
+        what a stranger can read of an unpublished business is nothing - so the
+        preview shows the page without them rather than inventing what they
+        would look like.
+      security: [{ oauth2: [dashboard:read] }]
+      responses:
+        '200':
+          description: The page, as it would be served.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderPreviewView'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
   /v1/media/{name}:
     get:
       operationId: getMedia
@@ -2620,6 +2768,42 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /v1/admin/reviews/{id}/reply:
+    delete:
+      operationId: clearReviewReply
+      tags: [moderation]
+      summary: Remove a business's answer, and leave the review standing
+      description: |
+        A lever that reaches the reply alone, and it has to exist separately
+        from the takedown.
+
+        Hiding was the only one there was, and it is the wrong tool here: a
+        business that answers a fair complaint with an insult would be dealt
+        with by removing the CUSTOMER's words too. That punishes the person who
+        was wronged in order to reach the person who wronged them.
+
+        Clearing twice is not an error. The reply is gone either way, and that
+        is what the operator asked for.
+      security: [{ oauth2: [admin:moderation] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The review, with nothing under it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModeratedReviewView'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /v1/customers:
     get:
       operationId: listCustomers
@@ -3768,6 +3952,17 @@ components:
             type: string
           description: In the order they were added. Where the bytes are; the
             name discloses neither the customer nor the original file.
+        reply:
+          type: string
+          description: |
+            The business's answer, when it has written one. It is the only text
+            on this page the business itself wrote, and it is published under
+            the review rather than beside it - an answer is a reply to
+            something, and laid out level with the review it reads as a second
+            opinion of equal standing.
+
+            No date. The review carries a month and the answer would carry a
+            day, which is a mismatch a reader notices and cannot explain.
 
     ReviewPage:
       type: object
@@ -3841,6 +4036,97 @@ components:
           description: With identifiers, because its author is the one person
             who may remove one.
 
+    ReviewReplyRequest:
+      type: object
+      required: [reply]
+      properties:
+        reply:
+          type: string
+          maxLength: 1000
+          description: The business's answer, in its own words. Blank is
+            refused; withdrawing an answer is the DELETE.
+
+    ProviderReviewView:
+      type: object
+      description: |
+        A review as the business it is about reads it - with its identifier,
+        because a reply is addressed by one, and with its state, because a
+        business is told when one of its reviews has been taken down rather than
+        left to notice the average move.
+
+        No reviewer, here either. The business knows who came at that hour; the
+        row does not say, and nothing on this surface joins it to a customer.
+      required: [review_id, rating, service_name, visited_month, status,
+                 created_at, photo_urls]
+      properties:
+        review_id:
+          type: string
+          format: uuid
+        rating:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+        service_name:
+          type: string
+        visited_month:
+          type: string
+          pattern: '^\d{4}-(0[1-9]|1[0-2])$'
+          example: '2026-09'
+        status:
+          type: string
+          enum: [VISIBLE, HIDDEN]
+          description: '`HIDDEN` means an operator removed it. It is off the
+            page, out of the average and out of the count, and it cannot be
+            answered.'
+        created_at:
+          type: string
+          format: date-time
+        photo_urls:
+          type: array
+          maxItems: 3
+          items:
+            type: string
+        reply:
+          type: string
+          description: What this business has already answered, if anything.
+
+    ProviderReviewPage:
+      type: object
+      required: [data, next_cursor]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProviderReviewView'
+        next_cursor:
+          type: string
+          nullable: true
+
+    ProviderPreviewView:
+      type: object
+      description: |
+        Everything the public page is drawn from, for the caller's own business,
+        in exactly the shapes the public routes return. One operation and one
+        set of projections, so a preview cannot drift from the page it previews.
+      required: [provider, opening_hours, staff, published]
+      properties:
+        provider:
+          $ref: '#/components/schemas/PublicProviderView'
+        opening_hours:
+          $ref: '#/components/schemas/PublicOpeningHours'
+        staff:
+          $ref: '#/components/schemas/PublicStaffList'
+        published:
+          type: boolean
+          description: |
+            Whether this page is already live. A preview of a page that is
+            published is still a preview, and saying which one the reader is
+            looking at is the difference between "this is how it will look" and
+            "this is how it looks".
+
     ReviewVisibilityRequest:
       type: object
       required: [hidden]
@@ -3889,6 +4175,11 @@ components:
           description: How many pictures hang off it. A count and not the
             pictures - the queue is a list, and an operator opens the page to
             look.
+        reply:
+          type: string
+          description: What the business answered, when it has. It is public
+            text with its own moderation surface, which is why it has a lever
+            of its own.
 
     ModeratedReviewPage:
       type: object

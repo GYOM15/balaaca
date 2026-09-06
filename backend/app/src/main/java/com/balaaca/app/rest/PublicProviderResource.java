@@ -54,8 +54,6 @@ import java.util.Optional;
 public class PublicProviderResource implements DiscoveryApi {
 
     /** Where a stored name becomes something a browser can fetch. */
-    private static final String MEDIA = "/v1/media/";
-
     private final PublicTenantBinder tenants;
     private final LookupPublicProviderUseCase providers;
     private final LookupPublicStaffUseCase staff;
@@ -164,10 +162,6 @@ public class PublicProviderResource implements DiscoveryApi {
                 .build();
     }
 
-    private static Fulfilment wire(com.balaaca.catalog.ports.inbound.Fulfilment mode) {
-        return Fulfilment.valueOf(mode.name());
-    }
-
     /** A blank query parameter is an absent one, not a value to match on. */
     private static Optional<String> trimmed(String value) {
         return Optional.ofNullable(value).map(String::trim).filter(v -> !v.isEmpty());
@@ -205,7 +199,8 @@ public class PublicProviderResource implements DiscoveryApi {
 
         tenants.bindPublished(slug);
         try {
-            return Response.ok(view(providers.publicPage(), catalogue.published(), rating))
+            return Response.ok(
+                    PublicPage.view(providers.publicPage(), catalogue.published(), rating))
                     .header("Cache-Control", PublicCaching.DIRECTORY)
                     .build();
         } finally {
@@ -223,12 +218,7 @@ public class PublicProviderResource implements DiscoveryApi {
     public Response listPublicStaff(String slug) {
         tenants.bindPublished(slug);
         try {
-            return Response.ok(new PublicStaffList()
-                    .data(staff.bookableStaff().stream()
-                            .map(m -> new PublicStaffMember()
-                                    .staffId(m.id().value())
-                                    .displayName(m.displayName()))
-                            .toList()))
+            return Response.ok(PublicPage.staff(staff.bookableStaff()))
                     .header("Cache-Control", PublicCaching.SLOW_MOVING)
                     .build();
         } finally {
@@ -240,11 +230,8 @@ public class PublicProviderResource implements DiscoveryApi {
     public Response listPublicOpeningHours(String slug) {
         tenants.bindPublished(slug);
         try {
-            return Response.ok(new PublicOpeningHours()
-                    .timezone(providers.publicPage().timezone().getId())
-                    .data(availability.combinedOpeningHours().stream()
-                            .map(PublicProviderResource::segment)
-                            .toList()))
+            return Response.ok(PublicPage.hours(providers.publicPage().timezone().getId(),
+                                               availability.combinedOpeningHours()))
                     .header("Cache-Control", PublicCaching.SLOW_MOVING)
                     .build();
         } finally {
@@ -280,78 +267,13 @@ public class PublicProviderResource implements DiscoveryApi {
                 .visitedMonth(r.visitedMonth().toString())
                 // The stored name becomes a URL here and only here, the way it
                 // does for every other image on this platform.
-                .photoUrls(r.photoNames().stream().map(n -> MEDIA + n).toList());
+                .photoUrls(r.photoNames().stream().map(n -> PublicPage.MEDIA + n).toList());
 
         r.comment().ifPresent(view::setComment);
+        // The one line on this page the business itself wrote, published under
+        // the review rather than beside it.
+        r.reply().ifPresent(view::setReply);
         return view;
     }
 
-    private static ReviewSummary summary(PublishedReviewsUseCase.Rating rating) {
-        return new ReviewSummary().average(rating.average()).count(rating.count());
-    }
-
-    private static PublicProviderView view(PublicProvider provider,
-                                           List<PublishedService> services,
-                                           Optional<PublishedReviewsUseCase.Rating> rating) {
-        PublicProviderView view = new PublicProviderView()
-                .slug(provider.slug())
-                .businessName(provider.businessName())
-                .timezone(provider.timezone().getId())
-                .services(services.stream()
-                        .map(PublicProviderResource::service)
-                        .toList());
-
-        // Absent rather than zero. A business nobody has reviewed has no
-        // opinion attached to it, and nought out of five is an opinion.
-        rating.map(PublicProviderResource::summary).ifPresent(view::setRating);
-
-        provider.description().ifPresent(view::setDescription);
-        provider.categorySlug().ifPresent(view::setCategorySlug);
-        provider.city().ifPresent(view::setCity);
-        provider.addressLine().ifPresent(view::setAddressLine);
-        provider.locality().ifPresent(l -> view.setLocality(
-                new com.balaaca.app.api.model.LocalityRef()
-                        .slug(l.slug()).labelFr(l.labelFr())));
-        provider.area().ifPresent(view::setArea);
-        provider.logoUrl().ifPresent(name -> view.setLogoUrl(ProviderProfileResource.MEDIA + name));
-        provider.coverUrl().ifPresent(name -> view.setCoverUrl(ProviderProfileResource.MEDIA + name));
-        provider.publicPhoneE164().ifPresent(view::setPublicPhoneE164);
-        provider.whatsappPhoneE164().ifPresent(view::setWhatsappPhoneE164);
-        return view;
-    }
-
-    private static PublicServiceOffering service(PublishedService published) {
-        PublicServiceOffering service = new PublicServiceOffering()
-                .serviceOfferingId(published.id().value())
-                .name(published.name())
-                .durationMinutes((int) published.duration().toMinutes())
-                // Exactly what the booking form must put to the customer: one
-                // value asks nothing, several ask, and the answer comes back on
-                // the booking request.
-                .fulfilments(published.fulfilments().stream()
-                        .map(PublicProviderResource::wire).toList())
-                // Deprecated and still required. A client that branches on it
-                // draws one of the ways this service can be had and hides the
-                // others, which is why the array above exists.
-                .fulfilment(wire(published.primaryFulfilment()))
-                .photos(published.photos().stream().map(name -> MEDIA + name).toList());
-
-        // "Ready in 48 h" is what a customer needs before choosing. Without it
-        // a drop-off reads as a ten-minute service, because ten minutes is what
-        // the handover takes.
-        published.turnaround().ifPresent(t -> service.setTurnaroundHours((int) t.toHours()));
-        published.description().ifPresent(service::setDescription);
-        // Absent, not zero: a hidden price rendered as 0 reads as free.
-        published.price().ifPresent(price -> service.setPrice(new Money()
-                .amountMinor(price.amountMinor())
-                .currency(price.currency().name())));
-        return service;
-    }
-
-    private static PublicOpeningHoursSegment segment(OpenWindow window) {
-        return new PublicOpeningHoursSegment()
-                .dayOfWeek(window.dayOfWeek())
-                .startTime(window.start().toString())
-                .endTime(window.end().toString());
-    }
 }
