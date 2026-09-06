@@ -96,6 +96,7 @@ public class ProvidersResource implements ProvidersApi {
                 new Account(caller.require(), caller.displayName(), caller.email()),
                 request.getSlug(),
                 request.getBusinessName(),
+                Optional.ofNullable(request.getDescription()),
                 Optional.ofNullable(request.getCategorySlug()),
                 Optional.ofNullable(request.getCity()),
                 zone(request.getTimezone())));

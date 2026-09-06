@@ -5311,6 +5311,18 @@ components:
           type: string
           minLength: 1
           maxLength: 120
+        description:
+          type: string
+          maxLength: 2000
+          description: |
+            What the business wants a customer to read first. Optional, and
+            deliberately: a mandatory paragraph is a wall in front of the one
+            screen that has to be easy, and a business with nothing prepared
+            would type one word to get past it.
+
+            The same field `updateProviderProfile` writes, asked for here
+            because this is the moment a business has something to say about
+            itself and the profile form is a screen it has not found yet.
         category_slug:
           type: string
           description: One of the published categories. Omit if none fits.

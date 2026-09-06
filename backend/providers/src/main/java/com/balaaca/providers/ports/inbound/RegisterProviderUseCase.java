@@ -34,6 +34,14 @@ public interface RegisterProviderUseCase {
     record Registration(Account account,
                         String slug,
                         String businessName,
+                        /**
+                         * What the business wants a customer to read first, and
+                         * optional on purpose: a mandatory paragraph is a wall
+                         * in front of the one screen that has to be easy, and a
+                         * business with nothing prepared would type a single
+                         * word to get past it.
+                         */
+                        Optional<String> description,
                         Optional<String> categorySlug,
                         Optional<String> city,
                         ZoneId timezone) {
