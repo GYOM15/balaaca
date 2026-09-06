@@ -486,15 +486,20 @@ export default async function ProviderPage({
           <section className="section" id="avis" style={{ paddingBlock: "var(--s-10)" }}>
             <div className="page">
               <h2 className="t-h3" style={{ marginBottom: "var(--s-5)" }}>
-                Ce que disent les client&eacute;s
+                Ce que disent les clients
               </h2>
 
+              {/* The glyphs and not <Stars> here: <Stars> prints the figure
+                  itself, and beside a figure this size that is 4,5 twice. */}
               <div className="rating-hero" style={{ marginBottom: "var(--s-6)" }}>
                 <span className="rating-hero__figure">
                   {provider.rating.average.toFixed(1).replace(".", ",")}
                 </span>
                 <span className="rating-hero__of">sur 5</span>
-                <Stars rating={provider.rating} size={18} />
+                <StarRow value={provider.rating.average} size={18} />
+                <span className="rating-hero__of">
+                  {provider.rating.count} avis
+                </span>
               </div>
 
               <div className="reviews">
@@ -679,8 +684,12 @@ function Review({ review }: { review: ReviewType }) {
       {review.photo_urls.length > 0 ? (
         <div className="review__photos">
           {review.photo_urls.map((url) => (
+            // Through mediaUrl, like every other image here. The API answers
+            // with its OWN path, /v1/media/<name>; this server serves the bytes
+            // at /media/<name>. Used raw, every review photograph is a broken
+            // image - which is what it was until the page was looked at.
             // eslint-disable-next-line @next/next/no-img-element
-            <img key={url} src={url} alt="" loading="lazy" width={96} height={96} />
+            <img key={url} src={mediaUrl(url)} alt="" loading="lazy" width={96} height={96} />
           ))}
         </div>
       ) : null}

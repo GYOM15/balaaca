@@ -76,10 +76,16 @@ export function ProviderTile({
         {/* Plain img, not next/image: the bytes come through this server's own
             /media route and are already immutable and sized by the API. */}
         {cover ? (
-          // Stored at 1600x400 by the API, which is the ratio this band is
-          // drawn at, so `object-fit: cover` crops nothing worth keeping. The
-          // intrinsic size is the file's, not the slot's - the wrong one here
-          // is what taught the stylesheet to crop a square mark to fit a lie.
+          // The API stores a cover at 1600x400; this band is 16/9. So it IS
+          // cropped, centrally, to a little under half its width - stated here
+          // rather than glossed, because the alternative was worse either way:
+          // a 4:1 strip across a 253 px card is 63 px of photograph, and
+          // letterboxing it leaves more empty ground than picture. A centred
+          // crop of a banner is what a directory card is.
+          //
+          // The intrinsic size is the FILE's and not the slot's. The wrong one
+          // here is what taught the stylesheet to crop a square mark to fit a
+          // lie, which is the defect this whole branch exists to undo.
           // eslint-disable-next-line @next/next/no-img-element
           <img src={cover} alt="" loading="lazy" width={1600} height={400} />
         ) : logo ? (

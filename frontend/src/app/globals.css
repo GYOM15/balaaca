@@ -2355,9 +2355,13 @@ a.choice { text-decoration: none; color: inherit; }
 .stars { display: inline-flex; align-items: center; gap: var(--s-2); }
 .stars__glyphs { display: inline-flex; gap: 1px; }
 /* L'etoile vide reste dessinee : sans elle, trois etoiles sur cinq et trois sur
-   trois se ressemblent, et le lecteur compte au lieu de voir. */
-.star { color: var(--border-strong); fill: none; }
-.star--on { color: var(--accent-strong); fill: currentColor; }
+   trois se ressemblent, et le lecteur compte au lieu de voir.
+   Le remplissage vient du SYMBOLE i-star-filled, pas d'ici : `fill` est un
+   attribut de presentation clone dans l'arbre fantome du `use`, et aucune regle
+   ecrite sur le svg exterieur ne peut le battre. Ici on ne pose que la
+   couleur. */
+.star { color: var(--border-strong); }
+.star--on { color: var(--accent-strong); }
 .stars__figure { font-size: var(--fs-sm); font-weight: var(--fw-bold);
   color: var(--text-secondary); white-space: nowrap; }
 .stars__count { font-weight: var(--fw-regular); color: var(--text-tertiary);
@@ -2395,6 +2399,12 @@ a.choice { text-decoration: none; color: inherit; }
    Cinq boutons radio, et rien d'autre. Un curseur ou un composant qui exige du
    JavaScript laisserait sans note tous ceux dont le telephone a fini de charger
    la page mais pas le script - c'est-a-dire une bonne part du marche. */
+/* Une note dit "j'en ai donne quatre", jamais "la quatrieme". On allume donc
+   l'etoile choisie ET toutes celles qui la precedent, avec :has(~ …) : "une
+   option suivie d'une option cochee". L'ordre du DOM reste 1 a 5, ce qui compte
+   pour autre chose que l'oeil - les fleches du clavier parcourent un groupe de
+   boutons radio dans l'ordre du DOM, et un DOM inverse ferait aller la fleche
+   droite vers la gauche a l'ecran. */
 .rate { display: flex; gap: var(--s-2); }
 .rate__option { position: relative; }
 .rate__option input { position: absolute; inset: 0; opacity: 0; margin: 0;
@@ -2404,16 +2414,51 @@ a.choice { text-decoration: none; color: inherit; }
   background: var(--surface); color: var(--border-strong);
   transition: border-color var(--dur-fast) var(--ease-out),
               background var(--dur-fast) var(--ease-out); }
-.rate__option span .ico { fill: none; }
-/* Rempli au survol ET au parcours clavier : sans le focus-within, la note se
-   choisit a l'aveugle des qu'on lache la souris. */
-.rate__option:hover span,
-.rate__option:focus-within span { border-color: var(--brand-border);
-  background: var(--brand-soft); }
-.rate__option:focus-within span { box-shadow: 0 0 0 3px var(--brand-soft); }
+/* L'etoile pleine est un SYMBOLE, pas une couleur : `fill` voyage avec le
+   symbole dans l'arbre fantome du `use` et aucune regle ne l'y rejoint. Les
+   deux sont posees, une seule est montree. */
+.rate__on { display: none; }
+
+/* Le socle, sans :has() - un navigateur trop ancien allume au moins celle qui
+   est choisie plutot que rien du tout. */
+.rate__option input:checked + span .rate__off { display: none; }
+.rate__option input:checked + span .rate__on { display: block; }
 .rate__option input:checked + span { border-color: var(--accent-strong);
-  color: var(--accent-strong); background: var(--surface); }
-.rate__option input:checked + span .ico { fill: currentColor; }
+  color: var(--accent-strong); }
+
+/* Et la note entiere : celle qui est choisie, plus toutes celles qui la
+   precedent. */
+.rate__option:has(~ .rate__option input:checked) span {
+  border-color: var(--accent-strong); color: var(--accent-strong); }
+.rate__option:has(~ .rate__option input:checked) .rate__off { display: none; }
+.rate__option:has(~ .rate__option input:checked) .rate__on { display: block; }
+
+/* Le survol et le parcours clavier previsualisent une AUTRE note, donc ils
+   eteignent d'abord ce qui est choisi : sans cela, survoler deux etoiles en
+   laisserait cinq allumees et la previsualisation ne dirait rien. */
+.rate:has(input:hover) .rate__on,
+.rate:has(input:focus-visible) .rate__on { display: none; }
+.rate:has(input:hover) .rate__off,
+.rate:has(input:focus-visible) .rate__off { display: block; }
+.rate:has(input:hover) span,
+.rate:has(input:focus-visible) span { border-color: var(--border);
+  color: var(--border-strong); }
+
+.rate__option:has(input:hover) span,
+.rate__option:has(~ .rate__option input:hover) span,
+.rate__option:has(input:focus-visible) span,
+.rate__option:has(~ .rate__option input:focus-visible) span {
+  border-color: var(--brand-border); background: var(--brand-soft);
+  color: var(--accent-strong); }
+.rate__option:has(input:hover) .rate__off,
+.rate__option:has(~ .rate__option input:hover) .rate__off,
+.rate__option:has(input:focus-visible) .rate__off,
+.rate__option:has(~ .rate__option input:focus-visible) .rate__off { display: none; }
+.rate__option:has(input:hover) .rate__on,
+.rate__option:has(~ .rate__option input:hover) .rate__on,
+.rate__option:has(input:focus-visible) .rate__on,
+.rate__option:has(~ .rate__option input:focus-visible) .rate__on { display: block; }
+.rate__option:has(input:focus-visible) span { box-shadow: 0 0 0 3px var(--brand-soft); }
 
 /* La pellicule deja deposee, sous le formulaire. */
 .shots { display: flex; gap: var(--s-3); flex-wrap: wrap; align-items: flex-start; }

@@ -26,9 +26,14 @@ function Glyphs({ value, size, label }: { value: number; size: number; label: st
   return (
     <span className="stars__glyphs" role="img" aria-label={label}>
       {[1, 2, 3, 4, 5].map((position) => (
+        // A different SYMBOL and not a different rule. `fill="none"` on the
+        // outline star is a presentation attribute cloned into the `use` shadow
+        // tree, and it beats anything the outer svg can inherit down - so no
+        // class on this element could ever have filled it. Five outlines with
+        // only a colour between them is what that looked like.
         <Icon
           key={position}
-          name="star"
+          name={position <= filled ? "star-filled" : "star"}
           size={size}
           className={position <= filled ? "star star--on" : "star"}
         />

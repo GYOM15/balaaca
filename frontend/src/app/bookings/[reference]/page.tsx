@@ -769,7 +769,15 @@ function DetailView({
                 <div className="review__photos" style={{ marginTop: "var(--s-4)" }}>
                   {booking.review.photos.map((photo) => (
                     /* eslint-disable-next-line @next/next/no-img-element */
-                    <img key={photo.photo_id} src={photo.url} alt="" width={96} height={96} />
+                    <img
+                      key={photo.photo_id}
+                      // The API answers with its own /v1/media/<name>; this
+                      // server serves the bytes at /media/<name>.
+                      src={mediaUrl(photo.url)}
+                      alt=""
+                      width={96}
+                      height={96}
+                    />
                   ))}
                 </div>
               ) : null}
@@ -1529,7 +1537,7 @@ function ReviewView({ booking, query }: { booking: CustomerBooking; query: Searc
             {existing.photos.map((photo) => (
               <div className="shots__one" key={photo.photo_id}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={photo.url} alt="" width={88} height={88} />
+                <img src={mediaUrl(photo.url)} alt="" width={88} height={88} />
                 {/* Its own form, because a nested one is not valid HTML and a
                     button inside the review form would submit the review. */}
                 <form action={removeReviewPhoto} className="shots__drop">
@@ -1563,6 +1571,14 @@ function ReviewView({ booking, query }: { booking: CustomerBooking; query: Searc
               *
             </span>
           </legend>
+          {/* One to five, in that order, and the stylesheet lights the ones
+              BEFORE the chosen star with :has(~ …). Reversing the DOM was the
+              obvious way to do it and it is the wrong one: arrow keys walk a
+              radio group in DOM order, so the right arrow would have moved the
+              selection leftwards on screen.
+
+              Lighting them all matters. Lit one at a time, the widget says
+              "the fourth star", which is not a rating anybody gives. */}
           <div className="rate">
             {[1, 2, 3, 4, 5].map((value) => (
               <label className="rate__option" key={value}>
@@ -1572,12 +1588,18 @@ function ReviewView({ booking, query }: { booking: CustomerBooking; query: Searc
                   value={value}
                   required
                   defaultChecked={existing?.rating === value}
-                  // The only label a screen reader gets: the glyph beside it is
-                  // aria-hidden like every icon here.
+                  // The only label a screen reader gets: the glyphs beside it
+                  // are aria-hidden like every icon here.
                   aria-label={value === 1 ? "1 étoile" : `${value} étoiles`}
                 />
+                {/* Both glyphs, one hidden. A `use` clones its symbol's own
+                    fill into a shadow tree no rule can reach, so a filled star
+                    is a different SYMBOL and not a different colour - and
+                    swapping symbols on click would need JavaScript, which this
+                    form deliberately does without. */}
                 <span>
-                  <Icon name="star" size={18} />
+                  <Icon name="star" size={18} className="rate__off" />
+                  <Icon name="star-filled" size={18} className="rate__on" />
                 </span>
               </label>
             ))}

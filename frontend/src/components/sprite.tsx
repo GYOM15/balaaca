@@ -103,6 +103,13 @@ const SPRITE = String.raw`<svg xmlns="http://www.w3.org/2000/svg" aria-hidden="t
   <symbol id="i-briefcase" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3.4" y="7.4" width="17.2" height="12.4" rx="2.2"/><path d="M8.8 7.4V5.8c0-.9.7-1.6 1.6-1.6h3.2c.9 0 1.6.7 1.6 1.6v1.6M3.4 12.6c2.7 1.2 5.6 1.8 8.6 1.8s5.9-.6 8.6-1.8M12 13.4v1.8"/></symbol>
   <symbol id="i-tag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11.2 3.6H5a1.4 1.4 0 0 0-1.4 1.4v6.2c0 .4.15.7.4 1l8 8c.55.55 1.45.55 2 0l5.8-5.8c.55-.55.55-1.45 0-2l-8-8c-.3-.25-.6-.4-1-.4Z"/><circle fill="currentColor" stroke="none" cx="8" cy="8" r="1.4"/></symbol>
   <symbol id="i-star" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3.6 2.6 5.4 5.9.85-4.3 4.15 1 5.9-5.2-2.8-5.2 2.8 1-5.9L3.5 9.85 9.4 9Z"/></symbol>
+  <!-- The same star, painted. A rating needs BOTH, and a rule cannot make one
+       out of the other: fill="none" above is a presentation attribute, it is
+       cloned into the shadow tree with the symbol, and it beats anything the
+       outer svg could inherit down. That is this file's own note, three
+       paragraphs up, discovered again from the other side - a rating drawn as
+       five outlines with only a colour telling them apart. -->
+  <symbol id="i-star-filled" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3.6 2.6 5.4 5.9.85-4.3 4.15 1 5.9-5.2-2.8-5.2 2.8 1-5.9L3.5 9.85 9.4 9Z"/></symbol>
   <symbol id="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2.4M12 19v2.4M21.4 12H19M5 12H2.6M18.6 5.4 16.9 7.1M7.1 16.9l-1.7 1.7M18.6 18.6l-1.7-1.7M7.1 7.1 5.4 5.4"/></symbol>
   <symbol id="i-sparkle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3.4 1.9 5.1 5.1 1.9-5.1 1.9L12 17.4l-1.9-5.1L5 10.4l5.1-1.9Z"/><path d="M18.6 16.4l.8 2.1 2.1.8-2.1.8-.8 2.1-.8-2.1-2.1-.8 2.1-.8Z"/></symbol>
   <symbol id="i-chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20.4h16.4M7 20.4v-6M12 20.4V6.6M17 20.4v-9"/></symbol>
