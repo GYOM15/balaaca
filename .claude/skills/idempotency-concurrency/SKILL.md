@@ -48,11 +48,13 @@ and a version check does not make a retry safe.
    request carrying the same key returns the same appointment - the customer who
    double-taps gets one 10:00 haircut, not two.
 3. **The key is stored beside a fingerprint of the request, and a reused key
-   with a different body is an error, not a replay.** Every appointment row
-   carries `idempotency_request_hash text NOT NULL`, the SHA-256 of the
-   canonicalised request body (`service_offering_id`, `starts_at`, `staff_id`,
-   `customer_id`, in a fixed order). On a hit, compare: an **equal** hash is a
-   replay and returns the stored appointment with its original `2xx` body; a
+   with a different body is an error, not a replay.** An appointment booked
+   with a key carries `idempotency_request_hash varchar(64)` beside it - both
+   columns are nullable, and `ck_appointments_idempotency_pair` makes them NULL
+   together - holding the SHA-256 of the canonicalised request body
+   (`service_offering_id`, `starts_at`, `staff_id`, `customer_id`, in a fixed
+   order). On a hit, compare: an **equal** hash is a replay and returns the
+   stored appointment with its original `2xx` body; a
    **different** hash is a client bug - a key recycled across two genuinely
    different bookings - and returns `422` with the published code
    `IDEMPOTENCY_KEY_REUSED`. Returning the first appointment for a second,
@@ -68,10 +70,11 @@ and a version check does not make a retry safe.
    but Redis evicts, restarts and expires. Never let a cache be the only thing
    standing between a retried request and a duplicate appointment: the index
    must make the duplicate impossible even with Redis cold.
-6. **Insert with `INSERT … ON CONFLICT (provider_id, idempotency_key) DO
-   NOTHING`, then `SELECT`; never `persist`-and-catch on the idempotency
-   path.** With an assigned identifier a UNIQUE violation surfaces only at flush
-   or commit, *after* your try/catch, and by then the transaction is
+6. **Insert with `INSERT … ON CONFLICT (provider_id, idempotency_key) WHERE
+   idempotency_key IS NOT NULL DO NOTHING`, then `SELECT`; never
+   `persist`-and-catch on the idempotency path.** With an assigned identifier a
+   UNIQUE violation surfaces only at flush or commit, *after* your try/catch,
+   and by then the transaction is
    rollback-only, so the compensating re-query fails too. One statement, no
    exception path, transaction still usable. Name the conflict target
    explicitly: an explicit target arbitrates **only** that index, so a `23P01`
@@ -82,26 +85,34 @@ and a version check does not make a retry safe.
    This rule is about the *idempotency* path only. The exclusion constraint is
    the opposite case: its `23P01` is meant to abort the transaction, and rule 8
    says what to do with it.
-7. **Concurrency: mutable aggregates carry `version bigint` (optimistic
-   locking), and state transitions are atomic and conditional in the database.**
-   `Appointment`, `ServiceOffering` and `Subscription` have a `version`. Advance
-   the appointment state machine with `UPDATE … SET status = :next,
-   version = version + 1 WHERE id = :id AND status = :expected AND
-   version = :v`, and check the affected-row count. The database - not an
-   app-side `if (appointment.status() == EXPECTED)` after a separate read - arbitrates the race. Two staff members cancelling and completing the same
-   appointment at once cannot both win; the loser gets an RFC 7807 `409`, never
-   a silent overwrite.
+7. **Concurrency: state transitions are atomic and conditional in the
+   database.** Advance the appointment state machine with
+   `UPDATE … SET status = :next, version = version + 1 WHERE id = :id AND
+   status = ANY(:accepted) RETURNING …`, and treat an empty result as "you
+   lost". The accepted states belong in the `WHERE` clause; the database - not
+   an app-side `if (appointment.status() == EXPECTED)` after a separate
+   read - arbitrates the race. Two staff members cancelling and completing the
+   same appointment at once cannot both win; the loser gets an RFC 7807 `409`,
+   never a silent overwrite.
+   **The predicate is status-only: there is no `AND version = :v`, and
+   `appointments` is the only table that carries `version bigint` at all.**
+   `service_offerings` and `subscriptions` never got one. The column is
+   incremented and never compared, because the published contract carries no
+   version for a caller to state: a check written today would compare against a
+   number no client can know, and would refuse every honest request. It stays
+   truthful for the day an ETag gives one a way to be sent.
 8. **Slot exclusion is a database constraint, never a read-then-write check.**
    Overlap is guaranteed by
    `EXCLUDE USING gist (provider_id WITH =, staff_id WITH =, blocked_range WITH
    &&) WHERE (status IN ('PENDING','CONFIRMED'))`. There is no Redis lock, no
    advisory lock and no `SELECT … FOR UPDATE` for slot exclusion. "Is this slot
    free?" answered by a `SELECT` before the `INSERT` is a race, not a guard:
-   both racers read "free". SQLSTATE `23P01` maps to `SlotUnavailableException`
-   → `409 SLOT_UNAVAILABLE`. The normative DDL, including the non-empty-range
-   and derived-buffer CHECKs without which the constraint can be defeated by an
-   empty range, lives in `booking-integrity` as
-   `V014__create_appointments.sql`; never restate it, excerpt it.
+   both racers read "free". The constraint is named `no_double_booking`, which
+   is the name a `23P01` puts in front of an operator. SQLSTATE `23P01` maps to
+   `SlotUnavailableException` → `409 SLOT_UNAVAILABLE`. The normative DDL,
+   including the non-empty-range and derived-buffer CHECKs without which the
+   constraint can be defeated by an empty range, lives in `booking-integrity` as
+   `V009__create_appointments.sql`; never restate it, excerpt it.
 9. **A server-chosen staff member retries; a client-named one conflicts.** If
    the request named `staff_id`, a `23P01` means *that* person is busy: map it
    to `409 SLOT_UNAVAILABLE` at once. If the server chose the staff member
@@ -120,9 +131,10 @@ and a version check does not make a retry safe.
     provider's customer gets two SMS reminders, or none.
 11. **Pessimistic locking is not the default.** The only sanctioned
     `FOR UPDATE` in this codebase is the worker's `SKIP LOCKED` claim.
-    Optimistic version checks handle aggregate edits; the exclusion constraint
-    handles slots. Reach for a row lock only on a genuinely hot row where the
-    retry cost under contention is worse than the lock, and say why in the PR.
+    The status-conditional `UPDATE` handles aggregate edits; the exclusion
+    constraint handles slots. Reach for a row lock only on a genuinely hot row
+    where the retry cost under contention is worse than the lock, and say why in
+    the PR.
 12. **Never conflate the two mechanisms.** "We have a UNIQUE idempotency key, so
     we don't need a version" is wrong - the key stops *replays of one request*,
     not two *different* legitimate edits of the same appointment. "We have
@@ -132,11 +144,18 @@ and a version check does not make a retry safe.
     twice over: a replay of a *cancel-then-rebook* flow, or a retry landing
     after the first appointment was cancelled, does not overlap anything.
 13. **Conflicts and duplicates map to RFC 7807 with published codes.** A slot
-    collision is `409 SLOT_UNAVAILABLE`; a lost optimistic update is `409
-    CONCURRENT_MODIFICATION`; a key replayed with a different body is `422
-    IDEMPOTENCY_KEY_REUSED`. A genuine replay returns the original `2xx` body,
-    not an error the second time. Any code used here must exist in the published
-    catalogue in `platform-api` before it ships.
+    collision is `409 SLOT_UNAVAILABLE`; a transition that loses the race is
+    `409 INVALID_STATE_TRANSITION`, the same code and the same answer a caller
+    gets for asking an appointment to leave a state it cannot leave - the loser
+    and the latecomer are indistinguishable from outside, and inventing a
+    second code would publish the difference for nobody's benefit; a key
+    replayed with a different body is `422 IDEMPOTENCY_KEY_REUSED`. A genuine
+    replay returns the original `2xx` body, not an error the second time.
+    **There is no `CONCURRENT_MODIFICATION` code and there never was one.** The
+    catalogue in `platform-api` is closed at fifteen, and `APPOINTMENT_CONFLICT`
+    was deleted from it precisely because it was published while nothing raised
+    it - a client branching on it branched on something that could not arrive.
+    Any code used here must exist in that catalogue before it ships.
 
 
 > **`ON CONFLICT` must repeat a partial index's predicate.** An idempotency key
@@ -157,7 +176,7 @@ and a version check does not make a retry safe.
 
 - "There is a `UNIQUE (provider_id, idempotency_key)`, so versioning is
   unnecessary." → conflation; the key blocks a *replay*, not a concurrent
-  distinct edit. Add `version` plus an atomic transition. (Rule 12)
+  distinct edit. Add an atomic, conditional transition. (Rule 12)
 - "There is an optimistic `version`, so retries are safe." → conflation; the
   version blocks a *lost update*, a client retry still re-runs the effect. Add
   the idempotency key. (Rule 12)
@@ -168,9 +187,9 @@ and a version check does not make a retry safe.
 - Documenting a "24-hour idempotency window" with no job that enforces one →
   the contract lies. The key lives as long as the appointment. (Rule 4)
 - `appointment = repo.find(id); appointment.confirm(); repo.save(appointment);`
-  with no version check (last writer silently wins) → conditional
-  `UPDATE … WHERE status = :expected AND version = :v`, check the row count.
-  (Rule 7)
+  (last writer silently wins) → one conditional
+  `UPDATE … WHERE id = :id AND status = ANY(:accepted) RETURNING …`; no row
+  back means you lost. (Rule 7)
 - `if (repo.findOverlapping(staffId, range).isEmpty()) repo.insert(…)` as the
   guard against double-booking → both racers see "no overlap"; let the EXCLUDE
   constraint decide and map `23P01` to `409 SLOT_UNAVAILABLE`. (Rule 8)
@@ -195,7 +214,7 @@ and a version check does not make a retry safe.
   `FOR UPDATE SKIP LOCKED` → two instances send the same reminder twice.
   (Rule 10)
 - `SELECT … FOR UPDATE` on every read "to be safe" → contention and lock waits;
-  optimistic locking is the norm. (Rule 11)
+  the conditional `UPDATE` is the norm. (Rule 11)
 - Returning a fresh `201` with a new appointment id for a replayed
   `Idempotency-Key` → return the stored original result. (Rule 13)
 
@@ -204,97 +223,133 @@ and a version check does not make a retry safe.
 **EXCERPT - idempotency columns only.** The normative `appointments` DDL, with
 `blocked_from`/`blocked_until`, the derived-buffer and non-empty CHECKs, the
 `btree_gist` extension and the exclusion constraint, is
-`V014__create_appointments.sql` in `booking-integrity`. Do not copy the table
+`V009__create_appointments.sql` in `booking-integrity`. Do not copy the table
 here and do not invent a second migration version for it; this shows only the
 three columns this skill owns.
 
 ```sql
--- EXCERPT of V014__create_appointments.sql (normative copy: booking-integrity)
---   idempotency_key        text   NOT NULL,
---   idempotency_request_hash text NOT NULL,   -- SHA-256 of the canonical body
---   version                bigint NOT NULL DEFAULT 0,
---   CONSTRAINT uq_appointments_idempotency
---       UNIQUE (provider_id, idempotency_key),
---   CONSTRAINT uq_appointments_provider_id UNIQUE (provider_id, id),
---   CONSTRAINT ex_appointments_no_overlap
---       EXCLUDE USING gist (provider_id WITH =, staff_id WITH =,
---                           blocked_range WITH &&)
---       WHERE (status IN ('PENDING', 'CONFIRMED'))
+-- EXCERPT of V009__create_appointments.sql (normative copy: booking-integrity)
+--   idempotency_key          varchar(80),    -- both nullable, which is exactly
+--   idempotency_request_hash varchar(64),    -- what makes the index below
+--                                            -- partial. SHA-256 of the body.
+--   version                  bigint NOT NULL DEFAULT 0,
+--   CONSTRAINT ck_appointments_idempotency_pair CHECK (
+--       (idempotency_key IS NULL) = (idempotency_request_hash IS NULL)),
+--   CONSTRAINT uq_appointments_provider_id UNIQUE (provider_id, id)
+-- );
+--
+-- -- Both of these come AFTER the table, not inside it. The idempotency
+-- -- guarantee is a partial unique INDEX and not a table constraint, because a
+-- -- constraint cannot carry a WHERE clause.
+-- ALTER TABLE appointments ADD CONSTRAINT no_double_booking
+--     EXCLUDE USING gist (provider_id WITH =, staff_id WITH =,
+--                         blocked_range WITH &&)
+--     WHERE (status IN ('PENDING','CONFIRMED'));
+-- CREATE UNIQUE INDEX uq_appointments_idempotency ON appointments
+--     (provider_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
 ```
 
 Idempotent command. `provider_id` is ambient - it is never a parameter of the
 command, the use case or the DTO.
 
 ```java
-@Transactional
-public Appointment book(BookAppointmentCommand command, StaffId staff) {
+@Transactional(Transactional.TxType.REQUIRES_NEW)
+public InsertOutcome once(BookAppointmentCommand command, StaffId staff) {
+    // The replay is read FIRST, before any rule is applied to the request. A
+    // retry is not a new request and must not be judged as one: the slot it
+    // took may since have fallen inside the lead time or been closed by an
+    // override, and refusing the retry would leave the caller believing nothing
+    // was booked while the appointment stands.
+    //
+    // replayOf compares the stored hash itself and throws
+    // IdempotencyKeyReusedException on a mismatch, so a key recycled across two
+    // different bookings is 422 here rather than a silent second confirmation.
+    Optional<InsertOutcome> replay = command.idempotency()
+            .flatMap(i -> appointments.replayOf(i.key(), i.requestHash()));
+    if (replay.isPresent()) {
+        return replay.get();
+    }
+
     // The slot is recomputed server-side from starts_at plus the service
     // offering's own duration and buffers; any end time sent by the client is
     // ignored. Buffers are frozen onto the row so the DB can check the
     // derivation.
-    ServiceOffering offering =
-            lookupServiceOffering.require(command.serviceOfferingId());
-    Appointment candidate =
-            Appointment.request(command, offering, staff, clock);
+    BookableOffering offering = offerings.requireBookable(command.serviceOfferingId());
+    BookedSlot slot = BookedSlot.from(command.startsAt(), offering.duration(),
+                                      offering.bufferBefore(), offering.bufferAfter());
 
-    // ON CONFLICT (provider_id, idempotency_key) DO NOTHING: exactly one racer
-    // inserts, the loser writes nothing and no ConstraintViolationException is
-    // thrown, so the transaction stays usable. The conflict target is explicit,
-    // so a 23P01 from the exclusion constraint is NOT absorbed here.
-    appointments.insertIfAbsent(candidate);
-
-    Appointment stored = appointments
-            .findByIdempotencyKey(command.idempotencyKey())
-            // DO NOTHING does not wait for a concurrent uncommitted insert, so
-            // this SELECT can legitimately find nothing. That is a race, not a
-            // bug: 409, retry the same key.
-            .orElseThrow(() -> new ConcurrentBookingException(
-                    command.idempotencyKey()));
-
-    // A key reused with a different body is a client error, never a replay.
-    if (!stored.idempotencyRequestHash()
-                .equals(candidate.idempotencyRequestHash())) {
-        throw new IdempotencyKeyReusedException(command.idempotencyKey());
-    }
-    return stored;   // first insert or replay - same body either way
+    // ON CONFLICT (provider_id, idempotency_key) WHERE idempotency_key IS NOT
+    // NULL DO NOTHING: exactly one racer inserts, the loser writes nothing and
+    // no ConstraintViolationException is thrown, so the transaction stays
+    // usable. The conflict target is explicit, so a 23P01 from the exclusion
+    // constraint is NOT absorbed here. Zero rows back means the key is already
+    // taken, and the adapter re-reads the stored outcome rather than minting a
+    // second reference for one booking.
+    return appointments.insertIfAbsent(newAppointment(command, offering, slot, staff));
 }
 ```
+
+**There is no `ConcurrentBookingException`, and none was ever built.** An
+attempt that lost for a reason saying nothing about the slot - a `40P01`
+deadlock, or a public reference drawn that somebody already holds - is
+`TransientBookingConflictException`, which is `500 INTERNAL_ERROR` and never
+reaches a client because the retry loop above it opens a new transaction and
+tries again. Only when the budget is spent does the caller hear anything, and
+then it is `409 SLOT_UNAVAILABLE` or `429 RATE_LIMITED` depending on what the
+committed data says. A dedicated conflict exception would have had nothing to
+add that those three do not already say.
 
 ```java
 // Adapter: one INSERT ... ON CONFLICT DO NOTHING - no pre-SELECT, no
 // find-then-insert, no exception path to unwind on the idempotency key.
-int insertIfAbsent(Appointment appointment) {
-    return em.createNativeQuery("""
+//
+// The column list is ABRIDGED to the ones this skill is about. The shipped
+// statement also writes service_name, duration_minutes, public_reference,
+// service_fulfilment and preferred_channel, every one of them NOT NULL: copy
+// this list as it stands and the first booking is a 23502, which has nothing to
+// do with idempotency and will cost an afternoon to read that way.
+InsertOutcome insertIfAbsent(NewAppointment a) {
+    List<Object[]> inserted = em.createNativeQuery("""
         INSERT INTO appointments
             (id, provider_id, staff_id, service_offering_id, customer_id,
              starts_at, ends_at, blocked_from, blocked_until,
-             buffer_before_minutes, buffer_after_minutes, status,
+             buffer_before_minutes, buffer_after_minutes,
              customer_price_amount_minor, customer_price_currency,
-             idempotency_key, idempotency_request_hash, version)
+             idempotency_key, idempotency_request_hash)
         VALUES (:id, :providerId, :staffId, :serviceOfferingId, :customerId,
                 :startsAt, :endsAt, :blockedFrom, :blockedUntil,
-                :bufferBefore, :bufferAfter, :status,
-                :amountMinor, :currency, :key, :hash, 0)
-        ON CONFLICT (provider_id, idempotency_key) DO NOTHING
+                :bufferBefore, :bufferAfter,
+                :amountMinor, :currency, :key, :hash)
+        -- The conflict target repeats the partial index's own predicate. Drop
+        -- the WHERE and the arbiter cannot infer the index: 42P10, at the first
+        -- real booking and never before it.
+        ON CONFLICT (provider_id, idempotency_key)
+            WHERE idempotency_key IS NOT NULL
+        DO NOTHING
+        -- RETURNING rather than a row count: the caller needs the status and
+        -- the reference the row was born with, and reading them back afterwards
+        -- would be a second query answering about a row another request may have
+        -- moved. Zero rows still means the conflict target fired.
+        RETURNING id, status, public_reference
         """)
-        .setParameter("id", appointment.id().value())
+        .setParameter("id", a.id().value())
         .setParameter("providerId", tenantContext.require().value())
-        .setParameter("staffId", appointment.staffId().value())
-        .setParameter("serviceOfferingId",
-                      appointment.serviceOfferingId().value())
-        .setParameter("customerId", appointment.customerId().value())
-        .setParameter("startsAt", appointment.startsAt())
-        .setParameter("endsAt", appointment.endsAt())
-        .setParameter("blockedFrom", appointment.blockedFrom())
-        .setParameter("blockedUntil", appointment.blockedUntil())
-        .setParameter("bufferBefore", appointment.bufferBeforeMinutes())
-        .setParameter("bufferAfter", appointment.bufferAfterMinutes())
-        .setParameter("status", appointment.status().name())
-        .setParameter("amountMinor", appointment.customerPrice().amountMinor())
-        .setParameter("currency", appointment.customerPrice().currency().code())
-        .setParameter("key", appointment.idempotencyKey())
-        .setParameter("hash", appointment.idempotencyRequestHash())
-        .executeUpdate();   // 1 = we inserted, 0 = a racer already did
+        // ... one binding per column above
+        .setParameter("key", a.idempotencyKey().orElse(null))
+        .setParameter("hash", a.idempotencyRequestHash().orElse(null))
+        .getResultList();
+
+    if (!inserted.isEmpty()) {
+        Object[] row = (Object[]) inserted.get(0);
+        return new InsertOutcome(a.id(), (String) row[2],
+                                 AppointmentStatus.valueOf((String) row[1]), false);
+    }
+    // Zero rows means the conflict target fired, so the key exists and a row
+    // must be readable. The stored reference is handed back, never a fresh
+    // mint: a retry answered with a different reference leaves the customer
+    // holding a key to nothing.
+    return findReplay(a).orElseThrow(
+            () -> new IdempotencyKeyReusedException(a.idempotencyKey().orElse(null)));
 }
 ```
 
@@ -306,15 +361,16 @@ client-named staff member conflicts immediately (rule 9):
 public class BookAppointmentService implements BookAppointmentUseCase {
 
     @Override
-    public Appointment book(BookAppointmentCommand command) {
+    public BookingResult book(BookAppointmentCommand command) {
         if (command.staffId().isPresent()) {
             // The client named this person. A conflict is the honest answer.
-            return bookOnce(command, command.staffId().get());
+            return result(attempt.once(command, command.staffId().get()));
         }
-        List<StaffId> candidates = staffAssignment.eligibleFor(command);
+        List<StaffId> candidates =
+                appointments.eligibleStaff(command.serviceOfferingId());
         for (StaffId candidate : candidates) {      // bounded by eligibility
             try {
-                return bookOnce(command, candidate);     // its own transaction
+                return result(attempt.once(command, candidate));  // own transaction
             } catch (SlotUnavailableException retryNext) {
                 // Every racer picked the same least-loaded chair. Take the next
                 // one rather than telling a customer the salon is full.
@@ -325,44 +381,65 @@ public class BookAppointmentService implements BookAppointmentUseCase {
 }
 ```
 
-`bookOnce` is the `@Transactional` method above; each attempt is a fresh unit of
-work because a `23P01` has already marked the previous one rollback-only.
+`attempt.once` is the `@Transactional(REQUIRES_NEW)` method above; each attempt
+is a fresh unit of work because a `23P01` has already marked the previous one
+rollback-only.
 
-Atomic, version-checked transition - the database arbitrates the race:
+Atomic, status-conditional transition - the database arbitrates the race:
 
 ```java
 @Transactional
-public void confirm(AppointmentId id, long expectedVersion) {
-    int updated = appointments.compareAndAdvance(
-        id,
-        /* from */ AppointmentStatus.PENDING,
-        /* to   */ AppointmentStatus.CONFIRMED,
-        expectedVersion);
-    if (updated == 0) {
-        // Status was not PENDING, or the version moved: we lost the race.
-        throw new AppointmentConflictException(id);   // -> 409
-    }
+public AgendaEntry confirm(AppointmentId id) {
+    return appointments.transition(id,
+            /* from */ EnumSet.of(AppointmentStatus.PENDING),
+            /* to   */ AppointmentStatus.CONFIRMED,
+            clock.instant())
+        // Why nothing moved is asked only once the statement has found no row.
+        // Before that it is not a question, and asking first would be the very
+        // read-modify-write the conditional UPDATE exists to avoid. The answer
+        // is 409 INVALID_STATE_TRANSITION for a row in another state, and 404
+        // for one that does not exist - a row that is not the caller's is
+        // invisible to that read too, so it gives the same 404.
+        .orElseThrow(() -> refusalFor(id, AppointmentStatus.CONFIRMED));
 }
 ```
+
+**There is no `compareAndAdvance` port method and no expected version passed
+in.** The conditional transition is `transition(...)` on
+`AppointmentStateRepository`, and it takes the *set* of states the move is legal
+from rather than one - `complete` and `markNoShow` both leave `CONFIRMED`, a
+cancellation may leave either active state, and folding that into one call is
+what keeps the decision in the WHERE clause instead of in an `if` above it.
 
 ```java
 // Adapter: one conditional UPDATE, not read-then-write. The RLS policy already
 // scopes the row to the current provider, so a cross-tenant id simply matches
-// nothing and the caller sees the same 409 as any other loser.
-int compareAndAdvance(AppointmentId id,
-                      AppointmentStatus expected,
-                      AppointmentStatus next,
-                      long version) {
-    return em.createNativeQuery("""
+// nothing and the caller sees the same answer as any other loser.
+Optional<AgendaEntry> transition(AppointmentId id, Set<AppointmentStatus> from,
+                                 AppointmentStatus to, Instant at) {
+    // The accepted states are BOUND as an array, not interpolated: the set
+    // comes from the application layer, and a set that reached SQL as text
+    // would be one place where it could stop being a set.
+    List<Object[]> rows = em.createNativeQuery("""
         UPDATE appointments
-           SET status = :next, version = version + 1
-         WHERE id = :id AND status = :expected AND version = :version
+           SET status = CAST(:to AS varchar),
+               -- Incremented, never compared. No route accepts a version, so
+               -- there is nothing to compare it against; the column stays
+               -- truthful for the day an ETag gives one a way to be sent.
+               version = version + 1,
+               updated_at = :at
+         WHERE id = :id
+           AND status = ANY(CAST(:accepted AS varchar[]))
+        RETURNING id, starts_at, ends_at, status, service_name
         """)
         .setParameter("id", id.value())
-        .setParameter("expected", expected.name())
-        .setParameter("next", next.name())
-        .setParameter("version", version)
-        .executeUpdate();   // 1 = won, 0 = lost
+        .setParameter("to", to.name())
+        .setParameter("accepted", "{" + String.join(",", names(from)) + "}")
+        .setParameter("at", Timestamp.from(at))
+        .getResultList();
+
+    // The row that moved is the answer; empty is the loser.
+    return rows.isEmpty() ? Optional.empty() : Optional.of(toEntry(rows.get(0)));
 }
 ```
 
@@ -372,12 +449,24 @@ replay, `SKIP LOCKED` for the concurrent drain:
 ```sql
 -- Enqueued in the SAME transaction as the appointment; UNIQUE (dedupe_key)
 -- makes a retried booking enqueue the reminder at most once.
-SELECT id, channel, recipient, variables
-  FROM notifications
- WHERE status = 'PENDING' AND scheduled_at <= :now
- ORDER BY scheduled_at
- LIMIT :batchSize
-   FOR UPDATE SKIP LOCKED;
+--
+-- The claim is an UPDATE and not a bare SELECT, and it commits on its own: a
+-- send must never happen inside the transaction that took the row, or one slow
+-- gateway holds the lock and every other replica queues behind it. Marking the
+-- batch SENDING and RETURNING it is what lets the lock go before the SMS is
+-- attempted.
+UPDATE notifications
+   SET status = 'SENDING', updated_at = now()
+ WHERE id IN (
+       SELECT id FROM notifications
+        WHERE status = 'PENDING'
+          AND scheduled_at <= now()
+          AND retry_after_at <= now()
+        ORDER BY scheduled_at
+        LIMIT :batchSize
+        FOR UPDATE SKIP LOCKED)
+RETURNING id, provider_id, kind, to_phone_e164, to_email,
+          preferred_channel, locale, payload::text, dedupe_key, attempts;
 ```
 
 Prove every property through the real stack (Testcontainers PostgreSQL 18, no
@@ -425,7 +514,7 @@ void anyStaffBookingsFillEveryFreeChair() throws Exception {
 @Test // concurrency: two threads advance the same appointment -> one wins
 void concurrentTransitionsHaveExactlyOneWinner() throws Exception {
     AppointmentId id = seedPendingAppointment();
-    var results = runInParallel(2, () -> tryConfirm(id, /* version */ 0L));
+    var results = runInParallel(2, () -> tryConfirm(id));
     assertThat(results).filteredOn(Result::won).hasSize(1);
     assertThat(appointments.get(id).status())
         .isEqualTo(AppointmentStatus.CONFIRMED);
@@ -451,7 +540,7 @@ void concurrentTransitionsHaveExactlyOneWinner() throws Exception {
 - `money-currency` - the frozen `customer_price_amount_minor` rides on the very
   aggregate that carries the `version` column.
 - `multi-tenant-rls` - the `UNIQUE (provider_id, …)` keys, the composite foreign
-  keys and the `version` columns all live on tenant-scoped, RLS-forced tables,
+  keys and the one `version` column all live on tenant-scoped, RLS-forced tables,
   and the GUC that makes them work is bound on the connection, not by an
   interceptor.
 - `backend-tests` - the replay test and the parallel-booking tests run over HTTP

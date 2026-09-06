@@ -11,9 +11,9 @@ description: Use when naming anything the machine reads - class, method, package
 > CANONICAL.md disagree, CANONICAL.md wins and this file is a bug.
 
 Strict rule: everything the machine and the developer read is **English**;
-everything the customer reads comes from an i18n catalogue, **French first**
-for the launch market, with English and local languages planned. Both
-directions, no drift.
+everything the customer reads is **French first** for the launch market, keyed
+in English, with English and local languages planned. Both directions, no
+drift.
 
 ## When to use
 
@@ -42,7 +42,7 @@ directions, no drift.
    names; comments and Javadoc; log event names and exception messages; RFC
    7807 `title`/`detail` written by the server; metric, span, and config keys - all English. The ubiquitous language of the domain is English: `Provider`,
    `ProviderStaff`, `ServiceOffering`, `AvailabilityRule`,
-   `AvailabilityOverride`, `AvailabilitySlot`, `Appointment`, `Customer`,
+   `AvailabilityOverride`, `AvailableSlot`, `Appointment`, `Customer`,
    `Subscription`, `PlanEntitlements`, `TenantContext` - never `Prestataire`,
    `Prestation`, `Disponibilite`, `RendezVous`, `Abonnement`.
 2. **Domain terms are English and shared.** The word used in the code is the
@@ -50,7 +50,7 @@ directions, no drift.
    template key, the event name, and the ADR. One term per concept, English,
    everywhere. If the business speaks French for a concept, translate it once
    into the ubiquitous English term and keep it fixed (business "prestation" ->
-   code `ServiceOffering`; "créneau" -> `AvailabilitySlot`; "plage horaire
+   code `ServiceOffering`; "créneau" -> `AvailableSlot`; "plage horaire
    d'ouverture" -> `AvailabilityRule`; "exception d'agenda" ->
    `AvailabilityOverride`; "annulation" -> `cancellation`).
    The sellable prestation is deliberately `ServiceOffering` and not `Service`:
@@ -60,15 +60,24 @@ directions, no drift.
    everywhere - class `ServiceOffering`, table `service_offerings`, foreign key
    `service_offering_id`, OpenAPI schema `ServiceOffering`, wire field
    `service_offering_id`, route `/v1/service-offerings`.
-3. **User-facing strings resolve from the i18n catalogue, never hardcoded.**
-   No user-visible literal in Java or in a template. Every label goes through
-   the catalogue under a **stable English key**; the catalogue holds the
-   translations. French is the launch locale and the fallback the product
-   ships with; English and local languages are planned and are added as
-   catalogue files, never as a code change. Selection is by request locale
-   (`Accept-Language`, or the customer's stored preference), not by branching
-   in code. This applies to notification bodies too: the `notifications` row
-   carries the key and its parameters, not a rendered French sentence.
+3. **User-facing strings carry a stable English key; the French copy lives in
+   one place per channel.** No user-visible literal scattered through business
+   code. **The i18n catalogue this rule was written around does not exist.**
+   There is no `messages*.properties` in the repository, no `ResourceBundle`,
+   no injected `messages` bean, and no `Accept-Language` on any route. It was
+   not deleted, it was never built, and the reason is that French is still the
+   only locale that ships: `BookingNotifications.LOCALE` is the constant
+   `"fr"`, the `notifications.locale` column defaults to `'fr'`, and the front
+   carries no i18n library at all. A catalogue with one column in it buys
+   nothing, so do not add one back believing it went missing. What does hold,
+   and is the half of the rule worth having, is the separation: the
+   `notifications` row carries the English `kind` and a `payload` of template
+   variables under stable English keys, never a rendered French sentence, and
+   the copy for each kind sits in one enum per channel - `EmailTemplate` for
+   e-mail, `WhatsAppTemplate` for the Meta-approved template names. Keep the
+   kinds and the payload keys English and a second locale is a table of copy;
+   let French leak into them and it is a rewrite. Build the catalogue the day a
+   second locale has a date, not before.
 4. **Money, time, and phone numbers stay locale-formatted at the edge, typed
    inside.** Amounts live as `Money(amountMinor, Currency)` in the domain
    (English, numeric); instants are `Instant`/`timestamptz`; phones are E.164
@@ -76,10 +85,23 @@ directions, no drift.
    the provider's timezone - never store or log a pre-formatted string as the
    source of truth.
 5. **URLs and route slugs are English kebab plural nouns behind a version
-   segment.** `/v1/providers`, `/v1/service-offerings`,
-   `/v1/availability-rules`, `/v1/appointments`, `/v1/customers`,
-   `/v1/subscriptions`. No verbs, no locale in the path segment, and no tenant
-   identifier: the same slug serves every language and every provider.
+   segment.** `/v1/providers`, `/v1/service-offerings`, `/v1/appointments`,
+   `/v1/customers`, `/v1/opening-hours`, `/v1/closures`. No verbs, no locale in
+   the path segment, and no tenant identifier: the same slug serves every
+   language and every provider. Two slugs this file used to name are not in the
+   published document and never were. `/v1/availability-rules` does not exist
+   because the public surface deliberately speaks the shopkeeper's words rather
+   than the domain's: the aggregates stay `AvailabilityRule` and
+   `AvailabilityOverride`, the tables stay `availability_rules` and
+   `availability_overrides`, but the routes are `/v1/opening-hours` and
+   `/v1/closures` and the schemas are `OpeningHours` and the `Closure*` family
+   (`ClosureView`, `ClosureRequest`, `ClosureList`). That is the
+   one place the published name and the code name part company on purpose, and
+   `platform-api` is where the trade is argued. `/v1/subscriptions` does not
+   exist because there is nothing behind it: `V011` created the `subscriptions`
+   table, `com.balaaca.billing` still holds one `package-info.java` and no
+   Java, and a route over an empty module publishes a promise no handler can
+   keep.
 6. **The wire is English and `snake_case`.** Every JSON property and every
    query parameter - `service_offering_id`, `starts_at`, `staff_id`,
    `amount_minor`, `next_cursor` - is an English term in `snake_case`. Never a
@@ -104,11 +126,13 @@ directions, no drift.
   English.
 - `throw new IllegalStateException("Le créneau est déjà réservé")` -> rule 1,
   server-authored message in English (the customer never sees this raw string;
-  the customer message comes from the i18n catalogue).
-- `return Response.ok("Rendez-vous confirmé").build()` -> rule 3, user text
-  must resolve from the catalogue by locale, not be a hardcoded literal.
+  what a customer reads is written on the front or in a channel template).
+- `return Response.ok("Rendez-vous confirmé").build()` -> rule 3/6; the API
+  answers in English, and the sentence a customer reads belongs to the front or
+  to a channel template, never to a JSON body.
 - Inserting a fully rendered French SMS body into the `notifications` table
-  -> rule 3; store the English key plus parameters and render at send time.
+  -> rule 3; store the English `kind` plus its payload and let the channel
+  render at send time.
 - Route `/rendez-vous`, or a per-locale tree `/fr/rendez-vous` +
   `/en/appointments` -> rule 5, one English slug `/v1/appointments`.
 - A JSON body with `serviceOfferingId` or `dateDebut` -> rule 6;
@@ -152,18 +176,31 @@ staff_id: null              # null means "any available staff"
 starts_at: "2026-09-14T09:30:00Z"
 ```
 
+And the message the booking owes. The row is entirely English - the kind, the
+payload keys, the constant - because it says what the message MEANS, not how it
+is said (see `outbox-messaging`):
+
 ```java
-// Edge: user-facing text resolved from the i18n catalogue, never a hardcoded
-// literal. The key is English; the values are translations, French first.
-// `messages` is a constructor-injected i18n bean (see `backend-di`).
-String confirmation = messages.get("appointment.confirmed", locale);
+new PlannedNotification(appointmentId, NotificationKind.BOOKING_CONFIRMATION,
+                        NotificationRecipient.CUSTOMER, phone, email, channel,
+                        LOCALE,                       // "fr", the only one that ships
+                        Map.of("business_name", provider.businessName(),
+                               "service_name", offering.name(),
+                               "customer_name", customer.fullName(),
+                               "starts_at_local", localStart),
+                        owedFor, scheduledAt);
 ```
 
-```properties
-# messages_fr.properties                      # messages_en.properties
-appointment.confirmed=Rendez-vous confirme    # appointment.confirmed=Appointment confirmed
-appointment.reminder=Rappel de rendez-vous    # appointment.reminder=Appointment reminder
-slot.unavailable=Ce creneau n'est plus libre  # slot.unavailable=This slot is no longer available
+The French appears once, in the worker, one entry per kind, with placeholders
+named after those payload keys. This is the whole of the product's customer
+copy on the server side; there is no catalogue behind it (rule 3):
+
+```java
+// notification-worker: EmailTemplate
+BOOKING_CONFIRMATION(Audience.CUSTOMER,
+        "Votre rendez-vous chez {business_name}",
+        "Votre rendez-vous est enregistré",
+        "Bonjour {customer_name}, {business_name} a bien reçu votre rendez-vous."),
 ```
 
 ## Sibling skills

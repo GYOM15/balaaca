@@ -18,14 +18,14 @@ between a race and a double booking: a concrete `staff_id`, a slot recomputed
 server-side, a range that can never be empty, one transaction, and a `23P01`
 mapped to `409`.
 
-This skill owns `V014__create_appointments.sql`. That migration is the one
+This skill owns `V009__create_appointments.sql`. That migration is the one
 normative appointments DDL in the pack; every other skill shows an excerpt of
 it and points back here.
 
 ## When to use
 
 - Creating, rescheduling, cancelling, or confirming an `Appointment`.
-- Writing or reviewing `V014__create_appointments.sql`, its exclusion
+- Writing or reviewing `V009__create_appointments.sql`, its exclusion
   constraint, its `blocked_range` column, its `CHECK` constraints, or the
   appointment state machine.
 - Resolving "any available staff" to a concrete `ProviderStaff`, or touching
@@ -145,8 +145,13 @@ it and points back here.
     **requested** service's buffers, and tests the widened candidate against
     `busy`. Widening both sides double-counts and hides free time; widening
     neither advertises slots that fail with `23P01` at insert. The busy lookup
-    returns `Map<StaffId, List<InstantRange>>` so the any-staff path in rule 9
-    can see every candidate in one read.
+    is `List<InstantRange> busyRanges(Optional<StaffId>, InstantRange)` and it
+    is asked **once per person**, never once for the salon: there is no
+    `Map<StaffId, List<InstantRange>>` and there deliberately never was. A
+    single pooled read treats every appointment in the shop as busy for
+    everybody, so one braider booked at ten closes a salon with an empty chair
+    beside her. It costs a few queries per chair, and being wrong is not
+    cheaper.
 12. **One transaction, in this order, with no network I/O inside it.** Load
     the provider (timezone, booking policy) and the service; resolve or accept
     the staff member; recompute the slot; validate it against
@@ -162,11 +167,16 @@ it and points back here.
     start then"; the constraint says "nobody else already has it". Passing
     availability is never a reason to skip the constraint, and a constraint
     violation is never reported as "closed".
-14. **The insert is `INSERT … ON CONFLICT (provider_id, idempotency_key) DO
-    NOTHING` followed by a `SELECT`, and the key carries a request
-    fingerprint.** The port method is `insertIfAbsent`; there is no `save` and
-    no `insert`. An affected-row count of `1` means created; `0` means the key
-    already exists, which is a **replay, never an error**. On a replay,
+14. **The insert is `INSERT … ON CONFLICT (provider_id, idempotency_key)
+    WHERE idempotency_key IS NOT NULL DO NOTHING` followed by a `SELECT`, and
+    the key carries a request fingerprint.** The predicate is not decoration:
+    the key is *optional* - a walk-in the provider types in at the counter has
+    none - so the index that enforces it is partial, and a conflict target
+    that does not repeat the predicate matches no index and raises `42P10` on
+    the very first booking. The port method is `insertIfAbsent`; there is no
+    `save` and no `insert`. An affected-row count of `1` means created; `0`
+    means the key already exists, which is a **replay, never an error**. On a
+    replay,
     compare the stored `idempotency_request_hash` with the current request's
     hash: equal returns the stored appointment and the original `201` body;
     different is `422 IDEMPOTENCY_KEY_REUSED`, because the same key with a
@@ -213,22 +223,35 @@ it and points back here.
     `PENDING → CONFIRMED | CANCELLED`, `CONFIRMED → COMPLETED | NO_SHOW |
     CANCELLED`; terminal states are terminal. Each transition is `UPDATE
     appointments SET status = :next, version = version + 1 WHERE id = :id AND
-    status = :expected AND version = :v`, and the affected-row count decides
-    the outcome - never an `if (appointment.status() == EXPECTED)` after a
-    separate read. Because the constraint's `WHERE` is partial on
+    status = ANY(:accepted)`, and the affected-row count decides the outcome -
+    never an `if (appointment.status() == EXPECTED)` after a separate read.
+    The `version` column is incremented and **nothing compares it**, which is
+    a decision rather than an omission: the published contract carries no
+    version for a caller to state, so an `AND version = :v` would be checking
+    a number no client can send. The accepted-status set is the whole guard,
+    and it is enough - two simultaneous cancellations still produce one
+    affected row and one zero. The column stays truthful for the day an ETag
+    gives a caller a way to state one. Because the constraint's `WHERE` is
+    partial on
     `('PENDING','CONFIRMED')`, cancelling releases the slot as a side effect
     of the same `UPDATE`, with no second statement and no window in which the
     slot is neither free nor taken.
 19. **Reschedule is a slot move under the same constraint, plus notification
     replanning.** Recompute the new slot from the service (rule 10), `UPDATE`
     `starts_at`, `ends_at`, `blocked_from`, `blocked_until` conditionally on
-    the current status and version, and let the constraint arbitrate: a
+    the current status - not on the version, for the reason rule 18 gives -
+    and let the constraint arbitrate: a
     `23P01` on the update is the same `409 SLOT_UNAVAILABLE`. In the same
     transaction, cancel the pending reminder rows for the old time and insert
     new ones for the new time, plus a reschedule-notice row for the customer.
-    The dedupe key of each reminder embeds its target instant
-    (`appointment:{uuid}:REMINDER_24H:{scheduled_at_epoch_seconds}`), so a
-    reschedule produces a naturally distinct key with no version counter.
+    The dedupe key of each reminder embeds the instant it is owed for
+    (`appointment:{uuid}:REMINDER:{owed_for_epoch_seconds}`), so a reschedule
+    produces a naturally distinct key with no version counter. The kind is
+    plain `REMINDER` and carries no horizon: there is no `REMINDER_24H`, and
+    `notifications_kind_check` would refuse the row - the instant in the key
+    is already what tells the day-before message from the hour-before one.
+    `scheduled_at` stays out of the key as well, because when the worker may
+    send a message is delivery and not identity.
     Never delete-then-insert the appointment: it changes the id, breaks the
     audit trail, and opens a window where a third party takes the slot.
 20. **The price is frozen onto the appointment at booking time.** The
@@ -290,12 +313,15 @@ it and points back here.
   `try/catch` as the idempotent insert - a replayed key and a genuine double
   booking arrive as two different SQLSTATEs through the same catch, and the
   transaction is rollback-only even for the harmless replay → `INSERT … ON
-  CONFLICT (provider_id, idempotency_key) DO NOTHING` then `SELECT`
-  (rule 14).
+  CONFLICT (provider_id, idempotency_key) WHERE idempotency_key IS NOT NULL
+  DO NOTHING` then `SELECT` (rule 14).
 - `ON CONFLICT DO NOTHING` with **no** conflict target - an unqualified `DO
   NOTHING` also arbitrates the exclusion constraint, so a real double booking
   is swallowed and reported to the client as a successful replay → always
-  name `(provider_id, idempotency_key)` (rule 14).
+  name `(provider_id, idempotency_key)`, predicate included (rule 14).
+- Naming that target without `WHERE idempotency_key IS NOT NULL` - the index
+  is partial because the key is optional, so PostgreSQL matches no index and
+  raises `42P10` on the very first booking → repeat the predicate (rule 14).
 - An `idempotency_key` column with no `idempotency_request_hash` - the same
   key sent with a different service or a different time returns the first
   appointment and reports success, so the customer is told they booked
@@ -339,8 +365,8 @@ it and points back here.
   to the customer → insert a `notifications` row and commit (rule 12).
 - `appointment.setStatus(CANCELLED); repo.save(appointment);` after a separate
   read - last writer wins silently and a confirm can overwrite a cancel →
-  conditional `UPDATE … WHERE status = :expected AND version = :v`, check the
-  count (rule 18).
+  conditional `UPDATE … WHERE status = ANY(:accepted)`, check the count
+  (rule 18).
 - Rescheduling as `DELETE` + `INSERT` - new id, broken audit trail, and a
   window where a third party takes the freed slot → conditional `UPDATE` of
   the time columns (rule 19).
@@ -360,25 +386,31 @@ The normative migration. Every other skill that shows this table shows an
 excerpt of *this* file:
 
 ```sql
--- V014__create_appointments.sql
+-- V009__create_appointments.sql
 -- The one normative appointments DDL. Other skills excerpt it; this runs.
-
-CREATE EXTENSION IF NOT EXISTS btree_gist;   -- uuid "=" needs a GiST opclass
-
--- Prerequisites for the composite foreign keys below. Without a matching
--- UNIQUE, PostgreSQL rejects the FK with 42830 on a fresh database; a
--- PRIMARY KEY on (id) alone does NOT satisfy a (provider_id, id) reference.
-ALTER TABLE provider_staff
-    ADD CONSTRAINT uq_provider_staff_provider_id UNIQUE (provider_id, id);
-ALTER TABLE service_offerings
-    ADD CONSTRAINT uq_service_offerings_provider_id UNIQUE (provider_id, id);
-ALTER TABLE customers
-    ADD CONSTRAINT uq_customers_provider_id UNIQUE (provider_id, id);
-
--- A zero-length service makes ends_at = starts_at; with zero buffers that is
--- an EMPTY tstzrange, which "&&" never matches. Close it at the source.
-ALTER TABLE service_offerings
-    ADD CONSTRAINT ck_service_offerings_duration CHECK (duration_minutes > 0);
+--
+-- What this migration deliberately does NOT contain, and must not:
+--
+--   * CREATE EXTENSION btree_gist. It is in V001, with citext and pg_trgm:
+--     extensions are installed once, before the first table exists, so that
+--     no migration has to guess whether an earlier one already needed them.
+--     It is still what gives "uuid =" a GiST operator class, and without it
+--     the exclusion constraint below does not build.
+--   * The parents' UNIQUE (provider_id, id). Each is declared INLINE by the
+--     migration that creates its table - uq_provider_staff_provider_id in
+--     V005, uq_service_offerings_provider_id in V006,
+--     uq_customers_provider_id in V007. Adding one here instead would be
+--     later than the first migration that references that parent, and the
+--     composite FK fails on a fresh database with 42830; a PRIMARY KEY on
+--     (id) alone does NOT satisfy a (provider_id, id) reference.
+--   * ck_service_offerings_duration. No constraint by that name exists: V006
+--     closes the empty-range hole at the source with an inline, unnamed
+--     CHECK (duration_minutes > 0 AND duration_minutes <= 720) on the column.
+--     A zero-length service makes ends_at = starts_at, and with zero buffers
+--     that is an EMPTY tstzrange, which "&&" never matches.
+--
+-- The rule behind all three: one migration creates a table AND every
+-- constraint a later migration depends on.
 
 CREATE TABLE appointments (
     id                          uuid        PRIMARY KEY,
@@ -414,16 +446,18 @@ CREATE TABLE appointments (
     customer_price_currency     varchar(3)  NOT NULL
         CHECK (customer_price_currency ~ '^[A-Z]{3}$'),
 
-    idempotency_key             text        NOT NULL,
-    idempotency_request_hash    text        NOT NULL,
+    -- Nullable, and nullable together. A walk-in the provider types in at the
+    -- counter carries no key at all, which is exactly why the unique index
+    -- below is partial and why every ON CONFLICT naming it repeats that
+    -- predicate.
+    idempotency_key             varchar(80),
+    idempotency_request_hash    varchar(64),
 
     version                     bigint      NOT NULL DEFAULT 0,
     created_at                  timestamptz NOT NULL,
 
     -- notifications references appointments the same composite way.
     CONSTRAINT uq_appointments_provider_id UNIQUE (provider_id, id),
-    CONSTRAINT uq_appointments_idempotency
-        UNIQUE (provider_id, idempotency_key),
 
     -- Composite FKs: a cross-tenant reference is physically impossible, and
     -- staff_id is therefore bound to exactly one provider.
@@ -443,6 +477,9 @@ CREATE TABLE appointments (
         CHECK (blocked_until > blocked_from),
     CONSTRAINT ck_appointments_block_covers
         CHECK (blocked_from <= starts_at AND blocked_until >= ends_at),
+    -- Both or neither: a key with no fingerprint cannot be replayed safely.
+    CONSTRAINT ck_appointments_idempotency_pair
+        CHECK ((idempotency_key IS NULL) = (idempotency_request_hash IS NULL)),
 
     -- A CHECK *may* call make_interval, even though a generated column may
     -- not. That asymmetry is why the block window is derived here.
@@ -459,54 +496,87 @@ CREATE TABLE appointments (
     ) WHERE (status IN ('PENDING', 'CONFIRMED'))
 );
 
--- Busy-range lookup for the slot calculator.
-CREATE INDEX ix_appointments_staff_window
-    ON appointments (provider_id, staff_id, starts_at)
+-- An index, not a table constraint, because the key is optional: a UNIQUE
+-- constraint cannot be partial. Every ON CONFLICT that targets it has to
+-- repeat this predicate or PostgreSQL infers no index and raises 42P10.
+CREATE UNIQUE INDEX uq_appointments_idempotency
+    ON appointments (provider_id, idempotency_key)
+    WHERE idempotency_key IS NOT NULL;
+
+-- The agenda read, which is also where the slot calculator gets its busy
+-- ranges. There is no ix_appointments_staff_window and never was: a diary is
+-- opened by provider and status, and an index leading on staff_id would
+-- answer a question nothing asks.
+CREATE INDEX ix_appointments_agenda ON appointments (provider_id, status, starts_at)
     WHERE status IN ('PENDING', 'CONFIRMED');
-
-ALTER TABLE appointments ENABLE ROW LEVEL SECURITY;
-ALTER TABLE appointments FORCE  ROW LEVEL SECURITY;
-
--- nullif(..., true) degrades to NULL and filters every row: an unbound GUC
--- gives a deterministic 404, not 42704 or 22P02. See multi-tenant-rls.
-CREATE POLICY provider_isolation ON appointments
-    USING      (provider_id
-                = nullif(current_setting('app.provider_id', true), '')::uuid)
-    WITH CHECK (provider_id
-                = nullif(current_setting('app.provider_id', true), '')::uuid);
+CREATE INDEX ix_appointments_customer
+    ON appointments (provider_id, customer_id, starts_at DESC);
 ```
+
+Row-level security is **not** switched on here, and looking for it in this
+file is how a reader concludes the table has none. V013 enables it for every
+tenant-scoped table in one loop, naming each policy `<table>_tenant`, so this
+one is `appointments_tenant` and its predicate calls the helper rather than
+restating it:
+
+```sql
+-- V013__enable_row_level_security.sql, for appointments among seven others.
+CREATE POLICY appointments_tenant ON appointments
+    USING      (provider_id = app_current_provider())
+    WITH CHECK (provider_id = app_current_provider());
+```
+
+`app_current_provider()` is where the `nullif` lives, once in the whole
+schema, defined in V001: `current_setting('app.provider_id', true)` with
+`missing_ok`, so an unbound GUC degrades to `NULL` and filters every row -
+a deterministic 404, not `42704` or `22P02`. See `multi-tenant-rls`.
 
 The domain computes the slot from the frozen buffers, mirroring
 `ck_appointments_block_derived` exactly:
 
 ```java
 // booking/domain - framework-free.
+//
+// Six components, not four: blockedFrom and blockedUntil are STORED on the
+// record rather than recomputed by accessors. There is no blockedFrom() /
+// blockedUntil() derivation and no blockedRange() at all, and that is the
+// point - the window is settled once, by the factory, and the same two
+// instants are what the INSERT binds and what ck_appointments_block_derived
+// re-derives. A pair of accessors doing the arithmetic again is a second
+// implementation of a rule the database is already checking.
 public record BookedSlot(Instant startsAt, Instant endsAt,
+                         Instant blockedFrom, Instant blockedUntil,
                          int bufferBeforeMinutes, int bufferAfterMinutes) {
 
-    /** Derived from the service alone; the client never contributes an end. */
-    public static BookedSlot of(Instant startsAt, ServiceDuration service) {
+    /**
+     * Derived from the offering's own durations; the client never contributes
+     * an end. Durations, not another context's offering type: this is
+     * booking's domain, and adding two intervals to an instant should not
+     * require it to know that catalog exists.
+     */
+    public static BookedSlot from(Instant startsAt, Duration duration,
+                                  Duration bufferBefore, Duration bufferAfter) {
+        if (duration.isZero() || duration.isNegative()) {
+            // A zero-length booking produces an EMPTY range, and an empty
+            // range overlaps nothing - which silently disables the constraint.
+            throw new IllegalArgumentException("duration must be positive, was " + duration);
+        }
+        Instant endsAt = startsAt.plus(duration);
         return new BookedSlot(
             startsAt,
-            startsAt.plusSeconds(service.durationMinutes() * 60L),
-            service.bufferBeforeMinutes(),
-            service.bufferAfterMinutes());
-    }
-
-    public Instant blockedFrom() {
-        return startsAt.minusSeconds(bufferBeforeMinutes * 60L);
-    }
-
-    public Instant blockedUntil() {
-        return endsAt.plusSeconds(bufferAfterMinutes * 60L);
-    }
-
-    /** What the calculator tests against busy: the widened candidate. */
-    public InstantRange blockedRange() {
-        return InstantRange.halfOpen(blockedFrom(), blockedUntil());
+            endsAt,
+            startsAt.minus(bufferBefore),
+            endsAt.plus(bufferAfter),
+            (int) bufferBefore.toMinutes(),
+            (int) bufferAfter.toMinutes());
     }
 }
 ```
+
+Widening the *candidate* by the requested service's buffers happens in
+`scheduling`, inside `SlotCalculator`, not here: the calculator is the only
+thing that has to compare a candidate against a busy list, and rule 11 is its
+rule.
 
 The orchestrator is deliberately **not** transactional: it owns the retry, and
 each attempt gets a fresh transaction.
@@ -518,23 +588,40 @@ public class BookAppointmentService implements BookAppointmentUseCase {
     // constructor injection omitted for brevity; see backend-di
 
     @Override
-    @Transactional(Transactional.TxType.NEVER)   // the retry needs new ones
+    // No transaction annotation at all - not even TxType.NEVER. A retry needs
+    // a new transaction, and each attempt opens its own with REQUIRES_NEW.
     public BookingResult book(BookAppointmentCommand command) {
-        if (command.staffId().isPresent()) {
-            // The customer named this person. A conflict is the real answer.
-            return attempt.once(command, command.staffId().get());
+        boolean staffNamedByClient = command.staffId().isPresent();
+        // Whoever an earlier attempt already found booked. The attempt picks
+        // from what is left, so the loop makes progress instead of retrying
+        // the same chair.
+        List<StaffId> tried = new ArrayList<>();
+        int candidateCount = staffNamedByClient ? 1 : attempt.candidates(command).size();
+        if (candidateCount == 0) {
+            throw new NoEligibleStaffException(command.startsAt());
         }
 
-        // Server-chosen: least-loaded first, ties by id. A hint, not a lock.
-        List<StaffId> candidates = staffAssignment.eligibleFor(command);
-        if (candidates.isEmpty()) {
-            throw new NoEligibleStaffException(command.serviceOfferingId());
-        }
-        for (StaffId candidate : candidates) {
+        // Elided here for length, and not optional in the real service: under
+        // contention the loser's SQLSTATE is not always 23P01. Measured on
+        // this schema, N racers deadlock (40P01) at two, five and ten, and a
+        // deadlock says nothing about the slot - so it is caught separately,
+        // retried against the SAME candidate, and the budget carries a few
+        // extra passes for it.
+        for (int i = 0; i < candidateCount; i++) {
             try {
-                return attempt.once(command, candidate);
+                InsertOutcome outcome = attempt.once(command, tried);
+                return new BookingResult(outcome.appointmentId(), outcome.reference(),
+                                         outcome.status(), outcome.replayed());
             } catch (SlotUnavailableException taken) {
-                // Another racer got this chair. Next chair, new transaction.
+                // The customer named this person, and that person is busy.
+                // Moving them silently to a colleague books them with someone
+                // they did not choose.
+                if (staffNamedByClient) {
+                    throw taken;
+                }
+                // Which chair the database refused travels in details, never
+                // in the message: the client must not learn who is busy.
+                tried.add(busyStaff(taken));
             }
         }
         throw new SlotUnavailableException(command.startsAt());
@@ -548,36 +635,45 @@ One attempt: one transaction, ordered, no network I/O, ambient tenant.
 @ApplicationScoped
 public class BookAppointmentAttempt {
 
+    // @Transactional only. No @TenantBound here: that binding is a REST
+    // concern and the interceptor sits on the resource, so by the time this
+    // runs the tenant is already ambient in TenantContext. An application
+    // class that rebound it would be a second place the tenant is decided.
     @Transactional(Transactional.TxType.REQUIRES_NEW)
-    @TenantBound
-    public BookingResult once(BookAppointmentCommand command, StaffId staffId) {
-        Provider provider = providers.requireCurrent();
-        ServiceOffering service =
-            lookupServiceOffering.require(command.serviceOfferingId());
+    public InsertOutcome once(BookAppointmentCommand command, List<StaffId> excluded) {
+        BookableOffering offering =
+            offerings.requireBookable(command.serviceOfferingId());
 
         // Recomputed server-side: nothing about duration comes from the wire.
-        BookedSlot slot = BookedSlot.of(command.startsAt(), service.duration());
+        BookedSlot slot = BookedSlot.from(command.startsAt(), offering.duration(),
+                                          offering.bufferBefore(), offering.bufferAfter());
 
-        availability.requireBookable(provider, staffId, slot);   // pure domain
-
-        CustomerId customerId = customers.upsertByPhone(command.customer());
-
-        Appointment appointment = Appointment.pending(
-            staffId, customerId, service.id(), slot,
-            service.price(),                        // frozen onto the row
-            command.idempotency(),                  // key + request hash
-            clock.instant());
-
-        InsertOutcome outcome = appointments.insertIfAbsent(appointment);
-        if (outcome.isReplay()) {
-            return BookingResult.replayed(outcome.stored());
+        // A retry is not a new request, so it is answered before any rule is
+        // applied: the slot it took may since have fallen inside the lead time.
+        Optional<InsertOutcome> replay = command.idempotency()
+            .flatMap(i -> appointments.replayOf(i.key(), i.requestHash()));
+        if (replay.isPresent()) {
+            return replay.get();
         }
 
-        // Outbox rows in the SAME transaction; the worker sends them later.
-        notifications.enqueueAll(appointment.plannedNotifications(provider));
-        auditTrail.record(AuditEvent.appointmentBooked(appointment));
+        availability.requireBookable(command.startsAt(), slot);   // pure domain
 
-        return BookingResult.created(appointment);
+        // The server's own pick skips whoever an earlier attempt found booked.
+        StaffId staffId = command.staffId().orElseGet(() -> pick(command, excluded));
+
+        CustomerId customerId = appointments.upsertCustomer(command.customer());
+
+        InsertOutcome outcome = appointments.insertIfAbsent(new NewAppointment(
+            AppointmentId.of(UUID.randomUUID()), staffId, offering, slot, customerId,
+            command.idempotency().map(Idempotency::key),
+            command.idempotency().map(Idempotency::requestHash)));
+
+        // Outbox rows in the SAME transaction; the worker sends them later.
+        // Not on a replay: the rows are already there.
+        if (!outcome.replayed()) {
+            notifications.planFor(outcome.appointmentId(), command.startsAt(), offering);
+        }
+        return outcome;
     }
 }
 ```
@@ -603,18 +699,29 @@ public class AppointmentPostgresRepository implements AppointmentRepository {
                     service_offering_id, status, starts_at, ends_at,
                     buffer_before_minutes, buffer_after_minutes,
                     blocked_from, blocked_until,
+                    -- service_name and duration_minutes are NOT NULL with no
+                    -- default, frozen from the offering like the price. An
+                    -- insert that omits either does not run at all.
+                    service_name, duration_minutes,
                     customer_price_amount_minor, customer_price_currency,
                     idempotency_key, idempotency_request_hash, created_at)
-                VALUES (?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT (provider_id, idempotency_key) DO NOTHING
+                VALUES (?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                -- The predicate is repeated because the index is partial. An
+                -- unqualified target matches no index and raises 42P10.
+                ON CONFLICT (provider_id, idempotency_key)
+                    WHERE idempotency_key IS NOT NULL
+                DO NOTHING
                 """)
                 .setParameter(1, appointment.id().value())
                 /* … remaining bindings … */
                 .executeUpdate();
         } catch (PersistenceException e) {
             if (isExclusionViolation(e)) {
-                // No further DB access: the transaction is rollback-only.
-                throw new SlotUnavailableException(appointment.startsAt());
+                // No further DB access: the transaction is rollback-only. The
+                // refused chair travels in the exception's details so the
+                // retry loop can skip it; the client never sees it.
+                throw new SlotUnavailableException(appointment.startsAt(),
+                                                   appointment.staffId().value());
             }
             throw e;
         }
@@ -627,7 +734,7 @@ public class AppointmentPostgresRepository implements AppointmentRepository {
         StoredAppointment stored = requireByIdempotencyKey(
             appointment.idempotencyKey());
         if (!stored.requestHash().equals(appointment.requestHash())) {
-            throw new IdempotencyKeyReuseException(appointment.idempotencyKey());
+            throw new IdempotencyKeyReusedException(appointment.idempotencyKey());
         }
         return InsertOutcome.replayed(stored);
     }
@@ -651,12 +758,37 @@ the other party:
 ```java
 package com.balaaca.booking.domain;
 
-public final class SlotUnavailableException extends DomainException {
+/**
+ * Every booking failure is a nested static class of BookingExceptions. There
+ * is no top-level SlotUnavailableException and there never was: one file per
+ * one-line exception buries the interesting part, which is the TABLE of which
+ * failure maps to which status and which published code. Keeping them
+ * together is what lets a reader check that in one read.
+ */
+public final class BookingExceptions {
 
-    public SlotUnavailableException(Instant startsAt) {
-        // Stable English message key; the i18n catalogue resolves the text.
-        super("SLOT_UNAVAILABLE", 409, "booking.slot.unavailable",
-              Map.of("starts_at", startsAt.toString()));
+    public static final class SlotUnavailableException extends DomainException {
+
+        /**
+         * The staff member is in details, never in the message: on the
+         * any-staff path the server chose them, so naming them would tell a
+         * caller who is busy about somebody they never asked for. The retry
+         * loop reads it to skip that candidate; the client cannot see it.
+         */
+        public SlotUnavailableException(Instant startsAt, UUID staffId) {
+            // A literal English message, not a catalogue key. There is no
+            // message catalogue in the backend to resolve one against, and a
+            // key that resolves to nothing reaches the customer as a key.
+            super("SLOT_UNAVAILABLE", 409, "That slot is no longer available",
+                  Map.of("starts_at", startsAt.toString(),
+                         "staff_id", String.valueOf(staffId)));
+        }
+
+        /** The any-staff path, once every chair has refused. */
+        public SlotUnavailableException(Instant startsAt) {
+            super("SLOT_UNAVAILABLE", 409, "That slot is no longer available",
+                  Map.of("starts_at", startsAt.toString()));
+        }
     }
 }
 ```
@@ -665,17 +797,30 @@ The state machine as one conditional statement - cancelling frees the slot
 because the constraint is partial:
 
 ```java
-int cancel(AppointmentId id, long version) {
-    return entityManager.createNativeQuery("""
+// No version parameter, because no caller has one to give: the published
+// contract carries no version, so a WHERE version = :v would be a guard
+// against a number nobody can send. The accepted-status set is the guard.
+// No provider predicate either - RLS supplies it, which is what makes
+// another tenant's appointment answer exactly like one that does not exist.
+Optional<AgendaEntry> cancel(AppointmentId id, Optional<String> reason, Instant at) {
+    List<Object[]> rows = entityManager.createNativeQuery("""
         UPDATE appointments
-           SET status = 'CANCELLED', version = version + 1
+           SET status = 'CANCELLED',
+               cancellation_reason = :reason,
+               cancelled_by = 'PROVIDER',
+               cancelled_at = :at,
+               version = version + 1,
+               updated_at = now()
          WHERE id = :id
            AND status IN ('PENDING', 'CONFIRMED')
-           AND version = :version
+        RETURNING id, starts_at, ends_at, status
         """)
         .setParameter("id", id.value())
-        .setParameter("version", version)
-        .executeUpdate();   // 1 = cancelled and the slot is free, 0 = lost
+        .setParameter("reason", reason.orElse(null))
+        .setParameter("at", Timestamp.from(at))
+        .getResultList();   // a row = cancelled and the slot is free, none = lost
+
+    return rows.isEmpty() ? Optional.empty() : Optional.of(toEntry(rows.get(0)));
 }
 ```
 
@@ -732,8 +877,9 @@ class AppointmentConcurrencyIT {   // Testcontainers PostgreSQL 18
   adapter, and why `shared-kernel` is the one context exempt from the
   four-layer rule.
 - `idempotency-concurrency` - the `Idempotency-Key` header, the request hash,
-  `IDEMPOTENCY_KEY_REUSED`, and the `version` column behind the conditional
-  `UPDATE`s.
+  `IDEMPOTENCY_KEY_REUSED`, and the accepted-status set that makes the
+  conditional `UPDATE`s atomic while the `version` column waits for a caller
+  able to state one.
 - `multi-tenant-rls` - `provider_id` is ambient from `TenantContext`, the
   `app.provider_id` GUC is bound by a connection-level hook rather than by an
   interceptor, and the composite foreign keys make a cross-tenant reference
