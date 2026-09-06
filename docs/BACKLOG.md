@@ -37,41 +37,6 @@ no producer breaks the build.
 
 ## Decided, scoped, not yet done
 
-### Previewing a page that is not published yet
-`/p/{slug}` resolves through a published-only lookup, so an unpublished
-business has no page there. Four dashboard screens linked to it anyway - the
-sidebar, the account panel, the hours aside, and a "Prévisualiser" button on a
-card that only renders WHILE the page is unpublished. Every one of them opened a
-404 on the provider's own dashboard, which reads as a broken product rather than
-as an unpublished page. The links are now conditional and
-`public-link.test.mts` fails if a fifth one appears.
-
-What is still owed is the thing the button promised: seeing the page as a
-customer would, before publishing it. The shape that does not drift is **one
-authenticated operation returning the same projection the public route
-returns** - `GET /v1/provider-profile/preview`, `dashboard:read`, tenant bound
-from the token as usual, calling the same `publicPage()` and
-`published()` the public resource calls. Building the preview instead out of
-the dashboard's own endpoints would be a second source of truth for the same
-page, and the two would disagree on the first change either side.
-
-The front end then needs the page body extracted out of `p/[slug]/page.tsx` so
-that both routes render it, which is the larger half of the work.
-
-### A provider's right of reply to a review
-Reviews ship without one. A business that receives an unfair review can ask for
-a takedown and can say nothing publicly, which is a real gap: in this market a
-one-line answer ("la cliente n'est pas venue, le rendez-vous a été noté comme
-honoré par erreur") is often the whole truth of it.
-
-Deliberately not built with the first version, because a reply is a second
-piece of public text with its own moderation surface, and because a takedown
-lever had to exist before any of it. The shape is a nullable `reply` and
-`replied_at` on `provider_reviews`, written under the tenant policy - which is
-the one write a business may make on that table and would have to be granted
-explicitly, since it currently has none.
-
-
 ### ~~Rate-limit registrations~~ (done)
 `V020` closed the oracle for any account that already has a salon. What remains
 is that an account **without** a salon can probe the handles, exactly like any
@@ -95,9 +60,19 @@ four hundred is a channel people mute, after which nothing alerts at all. One
 alert per kind per window, and the next one says how many it stands for.
 
 ### Deployment, backups
-CI builds, tests and checks the contract. **Nothing pushes to the VPS**, there is
-no scheduled `pg_dump`, and the image directory is in no backup. See
-`DEPLOYMENT.md`.
+CI builds, tests and checks the contract. **Nothing pushes to the VPS**, and
+there is no scheduled `pg_dump`.
+
+**The images go to Cloudflare R2**, decided, and that is what closes the second
+half: today they sit on the deployment's own disk, in no backup, and reviews
+have just made that content customers cannot reproduce. `ImageStore` is already
+the port for it - `store`, `read`, `discard`, and a `Shape` - so the change is
+an adapter beside the filesystem one and a property that chooses between them,
+not a change to a single caller. It was written that way on purpose.
+
+What is still owed with it: the bucket and its credentials, whether objects are
+served through R2's public domain or kept behind `/v1/media/<name>` so the
+platform can still refuse one, and what happens to the files already on disk.
 
 ## Translate the repository to English
 

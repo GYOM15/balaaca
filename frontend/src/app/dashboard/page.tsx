@@ -882,14 +882,17 @@ function Readiness({
                   icon="globe"
                   href="/dashboard/profile"
                 />
-                {/* No "Prévisualiser" here. This whole card only renders while
-                    the page is NOT published, and `/p/{slug}` resolves through
-                    a published-only lookup - so the button could only ever open
-                    a 404, next to the button that would have fixed it. What a
-                    provider is actually asking for is a preview of an
-                    unpublished page, which the API cannot serve yet: see
-                    docs/BACKLOG.md. Offering a broken one meanwhile taught them
-                    the product was broken. */}
+                {/* It points at /dashboard/apercu and not at /p/{slug}. This
+                    card only renders while the page is NOT published, and that
+                    handle resolves through a published-only lookup - so the
+                    button used to open a 404, sitting beside the button that
+                    would have fixed it. */}
+                <Button
+                  label="Prévisualiser"
+                  variant="secondary"
+                  icon="eye"
+                  href="/dashboard/apercu"
+                />
               </>
             ) : (
               <>
