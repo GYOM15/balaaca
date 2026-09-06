@@ -45,8 +45,8 @@ const GROUPS: Group[] = [
       { href: "/dashboard/profile", icon: "store", label: "Ma page", ownerOnly: true },
       // Beside "Ma page" rather than under the diary: both are about what a
       // customer sees, and neither is about today's appointments.
-      { href: "/dashboard/apercu", icon: "eye", label: "Aperçu" },
-      { href: "/dashboard/avis", icon: "star", label: "Avis" },
+      { href: "/dashboard/preview", icon: "eye", label: "Aperçu" },
+      { href: "/dashboard/reviews", icon: "star", label: "Avis" },
     ],
   },
   {

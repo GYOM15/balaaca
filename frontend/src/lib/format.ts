@@ -53,6 +53,34 @@ export function isoDate(date: Date): string {
 }
 
 /**
+ * The date it is WHERE THE BUSINESS IS, as `YYYY-MM-DD`.
+ *
+ * <p>`isoDate(new Date())` is the date in UTC, which for the launch market is
+ * the same thing and for nobody else. A provider two hours east, opening the
+ * hours screen at half past midnight, would be offered a calendar whose
+ * earliest selectable day is the one they have already started - so they could
+ * not declare exceptional hours for today, on the one screen that exists to
+ * declare them.
+ *
+ * <p>`en-CA` because its short date format IS `YYYY-MM-DD`; formatToParts and
+ * a manual join would say the same thing in six more lines.
+ */
+export function todayIn(timeZone: string): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone, dateStyle: "short" })
+    .format(new Date());
+}
+
+/** The same date, `days` later, still read where the business is. */
+export function isoDatePlus(from: string, days: number): string {
+  const [year, month, day] = from.split("-").map(Number);
+  // UTC arithmetic on a date with no time: no zone, so no drift and no hour
+  // that a daylight change could move.
+  return new Date(Date.UTC(year ?? 0, (month ?? 1) - 1, (day ?? 1) + days))
+    .toISOString()
+    .slice(0, 10);
+}
+
+/**
  * A wall-clock reading in a named zone, turned into the instant it names.
  *
  * <p>The inverse of {@link localInput}, and the reason it exists is that

@@ -69,7 +69,7 @@ type Segment = PublicOpeningHours["data"][number];
  * A provider's public page, as a page.
  *
  * <p>Its own component because TWO routes draw it: `/p/[slug]`, which any
- * customer opens, and the owner's preview at `/dashboard/apercu`, which exists
+ * customer opens, and the owner's preview at `/dashboard/preview`, which exists
  * because the first resolves through a published-only lookup and a business
  * that has not published has nothing there to look at.
  *

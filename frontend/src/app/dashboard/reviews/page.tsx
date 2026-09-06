@@ -120,7 +120,7 @@ export default async function ReviewsPage({
         <div className="row" style={{ marginTop: "var(--s-6)" }}>
           <a
             className="btn btn--secondary btn--sm"
-            href={`/dashboard/avis?cursor=${encodeURIComponent(page.next_cursor)}`}
+            href={`/dashboard/reviews?cursor=${encodeURIComponent(page.next_cursor)}`}
           >
             <span className="btn__label--idle">Voir la suite</span>
             <Icon name="arrow-right" size={18} className="ico--arrow" />

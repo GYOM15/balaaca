@@ -882,7 +882,7 @@ function Readiness({
                   icon="globe"
                   href="/dashboard/profile"
                 />
-                {/* It points at /dashboard/apercu and not at /p/{slug}. This
+                {/* It points at /dashboard/preview and not at /p/{slug}. This
                     card only renders while the page is NOT published, and that
                     handle resolves through a published-only lookup - so the
                     button used to open a 404, sitting beside the button that
@@ -891,7 +891,7 @@ function Readiness({
                   label="Prévisualiser"
                   variant="secondary"
                   icon="eye"
-                  href="/dashboard/apercu"
+                  href="/dashboard/preview"
                 />
               </>
             ) : (

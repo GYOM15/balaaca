@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { ApiError, api } from "@/lib/api";
 
-const HERE = "/dashboard/avis";
+const HERE = "/dashboard/reviews";
 
 /**
  * A business answering a review of itself.
