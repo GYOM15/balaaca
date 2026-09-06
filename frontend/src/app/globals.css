@@ -1557,7 +1557,13 @@ a.choice { text-decoration: none; color: inherit; }
    un peu moins de la MOITIE de la largeur, au centre. En 4:1 elle ne rognerait
    rien mais mesurerait 64 px de haut sur une carte de 257, ce qui ne porte plus
    ni photo ni pastille. 5/2 rogne 37 % au lieu de 55 et laisse 103 px. */
-.pcard__cover { position: relative; aspect-ratio: 5 / 2; background: var(--bg-sunken); overflow: hidden; }
+/* 4:1, parce que c'est la forme dans laquelle l'API stocke une couverture
+   (SanitisedImage.BANNER_WIDTH / BANNER_HEIGHT = 1600 / 400). Toute autre
+   valeur ici fait rogner `object-fit: cover` une SECONDE fois, en silence :
+   en 5/2 la carte coupait 37 % de la largeur d'une image que le prestataire
+   avait deja vue et approuvee. `banner-ratio.test.mts` compare desormais les
+   deux, pour toutes les bandes et plus seulement celle de la page publique. */
+.pcard__cover { position: relative; aspect-ratio: 4 / 1; background: var(--bg-sunken); overflow: hidden; }
 .pcard__cover img { width: 100%; height: 100%; object-fit: cover; transition: transform var(--dur-slow) var(--ease-out); }
 .pcard:hover .pcard__cover img { transform: scale(1.03); }
 .pcard__badges { position: absolute; left: var(--s-3); top: var(--s-3); display: flex; gap: var(--s-2); flex-wrap: wrap; }

@@ -7,7 +7,8 @@ import { test } from "node:test";
  * The cover band's proportion is decided twice, and the two have to agree.
  *
  * <p>The API crops every uploaded cover to a fixed ratio before it stores it;
- * the stylesheet draws the band at a ratio of its own. When they match, the
+ * the stylesheet draws each band at a ratio of its own, and there is more than
+ * one band. When they match, the
  * stored file fills the band exactly and nothing is cropped a second time. When
  * they drift, `object-fit: cover` silently takes the difference out of the
  * picture - and nobody finds out, because both halves still look plausible on
@@ -51,23 +52,74 @@ function declaration(selector: string, property: string): string {
   return found[1]!.trim();
 }
 
-test("the band is drawn in the proportion the API stores it in", () => {
+test("every band is drawn in the proportion the API stores it in", () => {
   const stored = constant("BANNER_WIDTH") / constant("BANNER_HEIGHT");
+  const bands = coverRules();
 
-  // "4 / 1", as aspect-ratio is written.
-  const drawn = declaration(".pcover", "aspect-ratio");
-  const parts = drawn.split("/").map((n) => Number(n.trim()));
-  assert.equal(parts.length, 2, `.pcover aspect-ratio is not a ratio: ${drawn}`);
+  // Two today: the public page's hero and the directory card. The list is
+  // FOUND rather than written, which is the whole point of this pass: the
+  // first version of this test named `.pcover` and only `.pcover`, and the
+  // card was then drawn at 5/2 with nothing to notice. A guard that checks
+  // one of the two places is a guard that reports green about the other.
+  assert.ok(bands.length >= 2,
+            `found ${bands.length} cover bands, expected at least the hero `
+            + "and the directory card - has a selector been renamed?");
 
-  assert.equal(
-    Math.round(stored * 100) / 100,
-    Math.round((parts[0]! / parts[1]!) * 100) / 100,
-    `the API stores covers at ${stored}:1 and the band draws them at ${drawn}. ` +
-      "One of the two moved. Change SanitisedImage.BANNER_WIDTH/BANNER_HEIGHT " +
-      "and .pcover's aspect-ratio together, and re-upload existing covers - a " +
-      "file already stored keeps the shape it was cropped to.",
-  );
+  for (const [selector, drawn] of bands) {
+    const parts = drawn.split("/").map((n) => Number(n.trim()));
+    assert.equal(parts.length, 2, `${selector} aspect-ratio is not a ratio: ${drawn}`);
+    assert.equal(
+      Math.round((parts[0]! / parts[1]!) * 100) / 100,
+      Math.round(stored * 100) / 100,
+      `the API stores covers at ${stored}:1 and ${selector} draws them at `
+        + `${drawn}, so \`object-fit: cover\` takes the difference out of a `
+        + "picture the provider already approved. Change "
+        + "SanitisedImage.BANNER_WIDTH/BANNER_HEIGHT and every band together, "
+        + "and re-upload existing covers - a file already stored keeps the "
+        + "shape it was cropped to.",
+    );
+  }
 });
+
+/**
+ * Every rule that draws a stored cover, found by its name.
+ *
+ * <p>Media queries are excluded on purpose, and that is not laziness: the hero
+ * widens to 5/2 under 700 px because 4:1 there would be ninety-eight pixels of
+ * letterbox slot, and that deviation is deliberate, commented, and crops the
+ * SIDES where the subject is not. What must not drift is the shape a band has
+ * by default.
+ */
+function coverRules(): Array<[string, string]> {
+  const found: Array<[string, string]> = [];
+  let depth = 0;
+  let head = 0;
+
+  for (let i = 0; i < globals.length; i++) {
+    if (globals[i] === "{") {
+      depth++;
+      if (depth === 1) head = i;
+      continue;
+    }
+    if (globals[i] !== "}") continue;
+    depth--;
+    // Only rules at the top level: a media query opens a block of its own, so
+    // everything inside it closes back to depth 1 and is skipped here.
+    if (depth !== 0) continue;
+
+    const selector = globals.slice(globals.lastIndexOf("}", head - 1) + 1, head)
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .trim();
+    // A single class whose name ends in "cover": `.pcover`, `.pcard__cover`.
+    // Not `.pcard__cover img`, which paints the picture rather than the box.
+    if (!selector.split(",").some((part) => /^\.[a-z][\w-]*cover$/.test(part.trim()))) {
+      continue;
+    }
+    const ratio = /aspect-ratio\s*:\s*([^;]+);/.exec(globals.slice(head, i));
+    if (ratio) found.push([selector, ratio[1]!.trim()]);
+  }
+  return found;
+}
 
 test("the dashboard preview announces the size the API actually stores", () => {
   const page = readFileSync(
