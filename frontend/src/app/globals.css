@@ -1564,7 +1564,7 @@ a.choice { text-decoration: none; color: inherit; }
    les bandes, plus seulement celle de la page publique. C'est precisement ce
    qui manquait le jour ou cette carte a ete ecrite. */
 .pcard__cover { position: relative; aspect-ratio: 1600 / 608; background: var(--bg-sunken); overflow: hidden; }
-.pcard__cover img { width: 100%; height: 100%; object-fit: cover; transition: transform var(--dur-slow) var(--ease-out); }
+.pcard__cover img { width: 100%; height: 100%; object-fit: contain; transition: transform var(--dur-slow) var(--ease-out); }
 .pcard:hover .pcard__cover img { transform: scale(1.03); }
 .pcard__badges { position: absolute; left: var(--s-3); top: var(--s-3); display: flex; gap: var(--s-2); flex-wrap: wrap; }
 /* La marque POSEE sur la banniere, ronde et centree, a cheval sur le bord bas.
@@ -1606,25 +1606,35 @@ a.choice { text-decoration: none; color: inherit; }
    plafonnee n'est pas un ratio du tout : la bande allait de 2,4:1 sur un
    telephone a 6,7:1 sur un grand ecran, donc aucune forme stockee ne pouvait y
    correspondre et chaque visiteur voyait un recadrage different. Le bandeau est
-   stocke en 1600x608, soit 2,63:1, et jusqu'a 1210 px c'est exactement ce qui
-   s'affiche - rien n'est rogne.
+   stocke en 1600x608, soit 2,63:1.
 
-   Le plafond de hauteur garde la photo a sa place sur un tres grand ecran. Au
-   dela, la boite devient plus large que le fichier et le rognage revient - mais
-   sur les COTES, jamais en hauteur, ou se trouve le sujet.
+   `width: 100%` est explicite, et c'est le correctif d'un defaut que le
+   commentaire precedent decrivait a l'envers. Il affirmait qu'au-dela du
+   plafond « le rognage revient, mais sur les COTES ». C'est faux, et ca l'etait
+   deja avant : sur une boite en `aspect-ratio` dont la largeur est `auto`, un
+   `max-height` qui mord ne rogne rien du tout, il RETRECIT la boite. Mesure
+   dans une fenetre de 1600 px : la bande faisait 1211 px, collee a gauche, avec
+   389 px de vide a sa droite. Personne ne l'avait vu parce que le fond de la
+   bande et celui de la page se ressemblent.
 
-   460 px, et le chiffre est calcule : la bande fait toute la largeur de la
-   fenetre, donc en 2,63:1 elle atteint 460 px a 1210 px de fenetre, soit la
-   largeur maximale de `.page`. Jusque-la, la couverture est entiere. Au-dela
-   seulement, les cotes rognent. En 4:1 le plafond de 340 px donnait le meme
-   comportement a 1360 px ; c'est la meme regle, deplacee avec le ratio.
+   `object-fit: contain` plutot que `cover`, et c'est la deuxieme moitie. Les
+   deux ratios etant identiques, jusqu'au plafond la difference est nulle : la
+   couverture remplit la bande exactement. Au-dela seulement, `contain` la
+   centre sur le fond sombre au lieu d'en couper les bords - ce qui est le
+   contraire de ce que faisait `cover`, qui aurait mange 24 % de la largeur a
+   1600 px. La regle du produit est que la couverture se voit ENTIERE ; une
+   bande un peu plus sombre sur un tres grand ecran est un prix moins cher que
+   la moitie d'un titre.
+
+   Le plafond garde la photo a sa place sur un tres grand ecran : sans lui, une
+   fenetre de 1600 px donne une bande de 608 px, soit les deux tiers d'un
+   portable avant que le nom apparaisse.
 
    L'exception a 700 px a disparu avec le changement de forme : elle existait
    parce que 4:1 sur un telephone donnait une meurtriere de 98 px. En 2,63:1 la
-   meme largeur donne 143 px, donc il n'y a plus de deviation a maintenir. */
-.pcover { position: relative; aspect-ratio: 1600 / 608; max-height: 460px; background: var(--surface-inverse); overflow: hidden; }
-
-.pcover img { width: 100%; height: 100%; object-fit: cover; }
+   meme largeur donne 143 px, mesure, donc il n'y a plus de deviation. */
+.pcover { position: relative; width: 100%; aspect-ratio: 1600 / 608; max-height: 460px; background: var(--surface-inverse); overflow: hidden; }
+.pcover img { width: 100%; height: 100%; object-fit: contain; }
 .pcover::after { content:""; position:absolute; inset:0; background: linear-gradient(180deg, rgba(8,31,27,.05) 0%, rgba(8,31,27,.42) 100%); }
 .phead { position: relative; margin-top: -46px; z-index: 2; }
 .phead__card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); padding: var(--s-5); box-shadow: var(--sh-sm); }
