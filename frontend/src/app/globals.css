@@ -75,6 +75,10 @@
   --p-warning-100: #FAF0E4;
   --p-warning-border: #DEBE93;
   --p-danger-500: #A32B22;
+  /* Le survol des boutons destructeurs. Il etait appele et jamais declare, donc
+     `background: var(--btn-bg)` devenait invalide au survol et retombait sur
+     transparent : le bouton rouge devenait blanc, et son texte blanc avec. */
+  --p-danger-700: #7A201A;
   --p-danger-100: #F9EAE8;
   --p-danger-border: #DFAFAA;
   --p-info-500: #1F5F86;
@@ -2473,3 +2477,33 @@ a.choice { text-decoration: none; color: inherit; }
 .review__reply { margin-left: var(--s-5); padding-left: var(--s-4);
   border-left: 2px solid var(--border); display: grid; gap: var(--s-2); }
 .review__reply .t-overline { color: var(--text-tertiary); }
+
+/* --------------------------------------------------------------------------
+   La visionneuse des photos de prestation
+   --------------------------------------------------------------------------
+   Ouverte par :target, pas par un script. Dans ces metiers la photo EST la
+   specification : quelqu'un qui hesite entre deux tresses achete l'image et lit
+   le texte comme une etiquette dessus. La page montrait une vignette et un
+   compteur qui ne faisait rien.
+   Sans JavaScript elle s'ouvre quand meme, et le bouton retour la referme,
+   parce que c'est une vraie navigation. */
+.lightbox { display: none; position: fixed; inset: 0; z-index: var(--z-dialog);
+  align-items: center; justify-content: center; padding: var(--gutter); }
+.lightbox:target { display: flex; }
+.lightbox__scrim { position: absolute; inset: 0; background: rgba(8, 31, 27, .72); }
+.lightbox__inner { position: relative; z-index: 1; background: var(--surface);
+  border-radius: var(--r-md); box-shadow: var(--sh-lg); overflow: hidden;
+  width: min(920px, 100%); max-height: 88vh; display: flex; flex-direction: column; }
+.lightbox__head { display: flex; align-items: center; justify-content: space-between;
+  gap: var(--s-4); padding: var(--s-4) var(--s-5);
+  border-bottom: 1px solid var(--border-subtle); }
+/* Une bande qui defile plutot qu'un carrousel : pas d'etat a garder, pas de
+   fleches a rendre accessibles, et le doigt fait deja le geste. */
+.lightbox__strip { display: flex; gap: var(--s-3); overflow-x: auto;
+  scroll-snap-type: x mandatory; padding: var(--s-4); }
+.lightbox__strip img { scroll-snap-align: center; flex: 0 0 auto;
+  max-height: 68vh; max-width: 100%; width: auto; height: auto;
+  object-fit: contain; border-radius: var(--r-sm); background: var(--bg-sunken); }
+/* La vignette devient cliquable : on le dit au pointeur et au clavier. */
+a.svc__photo { display: block; cursor: zoom-in; }
+a.svc__photo:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
