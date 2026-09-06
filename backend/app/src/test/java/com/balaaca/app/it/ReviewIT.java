@@ -344,6 +344,29 @@ class ReviewIT {
     }
 
     @Test
+    @DisplayName("A business taken off the hub takes its reviews with it")
+    void aSuspendedBusinessPublishesNothing() {
+        String reference = aBooking("622000014");
+        served(reference);
+        review(reference, "{\"rating\":5}").statusCode(200);
+
+        given().when().get("/v1/providers/salon-fatou/reviews").then().statusCode(200)
+                .body("data", hasSize(1));
+
+        // The public read policy admits reviews of a PUBLISHED, ACTIVE business
+        // and nothing else, so a suspension removes the opinions with the page.
+        // Nothing in Java restates that: it is one predicate, in one policy.
+        fixtures.execute("""
+                UPDATE providers
+                   SET status = 'SUSPENDED', suspended_at = now(), suspension_reason = 'essai'
+                 WHERE slug = 'salon-fatou'
+                """);
+
+        given().when().get("/v1/providers/salon-fatou/reviews").then().statusCode(200)
+                .body("data", hasSize(0));
+    }
+
+    @Test
     @DisplayName("A business nobody has reviewed has no rating, and not nought out of five")
     void absentIsNotZero() {
         given().when().get("/v1/providers/salon-fatou").then().statusCode(200)
