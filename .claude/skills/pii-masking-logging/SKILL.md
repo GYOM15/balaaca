@@ -40,21 +40,45 @@ operational identifiers that make the logs usable at all.
    Values are MDC keys in `snake_case`; prose lines are not parseable and not
    greppable.
 2. **Every line carries `correlation_id` and `provider_id`, and both are
-   logged RAW.** Bind them to the logging MDC at the boundary: the correlation
-   id from the incoming trace header, the provider id from
-   `TenantContext.require()` - resolved from the database, not from a JWT
-   claim, so it is the same value RLS is running under. Clear them in
-   `finally`. These two are **operational identifiers, not PII**: neither
-   resolves to a natural person, and masking them destroys the only thing they
-   exist for, which is joining every line of one request and every line of one
-   tenant. A tenant-scoped line without a `provider_id` is a defect, and that
-   includes background work: the drain loop binds the provider id off the
-   notification row.
+   logged RAW.** Bind them to the logging MDC at the boundary: a correlation
+   id per request, the provider id from `TenantContext.require()` - resolved
+   from the database, not from a JWT claim, so it is the same value RLS is
+   running under. Clear them in `finally`. These two are **operational
+   identifiers, not PII**: neither resolves to a natural person, and masking
+   them destroys the only thing they exist for, which is joining every line of
+   one request and every line of one tenant. A tenant-scoped line without a
+   `provider_id` is a defect, and that includes background work.
+
+   Half of this is wired, and the half that is missing is the REST half.
+   `NotificationDrainJob.drain()` does it properly: it binds `provider_id` off
+   the notification row before dispatch and removes it in `finally`. On the
+   REST side there is no boundary filter at all. `TraceId.current()`
+   (`app/rest/TraceId.java`) mints a UUID into `correlation_id` the first time
+   something asks for one, and the only callers are the exception mappers and
+   one resource - so a request that succeeds carries no correlation id, no
+   incoming trace header is read, and nothing anywhere binds
+   `TenantContext.require()` to the MDC. Treat this rule as the shape to reach,
+   not as a description of what the backend does today.
 3. **All values that identify a person pass through `LogMasking` before
-   logging.** The shared utility lives in `com.balaaca.sharedkernel.logging`
-   as `LogMasking`. Use `maskPhone`, `maskEmail`, `maskName`, `maskId`,
+   logging.** The shared utility belongs in `com.balaaca.sharedkernel.logging`
+   as `LogMasking`, offering `maskPhone`, `maskEmail`, `maskName`, `maskId`,
    `maskToken`, `sanitizeMessage`, `abbreviate`. Do not hand-format sensitive
    fields.
+
+   **`LogMasking` has never been written.** There is no
+   `sharedkernel.logging` package - `shared-kernel` holds `error/`, `ids/`,
+   `money/` and `phone/` and nothing else - and no `mask*` or
+   `sanitizeMessage` call exists anywhere in the repository. It was not deleted
+   and it is not missing by accident: no log line has yet needed a
+   person-identifying value, and the leak has been avoided by keeping the value
+   out of the line rather than by masking it. `NotificationDrainJob.died()`
+   is the model - it logs the provider id, the kind and the dedupe key, and
+   says in a comment why the recipient is not there. That works only while the
+   answer stays "do not log it". The first line that genuinely needs a person's
+   value writes this class first, in `shared-kernel`, with the contracts rules
+   6 to 9 state; it does not hand-roll the format at the call site. Everything
+   below that names `LogMasking` describes the class to build, not a class to
+   import today.
 4. **`maskId` applies to identifiers that resolve to a natural person, and
    only those.** `customer_id`, `user_id`, `appointment_id` all lead back to
    one human being through a single indexed lookup, so they are masked.
@@ -84,8 +108,8 @@ operational identifiers that make the logs usable at all.
    preserved, so the masked form does not disclose the customer's country
    either, and it is region-agnostic by construction. Every file that
    describes masking describes this and nothing else.
-8. **Money is loggable.** `Money(amountMinor, currency)` and an appointment's
-   frozen `customerPrice()` may be logged verbatim; audit needs them, and
+8. **Money is loggable.** `Money(amountMinor, currency)` and the price frozen
+   onto a booking may be logged verbatim; audit needs them, and
    there is no scaling to undo before printing a minor amount. Masking a price
    "to be safe" only makes the audit trail useless.
 9. **Run exception messages through `sanitizeMessage`.** Hibernate, driver,
@@ -93,8 +117,8 @@ operational identifiers that make the logs usable at all.
    hostnames, SQL, bind parameters, and occasionally a phone number.
    Sanitize before logging; log the throwable type explicitly.
 10. **Masking happens at the log boundary, not in business code and not in the
-    value object.** Domain and application classes throw or return; the
-    logging/audit interceptor or event listener masks. Business code never
+    value object.** Domain and application classes throw or return; whatever
+    writes the line at the boundary masks. Business code never
     pre-masks its own data, and never logs inline (see `cdi-interceptors`). A
     domain object that carries a pre-masked phone is a corrupted domain
     object, and a `PhoneNumber.toString()` that masks is worse: it corrupts
@@ -126,7 +150,7 @@ operational identifiers that make the logs usable at all.
 - `Log.error("failed: " + ex.getMessage())` when the message holds a JDBC
   URL or the bound `starts_at` and phone of a rejected booking → rule 9;
   `sanitizeMessage(ex.getMessage())`.
-- Masking `appointment.customerPrice()` "to be safe" → rule 8; money is not
+- Masking a booking's frozen price "to be safe" → rule 8; money is not
   PII, keep it readable for audit.
 - A private `String maskPhone(String p)` copied into a `booking` class →
   rule 11; add it to `shared-kernel` `LogMasking`.
@@ -138,12 +162,16 @@ operational identifiers that make the logs usable at all.
 - `LOG.info("Appointment %s confirmed for %s")` → rule 1; the message is
   `appointment.confirmed` and the values are MDC keys.
 - `Log.info(...)` inside an application service, "just this once" → rule 10;
-  the interceptor is the only place logging happens.
+  the application layer is silent today and stays that way, and the line
+  belongs at the boundary that already knows the correlation id.
 
 ## Minimal correct example
 
+Nothing below is in the repository yet. Read it as the shape the first masked
+log line has to build, and as the contract it has to build to.
+
 ```java
-// com.balaaca.sharedkernel.logging.LogMasking - the single source of truth.
+// com.balaaca.sharedkernel.logging.LogMasking - not written yet (rule 3).
 public final class LogMasking {
     private LogMasking() {}
 
@@ -192,8 +220,9 @@ public final class LogMasking {
 ```
 
 The boundary binds the two mandatory operational identifiers, **raw**, and
-clears them in `finally`. This runs once per request, in the REST filter - not
-in any business class:
+clears them in `finally`. This belongs once per request, in a REST filter - not
+in any business class. No such filter exists today (rule 2), so this is the
+class the next person writes rather than one to go and read:
 
 ```java
 @Provider
@@ -218,10 +247,23 @@ public class LoggingContextFilter implements ContainerRequestFilter,
 ```
 
 The logging/audit CDI interceptor is the only place a log call is written.
-Business code stayed silent; here the values are masked and the event emitted:
+Business code stayed silent; here the values are masked and the event emitted.
+
+**No such interceptor exists, and it is not one waiting to be written.**
+`@TenantBound` is the only interceptor binding in the codebase, and CANONICAL
+section 9 records that `@Audited` and its class were proposed and refused: one
+transaction rule cannot serve both halves of an audit, because a recorded
+success must commit with the change it describes and a recorded refusal must
+survive the rollback of the thing it refused. Auditing is therefore a port
+called by name - `AuditTrail.record` / `recordRefusal` in
+`platformkernel.audit` - and the log lines that do exist are written in the
+JAX-RS exception mappers. What the block below teaches is the step, not the
+plumbing: mask on the way out, emit a dotted event name, clear in `finally`.
+Put that step wherever the line is actually written. Do not bring `@Audited`
+back to hold it.
 
 ```java
-@Audited
+@Audited                      // illustrative: not a binding in this codebase
 @Interceptor
 @Priority(Interceptor.Priority.PLATFORM_AFTER + 10)
 public class AuditLoggingInterceptor {
@@ -260,18 +302,22 @@ useful:
 MDC.put("customer_id", LogMasking.maskId(appointment.customerId()));
 MDC.put("appointment_id", LogMasking.maskId(appointment.id()));
 MDC.put("customer_phone", LogMasking.maskPhone(customer.phone().e164()));
-MDC.put("customer_price_amount_minor",
-        appointment.customerPrice().amountMinor());              // money: raw
-MDC.put("customer_price_currency",
-        appointment.customerPrice().currency().code());
+// The frozen price, under its real name: `price()` on `BookingSnapshot`,
+// `offering().price()` on `NewAppointment`. There is no `customerPrice()`
+// accessor and no `Appointment` aggregate to hang one on - the row is only
+// ever reached through a repository and its snapshot.
+Money price = booking.price();
+MDC.put("customer_price_amount_minor", price.amountMinor());     // money: raw
+// Currency exposes name() and scale(), and no code().
+MDC.put("customer_price_currency", price.currency().name());
 // provider_id and correlation_id: already bound raw at the boundary.
 LOG.info("appointment.confirmed");
 ```
 
 ## Sibling skills
 
-- `cdi-interceptors` - logging/audit is an interceptor concern; masking is
-  its second step.
+- `cdi-interceptors` - `@TenantBound` is the only binding there is; auditing
+  was deliberately kept out of an interceptor and is the `AuditTrail` port.
 - `code-language` - logs, keys, and event names are English; only user-facing
   text is French-first from the i18n catalogue.
 - `code-comments` - no emoji in a log line; the level and an `outcome` field

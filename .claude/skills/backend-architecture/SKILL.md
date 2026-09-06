@@ -1,6 +1,6 @@
 ---
 name: backend-architecture
-description: Defines Balaaca's modular-monolith and hexagonal layout. Use when creating a bounded context or Maven module, deciding which of the four layers a new class belongs in, wiring one core context to another or to a satellite, placing a cross-cutting port in shared-kernel, arguing about extracting a service, or reviewing a PR for a layer violation, an HTTP hop between core contexts, a .proto file, or a core module importing another's domain, application or adapters.
+description: Defines Balaaca's modular-monolith and hexagonal layout. Use when creating a bounded context or Maven module, deciding which of the four layers a new class belongs in, wiring one core context to another or to a satellite, placing a cross-cutting port in shared-kernel or platform-kernel, arguing about extracting a service, or reviewing a PR for a layer violation, an HTTP hop between core contexts, a .proto file, or a core module importing another's domain, application or adapters.
 ---
 
 # backend-architecture
@@ -32,33 +32,65 @@ deployment target is a VPS; a Raspberry Pi is a transitional first step
 only, so images are multi-arch, but nothing in the design is sized for a
 Pi.
 
-Core bounded contexts, one Maven module each. **This list is closed** - adding a module is an architectural decision, not a refactor:
+NINE Maven modules, declared in `backend/pom.xml`: two kernels, six bounded
+contexts, and the one deployable that wires them. **This list is closed** -
+adding a module is an architectural decision, not a refactor:
 
 | module | owns |
 | --- | --- |
-| `shared-kernel` | `Money`, `Currency`, `PhoneNumber`, `TenantContext`, clock/time support, RFC 7807 problem types, `LogMasking`, `DomainException`, and the cross-cutting ports named below |
-| `identity` | `users`, the link between a Keycloak subject and a local business user, global roles |
-| `providers` | THE TENANT ROOT: `providers`, `provider_staff`, `provider_categories`, slug, public profile, booking policy |
+| `shared-kernel` | `Money`, `Currency`, `PhoneNumber`, the `ids` records, `DomainException`. ZERO framework imports, because this is the only kernel a `domain/` class may reach for |
+| `platform-kernel` | the framework-coupled cross-cutting machinery: `TenantContext`, `ProviderId`, `ProviderMembershipResolver`, `TenantBoundInterceptor`, the audit trail, `ImageStore`, `AttemptLimiter`, `ClockProducer`. CDI, JWT and Agroal live here and nowhere a domain can see them |
+| `identity` | RESERVED. One `package-info.java` and nothing else, until authentication is built |
+| `providers` | THE TENANT ROOT: `providers`, `provider_staff`, `provider_categories`, reviews, links, slug, public profile, booking policy |
 | `catalog` | `service_offerings` - the provider's sellable services: name, duration, price, buffers, visibility |
 | `scheduling` | `availability_rules`, `availability_overrides`, the pure slot-calculation domain service |
 | `booking` | `appointments`, `customers` (the provider's address book), the appointment state machine, anti-double-booking |
-| `billing` | `subscriptions` and plan ENTITLEMENTS (quotas). No payment collection, no PSP, no invoicing |
+| `billing` | RESERVED. One `package-info.java`, until the first quota is enforced. No payment collection, no PSP, no invoicing |
+| `app` | THE DEPLOYABLE: every JAX-RS resource in `com.balaaca.app.rest`, the one OpenAPI document, the Flyway migrations, the ArchUnit suite |
+
+`identity` and `billing` are empty on purpose, and the `package-info.java` in
+each says so. They are reserved names, not code: nothing has ever been written
+inside them, so do not code against a type you expect to find there. The file
+itself is not ceremony either - without it javac emits no `target/classes` for
+the module and the Quarkus resolver stops on the missing directory, which is
+how `mvn compile` once failed on a clean checkout while `verify` passed.
 
 Satellites, each its own deployable:
 
 - `notification-worker` - drains the `notifications` table and sends
   messages.
-- `chatbot-service` - skeleton; calls the business API, NEVER the database.
+- `chatbot-service` - NOT BUILT, and not a skeleton either. The directory at
+  the repository root is empty and git tracks nothing under it. `docs/BACKLOG.md`
+  puts it out of scope: it will be a completely detached Python service, and not
+  now. The name is kept here because the rule outlives the absence - whatever
+  eventually ships calls the business API over REST and NEVER the database.
 
-`shared-kernel` holds only stable types with no dependency on another
-module. It holds no business RULES - no pricing policy, no state machine,
-no availability logic - but it MAY declare cross-cutting **ports**: an
+**Why two kernels, and why this is not tidiness.** `shared-kernel` holds only
+stable types with no dependency on another module and no dependency on a
+framework, because it is what a `domain/` class is allowed to import. It holds
+no business RULES - no pricing policy, no state machine, no availability logic.
+The framework-coupled plumbing was pulled out into `platform-kernel` rather
+than left beside `Money`, and the split is load-bearing: the "domain is
+framework-free" ArchUnit rule inspects DIRECT imports only, so a `TenantContext`
+sitting in `shared-kernel` would let every domain class that imports `Money`
+drag CDI, JWT and Agroal behind it while the rule went on passing. No `domain/`
+package may depend on `platform-kernel`, and ArchUnit names it by hand for
+exactly that reason.
+
+`platform-kernel` is where a cross-cutting **port** may be declared: an
 interface whose contract is needed by the platform plumbing and whose
 implementation belongs to exactly one context. `ProviderMembershipResolver`
-is the canonical case: declared in `com.balaaca.sharedkernel.tenancy`
-because `TenantBoundInterceptor` lives there, implemented in `providers`,
-which owns `provider_staff`. Without this allowance the tenancy plumbing
-could not compile without depending on a context, which rule 1 forbids.
+is the canonical case: declared in `com.balaaca.platformkernel.tenancy`
+because `TenantBoundInterceptor` lives there, implemented in `providers` as
+`ProviderMembershipSqlResolver`, which owns `provider_staff`. Without this
+allowance the tenancy plumbing could not compile without depending on a
+context, which rule 1 forbids.
+
+`LogMasking` was never written. This file used to pin it in `shared-kernel`
+and no such class has ever existed anywhere in the tree, so a reader who goes
+looking is not staring at an accidental deletion. The RFC 7807 body is not in
+a kernel either: it is built by `com.balaaca.app.rest.Problems`, at the edge
+that serves it.
 
 ## The four layers (every module)
 
@@ -75,15 +107,23 @@ Under `com.balaaca.<context>.*`:
 3. **`application/`** - `*Service` CDI beans implementing an inbound port.
    Orchestration only: transaction boundaries, `TenantContext` reads,
    idempotency guards, entitlement checks. NEVER `*ServiceImpl`.
-4. **`adapters/`** - the edges. `adapters/inbound/{rest}` drives the
-   application through inbound ports; `adapters/outbound/{persistence,
-   gateway,messaging}` implements outbound ports. Adapters are named for
-   their technology: `AppointmentSqlRepository`, never `*Impl`.
+4. **`adapters/`** - the edges. Inside a context this means `adapters/outbound/`
+   and only that: `{persistence,ratelimit}` today, implementing outbound
+   ports. Adapters are named for their technology:
+   `AppointmentSqlRepository`, never `*Impl`.
 
-**`shared-kernel` is the ONE context exempt from this four-layer rule.** It
-is not a bounded context and has no aggregates to protect; it is laid out
-by concern instead, as
-`com.balaaca.sharedkernel.{money,time,logging,tenancy,error}`. Do not
+**There is no `adapters/inbound/` in any context, and that is the architecture
+rather than an omission.** A path is served by exactly one JAX-RS resource, so
+every REST resource lives in the `app` deployable, in `com.balaaca.app.rest`.
+A context that grew its own inbound adapter would be a second router for the
+same paths. The inbound PORT still belongs to the context, which is what
+matters: `app` drives `booking` through `BookAppointmentUseCase` and never
+past it.
+
+**Both kernels are exempt from this four-layer rule.** Neither is a bounded
+context and neither has an aggregate to protect; both are laid out by concern
+instead, as `com.balaaca.sharedkernel.{money,phone,ids,error}` and
+`com.balaaca.platformkernel.{tenancy,audit,media,ratelimit,time}`. Do not
 create `shared-kernel/domain/` or `shared-kernel/adapters/`, and do not
 write `com.balaaca.shared.*` - that package does not exist.
 
@@ -132,13 +172,15 @@ write `com.balaaca.shared.*` - that package does not exist.
    without one. See `outbox-messaging`.
 6. **There is NO gRPC and NO `.proto` anywhere in this project.** Not
    between core modules (rule 3 covers those), not to the satellites (rule
-   5 covers those), not to `chatbot-service`, which talks to the business
-   API over REST like any other client. Do not add a `.proto` file, a
+   5 covers those), and not to `chatbot-service` when it is finally built,
+   which will talk to the business API over REST like any other client. Do
+   not add a `.proto` file, a
    protobuf plugin, or a gRPC dependency; if a future deployable needs a
    synchronous contract, it is REST under `contract-first` unless an ADR
    says otherwise.
 7. **Client → core = REST/OpenAPI, contract-first.** ONE hand-authored
-   OpenAPI document, held in the runner/API module, is the source of truth;
+   OpenAPI document, at
+   `backend/app/src/main/resources/META-INF/openapi.yaml`, is the source of truth;
    server interfaces are generated into `target/` and never committed.
    Routes carry a version segment (`/v1/appointments`,
    `/v1/service-offerings`), every JSON property and query parameter is
@@ -146,15 +188,25 @@ write `com.balaaca.shared.*` - that package does not exist.
    `application/problem+json` with stable SCREAMING_SNAKE_CASE codes. No
    tenant identifier ever appears in a request. See `contract-first` and
    `platform-api`.
-8. **ArchUnit enforces every boundary in CI.** There MUST be tests that
-   assert: `domain` has no framework imports; layers only depend inward; no
-   core module imports another core module's `..domain..`, `..application..`
-   or `..adapters..` - an explicit allowlist names the published types a
-   cross-context call may touch (the inbound port, its command and result
-   records, and the ids they carry); the closed context list holds, with the
-   satellite deployables admitted alongside the seven core contexts; and no
-   HTTP-client or messaging type appears on a core→core call path. See
-   `backend-tests`.
+8. **ArchUnit enforces every boundary in CI**, in
+   `backend/app/src/test/java/com/balaaca/app/arch/ArchitectureTest.java`.
+   The tests assert: `domain` imports no framework and no `platform-kernel`;
+   layers only depend inward; no context imports another's `..domain..`,
+   `..application..` or `..adapters..`, with NO allowlist and no exemption on
+   that rule; the `app` deployable reaches past nobody's port into an
+   `application` or `adapters` package, and touches only the domain types on
+   the `PUBLISHED_DOMAIN_TYPES` allowlist. That allowlist governs the WIRING,
+   not cross-context calls, and it names the enums and records a port's own
+   commands and results carry (`BookingSource`, `AppointmentStatus`,
+   `AvailableSlot`, `AvailabilityOverride$Kind`, `SocialNetwork` and their
+   like); it grows one argued entry at a time, which is the point of writing
+   it out rather than conceding a wildcard. The closed package list holds, all
+   nine of them. No broker or gRPC type appears anywhere at all, and no
+   HTTP-client type appears inside a bounded context. The satellites are
+   absent from that suite by construction, being separate Maven projects with
+   none of their classes on the classpath; `notification-worker` carries its
+   own rule, and it asserts the stronger thing: that it depends on no Balaaca
+   artifact at all. See `backend-tests`.
 9. **Do not over-architect.** No full event sourcing, no full CQRS, no K8s,
    no service mesh, no broker, no gRPC inside or outside the monolith. Every
    one of those is added only when a concrete, written-down need forces it - never because it is the modern shape.
@@ -213,13 +265,17 @@ write `com.balaaca.shared.*` - that package does not exist.
 - Splitting `catalog` into `catalog-api` and `catalog-impl` to make the
   boundary compile-enforced → rule 4. One module per context; the rule
   lives in ArchUnit.
-- Putting `ProviderMembershipResolver`'s JDBC implementation in
-  `shared-kernel` so "it's all in one place" → rule 2. The port is declared
-  in `sharedkernel.tenancy`; the implementation belongs to `providers`,
-  which owns `provider_staff`.
+- Putting `ProviderMembershipResolver`'s JDBC implementation in a kernel so
+  "it's all in one place" → rule 2. The port is declared in
+  `platformkernel.tenancy`; the implementation is
+  `ProviderMembershipSqlResolver` in `providers`, which owns `provider_staff`.
 - Giving `shared-kernel` a `domain/` package, or a pricing rule, or a
   dependency on `catalog` → the four-layer exemption is a layout exemption,
   not a licence to hold business rules or point outward (rule 1).
+- Putting a CDI, JWT or Agroal type in `shared-kernel` because "it is shared"
+  → that is what `platform-kernel` is for. Anything a `domain/` class cannot
+  import does not belong on the far side of the line a domain is allowed to
+  cross.
 - A `.proto` file, a gRPC dependency, or a protobuf Maven plugin appearing
   anywhere in the tree → rule 6. Delete it; nothing in Balaaca speaks gRPC.
 - A JAX-RS resource `@Inject`-ing an `AppointmentRepository` and running the
@@ -236,8 +292,8 @@ write `com.balaaca.shared.*` - that package does not exist.
 - Adding Kafka or Redpanda "so the worker scales" → rules 5 and 9. The table
   with `SKIP LOCKED` is the transport until measured volume says otherwise.
 - One `META-INF/openapi.yaml` per Maven module → rule 7. They collide on the
-  classpath and SmallRye serves whichever wins; keep one document in the
-  runner module.
+  classpath and SmallRye serves whichever wins; keep the one document in
+  `app`.
 - `billing` exposed as an HTTP call so `catalog` can ask "may this provider
   add another service?" → rule 10. Entitlement checks are an in-process
   inbound-port call on the write path.
@@ -256,91 +312,125 @@ transaction.
 ```
 booking/
 ├── domain/
-│   ├── Appointment.java                    # aggregate, state machine, no framework
-│   ├── Customer.java                       # the provider's address book entry
-│   └── event/AppointmentBooked.java        # domain event
+│   ├── BookedSlot.java                     # start + duration + buffers, no framework
+│   ├── AppointmentStatus.java              # the states the machine moves between
+│   ├── PlannedNotification.java            # what a booking owes the outbox
+│   └── BookingExceptions.java              # every refusal this context can raise
 ├── ports/
 │   ├── inbound/BookAppointmentUseCase.java # published API of this module
 │   └── outbound/AppointmentRepository.java # driven port
 └── application/
-    └── BookAppointmentService.java         # orchestrates domain + ports
+    ├── BookAppointmentService.java         # the retry loop, no transaction of its own
+    └── BookAppointmentAttempt.java         # one attempt, REQUIRES_NEW
 
 catalog/ports/inbound/LookupServiceOfferingUseCase.java  # in-process, used by booking
-scheduling/ports/inbound/SlotAvailabilityUseCase.java    # in-process, used by booking
-billing/ports/inbound/EntitlementCheckUseCase.java       # in-process, write-path guard
+scheduling/ports/inbound/CalculateSlotsUseCase.java      # in-process, used by booking
+providers/ports/inbound/ListLocalitiesUseCase.java       # in-process, used by booking
 
 booking/adapters/outbound/persistence/AppointmentSqlRepository.java
-booking/adapters/outbound/messaging/NotificationOutboxWriter.java
+booking/adapters/outbound/persistence/NotificationOutboxSqlRepository.java
 ```
 
+**There is no `Appointment` aggregate class, and no `Customer` one.** This
+file used to draw them and they were never written: an appointment is created
+by one conditional `INSERT ... ON CONFLICT DO NOTHING` and moved by one
+conditional `UPDATE`, so there is no loaded object for a state machine to live
+in. The invariant it would have guarded is the database's - the `EXCLUDE USING
+gist` constraint - and a read-modify-write through an aggregate is precisely
+what would lose it under two racers. What the domain keeps is the parts that
+have rules of their own: `BookedSlot`, `AppointmentStatus`, the planned
+notifications. There is no `event/` package either, and no `AppointmentBooked`:
+the core-to-satellite path is a `notifications` row, not a published domain
+event, so nothing needs one.
+
+`SlotAvailabilityUseCase` and `EntitlementCheckUseCase` were also drawn here
+and never written. `scheduling` publishes `CalculateSlotsUseCase` and
+`ManageAvailabilityUseCase` instead, and `billing` publishes nothing at all
+because it is still a reserved name - which is also why `PLAN_LIMIT_REACHED`
+was struck from the published error catalogue rather than left promising an
+answer nothing could raise.
+
 ```java
-// booking/application/BookAppointmentService.java
+// booking/application/BookAppointmentAttempt.java
+// Its own class, apart from BookAppointmentService: the retry loop up there
+// needs a FRESH transaction, because once a statement fails the current one is
+// rollback-only and nothing further can run in it.
 @ApplicationScoped
-public class BookAppointmentService implements BookAppointmentUseCase {
+public class BookAppointmentAttempt {
 
-    private final LookupServiceOfferingUseCase serviceOfferings; // catalog
-    private final SlotAvailabilityUseCase availability;          // scheduling
-    private final StaffAssignment staffAssignment;               // booking domain
-    private final AppointmentRepository appointments;            // outbound port
-    private final CustomerRepository customers;                  // outbound port
-    private final NotificationOutboxPort notifications;          // core -> satellite
-    private final Clock clock;
+    private final LookupServiceOfferingUseCase offerings; // catalog
+    private final CalculateSlotsUseCase slots;            // scheduling
+    private final ListLocalitiesUseCase localities;       // providers
+    private final AppointmentRepository appointments;     // outbound port
+    private final BookingNotifications notifications;     // plans the outbox rows
 
-    @Inject
-    public BookAppointmentService(LookupServiceOfferingUseCase serviceOfferings,
-                                  SlotAvailabilityUseCase availability,
-                                  StaffAssignment staffAssignment,
+    public BookAppointmentAttempt(LookupServiceOfferingUseCase offerings,
+                                  CalculateSlotsUseCase slots,
+                                  ListLocalitiesUseCase localities,
                                   AppointmentRepository appointments,
-                                  CustomerRepository customers,
-                                  NotificationOutboxPort notifications,
-                                  Clock clock) {
-        this.serviceOfferings = serviceOfferings;
-        this.availability = availability;
-        this.staffAssignment = staffAssignment;
+                                  BookingNotifications notifications) {
+        this.offerings = offerings;
+        this.slots = slots;
+        this.localities = localities;
         this.appointments = appointments;
-        this.customers = customers;
         this.notifications = notifications;
-        this.clock = clock;
     }
 
-    @Override
-    @TenantBound
-    @Transactional
-    public AppointmentId book(BookAppointmentCommand command) {
-        // provider_id is ambient: TenantContext, never a parameter.
-        // Duration, buffers and price come from the service offering, never
-        // from the client.
-        ServiceOffering offering =
-            serviceOfferings.require(command.serviceOfferingId());
+    // No @TenantBound here: the tenant is bound at the REST edge, on the
+    // resource in com.balaaca.app.rest, and provider_id is ambient in
+    // TenantContext by the time this runs. Never a parameter.
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    public InsertOutcome once(BookAppointmentCommand command, List<StaffId> excluded) {
+        // Duration, buffers and price come from the offering, never from the
+        // client. The two contexts meet HERE, in application/, which is why
+        // BookedSlot takes Durations and not catalog's BookableOffering.
+        BookableOffering offering =
+            offerings.requireBookable(command.serviceOfferingId());
+        BookedSlot slot = BookedSlot.from(command.startsAt(), offering.duration(),
+                                          offering.bufferBefore(), offering.bufferAfter());
+
+        // A retry is not a new request and must not be judged as one.
+        Optional<InsertOutcome> replay = command.idempotency()
+            .flatMap(i -> appointments.replayOf(i.key(), i.requestHash()));
+        if (replay.isPresent()) {
+            return replay.get();
+        }
+
+        // What was published is what a stranger may take; a provider writing a
+        // walk-in into their own diary is recording something already happening.
+        if (command.source().honoursPublishedAvailability()
+                && !slots.isWithinAvailability(command.startsAt(),
+                                               slotRequest(command, offering))) {
+            throw new SlotOutsideAvailabilityException(command.startsAt(), ...);
+        }
 
         // "Any available staff" becomes a concrete staff member BEFORE the
         // insert; a client-named staff member is used as given.
-        StaffId staffId = command.staffId()
-            .orElseGet(() -> staffAssignment.pick(offering, command.startsAt()));
-
-        BookedSlot slot = BookedSlot.of(command.startsAt(), offering.durations());
-        availability.requireBookable(staffId, slot);
-
-        CustomerId customerId = customers.upsertByPhone(command.customer());
-
-        Appointment appointment = Appointment.pending(
-            staffId, customerId, offering.id(), slot,
-            offering.customerPrice(),          // frozen onto the row
-            command.idempotencyKey(),
-            clock.instant());
+        StaffId staffId = command.staffId().orElseGet(() -> pick(command, excluded));
+        CustomerId customerId = appointments.upsertCustomer(command.customer());
 
         // The EXCLUDE USING gist constraint is the anti-double-booking
         // guarantee; 23P01 surfaces as SlotUnavailableException -> 409.
-        appointments.insertIfAbsent(appointment);
+        InsertOutcome outcome = appointments.insertIfAbsent(new NewAppointment(
+            AppointmentId.of(UUID.randomUUID()), staffId, offering, slot,
+            customerId, /* fulfilment, address, note ... */
+            command.source(), command.preferredChannel(),
+            command.idempotency().map(Idempotency::key),
+            command.idempotency().map(Idempotency::requestHash)));
 
         // Outbox rows in the SAME transaction; the worker sends them later.
-        notifications.enqueueAll(appointment.pendingNotifications());
-        return appointment.id();
+        // Not on a replay: those rows already exist.
+        if (!outcome.replayed()) {
+            notifications.planFor(outcome.appointmentId(), outcome.reference(),
+                                  command.startsAt(), offering, command.customer(),
+                                  command.preferredChannel());
+        }
+        return outcome;
     }
 }
 ```
 
-No network call between `booking`, `catalog` and `scheduling`; the domain
+No network call between `booking`, `catalog`, `scheduling` and `providers`; the domain
 holds the invariants; the database holds the exclusion guarantee; the
 adapter - not the service - knows Hibernate; and nothing here logs, because
 observability is an interceptor's job.

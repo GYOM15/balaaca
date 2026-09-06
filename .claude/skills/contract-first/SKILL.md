@@ -1,6 +1,6 @@
 ---
 name: contract-first
-description: The spec-before-code process for the single OpenAPI document and the notification event schema. Use when adding or changing a REST endpoint any client can call, emitting a new outbox notification or reshaping an existing payload, deciding where the OpenAPI file lives or wiring openapi-generator, versioning a contract, setting up the spectral and openapi-diff CI gate, or reviewing a PR that hand-writes a DTO or resource with no spec change, adds a second META-INF/openapi.yaml, or reaches for a .proto or gRPC.
+description: The spec-before-code process for the single OpenAPI document and the notification outbox payload. Use when adding or changing a REST endpoint any client can call, emitting a new outbox notification or reshaping an existing payload, deciding where the OpenAPI file lives or wiring openapi-generator, versioning a contract, setting up the spectral and oasdiff CI gate, or reviewing a PR that hand-writes a DTO or resource with no spec change, adds a second META-INF/openapi.yaml, or reaches for a .proto or gRPC.
 ---
 
 # contract-first
@@ -12,10 +12,12 @@ description: The spec-before-code process for the single OpenAPI document and th
 
 Every seam that crosses a process or a client boundary is described by a
 versioned contract BEFORE the code exists. In Balaaca there are exactly
-two such seams today: the external REST surface, described by **one**
-hand-authored OpenAPI document, and the notification event payload,
-described by its own schema. The contract is the source of truth; code is
-generated from or verified against it, never the other way round.
+two such seams today, and only one of them has kept that promise: the
+external REST surface is described by **one** hand-authored OpenAPI
+document, and the notification event payload is described nowhere at all -
+rule 7 says what it has instead and why nobody should treat that as
+settled. For the REST surface the contract is the source of truth; code is
+generated from it, never the other way round.
 
 ## When to use
 
@@ -25,8 +27,9 @@ generated from or verified against it, never the other way round.
 - Emitting a new notification event into the outbox table, or changing
   the shape of an existing payload.
 - Deciding where the OpenAPI file lives, or wiring the generator.
-- Reviewing a PR that hand-writes a DTO, a resource, or an event payload
-  with no corresponding spec change.
+- Reviewing a PR that hand-writes a DTO or a resource with no
+  corresponding spec change, or reshapes an outbox payload with nothing
+  written down anywhere - read rule 7.
 - Reviewing a PR that adds a second `META-INF/openapi.yaml` - read rule 2.
 - Being tempted to introduce a third contract kind - read rule 3 first.
 
@@ -36,8 +39,9 @@ generated from or verified against it, never the other way round.
    REST change, edit the hand-authored OpenAPI document and regenerate the
    server interface from it with the `openapi-generator-maven-plugin`
    (jaxrs-spec/microprofile generator); SmallRye then serves that same
-   document as the runtime OpenAPI. For an event, edit the event-schema
-   file next to the outbox. A reviewer must be able to read the intended
+   document as the runtime OpenAPI. For an event there is no file to edit:
+   the event-schema half of this rule was never built, and rule 7 says what
+   stands in its place. A reviewer must be able to read the intended
    behavior from the spec diff alone.
 2. **There is exactly ONE OpenAPI document, and it lives in the runner/API
    module.** The published contract is
@@ -58,10 +62,11 @@ generated from or verified against it, never the other way round.
    published surface.
 3. **One contract kind per seam, and today there are only two.**
    client→core = REST/OpenAPI. core→satellite = a notification **event**
-   payload with its own schema, written to the `notifications` table,
-   which IS the outbox - there is no broker (cross-ref
-   `outbox-messaging`). Module→module inside the core is an in-process
-   Java call through the callee's inbound port and has **no** network
+   payload written to the `notifications` table, which IS the outbox -
+   there is no broker (cross-ref `outbox-messaging`). That payload has no
+   written schema today; rule 7 says what carries its shape instead.
+   Module→module inside the core is an in-process Java call through the
+   callee's inbound port and has **no** network
    contract at all (cross-ref `backend-architecture`). **There is no
    `.proto` and no gRPC in this project**, and no file may introduce one:
    `chatbot-service` calls the public business API over REST and never
@@ -91,22 +96,47 @@ generated from or verified against it, never the other way round.
    currency's own scale documented - never a bare number, never a float,
    never an assumed "cents", and never a hardcoded currency. Instants are
    `date-time` in UTC; a recurring local time carries the provider's IANA
-   zone. **No provider identifier is ever a request field**: the tenant is
-   resolved server-side from the verified JWT subject through `users` and
+   zone. **No provider identifier is ever a request field**: on every
+   authenticated provider-scoped operation the tenant is resolved
+   server-side from the verified JWT subject through `users` and
    `provider_staff`, so it must not appear in any request schema, path,
-   query or header (cross-ref `money-currency`, `temporal-modelling`,
-   `multi-tenant-rls`).
-7. **Event schemas are explicit, versioned, and additive.** Each outbox
-   notification has a documented schema (event type, version, dedupe key,
-   payload) and a stable type name. Evolve additively (new optional
-   fields); a breaking change is a new versioned event type, never a
-   silent reshape - delivery is at-least-once and an older
-   `notification-worker` must keep working against rows written by a
-   newer core (cross-ref `outbox-messaging`).
+   query or header. The one sanctioned exception is the unauthenticated
+   public write path, `POST /v1/providers/{slug}/appointments`, where the
+   published slug carries the tenant because a customer is not staff and
+   membership resolution would yield nothing but a 403; the slug grants
+   nothing the public page does not already show, and that route may only
+   create an appointment and read the public projections (CANONICAL 4.2).
+   Anywhere else it is the IDOR this rule exists to prevent (cross-ref
+   `money-currency`, `temporal-modelling`, `multi-tenant-rls`).
+7. **There is no event-schema file. It was never built, not deleted.** The
+   second contract kind exists as an ambition, not as a document: nothing
+   in this repository describes an outbox payload, and no such file has
+   ever existed - do not go looking for one and do not recreate it from
+   this rule. What carries the shape instead is the table itself,
+   `V010__create_notifications.sql`: `kind` is the event type and its CHECK
+   is the closed list (`BOOKING_CONFIRMATION`, `BOOKING_NOTICE`,
+   `REMINDER`, `CANCELLATION`, `RESCHEDULE`), `dedupe_key` is the
+   idempotence key, and `payload` is `jsonb NOT NULL DEFAULT '{}'` holding
+   a flat map of template variables built in Java by
+   `BookingNotifications` and read in Java by the worker's
+   `WhatsAppTemplate` and `EmailTemplate`. There is no version field
+   anywhere. It was never written because the outbox has exactly one
+   consumer, `notification-worker`, which ships from this repository and is
+   deployed alongside the core, so in practice both sides change in the
+   same commit. That is a habit, not a guarantee, and the cost of leaning
+   on it is invisible: delivery is at-least-once, an older worker can still
+   be draining rows a newer core wrote, and both templates resolve a
+   missing key to the empty string rather than failing, so a renamed
+   payload key sends a customer a confirmation with a hole in it and
+   nothing anywhere reports an error. Until a second consumer appears,
+   evolve the payload additively by hand - add keys, never rename or
+   repurpose one, and change producer and worker together (cross-ref
+   `outbox-messaging`).
 8. **Version every contract; breaking changes bump the version.** REST
-   carries the version in the path (`/v1/...`); event schemas carry an
-   explicit version and only ever add optional fields within one version.
-   Removing a field, tightening a type, renaming an error `code`, or
+   carries the version in the path (`/v1/...`), and it is the only
+   versioned contract there is: the outbox payload carries no version field
+   at all (rule 7), so its only discipline is the additive one agreed by
+   hand. Removing a field, tightening a type, renaming an error `code`, or
    making an optional parameter required is a version bump, never an edit
    in place.
 9. **Generated code is never committed, so there is no code-drift check - what CI checks is the spec.** The `openapi-generator-maven-plugin`
@@ -115,12 +145,15 @@ generated from or verified against it, never the other way round.
    diverge from the spec, and therefore no drift job to write or to
    forget: the only way to change the interface is to change the spec, and
    the compiler catches a resource that no longer matches its generated
-   interface. What CI **does** enforce is that the merged document is
-   sound and safe to publish - it runs spectral against it, fails on an
-   invalid OpenAPI file, and runs openapi-diff plus the event-schema
-   backward-compatibility check against the previous version so a breaking
-   change cannot merge unnoticed (cross-ref `ci-workflow`, which owns the
-   job definitions). Generated code is never edited by hand.
+   interface. What CI **does** enforce is that the published document is
+   sound and safe to publish - the `contract` job runs spectral against it
+   (`npm run lint:openapi`), fails on an invalid OpenAPI file, and runs a
+   pinned, checksummed `oasdiff breaking` against the copy on the base
+   branch so a breaking change cannot merge unnoticed. Those two steps are
+   the whole gate. There is no event-payload check beside them, because
+   there is no event schema for one to read (rule 7) (cross-ref
+   `ci-workflow`, which owns the job definitions). Generated code is never
+   edited by hand.
 10. **This skill owns the PROCESS; `platform-api` owns the SHAPE.** Spec
     first, one document, generation, versioning and the CI gate are the
     rules above. WHAT the public spec is allowed to contain - capability-oriented operations, no internal leakage, bookable-slots-only
@@ -151,8 +184,9 @@ generated from or verified against it, never the other way round.
   "services" → rule 3; they are modules in one deployable and that is an
   in-process port call. There is no gRPC here at all.
 - Describing the notification payload only in Java, so the worker and the
-  core agree by accident → rule 3+7; the payload is a written, versioned
-  schema.
+  core agree by accident → rule 3+7. This one is not hypothetical: it is
+  what the code does today, and it stays on the list so nobody reproduces
+  it for a second payload thinking it was a decision.
 - A path with a verb, or a path with no version segment:
   `POST /appointments/cancelAppointment` → rule 4; use
   `POST /v1/appointments/{id}/cancellation`.
@@ -166,26 +200,30 @@ generated from or verified against it, never the other way round.
   `problem+json` response in the spec → rule 5.
 - Inventing an error `code` in a handler that is not in the `platform-api`
   catalogue → rule 5; the enum is closed and lives in one document.
-- Changing a required event field's meaning in place → rule 7+8; that
-  silently breaks a worker still draining older rows.
+- Renaming or repurposing a payload key in place → rule 7+8; that silently
+  breaks a worker still draining older rows, and it breaks it quietly,
+  because a key the template cannot find becomes an empty string.
 - Adding a "generated-code drift" CI job → rule 9; nothing is committed to
-  drift from. Spend the job on spectral and openapi-diff instead.
+  drift from. Spend the job on spectral and oasdiff instead.
 - Editing generated resource/DTO code by hand to "fix" a mismatch instead
   of changing the spec → rule 9.
 
 ## Minimal correct example
 
 The one OpenAPI document (`app/src/main/resources/META-INF/openapi.yaml`),
-assembled from per-context fragments at build time and served by SmallRye:
+hand-authored as a single file - the fragments rule 2 permits are an option
+nobody has needed yet, so no merge step exists - and served by SmallRye:
 
 ```yaml
 paths:
   /v1/appointments:
     post:
-      operationId: bookAppointment
+      operationId: bookWalkIn        # bookAppointment is the public route,
+      security:                      # /v1/providers/{slug}/appointments
+        - oauth2: [appointments:write]
       parameters:
         - { name: Idempotency-Key, in: header, required: true,
-            schema: { type: string, maxLength: 64 } }
+            schema: { type: string, minLength: 1, maxLength: 80 } }
       requestBody:
         required: true
         content:
@@ -196,7 +234,7 @@ paths:
           description: Created
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/AppointmentView' }
+              schema: { $ref: '#/components/schemas/AppointmentCreatedView' }
         '409':
           description: SLOT_UNAVAILABLE
           content:
@@ -219,19 +257,23 @@ components:
         currency:     { type: string, example: GNF }
 ```
 
-Fragments merged into it, and scanning off, so nothing else can publish:
+One input, and scanning off, so nothing else can publish:
 
 ```xml
-<!-- app/pom.xml: one merged document, one served document -->
+<!-- app/pom.xml: one authored document, one served document -->
 <plugin>
   <groupId>org.openapitools</groupId>
   <artifactId>openapi-generator-maven-plugin</artifactId>
   <configuration>
-    <!-- fragments: */src/main/resources/openapi/*.fragment.yaml
-         are merged into META-INF/openapi.yaml before this runs -->
+    <!-- if fragments ever appear they are merged into
+         META-INF/openapi.yaml before this runs; none exists today -->
     <inputSpec>${project.basedir}/src/main/resources/META-INF/openapi.yaml</inputSpec>
     <generatorName>jaxrs-spec</generatorName>
     <output>${project.build.directory}/generated-sources/openapi</output>
+    <configOptions>
+      <!-- Interfaces only: the resource is ours, its shape is not. -->
+      <interfaceOnly>true</interfaceOnly>
+    </configOptions>
   </configuration>
 </plugin>
 ```
@@ -245,25 +287,27 @@ The resource implements the generated interface - it never invents the
 shape:
 
 ```java
-@Path("/v1/appointments")
-public class AppointmentResource implements AppointmentsApi {
-    // AppointmentsApi is generated from the single openapi.yaml into
-    // target/generated-sources and is never committed.
+public class AppointmentsResource implements AgendaApi {
+    // AgendaApi is generated from the single openapi.yaml into
+    // target/generated-sources and is never committed. It carries the
+    // @Path too, which is why there is none here: the route is the
+    // contract's, not this class's.
     @Override
-    public Response bookAppointment(String idempotencyKey,
-                                    BookAppointmentRequest request) {
+    public Response bookWalkIn(String idempotencyKey,
+                               BookAppointmentRequest request) {
         // The provider is ambient: resolved from the JWT subject through
         // users -> provider_staff and read from TenantContext inside the
         // service. Never a body field, never an argument.
-        AppointmentView view = bookAppointment.handle(idempotencyKey, request);
+        AppointmentCreatedView view = booking.handle(idempotencyKey, request);
         return Response.status(201).entity(view).build();
     }
 }
 ```
 
-The `AppointmentConfirmed` notification has its own versioned payload
-schema documented alongside the outbox, and CI fails the PR if spectral
-rejects the merged document or openapi-diff reports a breaking change.
+The `BOOKING_CONFIRMATION` notification has no payload schema and no
+version - rule 7 explains why, and what to do until one exists. CI fails
+the PR if spectral rejects the document or `oasdiff breaking` reports a
+breaking change against the base branch.
 
 ## Sibling skills
 
@@ -284,9 +328,9 @@ rejects the merged document or openapi-diff reports a breaking change.
   times on the wire.
 - `multi-tenant-rls` - why no provider identifier appears in a request
   schema.
-- `outbox-messaging` - the notifications table as the outbox, and
-  additive, versioned payload evolution.
-- `ci-workflow` - the pipeline gate that owns the spectral lint and the
-  openapi-diff job.
+- `outbox-messaging` - the notifications table as the outbox, and additive
+  payload evolution agreed by hand for want of a schema.
+- `ci-workflow` - the `contract` job that owns the spectral lint and the
+  oasdiff breaking-change step.
 - `code-language` - URLs and schemas are English; user-facing strings are
   French first.

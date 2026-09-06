@@ -30,36 +30,62 @@ kind of work in its own layer.
 1. **One class = one reason to change.** If you describe it with "and" - "computes the slot *and* checks the plan quota *and* saves the
    appointment *and* sends the SMS" - split it. Each of those is a
    distinct concern with a distinct reason to change.
-2. **Aggregate behavior lives in the domain, not the service.** Invariant
-   checks, state transitions and the money math belong on the aggregate
-   (`Appointment.confirm()`, `Appointment.cancel(reason)`,
-   `Appointment.reschedule(newStartsAt, clock)`). The application service
+2. **Domain rules live in the domain, not the service.** There is no
+   `Appointment` aggregate in `booking`, and there never was one: it was
+   not deleted, it was never built. An aggregate has to be loaded before
+   it can decide, and loading the row to decide on it in Java is exactly
+   the read-modify-write rule 3 forbids. So the domain holds the rules
+   that can be settled WITHOUT the row - `AppointmentStatus` with its
+   legal-transition map (`canBecome`, `isTerminal`), and
+   `BookedSlot.from(startsAt, duration, bufferBefore, bufferAfter)`,
+   which derives the window and its buffers so a client cannot shrink
+   what it blocks. `AppointmentStatus`'s own javadoc is explicit that the
+   map is there to be asserted exhaustively without a database and is
+   NOT what enforces the machine at runtime. The application service
    orchestrates; it does not re-implement the rules the domain owns.
-   Money logic - notably `customerPrice()`, frozen onto the appointment
-   at booking time - stays EXPLICIT in the domain, never smuggled into
-   an interceptor or a mapper. Where the invariant is owned by
-   PostgreSQL, as with the no-double-booking exclusion constraint, the
-   service does not re-implement it either (see `booking-integrity`).
+   Money stays EXPLICIT: the price is frozen at booking from the
+   offering into `customer_price_amount_minor` /
+   `customer_price_currency`, and no later statement puts those columns
+   in a `SET` list. It is never smuggled into an interceptor or a mapper.
+   Where the invariant is owned by PostgreSQL, as with the
+   no-double-booking exclusion constraint, the service does not
+   re-implement it either (see `booking-integrity`).
 3. **A state transition is ONE conditional UPDATE, never a
    read-modify-write.** Checking the status in Java and then letting
    Hibernate dirty-check the change is two responsibilities pretending
    to be one, and it is wrong under concurrency: two requests both read
    `PENDING`, both pass the Java check, and the second write silently
-   overwrites the first. The domain check stays - it produces a precise,
-   testable error - but the AUTHORITY is a single statement whose
+   overwrites the first. The AUTHORITY is a single statement whose
    `WHERE` clause carries the precondition:
-   `UPDATE … WHERE id = :id AND status IN (…) AND version = :expected`.
-   The affected-row count is checked; zero means someone else got there
-   first and raises `AppointmentConflictException` (409). Zero rows do
-   not throw on their own - under RLS a write to another tenant's row
-   also affects zero rows in silence (see `backend-exceptions`).
+   `UPDATE … WHERE id = :id AND status IN (…) RETURNING …`.
+   No `AND version = :expected` anywhere: `appointments.version` is
+   incremented by every transition so the column stays truthful, but no
+   published operation carries a version for a caller to state, so there
+   is nothing to compare it against. The `RETURNING` row IS the outcome,
+   and an empty result is the refusal. WHICH refusal is worked out
+   afterwards, from `snapshotOf(id)`: a row in a state that cannot be
+   left is `InvalidStateTransitionException` (409), no row at all is
+   `AppointmentNotFoundException` (404). Afterwards, not before - asking
+   first is the read-modify-write this rule exists to avoid. There is no
+   `AppointmentConflictException` to raise; that class was never built,
+   because the snapshot can name the state the row is actually in and a
+   generic clash cannot. Zero rows do not throw on their own - under RLS
+   a write to another tenant's row also affects zero rows in silence, and
+   answers as the same 404 (see `backend-exceptions`).
 4. **One application service per use-case family.** Do not build a
    god-service. Split by cohesive use case: `BookAppointmentService`,
-   `CancelAppointmentService`, `RescheduleAppointmentService` - each
-   fulfils one inbound port, not five unrelated ones.
+   `CancelAppointmentService`, `MoveAppointmentService` - each fulfils
+   one inbound port, not five unrelated ones. Family, not method:
+   `MoveAppointmentService` carries reschedule, confirm, complete,
+   no-show and the drop-off's ready/promise, because those are one port
+   (`MoveAppointmentUseCase`) and one reason to change. Cancellation is
+   the one split out, because it owes the outbox something none of the
+   others do - a message to the customer and the withdrawal of every
+   reminder.
 5. **I/O plumbing is its own class at the edge.** An outbound adapter
-   (`AppointmentSqlRepository`, `TwilioSmsAdapter`) shuttles bytes
-   and maps rows/responses. It makes no business decision. The service
+   (`AppointmentSqlRepository`, the worker's `SmtpNotificationChannel`)
+   shuttles bytes and maps rows/responses. It makes no business decision.
+   The service
    decides; the adapter transports. Keep persistence mapping, and the
    SQL text itself, out of the application service.
 6. **Cross-cutting concerns are not the class's job.** Transactions,
@@ -80,19 +106,24 @@ kind of work in its own layer.
 
 - A `BookingService` that computes the slots, checks the PRO plan quota,
   persists the appointment, renders the reminder text, and sends the SMS
-  → rule 1. Split into `BookAppointmentService`, `scheduling`'s slot
-  domain service, billing's `CheckEntitlementUseCase`, a notifications
-  row written in the same transaction, and the notification-worker that
-  drains it.
+  → rule 1. Split into `BookAppointmentService`, `scheduling`'s
+  `CalculateSlotsUseCase`, a notifications row written in the same
+  transaction, and the notification-worker that drains it. The plan quota
+  has nowhere to go yet and must not be given a home inside booking:
+  `billing` is an empty module and `CheckEntitlementUseCase` was never
+  built, so do not import it. When the quota arrives it is billing's own
+  inbound port, not a branch in the booking path.
 - `appointment.setStatus(CONFIRMED)` after an `if` on the current status,
   relying on dirty checking to flush → rule 3. Two concurrent requests
   both pass the `if`; the second write wins and the first is lost with
   no error anywhere. Make the precondition part of the `WHERE`.
-- Ignoring the return value of an `UPDATE`/`executeUpdate()` → rule 3;
-  the affected-row count IS the outcome of the operation.
-- Slot arithmetic or status transitions living in the service while
-  `Appointment` is an anemic data bag → rule 2. Move the rule onto the
-  aggregate.
+- Ignoring what the `UPDATE` gives back → rule 3. Every transition
+  statement carries `RETURNING`, so the repository hands up an
+  `Optional<AgendaEntry>`: an empty one IS the refusal, and nothing else
+  will tell you it happened.
+- Slot arithmetic or status transitions written out again in the service
+  while `BookedSlot` and `AppointmentStatus` sit unused → rule 2. Move
+  the rule into the domain type that already exists for it.
 - A service taking a Redis lock, an advisory lock or `SELECT FOR UPDATE`
   to stop a double booking → rule 2, and a hard prohibition: the
   `EXCLUDE USING gist` constraint owns that invariant. Duplicating it in
@@ -101,10 +132,13 @@ kind of work in its own layer.
 - Trusting a client-supplied `ends_at` or duration instead of deriving
   the slot from the appointment's own frozen duration → rule 2; the
   domain owns the duration, the request body does not.
-- Re-reading the `ServiceOffering` during a reschedule to recompute the
-  duration or the price → rule 2. Duration, buffers and `customerPrice()`
-  were frozen at booking; the catalogue may have changed since, and
-  moving an appointment must never reprice or re-length it.
+- Repricing an appointment while moving it → rule 2. `service_name`,
+  `customer_price_amount_minor`, `customer_price_currency`,
+  `duration_minutes` and the two buffer columns were frozen at booking,
+  and the migration says why in as many words: changing the offering
+  later never moves what an existing appointment blocks. The catalogue
+  may have changed since; the move re-derives a window, it does not
+  re-derive a bill.
 - Planning new reminders without cancelling the obsolete ones → rule 1
   hiding a bug: the customer gets a reminder for a time that no longer
   exists. Cancel then plan, in the same transaction (see
@@ -128,115 +162,165 @@ kind of work in its own layer.
 Rescheduling an appointment, each class owning exactly one concern:
 
 ```java
-// domain - owns the state machine and the derived window. Framework-free.
-public final class Appointment {
+// domain - what can be settled without the row. Framework-free.
+public enum AppointmentStatus {
+    PENDING, CONFIRMED, CANCELLED, COMPLETED, NO_SHOW;
 
-    private final AppointmentId id;
-    private final Duration duration;        // frozen at booking
-    private final Duration bufferBefore;    // frozen at booking
-    private final Duration bufferAfter;     // frozen at booking
-    private final Money customerPrice;      // frozen at booking
-    private AppointmentStatus status;
-    private TimeSlot slot;
-    private long version;
+    /** Asserted exhaustively in a test with no database. NOT the runtime
+     *  authority: two racers would both pass this and both then write. */
+    public boolean canBecome(AppointmentStatus next) { … }
+}
 
-    public AppointmentRescheduled reschedule(Instant newStartsAt, Clock clock) {
-        if (status != PENDING && status != CONFIRMED) {
-            throw new InvalidStateTransitionException(id, status, "RESCHEDULE");
-        }
-        if (!newStartsAt.isAfter(clock.instant())) {
-            throw new SlotOutsideAvailabilityException(newStartsAt);
-        }
-        TimeSlot previous = this.slot;
-        // derived from THIS appointment's frozen duration; the catalogue is
-        // not consulted and customerPrice never moves
-        this.slot = TimeSlot.of(newStartsAt, newStartsAt.plus(duration));
-        return new AppointmentRescheduled(id, previous, slot, blockedWindow());
-    }
+/** The window a booking occupies, derived from the offering's own duration
+ *  and buffers rather than from anything the client sent - a client sends a
+ *  start, everything else follows, so it cannot shrink what it blocks.
+ *  blockedFrom / blockedUntil are ordinary columns computed here; only
+ *  blocked_range is generated by PostgreSQL, and
+ *  ck_appointments_block_derived re-derives the pair rather than trusting
+ *  the statement to have done it. */
+public record BookedSlot(Instant startsAt, Instant endsAt,
+                         Instant blockedFrom, Instant blockedUntil,
+                         int bufferBeforeMinutes, int bufferAfterMinutes) {
 
-    /** blocked_from / blocked_until are ordinary columns the application
-     *  computes; only blocked_range is generated by PostgreSQL. */
-    public BlockedWindow blockedWindow() {
-        return new BlockedWindow(slot.startsAt().minus(bufferBefore),
-                                 slot.endsAt().plus(bufferAfter));
-    }
+    public static BookedSlot from(Instant startsAt, Duration duration,
+                                  Duration bufferBefore, Duration bufferAfter) { … }
 }
 ```
 
 ```java
-// outbound port - states the semantics, returns the outcome
-public interface AppointmentRepository {
+// outbound port - one conditional statement per transition, and the row it
+// gives back IS the outcome
+public interface AppointmentStateRepository {
 
-    Appointment require(AppointmentId id);   // miss -> 404 RESOURCE_NOT_FOUND
+    Optional<AgendaEntry> reschedule(AppointmentId id, BookedSlot slot,
+                                     Optional<StaffId> staffId, Instant at);
 
-    /** One conditional UPDATE. Returns the affected row count. */
-    int applyReschedule(AppointmentId id, long expectedVersion,
-                        TimeSlot slot, BlockedWindow window);
+    /** Asked before the move rather than left to the composite foreign key,
+     *  so an unknown chair is a 404 and not a 500 naming a constraint. */
+    boolean activeStaffExists(StaffId staffId);
+
+    /** Just enough to phrase a refusal, and read only once a statement has
+     *  found nothing. Empty when the row does not exist OR is not the
+     *  caller's - RLS makes those one answer, deliberately. */
+    Optional<AppointmentSnapshot> snapshotOf(AppointmentId id);
 }
 ```
 
 ```java
-// application - orchestrates only; no SQL, no gateway code, no logging
+// application - one attempt, in its own transaction. Orchestrates only:
+// no SQL, no gateway code, no Logger field.
 @ApplicationScoped
-public class RescheduleAppointmentService
-        implements RescheduleAppointmentUseCase {
+public class RescheduleAttempt {
 
-    private final AppointmentRepository appointments;   // outbound port
-    private final OutboxEventPublisher outbox;          // outbound port
+    private final AppointmentStateRepository appointments;  // outbound port
+    private final LookupServiceOfferingUseCase offerings;   // catalog's port
+    private final CalculateSlotsUseCase slots;              // scheduling's port
+    private final NotificationOutboxPort outbox;            // outbound port
+    private final BookingNotifications notifications;
     private final Clock clock;
 
-    public RescheduleAppointmentService(AppointmentRepository appointments,
-                                        OutboxEventPublisher outbox,
-                                        Clock clock) {
-        this.appointments = appointments;
-        this.outbox = outbox;
-        this.clock = clock;
-    }
+    // constructor injection, one collaborator per concern
 
-    @Override
-    @Transactional
-    public void reschedule(AppointmentId id, Instant newStartsAt) {
-        Appointment appointment = appointments.require(id);  // RLS-scoped
-        AppointmentRescheduled event =
-                appointment.reschedule(newStartsAt, clock);
-
-        // the domain check above produces the precise error; THIS statement
-        // is what makes it true under concurrency. 23P01 from the exclusion
-        // constraint surfaces as SlotUnavailableException -> 409: the staff
-        // member is the one already on the appointment, so the client named it
-        int updated = appointments.applyReschedule(
-                id, appointment.version(), event.newSlot(),
-                event.blockedWindow());
-        if (updated == 0) {
-            throw new AppointmentConflictException(id);   // lost update -> 409
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    public AgendaEntry once(AppointmentId id, Instant newStartsAt,
+                            Optional<StaffId> newStaffId) {
+        AppointmentSnapshot current = appointments.snapshotOf(id)
+                .orElseThrow(() -> new AppointmentNotFoundException(id.value()));
+        if (!MOVABLE.contains(current.status())) {
+            throw new InvalidStateTransitionException(current.status(), current.status());
         }
+
+        StaffId target = newStaffId.orElse(current.staffId());
+        if (newStaffId.isPresent() && !appointments.activeStaffExists(target)) {
+            throw new UnknownStaffException(target.value());
+        }
+
+        // recomputed from the service the appointment already carries; the
+        // client sends a start and nothing else about time
+        BookableOffering offering = offerings.requireBookable(current.serviceOfferingId());
+        BookedSlot moved = BookedSlot.from(newStartsAt, offering.duration(),
+                                           offering.bufferBefore(), offering.bufferAfter());
+
+        // the friendly answer, not the guarantee
+        if (!slots.isWithinAvailability(newStartsAt,
+                                        slotRequest(target, offering, newStartsAt))) {
+            throw new SlotOutsideAvailabilityException(newStartsAt,
+                    "outside the provider's declared availability");
+        }
+
+        // and here is the guarantee. A 23P01 from the exclusion constraint is
+        // translated in the adapter and surfaces as SlotUnavailableException
+        // -> 409, exactly as a first booking's would
+        AgendaEntry entry = appointments.reschedule(id, moved, newStaffId, clock.instant())
+                .orElseThrow(() -> new InvalidStateTransitionException(
+                        current.status(), AppointmentStatus.PENDING));
 
         // same transaction: retract what is now wrong before planning what is
         // right, or the customer is reminded of a time that no longer exists
-        outbox.cancelPendingFor(id);
-        outbox.record(event);   // reminder keys embed the new scheduled_at
+        outbox.cancelPending(id);
+        notifications.planReschedule(entry);
+
+        return entry;
+    }
+}
+```
+
+```java
+// application - the retry, and nothing else. Deliberately NOT @Transactional:
+// a deadlock leaves the attempt's transaction rollback-only, so a retry inside
+// it would fail on its first statement. Its own class for its own reason to
+// change.
+@ApplicationScoped
+public class MoveAppointmentService implements MoveAppointmentUseCase {
+
+    @Override
+    public AgendaEntry reschedule(AppointmentId id, Instant newStartsAt,
+                                  Optional<StaffId> staff) {
+        for (int attempt = 0; attempt <= MAX_DEADLOCK_RETRIES; attempt++) {
+            try {
+                return rescheduleAttempt.once(id, newStartsAt, staff);
+            } catch (TransientBookingConflictException e) {
+                if (attempt == MAX_DEADLOCK_RETRIES) {
+                    throw new BookingContendedException(newStartsAt);
+                }
+            }
+        }
+        throw new BookingContendedException(newStartsAt);
     }
 }
 ```
 
 ```sql
--- inside AppointmentSqlRepository.applyReschedule; the service never
--- sees this text. buffer_before_minutes / buffer_after_minutes are frozen
--- and untouched, so ck_appointments_block_derived still holds.
+-- inside AppointmentStateSqlRepository.reschedule; the service never sees
+-- this text. buffer_before_minutes / buffer_after_minutes and the price
+-- columns are frozen and absent from the SET list, so
+-- ck_appointments_block_derived still holds and the bill does not move.
 UPDATE appointments
-   SET starts_at     = :starts_at,
-       ends_at       = :ends_at,
-       blocked_from  = :blocked_from,
-       blocked_until = :blocked_until,
+   SET starts_at     = :startsAt,
+       ends_at       = :endsAt,
+       blocked_from  = :blockedFrom,
+       blocked_until = :blockedUntil,
+       -- COALESCE, so a move naming no chair leaves the row on the one it
+       -- has. The chair changes in THIS statement and not a second one: the
+       -- exclusion constraint keys on staff_id, and releasing the old
+       -- resource before taking the new one opens a window a third booking
+       -- fits into.
+       staff_id      = COALESCE(CAST(:staffId AS uuid), staff_id),
+       -- re-derived from the turnaround frozen at booking: a promise
+       -- anchored to a handover that has moved is not a promise
+       ready_by      = CASE WHEN turnaround_hours IS NULL THEN NULL
+                            ELSE CAST(:endsAt AS timestamptz)
+                                 + make_interval(hours => turnaround_hours)
+                       END,
        version       = version + 1,
-       updated_at    = now()
- WHERE id      = :id
-   AND status  IN ('PENDING', 'CONFIRMED')
-   AND version = :expected_version
+       updated_at    = :at
+ WHERE id     = :id
+   AND status IN ('PENDING','CONFIRMED')
+RETURNING id, starts_at, ends_at, status, service_name, …
 ```
 
-The domain holds the rule, PostgreSQL holds the exclusion invariant and the
-precondition, the service only orchestrates, the repository does I/O, and
+The domain derives the window, PostgreSQL holds the exclusion invariant and
+the precondition, the service only orchestrates, the repository does I/O, and
 audit/tracing/tenant/logging are interceptors and connection hooks elsewhere.
 
 ## Sibling skills
@@ -245,11 +329,12 @@ audit/tracing/tenant/logging are interceptors and connection hooks elsewhere.
 - `backend-naming` - suffixes that make the single responsibility readable,
   and why the insert port method is `insertIfAbsent`.
 - `backend-di` - injecting one collaborator per concern.
-- `backend-exceptions` - `AppointmentConflictException` for the lost update,
+- `backend-exceptions` - `InvalidStateTransitionException` and
+  `AppointmentNotFoundException`, the two a refused transition resolves to,
   and why zero affected rows never throws by itself.
 - `cdi-interceptors` - where cross-cutting effects go instead of the class.
 - `pii-masking-logging` - the interceptor that logs so the service does not.
-- `money-currency` - why the frozen `customerPrice()` stays in the domain.
+- `money-currency` - why the price frozen at booking never moves again.
 - `booking-integrity` - the invariant the database owns, not the service.
 - `outbox-messaging` - cancelling obsolete notifications and planning new
   ones in the same transaction.

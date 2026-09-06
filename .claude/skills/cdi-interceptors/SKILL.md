@@ -24,7 +24,8 @@ application code - never hidden inside an interceptor.**
   check to a business method.
 - About to type `Log.info` / `Log.debug` / `System.out` inside a domain,
   application, or adapter class - stop; a logging/audit concern belongs
-  in an interceptor (see `pii-masking-logging`).
+  behind the `AuditTrail` port or the logging boundary, not inline (see
+  `pii-masking-logging`).
 - Wiring the `app.provider_id` GUC that the RLS policies read, or
   debugging queries that return nothing under RLS.
 - Reviewing a PR that introduces `@Transactional`, timing code,
@@ -37,19 +38,24 @@ application code - never hidden inside an interceptor.**
 
 1. **One `@InterceptorBinding` annotation per concern, one
    `@Interceptor` class that implements it.** Approved concerns only:
-   transactions, audit, tracing, metrics, `TenantContext` binding,
-   idempotency, rate-limit. Anything else - validation, mapping, slot
-   arithmetic, pricing, state transitions - is explicit code, not an
-   interceptor.
+   transactions, `TenantContext` binding, and - should one ever earn it -
+   audit, tracing, metrics, idempotency or rate-limit, none of which did
+   (rule 4). Anything else - validation, mapping, slot arithmetic,
+   pricing, state transitions - is explicit code, not an interceptor.
 2. **The frozen price and the appointment state machine stay explicit in
    the domain, never inside an interceptor.** Copying a
    `ServiceOffering`'s price into `customer_price_amount_minor` /
    `customer_price_currency`, computing a `Money`, widening a candidate
    slot by the requested offering's buffers, deciding
-   `PENDING -> CONFIRMED` - all stay visible in the application service
-   and the aggregate. An interceptor may open the transaction around
-   them; it must not perform them. This is a hard review gate: a reader
-   of `BookAppointmentService` must be able to see every rule that
+   `PENDING -> CONFIRMED` - all stay visible in the booking path itself:
+   `BookAppointmentAttempt` and the statement it issues. There is no
+   `Appointment` aggregate to keep them in - booking hands the repository a
+   `NewAppointment` and the INSERT writes the frozen price and reads the
+   provider's `auto_confirm` for the status - which makes this rule
+   sharper, not softer, because the only place left to hide them would be
+   an interceptor. An interceptor may open the transaction around them; it
+   must not perform them. This is a hard review gate: a reader following
+   `BookAppointmentAttempt.once` must be able to see every rule that
    decided the appointment's price and status without opening an
    interceptor.
 3. **Interceptors are thin and delegate.** No business branching. An
@@ -59,30 +65,52 @@ application code - never hidden inside an interceptor.**
    limit - the logic belongs in the domain.
 4. **Order interceptors explicitly with `@Priority`, and write the number
    down.** Fixed outer→inner chain, bound to
-   `jakarta.interceptor.Interceptor.Priority` offsets:
+   `jakarta.interceptor.Interceptor.Priority` offsets. There is exactly
+   **one** interceptor binding in this codebase, and this table used to
+   list six:
 
-   | Concern             | Priority                  |
-   | ------------------- | ------------------------- |
-   | tracing             | `PLATFORM_BEFORE + 5`     |
-   | `@TenantBound`      | `PLATFORM_BEFORE + 10`    |
-   | `@RateLimited`      | `PLATFORM_BEFORE + 20`    |
-   | `@Idempotent`       | `PLATFORM_BEFORE + 30`    |
-   | `@Transactional`    | `PLATFORM_BEFORE + 200`   |
-   | audit               | `PLATFORM_BEFORE + 210`   |
+   | Concern             | Class                    | Priority                  |
+   | ------------------- | ------------------------ | ------------------------- |
+   | `@TenantBound`      | `TenantBoundInterceptor` | `PLATFORM_BEFORE + 10`    |
+   | `@Transactional`    | Quarkus                  | `PLATFORM_BEFORE + 200`   |
 
-   `PLATFORM_BEFORE + 200` is Quarkus's own transactional interceptor - it is not ours to move. Audit sits at `+210`, inside the transaction,
-   so an audit row commits or rolls back with the change it describes.
-   Never rely on declaration order, and never leave a priority
-   undocumented: the whole chain is read from these numbers.
+   `PLATFORM_BEFORE + 200` is Quarkus's own transactional interceptor - it
+   is not ours to move. Never rely on declaration order, and never leave a
+   priority undocumented: the whole chain is read from these numbers.
+
+   The four rows that are gone - tracing at `+5`, `@RateLimited` at `+20`,
+   `@Idempotent` at `+30`, audit at `+210` - were **never written**.
+   Nothing was deleted: the table described a plan, and the plan lost each
+   time to the same objection, that the concern needs something from the
+   method an annotation cannot ask for. **Tracing** is what the platform
+   already does at the HTTP boundary. **Rate limiting is a call, not an
+   annotation** - `AttemptLimiter` in `platformkernel.ratelimit`, and
+   `GuessBudget` in booking where it has to fail closed - because the
+   decision needs the caller's own key and puts a `Retry-After` on the
+   response, neither of which an interceptor gets without the method
+   handing it over. **Auditing is a port with two methods**, invoked by
+   name: `AuditTrail.record` joins the caller's transaction, so a recorded
+   success cannot commit while the change it describes rolls back, and
+   `AuditTrail.recordRefusal` opens its own, because the refusal is what
+   aborts that transaction. One `@Priority` cannot express both, and an
+   interceptor would have had to pick one. Do not restore these rows from
+   this file.
 5. **`TenantContext` is bound by `TenantBoundInterceptor` from the
    verified JWT subject resolved against `provider_staff` in the
-   database, fail-closed, with no cache.** The interceptor reads
-   `jwt.getSubject()`, resolves
+   database, fail-closed, with no cache.** The interceptor takes the
+   subject from `AuthenticatedSubject`, never from an injected
+   `JsonWebToken` - that bean only exists while the OIDC extension is
+   active, so an injection point on it resolves to nothing the moment OIDC
+   is off and every caller is refused with no way to tell that from a real
+   refusal. It resolves
    `sub -> users.keycloak_user_id -> users.id -> provider_staff.user_id
    -> provider_staff.provider_id` through `ProviderMembershipResolver`
-   (declared in `com.balaaca.sharedkernel.tenancy`, implemented in
-   `providers`), assigns the resulting `ProviderId`, and clears it in
-   `finally`. Zero memberships throws `NoProviderMembershipException`.
+   (declared in `com.balaaca.platformkernel.tenancy`, implemented in
+   `providers`), assigns the resulting `Membership` - provider, chair and
+   role, not just an id - and clears it in `finally`. Zero memberships
+   throws `NoProviderMembershipException`, and the port throws it itself:
+   `requireFor` returns a `Membership`, not an `Optional` for the caller
+   to unwrap and possibly forget.
    Never a `provider_id` claim, never a header, never a path or method
    parameter (see `multi-tenant-rls`). **There is deliberately no Redis
    cache on this path.** A five-minute positive cache of
@@ -109,30 +137,39 @@ application code - never hidden inside an interceptor.**
    statement on the connection enlisted in the transaction**, reading the
    value from `TenantContext`. A connection hook, unlike an annotation,
    also covers every transaction opened without `@TenantBound` - `notification-worker` jobs, scheduled tasks, admin paths. Matching
-   this, every RLS policy predicate in the codebase is
-   `provider_id = nullif(current_setting('app.provider_id', true),
-   '')::uuid`: `current_setting` without `missing_ok` raises `42704` and
-   `''::uuid` raises `22P02`, whereas this form degrades to `NULL`,
-   filters every row, and yields a deterministic `404` instead of a
-   `500`.
-7. **Idempotency and rate-limit are interceptors; they guard, they never
-   compute results, and they are never the only guard.** The
-   `@Idempotent` interceptor keys off the `Idempotency-Key` header. It
-   may short-circuit a replay it can *prove* - same provider, same key,
-   same `idempotency_request_hash`, stored response in hand - and it may
-   consult a Redis record to do so. The authority remains
-   `UNIQUE (provider_id, idempotency_key)`, enforced inside the booking
-   transaction by `INSERT … ON CONFLICT (provider_id, idempotency_key)
-   DO NOTHING` followed by a `SELECT`. The two compose by falling
-   through: with Redis cold, every request reaches the index and the
-   outcome is byte-identical, only slower. The interceptor never
-   fabricates an `Appointment`, and a key replayed with a different
-   request hash is `422 IDEMPOTENCY_KEY_REUSED` raised by the service,
-   not a guess made in the interceptor (see `idempotency-concurrency`).
+   this, every RLS policy predicate in the codebase reads the GUC through
+   `app_current_provider()` - `provider_id = app_current_provider()` - the
+   `STABLE` function `V001` defines as
+   `nullif(current_setting('app.provider_id', true), '')::uuid`. The
+   expression is written once, in that one function body, precisely so no
+   policy has to get it right on its own: `current_setting` without
+   `missing_ok` raises `42704` and `''::uuid` raises `22P02`, whereas this
+   form degrades to `NULL`, filters every row, and yields a deterministic
+   `404` instead of a `500`.
+7. **Idempotency is not an interceptor either, and there is no Redis
+   replay record.** No `@Idempotent` binding was ever written. The header
+   is bound on the resource method
+   (`@HeaderParam("Idempotency-Key") @NotNull @Size(min = 1, max = 80)`),
+   and the only authority is the partial index
+   `UNIQUE (provider_id, idempotency_key) WHERE idempotency_key IS NOT
+   NULL`, enforced inside the booking transaction by
+   `INSERT … ON CONFLICT (provider_id, idempotency_key) WHERE
+   idempotency_key IS NOT NULL DO NOTHING` - the index's predicate has to
+   be repeated in the conflict target or PostgreSQL answers `42P10` - with
+   `AppointmentRepository.replayOf(key, requestHash)` read **first**, in
+   that same transaction, so a retry is handed what it asked for instead of
+   being judged a second time against rules that may have moved. A cache in
+   front of that would be a second answer to the same question living in a
+   second failure domain, and the index is already the answer. A key
+   replayed with a different request hash is `422 IDEMPOTENCY_KEY_REUSED`,
+   raised where the replay is read; nothing ever fabricates an appointment
+   to satisfy a retry (see `idempotency-concurrency`).
 8. **No inline logging in intercepted classes.** Domain, application and
-   adapter classes throw or return; an audit or logging interceptor turns
-   the outcome into a structured line - dotted lowercase event names such
-   as `appointment.booked` and `appointment.book.slot_unavailable` - always through the masking helper. `provider_id` and `correlation_id`
+   adapter classes throw or return; the `AuditTrail` port and the logging
+   boundary turn the outcome into a structured line - dotted lowercase
+   event names such as `appointment.booked` and
+   `appointment.book.slot_unavailable` - always through the masking
+   helper. `provider_id` and `correlation_id`
    go into the MDC raw; identifiers that resolve to a natural person
    (`customer_id`, `user_id`, `appointment_id`) are masked (see
    `pii-masking-logging`).
@@ -171,19 +208,21 @@ application code - never hidden inside an interceptor.**
   connection hook.
 - An RLS policy written
   `provider_id = current_setting('app.provider_id')::uuid` → rule 6; it
-  raises `42704`/`22P02` and turns a missing tenant into a `500`. Use the
-  `nullif(current_setting(…, true), '')::uuid` form.
-- An idempotency interceptor that builds and returns a fresh
-  `Appointment` on replay, or that is the only thing preventing a
-  duplicate booking when Redis is cold → rule 7.
+  raises `42704`/`22P02` and turns a missing tenant into a `500`. Call
+  `app_current_provider()`, which is that expression written safely, once.
+- A new `@Idempotent` binding, or a Redis replay record in front of the
+  idempotency index → rule 7; the partial unique index and `replayOf` are
+  the whole mechanism, and a cache would be a second answer that can
+  disagree.
 - `Log.info("booked " + customer.phone())` inside
-  `BookAppointmentService` → rule 8; the audit interceptor emits
-  `appointment.booked`, masked.
+  `BookAppointmentService` → rule 8; the trail records it through
+  `AuditTrail`, and the log line is masked.
 - An interceptor that quietly calls
   `eventPublisher.fire(new AppointmentBooked(...))` the caller cannot see
   → rule 9; publish explicitly and record it in the outbox.
-- A `private static final Map<String, Integer> COUNTERS` inside the
-  rate-limit interceptor → rule 10; put it behind an injected port.
+- A `private static final Map<String, Integer> COUNTERS` inside an
+  interceptor or a limiter bean → rule 10; put it behind an injected port,
+  the way `GuessBudget` and `AttemptLimiter` already are.
 
 ## Minimal correct example
 
@@ -197,7 +236,7 @@ public @interface TenantBound {
 ```
 
 ```java
-// com.balaaca.sharedkernel.tenancy - same package as TenantContext, so
+// com.balaaca.platformkernel.tenancy - same package as TenantContext, so
 // assign/clear stay closed to every other class.
 //
 // Thin: resolves the provider from the DATABASE and binds TenantContext.
@@ -207,37 +246,50 @@ public @interface TenantBound {
 @Priority(Interceptor.Priority.PLATFORM_BEFORE + 10)  // outside the tx
 public class TenantBoundInterceptor {
 
-    private final JsonWebToken jwt;
+    private final AuthenticatedSubject caller;
     private final TenantContext tenantContext;
     private final ProviderMembershipResolver memberships;
+    private final AuditTrail audit;
 
-    public TenantBoundInterceptor(JsonWebToken jwt,
+    public TenantBoundInterceptor(AuthenticatedSubject caller,
                                   TenantContext tenantContext,
-                                  ProviderMembershipResolver memberships) {
-        this.jwt = jwt;
+                                  ProviderMembershipResolver memberships,
+                                  AuditTrail audit) {
+        this.caller = caller;
         this.tenantContext = tenantContext;
         this.memberships = memberships;
+        this.audit = audit;
     }
 
     @AroundInvoke
     Object bind(InvocationContext ctx) throws Exception {
-        String subject = jwt.getSubject();
-        if (subject == null || subject.isBlank()) {
-            throw new UnauthenticatedException();
+        // From SecurityIdentity, not an injected JsonWebToken: that bean
+        // disappears with the OIDC extension and takes every caller with it.
+        String subject = caller.subject().orElse(null);
+        if (subject == null) {
+            throw refused(ctx, new NoProviderMembershipException(null));
         }
-        // The JWT carries identity (sub) and global roles only. Tenant
-        // membership is read from provider_staff on every request, so a
-        // revocation takes effect on the next call. Deliberately uncached.
-        ProviderId provider = memberships.resolve(subject)
-                .orElseThrow(NoProviderMembershipException::new);
-
-        tenantContext.assign(provider);
+        try {
+            // The token carries identity (sub) and global roles only.
+            // Membership is read from provider_staff on every request, so a
+            // revocation takes effect on the next call. Deliberately uncached.
+            tenantContext.assign(memberships.requireFor(subject));
+        } catch (DomainException e) {
+            throw refused(ctx, e);
+        }
         try {
             return ctx.proceed();
+        } catch (DomainException e) {
+            throw refused(ctx, e);
         } finally {
             tenantContext.clear();
         }
     }
+
+    // Auditing a refusal is a CALL, not a second interceptor: it has to run
+    // while the tenant is still bound, because this finally clears it long
+    // before any JAX-RS mapper would see the exception.
+    private DomainException refused(InvocationContext ctx, DomainException e) { ... }
 }
 ```
 
@@ -247,7 +299,7 @@ The database GUC cannot be set from that interceptor - at
 first statement issued on the connection the transaction enlists:
 
 ```java
-// com.balaaca.sharedkernel.tenancy - connection-level, so it also covers
+// com.balaaca.platformkernel.tenancy - connection-level, so it also covers
 // transactions opened without @TenantBound (worker jobs, scheduled tasks).
 @ApplicationScoped
 public class TenantGucPoolInterceptor implements AgroalPoolInterceptor {
@@ -263,13 +315,18 @@ public class TenantGucPoolInterceptor implements AgroalPoolInterceptor {
 
     @Override
     public void onConnectionAcquire(Connection connection) {
-        // No resolved tenant -> bind the empty string. The policy reads
-        // nullif(current_setting('app.provider_id', true), '')::uuid, which
+        // The request-context test is not optional. Flyway at startup, the
+        // readiness probe and every scheduled job acquire a connection with no
+        // request in flight, and touching a @RequestScoped bean there throws
+        // ContextNotActiveException rather than returning empty.
+        //
+        // No resolved tenant -> bind the empty string. app_current_provider()
         // is then NULL, so every row is filtered and the API answers 404
         // instead of raising 42704/22P02 and returning 500.
-        String value = tenantContext.current()
-                .map(p -> p.value().toString())
-                .orElse("");
+        String value = "";
+        if (Arc.container().requestContext().isActive()) {
+            value = tenantContext.current().map(ProviderId::toString).orElse("");
+        }
         try (PreparedStatement ps = connection.prepareStatement(BIND)) {
             ps.setString(1, value);
             ps.execute();
@@ -280,53 +337,67 @@ public class TenantGucPoolInterceptor implements AgroalPoolInterceptor {
 }
 ```
 
-The application service stays explicit about the frozen price and the
-state machine. The interceptors only bound the tenant and the transaction:
+Note where `@TenantBound` goes: on the **resource class**, beside
+`@Authenticated`, never on an application service. The edge is where a
+caller becomes a tenant, and putting the binding there means no service can
+be reached with the tenant unresolved. `BookAppointmentAttempt` below
+carries no tenant annotation at all, and reads `TenantContext` through the
+repository like everything else.
+
+The application code stays explicit about the frozen price and the state
+machine. The transaction is its own annotation, on the class that owns one
+attempt:
 
 ```java
 @ApplicationScoped
-public class BookAppointmentService implements BookAppointmentUseCase {
+public class BookAppointmentAttempt {
 
-    private final AppointmentRepository appointments;
     private final LookupServiceOfferingUseCase offerings;
-    private final OutboxEventPublisher outbox;
-    private final Clock clock;
+    private final CalculateSlotsUseCase slots;
+    private final AppointmentRepository appointments;
+    private final BookingNotifications notifications;
 
-    public BookAppointmentService(AppointmentRepository appointments,
-                                  LookupServiceOfferingUseCase offerings,
-                                  OutboxEventPublisher outbox,
-                                  Clock clock) {
-        this.appointments = appointments;
-        this.offerings = offerings;
-        this.outbox = outbox;
-        this.clock = clock;
-    }
+    // constructor injection, as everywhere - see backend-di
 
-    @Override
-    @TenantBound
-    @Transactional
-    public AppointmentId book(BookAppointmentCommand command) {
-        ServiceOffering offering =
-            offerings.require(command.serviceOfferingId());
+    // REQUIRES_NEW, and separate from BookAppointmentService for a reason:
+    // a lost race leaves this transaction rollback-only, so the retry needs
+    // a fresh one. No interceptor can express that; the caller loops.
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    public InsertOutcome once(BookAppointmentCommand command, List<StaffId> excluded) {
+        BookableOffering offering =
+            offerings.requireBookable(command.serviceOfferingId());
 
-        // Visible here, never in an interceptor: the price is frozen onto
-        // the appointment, and the window is recomputed server-side from
-        // the offering's own duration and buffers.
-        Money customerPrice = offering.customerPrice();
-        Appointment candidate =
-            Appointment.request(command, offering, customerPrice, clock);
+        // Visible here, never in an interceptor: the window is recomputed
+        // server-side from the offering's own duration and buffers, and the
+        // offering is carried into the insert so the row freezes its price
+        // into customer_price_amount_minor / customer_price_currency.
+        BookedSlot slot = BookedSlot.from(command.startsAt(), offering.duration(),
+                                          offering.bufferBefore(), offering.bufferAfter());
 
-        // ON CONFLICT (provider_id, idempotency_key) DO NOTHING, then read
-        // back: the index arbitrates the replay, a 23P01 from the exclusion
-        // constraint still surfaces as SLOT_UNAVAILABLE.
-        appointments.insertIfAbsent(candidate);
-        Appointment stored =
-            appointments.requireByIdempotencyKey(command.idempotencyKey());
+        // The replay is read FIRST, in this transaction. A retry is not a new
+        // request: the slot it took may since have closed, and refusing the
+        // retry would leave the caller believing nothing was booked.
+        Optional<InsertOutcome> replay = command.idempotency()
+                .flatMap(i -> appointments.replayOf(i.key(), i.requestHash()));
+        if (replay.isPresent()) {
+            return replay.get();
+        }
 
-        // The event is published where the state changed, not by a hidden
-        // interceptor, and lands in the outbox inside this transaction.
-        outbox.record(new AppointmentBooked(stored.id()));
-        return stored.id();
+        // ... blocking, availability, fulfilment and staff checks, each an
+        // explicit call, each throwing its own domain exception ...
+
+        // ON CONFLICT (provider_id, idempotency_key) WHERE idempotency_key
+        // IS NOT NULL DO NOTHING: the index arbitrates the replay, and a
+        // 23P01 from the exclusion constraint still surfaces as
+        // SLOT_UNAVAILABLE rather than being swallowed as a duplicate.
+        InsertOutcome outcome = appointments.insertIfAbsent(new NewAppointment(...));
+
+        // Planned where the state changed, not by a hidden interceptor, and
+        // written through the outbox port inside this same transaction.
+        if (!outcome.replayed()) {
+            notifications.planFor(outcome.appointmentId(), outcome.reference(), ...);
+        }
+        return outcome;
     }
 }
 ```
@@ -337,9 +408,9 @@ public class BookAppointmentService implements BookAppointmentUseCase {
   interceptor and the connection hook feed, and the `404` rule.
 - `backend-di` - the canonical `TenantContext`, and why an interceptor is
   a production bean that uses constructor injection.
-- `idempotency-concurrency` - how the `@Idempotent` short-circuit and the
-  in-transaction UNIQUE index compose.
-- `pii-masking-logging` - the audit interceptor masks person-resolving
+- `idempotency-concurrency` - why the in-transaction partial UNIQUE index
+  and `replayOf` are the whole mechanism, with no guard in front.
+- `pii-masking-logging` - the audit trail masks person-resolving
   identifiers and logs `provider_id` raw.
 - `outbox-messaging` - domain events are published explicitly then
   persisted via the outbox, not emitted by an interceptor.

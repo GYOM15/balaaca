@@ -62,15 +62,19 @@ method argument. Fail-closed: no resolvable membership, no access.
    the same defect and no eviction channel at all.
 4. **The membership lookup runs through a `SECURITY DEFINER` function,
    because no tenant is bound yet.** `provider_staff` is itself
-   tenant-scoped and under RLS, so the resolver cannot read it as a tenant - that is the chicken-and-egg of tenant resolution. Expose exactly one
-   locked-down function, owned by the schema owner, with a pinned
-   `search_path`, returning nothing but a `provider_id`, and grant
-   `EXECUTE` on it to the application role alone. It is the only sanctioned
-   pre-tenant read in the system; any second one needs an ADR.
+   tenant-scoped and under RLS, so the resolver cannot read it as a tenant - that is the chicken-and-egg of tenant resolution. Expose one
+   locked-down function, owned by `balaaca_resolver` and NOT by the schema
+   owner - a `SECURITY DEFINER` function runs with its owner's rights, and
+   the schema owner reads every table - with a pinned `search_path`,
+   returning the membership row and nothing wider, and grant `EXECUTE` on it
+   to the application role alone. Pre-tenant reads are a closed set, one per
+   server-side tenant source (CANONICAL.md §4 names four: the Keycloak
+   subject, the published slug, the booking reference, the invitation code);
+   a fifth needs an ADR.
 5. **A user has at most ONE active membership, enforced by a unique partial
    index.** `provider_staff` is many-to-many by shape, so the resolver must
    not silently assume a single row and take the first. Ship
-   `CREATE UNIQUE INDEX provider_staff_one_active_membership ON
+   `CREATE UNIQUE INDEX uq_provider_staff_one_active_membership ON
    provider_staff (user_id) WHERE user_id IS NOT NULL AND status = 'ACTIVE';`
    and have the resolver throw `NoProviderMembershipException` on zero rows.
    **Known limitation, stated deliberately:** a person cannot yet be staff
@@ -254,87 +258,125 @@ method argument. Fail-closed: no resolvable membership, no access.
 Forced RLS with the only sanctioned predicate:
 
 ```sql
--- V030__enable_rls_tenant_tables.sql
+-- V013__enable_row_level_security.sql
 ALTER TABLE appointments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE appointments FORCE  ROW LEVEL SECURITY;
 
-CREATE POLICY tenant_isolation ON appointments
-    USING      (provider_id
-                = nullif(current_setting('app.provider_id', true), '')::uuid)
-    WITH CHECK (provider_id
-                = nullif(current_setting('app.provider_id', true), '')::uuid);
+-- Two conventions, both load-bearing. The policy is named <table>_tenant, so
+-- twenty of them read alike and a missing one is visible in pg_policies. And
+-- the predicate calls app_current_provider(), which IS rule 7's nullif form,
+-- written down once in V001: inlining the expression makes a second copy to
+-- keep in step with every other policy, and copies drift.
+CREATE POLICY appointments_tenant ON appointments
+    USING      (provider_id = app_current_provider())
+    WITH CHECK (provider_id = app_current_provider());
 
--- Repeat verbatim for customers, service_offerings, availability_rules,
--- availability_overrides, notifications, subscriptions, provider_staff.
+-- V013 does exactly this, in a loop, for provider_staff, service_offerings,
+-- customers, availability_rules, availability_overrides, notifications and
+-- subscriptions. users and audit_logs followed in V015 with predicates of
+-- their own, and seven tenant tables since: staff_service_offerings (V032),
+-- provider_reports (V037), provider_contestations (V041), service_photos
+-- (V042), provider_reviews and review_photos (V050), provider_links (V052).
+--
+-- Both halves is the default, NOT a law - decide which halves a new table
+-- gets and say why in the migration. provider_reviews and review_photos have
+-- provider_reviews_tenant_read / review_photos_tenant_read, FOR SELECT, and
+-- no tenant write policy at all: the missing WITH CHECK is what stops a salon
+-- posting its own five stars, and adding one back "for symmetry" would
+-- destroy the only thing that makes the ratings worth reading.
 -- The composite-FK excerpts and the appointments DDL itself are normative
--- in booking-integrity (V014__create_appointments.sql); do not restate them.
+-- in booking-integrity (V009__create_appointments.sql); do not restate them.
 ```
 
 Membership resolution - one active membership, one privileged function:
 
 ```sql
--- V031__provider_membership_resolution.sql
-CREATE UNIQUE INDEX provider_staff_one_active_membership
+-- V005__create_provider_staff.sql - the index ships with the table, because a
+-- constraint added later is a constraint some existing row already violates.
+CREATE UNIQUE INDEX uq_provider_staff_one_active_membership
     ON provider_staff (user_id)
     WHERE user_id IS NOT NULL AND status = 'ACTIVE';
 
--- provider_staff is under RLS and no tenant is bound at resolution time,
--- so this is the one pre-tenant read: it returns a provider_id and nothing
--- else, and only the application role may execute it.
-CREATE FUNCTION app_resolve_provider(p_subject text)
-    RETURNS uuid
-    LANGUAGE sql
-    STABLE
-    SECURITY DEFINER
-    SET search_path = public, pg_temp
-AS $$
-    SELECT ps.provider_id
+-- V013 -> V015 -> V018 -> V036. provider_staff is under RLS and no tenant is
+-- bound at resolution time, so this is the pre-tenant read for authenticated
+-- staff: it is owned by balaaca_resolver, whose one narrow SELECT policy is
+-- the whole of the definer rights it lends, and only the application role may
+-- execute it.
+--
+-- `app_resolve_provider(varchar)`, which returned a bare uuid, NO LONGER
+-- EXISTS - V013 shipped it, V015 DROPped it, and nothing may call it. It was
+-- not deleted by accident and must not be put back: it filtered on the staff
+-- row's status alone, so a DELETED account and a SUSPENDED business both went
+-- on resolving, and a single uuid cannot carry the staff row and the account
+-- that audit_logs has to name. Replaced rather than amended, twice, because
+-- the return type changed and two functions answering almost the same
+-- question is how the two answers drift apart.
+CREATE FUNCTION app_resolve_membership(p_subject varchar)
+RETURNS TABLE (provider_id uuid, staff_id uuid, user_id uuid, staff_role varchar)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+    SELECT ps.provider_id, ps.id, u.id, ps.role
       FROM provider_staff ps
-      JOIN users u ON u.id = ps.user_id
+      JOIN users u     ON u.id = ps.user_id
+      JOIN providers p ON p.id = ps.provider_id
      WHERE u.keycloak_user_id = p_subject
        AND ps.status = 'ACTIVE'
+       AND u.status  = 'ACTIVE'
+       -- Every standing a provider may hold, listed rather than defaulted, so
+       -- the next person to add one has to decide here whether it may sign in.
+       AND p.status IN ('ACTIVE', 'SUSPENDED')
 $$;
-
-REVOKE ALL     ON FUNCTION app_resolve_provider(text) FROM PUBLIC;
-GRANT  EXECUTE ON FUNCTION app_resolve_provider(text) TO balaaca_app;
+ALTER FUNCTION app_resolve_membership(varchar) OWNER TO balaaca_resolver;
+REVOKE ALL     ON FUNCTION app_resolve_membership(varchar) FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION app_resolve_membership(varchar) TO balaaca_app;
 ```
 
-`TenantContext` is defined ONCE, in `shared-kernel`
-(`com.balaaca.sharedkernel.tenancy`) - see `backend-di` for the canonical
-class, `require()` public, `assign()`/`clear()` package-private. Do not
-redeclare it. What belongs here is how it gets filled, fail-closed:
+`TenantContext` is defined ONCE, in `platform-kernel`
+(`com.balaaca.platformkernel.tenancy`) - not in `shared-kernel`, which stays
+free of CDI and holds only ids, money, phone and error, while binding a tenant
+needs a `@RequestScoped` bean. See `backend-di` for the canonical class:
+`require()` and `current()` public, `assign()`/`clear()` package-private. Do
+not redeclare it. What belongs here is how it gets filled, fail-closed:
 
 ```java
-// com.balaaca.sharedkernel.tenancy - same package as TenantContext, so
+// com.balaaca.platformkernel.tenancy - same package as TenantContext, so
 // assign/clear stay closed to everyone else.
 @Interceptor @TenantBound
 @Priority(Interceptor.Priority.PLATFORM_BEFORE + 10)
 public class TenantBoundInterceptor {
 
-    private final JsonWebToken jwt;
+    private final AuthenticatedSubject caller;
     private final TenantContext tenantContext;
     private final ProviderMembershipResolver memberships;
+    // The shipped class takes a fourth collaborator, AuditTrail, and writes a
+    // 403 refusal here rather than leaving it to the exception mapper: by the
+    // time a mapper runs, the finally below has already cleared the tenant, so
+    // the trail would name no provider and no actor.
 
     @Inject
-    public TenantBoundInterceptor(JsonWebToken jwt,
+    public TenantBoundInterceptor(AuthenticatedSubject caller,
                                   TenantContext tenantContext,
                                   ProviderMembershipResolver memberships) {
-        this.jwt = jwt;
+        this.caller = caller;
         this.tenantContext = tenantContext;
         this.memberships = memberships;
     }
 
     @AroundInvoke
     Object bind(InvocationContext ctx) throws Exception {
-        String subject = jwt.getSubject();
-        if (subject == null || subject.isBlank()) {
-            throw new UnauthenticatedException();
+        // The subject comes from AuthenticatedSubject, which reads the
+        // SecurityIdentity, and NOT from an injected JsonWebToken: that bean
+        // exists only while the OIDC extension is active, so switching the
+        // extension off resolves the injection point to nothing and refuses
+        // every caller in a way nobody can tell from a genuine refusal.
+        String subject = caller.subject().orElse(null);
+        if (subject == null) {
+            // These routes sit behind @Authenticated, so no subject here means
+            // the identity carries no token: the same closed door either way.
+            throw new NoProviderMembershipException(null);
         }
         // Identity from the token, membership from the database, every
         // request, uncached. No membership means no access.
-        ProviderId provider = memberships.requireFor(subject);
-
-        tenantContext.assign(provider);
+        tenantContext.assign(memberships.requireFor(subject));
         try {
             return ctx.proceed();
         } finally {
@@ -350,32 +392,37 @@ The resolver: two joins behind the privileged function, no cache, no
 ```java
 // providers/adapters/outbound/persistence
 @ApplicationScoped
-public class JdbcProviderMembershipResolver
-        implements ProviderMembershipResolver {   // port: sharedkernel.tenancy
+public class ProviderMembershipSqlResolver
+        implements ProviderMembershipResolver {   // port: platformkernel.tenancy
 
-    private final AgroalDataSource dataSource;
+    private final EntityManager em;
 
-    @Inject
-    public JdbcProviderMembershipResolver(AgroalDataSource dataSource) {
-        this.dataSource = dataSource;
+    public ProviderMembershipSqlResolver(EntityManager em) {
+        this.em = em;
     }
 
     @Override
-    public ProviderId requireFor(String keycloakSubject) {
-        try (Connection c = dataSource.getConnection();
-             PreparedStatement ps =
-                 c.prepareStatement("SELECT app_resolve_provider(?)")) {
-            ps.setString(1, keycloakSubject);
-            try (ResultSet rs = ps.executeQuery()) {
-                UUID providerId = rs.next() ? (UUID) rs.getObject(1) : null;
-                if (providerId == null) {
-                    throw new NoProviderMembershipException(keycloakSubject);
-                }
-                return new ProviderId(providerId);
-            }
-        } catch (SQLException e) {
-            throw new TenantResolutionUnavailableException(e);
+    public Membership requireFor(String keycloakSubject) {
+        // The function returns NO ROW rather than a null column when the
+        // subject resolves to nothing, so this reads a list. A suspended
+        // account, a suspended business and a stranger are the same empty
+        // answer on purpose: telling them apart is an oracle.
+        List<Object[]> rows = em.createNativeQuery(
+                        "SELECT provider_id, staff_id, user_id, staff_role "
+                        + "FROM app_resolve_membership(:subject)")
+                .setParameter("subject", keycloakSubject)
+                .getResultList();
+
+        if (rows.isEmpty()) {
+            throw new NoProviderMembershipException(keycloakSubject);
         }
+        Object[] r = rows.get(0);
+        // The whole row, not just the tenant: the role is what refuses a STAFF
+        // member an OWNER action, and the account is what audit_logs names.
+        return new Membership(ProviderId.of((UUID) r[0]),
+                              StaffId.of((UUID) r[1]),
+                              UserId.of((UUID) r[2]),
+                              MembershipRole.of((String) r[3]));
     }
 }
 ```
@@ -385,14 +432,19 @@ transaction - the only place that is both inside the transaction and ahead
 of the first business statement:
 
 ```java
-// com.balaaca.sharedkernel.tenancy
+// com.balaaca.platformkernel.tenancy
 @ApplicationScoped
-public class TenantConnectionInterceptor implements AgroalPoolInterceptor {
+public class TenantGucPoolInterceptor implements AgroalPoolInterceptor {
+
+    private static final Logger LOG =
+            Logger.getLogger(TenantGucPoolInterceptor.class);
+    private static final String BIND =
+            "SELECT set_config('app.provider_id', ?, true)";
 
     private final TenantContext tenantContext;
 
     @Inject
-    public TenantConnectionInterceptor(TenantContext tenantContext) {
+    public TenantGucPoolInterceptor(TenantContext tenantContext) {
         this.tenantContext = tenantContext;
     }
 
@@ -402,27 +454,35 @@ public class TenantConnectionInterceptor implements AgroalPoolInterceptor {
         // TenantContext; Quarkus opened the transaction at + 200; the
         // connection is enlisted now. Unbound paths bind the empty string,
         // which the policy predicate turns into NULL: zero rows, not 500.
-        String providerId = tenantContext.current()
-                .map(p -> p.value().toString())
-                .orElse("");
-        try (PreparedStatement ps = connection.prepareStatement(
-                "SELECT set_config('app.provider_id', ?, true)")) {
+        //
+        // The activity guard is NOT optional. Flyway at startup, the readiness
+        // probe and every scheduled job acquire a connection with no request in
+        // flight, and touching a @RequestScoped proxy there throws
+        // ContextNotActiveException instead of answering empty - so reading
+        // TenantContext unconditionally does not leak, it refuses to boot.
+        String providerId = "";
+        if (Arc.container().requestContext().isActive()) {
+            providerId = tenantContext.current()
+                    .map(ProviderId::toString)
+                    .orElse("");
+        }
+        try (PreparedStatement ps = connection.prepareStatement(BIND)) {
             ps.setString(1, providerId);
             ps.execute();   // is_local = true: dies with the transaction
         } catch (SQLException e) {
+            // Fails closed - every policy then filters every row - but it has
+            // to be loud, because silence here reads exactly like a tenant
+            // with no data.
+            LOG.error("tenant.guc.bind_failed", e);
             throw new TenantBindingFailedException(e);
         }
     }
 
-    @Override
-    public void onConnectionReturn(Connection connection) {
-        // Belt and braces: SET LOCAL already expired at commit or rollback.
-        try (Statement s = connection.createStatement()) {
-            s.execute("SELECT set_config('app.provider_id', '', false)");
-        } catch (SQLException e) {
-            throw new TenantBindingFailedException(e);
-        }
-    }
+    // There is deliberately NO onConnectionReturn override, and adding one
+    // would be theatre rather than belt and braces: set_config(..., true) is
+    // SET LOCAL, so the value is already gone at commit or rollback and there
+    // is nothing left on the pooled connection to reset. A reset-on-return
+    // would advertise an isolation guarantee the acquire path already owns.
 }
 ```
 

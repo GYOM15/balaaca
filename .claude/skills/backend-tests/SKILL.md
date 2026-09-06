@@ -18,14 +18,16 @@ not just warn.
 ## When to use
 
 - Adding any class in a bounded-context module (identity, providers, catalog,
-  scheduling, booking, billing, shared-kernel) or in a satellite deployable
-  (notification-worker, chatbot-service) - it ships with its tests in the same
-  PR, never "later".
+  scheduling, booking, billing) or in either kernel (shared-kernel,
+  platform-kernel), or in the satellite deployable `notification-worker` - it
+  ships with its tests in the same PR, never "later". `chatbot-service` is a
+  reserved directory with no code in it yet, so nothing here applies to it.
 - Touching Money, slot calculation, the appointment state machine, idempotency,
   entitlements, or tenant scoping - these carry mandatory property-based and/or
   integration coverage.
-- Writing or changing any adapter that talks to PostgreSQL, Redis, or Keycloak - the test must exercise the real thing via Testcontainers, not a hand-rolled
-  mock.
+- Writing or changing any adapter that talks to PostgreSQL or Redis - the test
+  must exercise the real thing via Testcontainers, not a hand-rolled mock. The
+  OIDC boundary is the exception, and rule 4 says why.
 - Any PR: it must keep JaCoCo coverage and the PIT mutation score at or above the
   gate, and keep every ArchUnit rule green.
 
@@ -43,23 +45,38 @@ not just warn.
 3. **NEVER mock the database in an integration test.** Persistence, RLS, unique
    constraints, the GiST exclusion constraint, the `ck_appointments_*` CHECKs and
    optimistic-lock version bumps are tested against a **real PostgreSQL 18**
-   through Testcontainers - in Quarkus this is Dev Services (zero-config
-   container) or an explicit `@QuarkusTestResource`. No H2, no in-memory fake, no
-   mocked `EntityManager`, no mocked repository when the thing under test *is*
-   the persistence behavior. A constraint that only PostgreSQL enforces cannot be
-   proven by a database that does not have it.
-4. **Redis and Keycloak get real doubles at the boundary, not internal mocks.**
-   Cache and rate limiting run against a Redis container; OIDC identity runs
-   against a Keycloak container or a signed test JWT minted with the test realm's
-   key. Tenant resolution is never faked at the claim level: the test seeds
-   `users` and `provider_staff` and lets the real resolution chain run, because
-   the database - not the token - is the source of truth for membership. There is
+   through Testcontainers - here that is one explicit `@QuarkusTestResource`,
+   `PostgresTestResource`, which starts `postgres:18.6` and creates the same
+   least-privilege roles the real bootstrap does. **Not Dev Services**, even
+   though it is the zero-config option: Dev Services connects as a single
+   superuser, for which RLS is silently inert, so every isolation test would
+   pass while the thing it claims to prove was switched off. No H2, no in-memory
+   fake, no mocked `EntityManager`, no mocked repository when the thing under
+   test *is* the persistence behavior. A constraint that only PostgreSQL
+   enforces cannot be proven by a database that does not have it.
+4. **Redis is a real container. The identity provider is not, on purpose.**
+   Cache and rate limiting run against a Redis container started beside
+   PostgreSQL by the same `PostgresTestResource`, and that is load-bearing:
+   `application.properties` names a Redis host, an explicit host disables Dev
+   Services, and before that container the integration suites were writing to
+   the developer's own Redis, taking NOAUTH, and letting the rate limiter fail
+   open while the test that was meant to prove the limit passed. **There is no
+   Keycloak container and no signed test JWT anywhere in the tree**: the caller
+   is supplied in-process by Quarkus's `@TestSecurity` plus
+   `@OidcSecurity(claims = @Claim(key = "sub", ...))`. That is a decision, not
+   an omission - what is under test is what the database does with a subject,
+   not that an identity provider can sign - and it is safe only because of the
+   next sentence. Tenant resolution is never faked at the claim level: the test
+   seeds `users` and `provider_staff` and lets the real resolution chain run,
+   because the database - not the token - is the source of truth for
+   membership. There is
    no membership cache to prime or evict; the resolver is a two-join lookup on
    primary-key paths (see `multi-tenant-rls`). A user with no `ACTIVE` row must
    produce `NoProviderMembershipException`, and that case gets its own test.
-5. **Tests enter a tenant exactly the way production does.** Drive the three
-   mandatory suites through the **real HTTP surface with a signed test JWT** - RestAssured against the `@QuarkusTest` port - so the whole chain runs as
-   deployed: the interceptor chain, `ProviderMembershipResolver`, the
+5. **Tests enter a tenant exactly the way production does.** Drive the
+   mandatory suites through the **real HTTP surface** - RestAssured against the
+   `@QuarkusTest` port, with the subject supplied as in rule 4 - so the whole
+   chain runs as deployed: the interceptor chain, `ProviderMembershipResolver`, the
    request-scoped `TenantContext`, and the **connection-level RLS binding** that
    issues `SELECT set_config('app.provider_id', ?, true)` as the first statement
    on the enlisted connection. A test that injects a use case and calls it
@@ -69,31 +86,44 @@ not just warn.
    because `TenantContext` is `@RequestScoped` and a bare pool thread has none.
    **No test invents a tenant parameter**: `provider_id` is ambient, never an
    argument to a service method that has no such parameter.
-6. **Property-based tests (jqwik) guard Money arithmetic AND slot calculation.**
-   For `Money`: arithmetic never overflows, never loses minor units, rejects
-   mixed-currency operations, respects the currency's own scale - GNF has scale
+6. **Property-based tests (jqwik) guard Money arithmetic. Slot calculation is
+   still owed one.** For `Money`: arithmetic never overflows, never loses minor
+   units, rejects mixed-currency operations, respects the currency's own scale - GNF has scale
    0, so no example may assume "cents" - and `allocate` distributes a total with
    no minor unit created or destroyed. Commutativity properties must generate
    both operands from the *same* currency, or they assert the mixed-currency
-   rejection instead. For scheduling: a generated set of `AvailabilityRule` plus
-   `AvailabilityOverride` plus booked appointments yields slots that are always
-   inside an opening window, never overlap an existing appointment once buffers
-   are applied, and are always a whole number of the service's granularity apart.
-   The rule generator must produce windows where `end_time < start_time` - a
-   provider open 22:00–01:00 wraps into the next local date and is legal - and
-   must assert that an equal pair is rejected rather than read as 24 hours.
-   Slot properties run under `Africa/Conakry`, a northern DST zone
-   (`Europe/Paris`) **and** a southern one (`America/Santiago`): Guinea is UTC+0
-   with no DST, which hides timezone bugs, and a southern zone catches the
+   rejection instead. `MoneyTest` is the **only** jqwik class in the backend, and
+   that is the gap: **there is no slot-calculation property**. `SlotCalculatorTest`
+   is example-based, exercising the calculator as a pure function under
+   `Africa/Conakry` and `Europe/Paris`, so nothing generates `AvailabilityRule`
+   plus `AvailabilityOverride` plus booked appointments together and asserts
+   across the whole set that slots are always inside an opening window, never
+   overlap an existing appointment once buffers are applied, and are always a
+   whole number of the service's granularity apart. When that property is
+   written, its rule generator must produce windows where `end_time <
+   start_time` - a provider open 22:00-01:00 wraps into the next local date and
+   is legal, which is why `LocalWindow.spansMidnight()` exists - and must assert
+   that an equal pair is rejected rather than read as 24 hours, which is what
+   `LocalWindow`'s constructor and `ck_availability_rules_span` already do. It
+   must also run under a **southern** DST zone: no test in the tree names one.
+   Guinea is UTC+0 with no DST, which hides timezone bugs outright, and
+   `Europe/Paris` alone only proves the northern half - nothing here catches the
    assumption that clocks spring forward in March (see `temporal-modelling`).
 7. **The calculator and the constraint must be proven to agree.** `busy` is the
    **stored** `blocked_range` of each PENDING/CONFIRMED appointment, which
    already carries that appointment's own frozen buffers and is never widened
    again; the calculator widens only the *candidate* slot, by the *requested*
-   service's buffers. A mandatory property test closes the loop: every slot the
-   calculator proposes is then INSERTed against real PostgreSQL and must succeed - no `23P01`. If that property is red, the API is advertising slots the
-   exclusion constraint rejects (see `booking-integrity`).
-8. **Three suites are mandatory, by name, and none may be deleted.**
+   service's buffers. The loop is closed by two integration tests, not by a
+   property: `AvailabilityIT.offeredSlotsAreActuallyBookable` takes the first
+   slot the public list offers and POSTs it, and
+   `MultiChairAvailabilityIT.offersOnlyWhatItWillAccept` does the same once a
+   second chair exists. **There is no `SlotCalculationPropertyIT`** - it was
+   never written, so one example stands where a generated set belongs, and a
+   slot the calculator only proposes at an awkward boundary is untested. If
+   either test is red, the API is advertising slots the exclusion constraint
+   rejects (see `booking-integrity`).
+8. **Three subjects are mandatory. Two are covered, one is not, and nothing
+   already there may be deleted.**
    - **Tenant non-leak**, one test per tenant-scoped aggregate (Provider,
      ProviderStaff, ServiceOffering, AvailabilityRule, AvailabilityOverride,
      Appointment, Customer, Subscription), run under the unprivileged
@@ -104,22 +134,33 @@ not just warn.
      write, so assert `0` affected and that B's row is unchanged afterwards; an
      INSERT that names B's `provider_id` **does** raise, because it fails the
      policy's WITH CHECK.
-   - **IDOR/BOLA matrix**, a parameterised table of every tenant-scoped REST
-     resource: provider A's token against provider B's resource must return
+   - **IDOR/BOLA**: provider A's token against provider B's resource must return
      **404 with code `RESOURCE_NOT_FOUND`**, byte-identical to a genuine miss - never 403, never a per-resource code, or the response is an existence
-     oracle. A companion test asserts the matrix covers every tenant-scoped path
-     in the OpenAPI document, so adding a resource without adding its row fails
-     the build rather than quietly shipping an unguarded endpoint.
-   - **Booking concurrency**, two tests, both against real PostgreSQL because
-     the invariant is the GiST exclusion constraint. (a) *Named staff*: N
-     parallel POSTs with the same `service_offering_id`, `staff_id` and
-     `starts_at` yield exactly one 201 and N-1 409 carrying `SLOT_UNAVAILABLE`.
-     (b) *Any available staff*: a provider with N eligible staff receives N
-     concurrent requests that name **no** `staff_id`, and must yield **N
-     successes on N distinct `staff_id` values** - the server-chosen path
-     retries the unit of work against the next candidate on `23P01`, so a
-     spurious 409 while a chair sits empty is a bug, not contention (see
-     `booking-integrity`).
+     oracle. That rule *is* asserted, resource by resource, inside each
+     resource's own suite (`PublicBookingIT.crossTenantOfferingIsNotFound`,
+     `SocialLinkIT`'s `Tenancy` group, and their equivalents elsewhere). What
+     does **not** exist is the parameterised matrix this file used to pin, nor
+     the companion test that would check it against every tenant-scoped path in
+     the OpenAPI document: no `TenantResourceMatrixIT`, no
+     `coversEveryTenantScopedPath`. Neither was deleted; neither was ever
+     written. The cost is exactly the one the matrix was for - a new
+     tenant-scoped resource ships with no cross-tenant test and nothing fails,
+     so write the per-suite assertion by hand until the matrix exists.
+   - **Booking concurrency** (`BookingConcurrencyIT`), against real PostgreSQL
+     because the invariant is the GiST exclusion constraint. Ten racers fire at
+     once through HTTP, released together by a latch, and leave exactly one 201
+     and nine 409 - plus **zero 500 and zero 503**, which is the sharp end: the
+     losers' SQLSTATE is not deterministic (`23P01` at three racers, `40P01`
+     deadlock at two, five and ten), a deadlock says nothing about whether the
+     slot is free, so it is retried, and a loser whose retry budget ran out must
+     still be told the slot is taken rather than that the system is busy. What
+     is **not** covered concurrently is the multi-chair case: every race here
+     runs at a one-chair provider. A salon with N eligible staff receiving N
+     concurrent requests that name no `staff_id` must yield **N successes on N
+     distinct `staff_id` values**, because the server-chosen path retries
+     against the next candidate on `23P01` - a spurious 409 while a chair sits
+     empty is a bug, not contention - and today only the sequential version of
+     that is asserted, in `MultiChairAvailabilityIT` (see `booking-integrity`).
 9. **Concurrency and idempotency are tested together, never sequentially.** Fire
    two concurrent requests with the same `Idempotency-Key` and the same body, and
    assert exactly one committed appointment plus one replayed response. A
@@ -127,21 +168,33 @@ not just warn.
    the key with a **different** body and asserts 422 `IDEMPOTENCY_KEY_REUSED`,
    because the stored request fingerprint is what makes a replay safe (see
    `idempotency-concurrency`).
-10. **ArchUnit is a required test, run in CI.** Encode the locked architecture as
-    executable rules: `domain/` imports no framework (no `jakarta.persistence`,
-    no `io.quarkus`, no `jakarta.ws.rs`, no adapter package); dependencies point
-    inward (adapters -> application -> ports -> domain, never the reverse), with
-    `com.balaaca.sharedkernel` explicitly exempt from the four-layer shape
-    because it is a flat set of cross-cutting packages; **cross-context imports
+10. **ArchUnit is a required test, run in CI.** `ArchitectureTest`, in
+    `com.balaaca.app.arch`, and not an `*IT`: it reads bytecode, needs no
+    database, and runs under Surefire in seconds. Encode the locked
+    architecture as executable rules: `domain/` imports no framework (no
+    `jakarta..`, no `io.quarkus`, no `org.hibernate`, and not
+    `com.balaaca.platformkernel` either, which would drag CDI, JWT and Agroal
+    behind everything importing it); dependencies point inward, enforced as two
+    negatives rather than a `layeredArchitecture()` - nothing in `..domain..`,
+    `..ports..` or `..application..` may touch `..adapters..`, and `..domain..`
+    and `..ports..` may not touch `..application..`; **cross-context imports
     of `..domain..`, `..application..` and `..adapters..` are forbidden**, with
-    an explicit allowlist of published types, since one Maven module per context
-    means the compiler cannot enforce a ports-only boundary and ArchUnit is the
-    only thing that can; the **deployable list is closed**, covering the seven
-    contexts *and* the two satellites, so a stray package under `com.balaaca`
-    fails; and **no gRPC and no broker type appears anywhere** - no `io.grpc`,
-    no `.proto`, no Kafka or Redpanda client. Intra-core calls go through Java
-    inbound ports; asynchronous work goes through the notifications outbox table
-    (see `backend-architecture`, `outbox-messaging`).
+    an explicit allowlist of published domain types, since one Maven module per
+    context means the compiler cannot enforce a ports-only boundary and ArchUnit
+    is the only thing that can; the **package list is closed** - the two
+    kernels, the six contexts and `com.balaaca.app`, so a stray top-level
+    package fails; and **no gRPC and no broker type appears anywhere** - no
+    `io.grpc`, no `com.google.protobuf`, no Kafka client. The kernels are exempt
+    from the layer shape not by an `ignoreDependency` but by construction: the
+    per-context rules loop over the six contexts and the kernels are flat sets
+    of cross-cutting packages with no `domain/` segment to catch. **The
+    satellites are not on that closed list and must not be added**:
+    `notification-worker` is a separate Maven project whose classes are never on
+    this classpath, and it carries its own, stronger rule -
+    `the_worker_imports_nothing_of_the_core`, which forbids it any Balaaca
+    artifact at all. Intra-core calls go through Java inbound ports;
+    asynchronous work goes through the notifications outbox table (see
+    `backend-architecture`, `outbox-messaging`).
 11. **State-machine transitions are tested exhaustively.** For the appointment
     status machine, assert every legal transition succeeds and every illegal one
     is rejected atomically (`UPDATE ... WHERE status = :expected`). Cover the
@@ -153,18 +206,37 @@ not just warn.
     dedupe key that embeds the target instant
     (`appointment:{uuid}:REMINDER_24H:{scheduled_at_epoch_seconds}`), so a
     reschedule produces a new key rather than colliding with the old one.
-12. **Coverage and mutation gates cover the core, and they fail the build.**
-    JaCoCo enforces the line/branch threshold at `verify`; PIT enforces the
-    mutation score. Both are scoped to `domain/` and `application/` in the seven
-    contexts **plus** `com/balaaca/sharedkernel/{money,time,logging}/**`, which
-    has no `domain/` segment to be caught by a wildcard - `LocalWindows` is the
-    most DST-critical class in the product and an include pattern that misses it
-    leaves the gate wide open exactly where it matters. Adapters, generated
-    OpenAPI interfaces, MapStruct output and Flyway migrations are excluded:
-    gating adapters buys plumbing tests that assert a mapper copies a field,
-    which raises the number without raising confidence. Exclusions are declared
-    once in the parent POM and are never extended to sneak a fresh domain class
-    past the gate. You fix a red gate by adding tests, not by lowering it.
+12. **The two gates are scoped differently, and both fail the build.** They are
+    not two views of one rule, so do not reason about them as a pair.
+    - **JaCoCo is one whole-bundle number.** The `check` goal runs at `verify`
+      in **`backend/app/pom.xml`**, not the parent - the parent only wires the
+      two agents, the merge and the report. One rule, on element `BUNDLE`:
+      `INSTRUCTION` / `COVEREDRATIO` at a minimum of `0.78`, set below the
+      83.3% it measured on the day, because a threshold equal to the current
+      number turns the next honest refactor red and gets the gate deleted. It
+      reads `jacoco-quarkus.exec` from the Quarkus extension rather than the
+      bare agent, because Quarkus rewrites classes during augmentation and a
+      report built from the bare agent's exec file reads every adapter as 0%
+      while the integration suites are driving them. **There is no `<includes>`
+      list anywhere in the tree**, so adapters are deliberately *inside* the
+      gate - measured at 79.6% for the providers adapter, which is the point.
+      The single `<excludes>` entry is `com/balaaca/app/api/**`: those types
+      are generated from the contract, and leaving the generator's getters,
+      `equals` and `toString` in moved the ratio from 83% to 50% the day the
+      contract landed without one test having got worse.
+    - **PIT is per-module and narrower.** Each module carries its own
+      `mutationThreshold` and its own target: `com.balaaca.scheduling.domain.*`
+      at 68, `com.balaaca.booking.domain.*` at 78, and
+      `com.balaaca.sharedkernel.{money,phone}.*` at 50, the last one wider on
+      purpose because jqwik reseeds every run and a mutation killed by one draw
+      survives the next. **No `application/` package is mutation-tested at all**,
+      and no other module runs PIT.
+    `LocalWindows` never existed and there is no `com.balaaca.sharedkernel.time`
+    or `.logging` package to gate: the DST-critical type is **`LocalWindow`, in
+    `com.balaaca.scheduling.domain`**, which both gates already cover - JaCoCo
+    because it excludes almost nothing, PIT because scheduling's domain is one
+    of its three targets. You fix a red gate by adding tests, not by lowering
+    the threshold and not by adding an exclusion for the class you just wrote.
 13. **Assertions are behavioral, not log-sniffing.** Assert on returned values,
     persisted state, rows in `notifications`, and RFC 7807 problem bodies
     including the stable error code and its snake_case wire fields. Logging,
@@ -180,7 +252,8 @@ not just warn.
   product broken.
 - Injecting a use case and calling it from a raw thread pool in one of the
   mandatory suites -> rule 5; no request scope, no interceptor chain, no
-  `app.provider_id` on the connection. Drive it over HTTP with a signed JWT.
+  `app.provider_id` on the connection. Drive it over HTTP, with the subject
+  supplied by `@TestSecurity` / `@OidcSecurity`.
 - `Executors.newFixedThreadPool(...)` around a `@RequestScoped` bean without
   `Arc.container().requestContext().activate()` per thread -> rule 5; the
   failure is a `ContextNotActiveException` at best and a leaked caller context
@@ -198,101 +271,117 @@ not just warn.
 - A commutativity property that generates two independent currencies -> rule 6;
   it will fail on the mixed-currency rejection it should be asserting elsewhere.
 - Slot-calculation tests that only ever run under `Africa/Conakry` -> rule 6;
-  UTC+0 with no DST hides exactly the bugs the property is for.
+  UTC+0 with no DST hides exactly the bugs a zone parameter exists to catch.
 - A slot generator that never emits `end_time < start_time` -> rule 6; a
-  provider open 22:00–01:00 exists and must round-trip.
+  provider open 22:00-01:00 exists and must round-trip.
 - Widening `busy` ranges by the requested service's buffers in the test helper
   -> rule 7; `blocked_range` already contains its own frozen buffers, and
   double-widening makes the test agree with a calculator that is wrong.
-- Adding a new tenant-scoped resource without a row in the IDOR matrix ->
-  rule 8; the coverage test is there to make that impossible.
+- Adding a new tenant-scoped resource and assuming some matrix already covers
+  it cross-tenant -> rule 8; no matrix exists, so the 404 assertion has to be
+  written into that resource's own suite by hand.
 - A booking test that posts once and asserts 201 -> rule 8; N threads, one 201,
   N-1 409.
 - Asserting 409 for N concurrent "any available staff" requests at a salon with
-  N free chairs -> rule 8(b); the expected result is N successes.
+  N free chairs -> rule 8; the expected result is N successes, and nothing
+  asserts it yet, so nobody will catch you.
 - Sequential "call twice, both succeed" as an idempotency test -> rule 9; run
   them concurrently and assert exactly one commit.
 - Deleting the ArchUnit test because it "blocks the PR" -> rule 10; fix the
   dependency direction instead.
-- A closed-context ArchUnit rule listing only the seven contexts -> rule 10; the
-  satellites are real deployables under `com.balaaca` and would fail a rule they
-  were never under.
-- JaCoCo `includes` of `com/balaaca/*/domain/**` alone -> rule 12; shared-kernel
-  is flat, so `money`, `time` and `logging` fall outside the gate entirely.
+- Adding `com.balaaca.notificationworker..` to the closed package list ->
+  rule 10; the satellite's classes are never on this classpath, so the entry
+  would sit there proving nothing while the rule that does hold it - its own
+  `the_worker_imports_nothing_of_the_core` - lives in the satellite.
+- Adding a JaCoCo `<includes>` list to "focus" the gate -> rule 12; there is
+  none today, the gate is the whole bundle, and the first include pattern
+  someone writes silently drops everything it forgot.
 - Adding a JaCoCo/PIT exclusion for the domain class you just wrote -> rule 12;
   write the test.
 
 ## Minimal correct example
 
 ```java
-// Mandatory suite 3 of 3 - booking concurrency, driven over the REAL HTTP
-// surface with a signed test JWT so the interceptor chain, the membership
-// resolver and the connection-level app.provider_id binding all run as in
-// production (rule 5). The invariant is a GiST exclusion constraint, so only
-// PostgreSQL can prove it: no Redis lock, no SELECT FOR UPDATE.
+// Booking concurrency, as it is actually written. Driven over the REAL HTTP
+// surface (rule 5) so the tenant binder, the interceptor chain and the
+// connection-level app.provider_id binding all run as in production. The
+// invariant is a GiST exclusion constraint, so only PostgreSQL can prove it:
+// no Redis lock, no SELECT FOR UPDATE. This one races the PUBLIC booking path,
+// where the tenant comes from the slug and there is no caller to authenticate.
 @QuarkusTest
-class AppointmentConcurrencyIT {
+@QuarkusTestResource(PostgresTestResource.class)
+class BookingConcurrencyIT {
 
-    private static final int THREADS = 16;
+    private static final int RACERS = 10;
 
-    @Inject TestFixtures fixtures;   // seeds users + provider_staff, mints JWTs
+    @Inject BookingFixtures fixtures;   // seeds users, provider_staff, offerings
 
-    @Test
-    @DisplayName("Exactly one of N concurrent bookings wins a named slot")
-    void allowsExactlyOneBookingForTheSameStaffAndInstant() throws Exception {
-        // given one provider, one staff member, one offering, one instant
-        var scope = fixtures.providerWithOwnerStaff("chez-fatou");
-        var offering = fixtures.serviceOffering(scope, 30);
-        var token = fixtures.signedJwtFor(scope.ownerUserId());
-        var body = Map.of(
-            "service_offering_id", offering.id().toString(),
-            "staff_id",            scope.ownerStaffId().toString(),
-            "starts_at",           "2026-03-12T09:00:00Z",
-            "customer_id",         fixtures.customer(scope).id().toString());
-
-        // when THREADS clients race for it, each with its own idempotency key
-        var responses = fixtures.race(THREADS, () ->
-            given().auth().oauth2(token)
-                .contentType("application/json")
-                .header("Idempotency-Key", UUID.randomUUID().toString())
-                .body(body)
-                .post("/v1/appointments"));
-
-        // then one wins and every loser gets the one published conflict code
-        assertThat(responses).filteredOn(r -> r.statusCode() == 201).hasSize(1);
-        assertThat(responses).filteredOn(r -> r.statusCode() == 409)
-            .hasSize(THREADS - 1)
-            .allSatisfy(r -> assertThat(r.jsonPath().getString("code"))
-                .isEqualTo("SLOT_UNAVAILABLE"));
-        assertThat(fixtures.appointmentCountAt(scope, "2026-03-12T09:00:00Z"))
-            .isEqualTo(1);
+    @BeforeEach
+    void seed() {
+        fixtures.reset();
     }
 
     @Test
-    @DisplayName("N concurrent any-staff requests fill N distinct chairs")
-    void servesEveryConcurrentAnyStaffRequestWhenChairsRemain() throws Exception {
-        // given a salon with N free chairs and no staff_id in the request
-        var scope = fixtures.providerWithStaff("salon-mariama", THREADS);
-        var offering = fixtures.serviceOffering(scope, 30);
-        var token = fixtures.signedJwtFor(scope.ownerUserId());
+    @DisplayName("Ten simultaneous bookings on one slot leave exactly one winner")
+    void oneWinnerOnly() throws Exception {
+        // when RACERS clients race for the same instant, released together
+        Map<Integer, Long> byStatus = race(
+                "/v1/providers/coiffeur-solo/appointments",
+                BookingFixtures.SOLO_OFFERING, "2026-10-01T09:00:00Z");
 
-        // when THREADS customers ask for "anyone", all at the same instant
-        var responses = fixtures.race(THREADS, () ->
-            given().auth().oauth2(token)
-                .contentType("application/json")
-                .header("Idempotency-Key", UUID.randomUUID().toString())
-                .body(Map.of(
-                    "service_offering_id", offering.id().toString(),
-                    "starts_at",           "2026-03-12T09:00:00Z",
-                    "customer_id",         fixtures.customer(scope).id().toString()))
-                .post("/v1/appointments"));
+        // then one wins and every loser is told the slot is taken - and told it
+        // as a 409, never as a 500 and never as a 503. The losers' SQLSTATE is
+        // not deterministic: 23P01 at three racers, 40P01 deadlock at ten. A
+        // deadlock says nothing about whether the slot is free, so it is
+        // retried; a racer whose budget ran out must still get the truth from
+        // the committed data rather than "the system is busy".
+        assertThat(byStatus.getOrDefault(201, 0L)).isEqualTo(1);
+        assertThat(byStatus.getOrDefault(409, 0L)).isEqualTo(RACERS - 1);
+        assertThat(byStatus.getOrDefault(500, 0L)).isZero();
+        assertThat(byStatus.getOrDefault(503, 0L)).isZero();
 
-        // then the server retried each 23P01 onto the next candidate: N wins,
-        // N distinct staff. A 409 here would mean a chair sat empty.
-        assertThat(responses).allSatisfy(r -> assertThat(r.statusCode()).isEqualTo(201));
-        assertThat(responses).map(r -> r.jsonPath().getString("staff_id"))
-            .doesNotHaveDuplicates().hasSize(THREADS);
+        // and the API's answer is checked against the database, not trusted
+        assertThat(fixtures.activeAppointments(BookingFixtures.SOLO)).isEqualTo(1);
     }
+
+    /** Fires RACERS requests released together by a latch, and counts statuses. */
+    private Map<Integer, Long> race(String path, UUID offering, String startsAt)
+            throws Exception {
+        CountDownLatch releaseAll = new CountDownLatch(1);
+        try (ExecutorService pool = Executors.newFixedThreadPool(RACERS)) {
+            List<Future<Integer>> futures = IntStream.range(0, RACERS)
+                    .mapToObj(i -> pool.submit(() -> {
+                        releaseAll.await();
+                        return given().contentType("application/json")
+                                .header("Idempotency-Key", "racer-" + startsAt + "-" + i)
+                                .body(bookingFor(offering, startsAt, i))
+                                .when().post(path)
+                                .then().extract().statusCode();
+                    }))
+                    .toList();
+            releaseAll.countDown();
+            return count(futures);
+        }
+    }
+}
+
+// NOT WRITTEN YET, and rule 8 says it should be. Every race above runs at a
+// one-chair provider, so the any-staff retry has never been tested under
+// contention. Written, it would look like this - and a 409 in it would mean a
+// customer was refused while a chair sat empty.
+@Test
+@DisplayName("N concurrent any-staff requests fill N distinct chairs")
+void servesEveryConcurrentAnyStaffRequestWhenChairsRemain() throws Exception {
+    // given a salon with RACERS free chairs and no staff_id in any request
+    fixtures.seedChairs(BookingFixtures.SALON, RACERS);
+
+    var byStatus = race("/v1/providers/salon-fatou/appointments",
+                        BookingFixtures.SALON_OFFERING, "2026-10-01T09:00:00Z");
+
+    // then the server retried each 23P01 onto the next candidate: N wins on N
+    // distinct staff, which is what "any available staff" promises.
+    assertThat(byStatus.getOrDefault(201, 0L)).isEqualTo(RACERS);
+    assertThat(fixtures.distinctStaffBooked(BookingFixtures.SALON)).isEqualTo(RACERS);
 }
 
 // Rule 5, for the rare direct-bean assertion only. TenantContext is
@@ -303,28 +392,30 @@ static <T> T inRequestScope(Supplier<T> body) {
     try { return body.get(); } finally { ctx.terminate(); }
 }
 
-// Mandatory suite 2 of 3 - IDOR/BOLA matrix. Adding a tenant-scoped resource
-// without a row here fails coversEveryTenantScopedPath().
+// NOT WRITTEN, and rule 8 wants it. Cross-tenant 404 is asserted today one
+// resource at a time, inside each resource's own suite, so a new tenant-scoped
+// route ships with no such test and nothing goes red. This is the shape that
+// would make that impossible; note that the paths must come from the contract,
+// because half the guesses a reader would make (/v1/availability-rules,
+// /v1/subscription) are not routes this API has.
 class TenantResourceMatrixIT {
 
     static Stream<TenantResource> tenantScopedResources() {
         return Stream.of(
-            new TenantResource("/v1/service-offerings/{id}",       Fixtures::serviceOffering),
-            new TenantResource("/v1/staff/{id}",                   Fixtures::staff),
-            new TenantResource("/v1/availability-rules/{id}",      Fixtures::availabilityRule),
-            new TenantResource("/v1/availability-overrides/{id}",  Fixtures::availabilityOverride),
-            new TenantResource("/v1/appointments/{id}",            Fixtures::appointment),
-            new TenantResource("/v1/customers/{id}",               Fixtures::customer),
-            new TenantResource("/v1/subscription",                 Fixtures::subscription));
+            new TenantResource("/v1/service-offerings/{id}", Fixtures::serviceOffering),
+            new TenantResource("/v1/staff/{id}",             Fixtures::staff),
+            new TenantResource("/v1/closures/{id}",          Fixtures::closure),
+            new TenantResource("/v1/customers/{id}",         Fixtures::customer));
     }
 
     @ParameterizedTest(name = "{0} is invisible across tenants")
     @MethodSource("tenantScopedResources")
+    @TestSecurity(user = BookingFixtures.SALON_SUBJECT, roles = "dashboard:read")
+    @OidcSecurity(claims = @Claim(key = "sub", value = BookingFixtures.SALON_SUBJECT))
     void returnsNotFoundForAnotherProvidersResource(TenantResource resource) {
-        var owned = resource.createUnder(providerB);
+        var owned = resource.createUnder(BookingFixtures.SOLO);
 
-        given().auth().oauth2(tokenFor(providerA))
-            .get(resource.path(), owned.id())
+        given().when().get(resource.path(), owned.id())
         .then()
             .statusCode(404)                    // never 403: no existence oracle
             .contentType("application/problem+json")
@@ -339,23 +430,29 @@ class TenantResourceMatrixIT {
     }
 }
 
-// Mandatory suite 1 of 3, the write half. Under RLS a cross-tenant UPDATE is
-// FILTERED, not refused: zero rows, no exception (rule 8).
+// Tenant non-leak, the write half. Under RLS a cross-tenant UPDATE is
+// FILTERED, not refused: zero rows, no exception (rule 8). BookingFixtures
+// distinguishes the two on purpose - writeAsProvider returns the affected count,
+// or -1 when the database refused outright - because a missing GRANT raises
+// while a missing POLICY quietly matches nothing, and only one of those is
+// visible to a test that asserts "it throws".
 @Test
 void crossTenantUpdateAffectsZeroRowsAndRaisesNothing() {
-    var target = fixtures.appointmentUnder(providerB);
+    long affected = fixtures.writeAsProvider(BookingFixtures.SALON, """
+            UPDATE appointments SET status = 'CANCELLED'
+             WHERE provider_id = '%s'
+            """.formatted(BookingFixtures.SOLO));
 
-    var affected = fixtures.asProvider(providerA, () ->
-        em.createQuery("update AppointmentEntity a set a.status = :s where a.id = :id")
-          .setParameter("s", CANCELLED).setParameter("id", target.id())
-          .executeUpdate());
-
-    assertThat(affected).isZero();
-    assertThat(fixtures.reloadAsOwner(target).status()).isEqualTo(CONFIRMED);
+    assertThat(affected).as("filtered by USING, not refused").isZero();
+    assertThat(fixtures.activeAppointments(BookingFixtures.SOLO)).isEqualTo(1);
 }
 
-// Property test - the calculator and the constraint must agree (rule 7), run
-// under UTC+0 and both hemispheres' DST (rule 6).
+// NOT WRITTEN. There is no jqwik anywhere outside MoneyTest, so nothing
+// generates rules, overrides and bookings together and nothing runs the
+// calculator under a southern-hemisphere zone (rules 6 and 7). Today the
+// calculator-agrees-with-the-constraint loop is closed by a single example, in
+// AvailabilityIT.offeredSlotsAreActuallyBookable. This is what would close it
+// properly.
 class SlotCalculationPropertyIT {
 
     @Property
@@ -383,79 +480,126 @@ class SlotCalculationPropertyIT {
     }
 }
 
-// Architecture test - hexagonal boundaries, closed deployable list, ports-only
-// cross-context boundary, no gRPC or broker type anywhere.
+// Architecture test, as written: ArchitectureTest in com.balaaca.app.arch.
+// Hexagonal boundaries, a closed PACKAGE list, a ports-only cross-context
+// boundary, no gRPC and no broker type anywhere. Not an *IT - it reads bytecode
+// and runs under Surefire in seconds.
 @AnalyzeClasses(packages = "com.balaaca",
                 importOptions = ImportOption.DoNotIncludeTests.class)
-class HexagonalArchitectureTest {
+class ArchitectureTest {
 
-    // Seven contexts plus the two satellite deployables. Both are real
-    // packages under com.balaaca and must be admitted (rule 10).
-    private static final String[] DEPLOYABLES = {
-        "com.balaaca.sharedkernel..",       "com.balaaca.identity..",
-        "com.balaaca.providers..",          "com.balaaca.catalog..",
-        "com.balaaca.scheduling..",         "com.balaaca.booking..",
-        "com.balaaca.billing..",            "com.balaaca.notificationworker..",
-        "com.balaaca.chatbot.." };
+    // The bounded contexts. Not the kernels, and not the deployable's own
+    // wiring - the per-context rules below loop over exactly these, which is
+    // how the two flat kernels stay exempt from the layer shape without an
+    // ignoreDependency anyone could widen.
+    private static final String[] CONTEXTS = {
+        "identity", "providers", "catalog", "scheduling", "booking", "billing"
+    };
 
-    @ArchTest static final ArchRule domain_is_framework_free =
+    @ArchTest static final ArchRule domain_imports_no_framework =
         noClasses().that().resideInAPackage("..domain..")
             .should().dependOnClassesThat().resideInAnyPackage(
-                "jakarta.persistence..", "jakarta.ws.rs..", "jakarta.enterprise..",
-                "io.quarkus..", "..adapters..");
+                "jakarta..", "io.quarkus..", "org.hibernate..", "io.agroal..",
+                "org.eclipse.microprofile..", "com.balaaca.platformkernel..")
+            .because("a domain rule that needs a container to run is a rule "
+                   + "nobody unit-tests, and platform-kernel drags CDI, JWT "
+                   + "and Agroal behind everything that imports it");
 
-    // shared-kernel is the ONE context exempt from the four-layer shape: it is
-    // a flat set of cross-cutting packages (money, time, logging, tenancy,
-    // error), so the layer rule must not be applied to it.
-    @ArchTest static final ArchRule layers_point_inward =
-        layeredArchitecture().consideringOnlyDependenciesInAnyPackage("com.balaaca..")
-            .layer("Adapters").definedBy("com.balaaca.(*)..adapters..")
-            .layer("Application").definedBy("com.balaaca.(*)..application..")
-            .layer("Domain").definedBy("com.balaaca.(*)..domain..")
-            .whereLayer("Adapters").mayNotBeAccessedByAnyLayer()
-            .whereLayer("Application").mayOnlyBeAccessedByLayers("Adapters")
-            .ignoreDependency(resideInAPackage("com.balaaca.sharedkernel.."),
-                              alwaysTrue());
+    // Two negatives rather than layeredArchitecture(): the layer helper wants
+    // one (*) capture per layer, and the capture is substituted on one side of
+    // the comparison and taken literally on the other.
+    @ArchTest static final ArchRule nothing_inward_depends_on_an_adapter =
+        noClasses().that().resideInAnyPackage("..domain..", "..ports..", "..application..")
+            .should().dependOnClassesThat().resideInAPackage("..adapters..")
+            .because("an adapter is one implementation of a port, and the "
+                   + "inside naming it is the dependency inverted");
+
+    @ArchTest static final ArchRule the_domain_and_its_ports_ignore_the_application_layer =
+        noClasses().that().resideInAnyPackage("..domain..", "..ports..")
+            .should().dependOnClassesThat().resideInAPackage("..application..")
+            .because("orchestration knows about rules; rules must not know "
+                   + "which orchestration invoked them");
 
     // One Maven module per context, so the COMPILER cannot stop context A from
     // importing context B's internals: ArchUnit is the boundary (rule 10).
-    @ArchTest static final ArchRule contexts_talk_through_inbound_ports_only =
-        noClasses().that().resideInAPackage("com.balaaca.(*)..")
-            .should().dependOnClassesThat(
-                resideInAnyPackage("..domain..", "..application..", "..adapters..")
-                    .and(not(belongToTheSameContext()))
-                    .and(not(publishedPortAllowlist())))
-            .because("a sibling context is reachable only through its inbound "
-                   + "ports and published types");
+    // Written as a loop for the same reason as above.
+    @ArchTest
+    static void a_context_touches_only_another_context_s_ports(JavaClasses classes) {
+        for (String context : CONTEXTS) {
+            for (String other : CONTEXTS) {
+                if (context.equals(other)) {
+                    continue;
+                }
+                noClasses().that().resideInAPackage("com.balaaca." + context + "..")
+                        .should().dependOnClassesThat().resideInAnyPackage(
+                                "com.balaaca." + other + ".domain..",
+                                "com.balaaca." + other + ".application..",
+                                "com.balaaca." + other + ".adapters..")
+                        .allowEmptyShould(true)
+                        .check(classes);
+            }
+        }
+    }
 
-    @ArchTest static final ArchRule deployable_list_is_closed =
+    // The satellite is NOT here and must not be added: it is a separate Maven
+    // project, none of its classes are on this classpath, and its own rule -
+    // the_worker_imports_nothing_of_the_core - asserts the stronger thing.
+    @ArchTest static final ArchRule every_package_is_a_declared_module =
         classes().that().resideInAPackage("com.balaaca..")
-            .should().resideInAnyPackage(DEPLOYABLES)
-            .because("the seven contexts and two satellites are settled");
+            .should().resideInAnyPackage(
+                "com.balaaca.sharedkernel..", "com.balaaca.platformkernel..",
+                "com.balaaca.identity..", "com.balaaca.providers..",
+                "com.balaaca.catalog..", "com.balaaca.scheduling..",
+                "com.balaaca.booking..", "com.balaaca.billing..",
+                "com.balaaca.app..")
+            .because("a new top-level package is a new bounded context, which "
+                   + "is a decision with an ADR behind it");
 
     // There is no broker and no RPC in this project: core -> core is an
     // in-process inbound-port call, async work goes through the outbox table.
-    @ArchTest static final ArchRule no_rpc_and_no_broker =
+    @ArchTest static final ArchRule there_is_no_broker_and_no_grpc =
         noClasses().should().dependOnClassesThat().resideInAnyPackage(
-                "io.grpc..", "org.apache.kafka..", "io.smallrye.reactive.messaging.kafka..")
-            .because("no gRPC, no Kafka, no Redpanda: ports in-process, outbox for async");
+                "io.grpc..", "com.google.protobuf..",
+                "org.apache.kafka..", "io.vertx.kafka..")
+            .because("a broker is deferred until volume forces one (ADR-0004)");
 }
 ```
 
-The gates in the parent `pom.xml` must actually *match* shared-kernel, which is
-flat and has no `domain/` segment:
+The coverage gate lives in `backend/app/pom.xml`, not the parent, because that
+is the only module from which every context's classes are exercised. The parent
+wires the two agents, the merge and the report and stops there:
 
 ```xml
-<!-- JaCoCo includes. The last three lines are load-bearing: LocalWindows lives
-     in com.balaaca.sharedkernel.time and a com/balaaca/*/domain/** pattern
-     alone leaves the most DST-critical class in the product ungated. -->
-<includes>
-  <include>com/balaaca/*/domain/**</include>
-  <include>com/balaaca/*/application/**</include>
-  <include>com/balaaca/sharedkernel/money/**</include>
-  <include>com/balaaca/sharedkernel/time/**</include>
-  <include>com/balaaca/sharedkernel/logging/**</include>
-</includes>
+<!-- One rule, whole bundle. There is deliberately NO <includes>: an include
+     list is a promise to remember every package anyone adds, and the first
+     thing it forgets falls out of the gate silently. dataFile matters as much -
+     Quarkus rewrites classes during augmentation, so a report built from the
+     bare agent's exec file reads every adapter as 0% while the integration
+     suites are driving them. -->
+<configuration>
+  <dataFile>${project.build.directory}/jacoco-quarkus.exec</dataFile>
+  <!-- Generated from the contract. Leaving the generator's getters, equals and
+       toString in moved the ratio from 83% to 50% the day the contract landed,
+       without one test having got worse. -->
+  <excludes>
+    <exclude>com/balaaca/app/api/**</exclude>
+  </excludes>
+  <rules>
+    <rule>
+      <element>BUNDLE</element>
+      <limits>
+        <!-- 83.3% the day this was set. The gate sits below it, not at it: a
+             threshold equal to the current number turns the next honest
+             refactor red and gets the gate deleted. -->
+        <limit>
+          <counter>INSTRUCTION</counter>
+          <value>COVEREDRATIO</value>
+          <minimum>0.78</minimum>
+        </limit>
+      </limits>
+    </rule>
+  </rules>
+</configuration>
 ```
 
 ```bash
@@ -465,21 +609,22 @@ mvn test
 # Full DoD gate: Failsafe *IT (Testcontainers), ArchUnit, JaCoCo, PIT
 mvn verify
 
-# Mutation score for the code that carries the critical invariants
+# Mutation score for the code that carries the critical invariants. Only these
+# three modules run PIT, each with its own threshold: 68, 78, 50.
 mvn -pl scheduling,booking,shared-kernel org.pitest:pitest-maven:mutationCoverage
 ```
 
 ## Sibling skills
 
-- `backend-architecture` - the hexagonal boundaries and closed deployable list ArchUnit enforces.
+- `backend-architecture` - the hexagonal boundaries and closed package list ArchUnit enforces.
 - `booking-integrity` - the exclusion constraint and the any-staff retry the concurrency suite proves.
 - `multi-tenant-rls` - the connection-level `app.provider_id` binding a test must exercise, not fake.
 - `money-currency` - the `Money`/`Currency` invariants property-tested here.
-- `temporal-modelling` - why slot properties run under both hemispheres' DST.
+- `temporal-modelling` - why slot tests owe a southern-hemisphere zone.
 - `idempotency-concurrency` - the fingerprint replay and `IDEMPOTENCY_KEY_REUSED` asserted here.
 - `outbox-messaging` - the notifications rows and dedupe keys asserted in the same transaction.
-- `platform-api` - the closed error-code catalogue the IDOR matrix asserts against.
-- `contract-first` - the OpenAPI document the IDOR matrix checks itself against.
+- `platform-api` - the closed error-code catalogue the cross-tenant 404 asserts against.
+- `contract-first` - the OpenAPI document an IDOR matrix would check itself against.
 - `ci-workflow` - where these gates run and block the merge.
 - `backend-naming` - the `*Test` / `*IT` suffix convention.
 - `cdi-interceptors` - why logging, audit and tracing are not asserted in tests.

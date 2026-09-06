@@ -70,7 +70,7 @@ machine-generated filler. The code should look human-authored and clean.
  * The customer price is frozen in minor units of the provider's currency
  * (GNF has scale 0).
  */
-public Appointment book(BookAppointmentCommand command) { ... }
+public BookingResult book(BookAppointmentCommand command) { ... }
 ```
 
 Purpose plus the three things a caller must know (server-recomputed slot,
@@ -84,15 +84,24 @@ the line stays greppable and parseable - no emoji (see `pii-masking-logging`):
 ```java
 // Structured fields via MDC; the message is a stable dotted event name, not a
 // sentence with values baked in (see `pii-masking-logging` rules 1-2).
-// appointment_id resolves to one customer, so it goes through maskId; the
-// provider id and correlation id are bound raw at the boundary.
+// appointment_id resolves to one customer, so it is masked before it is bound;
+// the provider id and correlation id are bound raw at the boundary.
 MDC.put("outcome", "success");
-MDC.put("appointment_id", LogMasking.maskId(appointment.id()));
+MDC.put("appointment_id", maskedAppointmentId);
 log.info("appointment.booked");
 
 MDC.put("outcome", "failure");
 log.warn("appointment.book.slot_unavailable");
 ```
+
+This example used to bind `LogMasking.maskId(appointment.id())`. That helper
+was never written: there is no `sharedkernel.logging` package, no class by
+that name anywhere in the tree, and nothing in the code masks anything today.
+A reader who goes looking for it is not staring at an accidental deletion, so
+do not re-add the call here to "fix" the sample. `pii-masking-logging` owns
+which identifiers are masked and what the helper should look like when someone
+builds it. What this example is about survives either way: severity in the
+level, outcome in a field, event name in the message.
 
 ## Sibling skills
 

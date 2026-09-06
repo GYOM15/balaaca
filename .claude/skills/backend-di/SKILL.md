@@ -40,8 +40,10 @@ managed beans, correct scopes, no hidden collaborators inside the domain.
 4. **Choose the scope deliberately, default `@ApplicationScoped`.** Stateless
    services, application use cases, ports' adapters, gateways and repositories
    are `@ApplicationScoped` (one instance, thread-safe). Per-request state such
-   as `TenantContext` is `@RequestScoped` and is populated ONLY by the
-   `TenantBoundInterceptor`, which resolves the tenant from the DATABASE - verified JWT `sub` -> `users.keycloak_user_id` -> `users.id` ->
+   as `TenantContext` is `@RequestScoped` and is populated ONLY by the two
+   binders in its own package - `TenantBoundInterceptor` for staff, and
+   `PublicTenantBinder` for a customer arriving by published slug or booking
+   reference. The interceptor resolves the tenant from the DATABASE - verified JWT `sub` -> `users.keycloak_user_id` -> `users.id` ->
    `provider_staff.user_id` -> `provider_id` - on every request, uncached, so
    that removing a `provider_staff` row takes effect on the very next call. It
    is never parsed from a JWT claim and never injected as a business parameter
@@ -145,20 +147,24 @@ public class BookAppointmentService implements BookAppointmentUseCase {
 ```
 
 **Canonical `TenantContext`** - this is THE definition for the whole codebase
-(it lives in `com.balaaca.sharedkernel.tenancy`, together with the interceptor
-that fills it; every other skill refers to this one, none redefines it). The
-tenant is the **provider**, and it is resolved from the database, not from a
-token claim:
+(it lives in `com.balaaca.platformkernel.tenancy`, together with the interceptor
+that fills it; every other skill refers to this one, none redefines it). It is
+in `platform-kernel` and not in `shared-kernel` because it imports CDI: putting
+it beside `Money` would drag CDI, JWT and Agroal behind every domain class that
+imports a value object. The tenant is the **provider**, and it is resolved from
+the database, not from a token claim:
 
 ```java
 @RequestScoped
 public class TenantContext {
 
     private ProviderId providerId;   // assigned once per request, fail-closed
+    private Membership membership;   // staff only, null for a customer
 
     /**
-     * The accessor business code uses. Throws when the interceptor resolved
-     * no ACTIVE provider_staff membership for the verified JWT subject.
+     * The accessor business code uses. Throws when nothing was bound - for
+     * staff, when the interceptor resolved no ACTIVE provider_staff membership
+     * for the verified JWT subject.
      */
     public ProviderId require() {
         if (providerId == null) throw new NoProviderMembershipException();
@@ -175,32 +181,57 @@ public class TenantContext {
         return Optional.ofNullable(providerId);
     }
 
-    // Package-private: ONLY the @TenantBound interceptor may fill or clear it.
-    // It resolves sub -> users.id -> provider_staff.provider_id against the
-    // database on every request, uncached, so no business code can assign a
-    // tenant and no claim can forge one (see `cdi-interceptors`).
-    void assign(ProviderId providerId) { this.providerId = providerId; }
-    void clear() { this.providerId = null; }
+    // Package-private: only this package may fill or clear it, so no business
+    // code can assign a tenant and no claim can forge one. Two binders live
+    // here. The @TenantBound interceptor binds staff, resolving
+    // sub -> users.id -> provider_staff.provider_id against the database on
+    // every request, uncached. PublicTenantBinder binds a customer on the
+    // public path from a published slug or a booking reference - a tenant with
+    // deliberately no membership behind it, which is why the staff accessors
+    // (staff id, owner check) refuse rather than guess (see `cdi-interceptors`).
+    void assign(Membership resolved) { ... }          // staff
+    void assign(ProviderId publishedProvider) { ... }  // customer, no membership
+    void clear() { ... }
 }
 ```
 
 `ProviderMembershipResolver`, the port that interceptor injects, is declared
-next to `TenantContext` in `com.balaaca.sharedkernel.tenancy` and implemented
-in the `providers` context: `shared-kernel` holds no business *rules*, but it
-may declare cross-cutting ports.
+next to `TenantContext` in `com.balaaca.platformkernel.tenancy` and implemented
+in the `providers` context, which owns the tables it reads: `platform-kernel`
+holds no business *rules*, but it may declare the cross-cutting ports its own
+machinery needs. `shared-kernel` could not declare this one - it is the
+framework-free module.
 
 The clock is produced once and injected everywhere, never called statically:
 
 ```java
 @ApplicationScoped
-public class TimeProducer {
+public class ClockProducer {   // com.balaaca.platformkernel.time
+
+    private final Optional<String> pinnedTo;
+
+    public ClockProducer(@ConfigProperty(name = "balaaca.clock.pinned-to")
+                         Optional<String> pinnedTo) {
+        this.pinnedTo = pinnedTo;
+    }
+
     @Produces
     @ApplicationScoped
     public Clock clock() {
-        return Clock.systemUTC();   // tests substitute a fixed clock
+        // Empty everywhere but the test profile, which pins the clock through
+        // config rather than by substituting a bean: the integration fixtures
+        // book on dates chosen for their day of week, so against the real clock
+        // the suite had an expiry date and reached it.
+        return pinnedTo.filter(s -> !s.isBlank())
+                       .map(s -> Clock.fixed(Instant.parse(s), ZoneOffset.UTC))
+                       .orElseGet(Clock::systemUTC);
     }
 }
 ```
+
+A pinned clock is safe only because nothing else in the codebase reads the time:
+one `Instant.now()` left in a service and the suite is deterministic in some
+places and drifting in others, which is worse than drifting everywhere.
 
 Config binding, no ad-hoc env reads:
 
@@ -215,8 +246,8 @@ public interface SmsSenderConfig {
 ## Sibling skills
 
 - `backend-architecture` - inward dependencies; the core depends on ports, CDI
-  wires adapters at the edge, and `shared-kernel` is the one context exempt
-  from the four-layer rule.
+  wires adapters at the edge, and the two kernels - `shared-kernel` and
+  `platform-kernel` - are the modules exempt from the four-layer rule.
 - `backend-srp` - a bloated constructor means too many responsibilities.
 - `backend-naming` - port `*UseCase` + bean `*Service` (never `*ServiceImpl`),
   `*Repository`, `*Adapter` and final-field naming.

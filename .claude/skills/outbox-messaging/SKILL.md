@@ -80,21 +80,41 @@ gives the transactional safety that a broker would have been bought for.
    `SENT`, and nobody ever finds out. Ack first, mark second, in that order.
 8. **Delivery is at-least-once, so everything dedupes on a UNIQUE
    `dedupe_key`, and the key embeds the instant the message is owed for.**
-   The shape is `appointment:{uuid}:{TYPE}:{scheduled_at_epoch_seconds}` - for example
-   `appointment:9f1c…:REMINDER_24H:1772445600`. That is deterministic (a
+   The shape is `appointment:{uuid}:{KIND}:{owed_for_epoch_seconds}` - for
+   example `appointment:9f1c…:REMINDER:1772445600`. That is deterministic (a
    replayed transaction recomputes the identical key and the UNIQUE index
    absorbs it) and collision-free across reschedules (the new time is a new
    instant, so the re-planned reminder is a new row, while the obsolete one is
    cancelled by rule 9). There is no plan-version column and no counter:
    anything that has to be incremented is state that two racing transactions
-   can disagree about. For this to hold, `scheduled_at` must be derived from
-   domain instants - `starts_at` minus 24 hours, the recorded cancellation
-   instant - never from a fresh clock read at planning time. The same key is
-   passed to the channel as its own idempotency key, so a crash between the
-   send and the `SENT` update costs a suppressed duplicate, not a second SMS.
+   can disagree about.
+
+   **There is no `REMINDER_24H` kind, and there never was one to delete.** The
+   day-before and the two-hour reminders are both `REMINDER`, told apart by the
+   instant they are owed for. A kind per lead time would buy a new enum
+   constant and a new CHECK migration every time somebody changes a schedule,
+   and the key already distinguishes the two for free. The lead times are
+   constants in `BookingNotifications`, not kinds.
+
+   **`owed_for` and `scheduled_at` are two different instants, and only the
+   first is in the key.** `owed_for` is the domain moment the message exists
+   for - the appointment's start, or its start minus the reminder's lead time -
+   and it is never a clock read, because a replay that read a fresh clock would
+   compute a different key and send twice. `scheduled_at` is only when the
+   worker may send: for an immediate message it is simply now. A retry does not
+   touch it either - the backoff moves `retry_after_at` and leaves the due
+   instant alone. Delivery is not identity, so it stays out of the key. `owed_for`
+   is an input to the key and never became a column; the row keeps
+   `scheduled_at`.
+
+   Nothing carries the key to the channel as an idempotency key, either.
+   Neither the WhatsApp Graph API nor SMTP takes one, so a crash between the
+   acknowledgement and the `SENT` update costs a real duplicate, not a
+   suppressed one. What the key does buy is the larger win: it stops a
+   notification being *planned* twice, which is by far the likelier mistake.
 9. **Cancelling or rescheduling an appointment cancels its pending
    notifications and plans the new ones in the same transaction.** A cancelled
-   appointment whose `REMINDER_24H` is still `PENDING` will text a customer
+   appointment whose `REMINDER` is still `PENDING` will text a customer
    about an appointment that no longer exists. Cancellation of the obsolete
    rows and insertion of the owed ones are part of the same unit of work as
    the state change.
@@ -106,8 +126,12 @@ gives the transactional safety that a broker would have been bought for.
     keeps a message truthful about the moment it was owed.
 11. **Retry is exponential backoff with jitter, a bounded attempt count, and a
     terminal `DEAD` state.** A failure increments `attempts`, pushes
-    `scheduled_at` forward, and leaves the row `PENDING`; at the cap the row
-    becomes `DEAD` and is alerted on, never retried forever. No retry loop
+    `retry_after_at` forward, and leaves the row `PENDING`; `scheduled_at` is
+    when the message became due and a retry has no business rewriting it. At
+    the cap - the row's own `max_attempts`, a column rather than a constant, so
+    one stubborn recipient can be given a different budget without a
+    deployment - the row becomes `DEAD` and is alerted on, never retried
+    forever. No retry loop
     ever runs on a request thread. `last_error` holds a **stable failure code**
     produced by the channel adapter - not a provider payload, and not the
     result of a masking call sprinkled through business code. Sanitising is
@@ -134,12 +158,16 @@ gives the transactional safety that a broker would have been bought for.
   or `22P02` and the API answers `500` where it should answer nothing at all.
 - `FORCE ROW LEVEL SECURITY` with no policy for the owning role → rule 6; the
   next backfill migration updates zero rows and says it worked.
-- Versioning the dedupe key (`…:REMINDER_24H:v2`) or keeping a `plan_version`
+- Versioning the dedupe key (`…:REMINDER:v2`) or keeping a `plan_version`
   column → rule 8; a counter is state two racing transactions can disagree
   about, and the target instant already distinguishes the rows for free.
-- Building `scheduled_at` from `clock.instant()` at planning time for a
-  message that is owed at a domain instant → rule 8; the replayed transaction
-  computes a different key and the customer gets two reminders.
+- Minting a `REMINDER_24H` kind, or any other kind named after a lead time →
+  rule 8; two reminders of one kind are already told apart by the instant they
+  are owed for, and the new constant costs a CHECK migration for nothing.
+- Building `owed_for` from `clock.instant()` at planning time for a message
+  that is owed at a domain instant → rule 8; the replayed transaction computes
+  a different key and the customer gets two reminders. (`scheduled_at` from a
+  clock read is fine and usual: an immediate message is due now.)
 - The worker joining `appointments` and `customers` to fetch the phone
   number → rule 10; it widens the worker's privileges and sends a reminder
   built from data that has since changed.
@@ -148,7 +176,7 @@ gives the transactional safety that a broker would have been bought for.
 - Writing the raw gateway response into `last_error`, or calling a masking
   helper inline in the drain service → rule 11; store a stable failure code
   and leave sanitising to the adapter and the log boundary.
-- Rescheduling an appointment and leaving the old `REMINDER_24H` `PENDING` →
+- Rescheduling an appointment and leaving the old `REMINDER` `PENDING` →
   rule 9; the customer is reminded of the old time.
 - Routing a `billing` entitlement check or a `scheduling` slot computation
   through the table → rule 1; those are in-process port calls.
@@ -160,53 +188,81 @@ composite foreign key works because `appointments` declares
 `UNIQUE (provider_id, id)`; see `booking-integrity` for that table.
 
 ```sql
--- V021__create_notifications.sql   (owner: balaaca_migrator)
+-- V010__create_notifications.sql   (owner: balaaca_migrator)
 CREATE TABLE notifications (
-    id             uuid        PRIMARY KEY,
-    provider_id    uuid        NOT NULL,
-    appointment_id uuid,                   -- nullable: not all are bookings
-    type           text        NOT NULL,   -- APPOINTMENT_CONFIRMED etc.
-    channel        text        NOT NULL,   -- SMS, EMAIL
-    recipient      text        NOT NULL,   -- E.164 or email, frozen
-    locale         text        NOT NULL,   -- resolves the i18n catalogue key
-    variables      jsonb       NOT NULL,   -- template variables, English keys
-    dedupe_key     text        NOT NULL,   -- intent + target instant (rule 8)
-    -- status: PENDING | SENDING | SENT | CANCELLED | DEAD
-    status         text        NOT NULL,
-    attempts       int         NOT NULL DEFAULT 0 CHECK (attempts >= 0),
-    scheduled_at   timestamptz NOT NULL,   -- the one due column, UTC
-    claimed_at     timestamptz,            -- lease, for crash recovery
+    id             uuid PRIMARY KEY,
+    provider_id    uuid NOT NULL,
+    appointment_id uuid,                    -- nullable: not all are bookings
+    recipient_kind varchar(20)  NOT NULL,   -- CUSTOMER | PROVIDER
+    kind           varchar(40)  NOT NULL,   -- BOOKING_CONFIRMATION, REMINDER, …
+    dedupe_key     varchar(200) NOT NULL UNIQUE,  -- intent + owed-for instant
+
+    -- Both addresses travel, frozen at planning time, and preferred_channel
+    -- (added by V049) says which was asked for. The worker cannot read the
+    -- customer, so a row carrying only the chosen address would have nothing
+    -- to fall back to when that transport has none.
+    to_phone_e164     varchar(20),
+    to_email          citext,
+    preferred_channel varchar(20) NOT NULL, -- WHATSAPP | EMAIL   (V049)
+    locale         varchar(10) NOT NULL DEFAULT 'fr',
+    payload        jsonb NOT NULL DEFAULT '{}'::jsonb,  -- variables, English keys
+
+    -- Six, and nothing writes FAILED: a terminal failure is DEAD. FAILED
+    -- survives as vocabulary the schema allows and no code has ever needed.
+    status         varchar(20) NOT NULL DEFAULT 'PENDING'
+                   CHECK (status IN ('PENDING','SENDING','SENT',
+                                     'FAILED','DEAD','CANCELLED')),
+    scheduled_at   timestamptz NOT NULL,    -- when it may go out, UTC
+    retry_after_at timestamptz NOT NULL DEFAULT now(),  -- moved by the backoff
+    attempts       int NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+    max_attempts   int NOT NULL DEFAULT 6 CHECK (max_attempts > 0),
+    channel_used   varchar(20),             -- the outcome, not the intention
+    last_error     varchar(500),            -- stable failure code only
     sent_at        timestamptz,
-    last_error     text,                   -- stable failure code only
     created_at     timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT uq_notifications_dedupe UNIQUE (dedupe_key),
-    CONSTRAINT fk_notifications_appointment
-        FOREIGN KEY (provider_id, appointment_id)
-        REFERENCES appointments (provider_id, id)
+    -- There is no claimed_at, and none was removed: the claim is the only
+    -- statement that touches updated_at on a SENDING row, so its age IS the
+    -- lease. A second timestamp would only be a second thing to keep in step.
+    updated_at     timestamptz NOT NULL DEFAULT now(),
+
+    CONSTRAINT ck_notifications_destination
+        CHECK (to_phone_e164 IS NOT NULL OR to_email IS NOT NULL),
+    FOREIGN KEY (provider_id, appointment_id)
+        REFERENCES appointments (provider_id, id) ON DELETE CASCADE
 );
 
--- The drain path and the lease reaper each get their own partial index.
-CREATE INDEX ix_notifications_due ON notifications (scheduled_at)
+-- The claim filters on both instants, so the partial index carries both.
+CREATE INDEX ix_notifications_due ON notifications (scheduled_at, retry_after_at)
     WHERE status = 'PENDING';
-CREATE INDEX ix_notifications_leased ON notifications (claimed_at)
-    WHERE status = 'SENDING';
+CREATE INDEX ix_notifications_appointment ON notifications (appointment_id)
+    WHERE appointment_id IS NOT NULL;
+-- No lease index was ever built: the reaper reads only rows left SENDING, a
+-- set that is empty except after a crash.
+```
 
+The RLS below is `V013`'s, not this migration's: policies and grants for every
+tenant table are declared together there. It belongs here all the same, because
+the table and the policies only make sense read as one thing.
+
+```sql
+-- V013__enable_row_level_security.sql
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications FORCE  ROW LEVEL SECURITY;
 
--- The business API sees only its own provider's rows. nullif + missing_ok:
--- an unbound connection yields NULL, which matches nothing, instead of 42704.
-CREATE POLICY notifications_tenant_isolation ON notifications
-    FOR ALL TO balaaca_app
-    USING      (provider_id
-                = nullif(current_setting('app.provider_id', true), '')::uuid)
-    WITH CHECK (provider_id
-                = nullif(current_setting('app.provider_id', true), '')::uuid);
+-- The business API sees only its own provider's rows. app_current_provider()
+-- (V001) is exactly rule 6's null-safe form behind a name: an unbound
+-- connection yields NULL, which matches nothing, instead of 42704. No TO
+-- clause - V013 writes this one in a loop over every tenant table - so it
+-- binds every role. Policies are OR'd, so the two below widen what their own
+-- role may see rather than replacing this one.
+CREATE POLICY notifications_tenant ON notifications
+    USING      (provider_id = app_current_provider())
+    WITH CHECK (provider_id = app_current_provider());
 
 -- The worker drains every provider. Not BYPASSRLS: a policy naming its own
 -- role, which is granted these two verbs on this one table and nothing else.
 -- It never sets app.provider_id, and this policy never reads it.
-CREATE POLICY notifications_worker_drain ON notifications
+CREATE POLICY notifications_worker ON notifications
     FOR ALL TO balaaca_notification_worker
     USING (true) WITH CHECK (true);
 
@@ -225,30 +281,33 @@ State change and notification rows in one transaction, through a port:
 @ApplicationScoped
 public class CancelAppointmentService implements CancelAppointmentUseCase {
 
-    private final AppointmentRepository appointments;
-    private final NotificationOutboxPort outbox;   // appends rows, no network
+    private final AppointmentStateRepository appointments;
+    private final NotificationOutboxPort outbox;        // appends rows, no network
+    private final BookingNotifications notifications;   // decides what is owed
     private final Clock clock;
 
-    @Inject
-    public CancelAppointmentService(AppointmentRepository appointments,
+    public CancelAppointmentService(AppointmentStateRepository appointments,
                                     NotificationOutboxPort outbox,
+                                    BookingNotifications notifications,
                                     Clock clock) {
         this.appointments = appointments;
         this.outbox = outbox;
+        this.notifications = notifications;
         this.clock = clock;
     }
 
     @Override
-    @Transactional
-    public void cancel(AppointmentId appointmentId, CancellationReason reason) {
-        Appointment appointment = appointments.require(appointmentId);
-        appointment.cancel(reason, clock.instant());          // state change
+    @Transactional(Transactional.TxType.REQUIRED)
+    public AgendaEntry cancel(AppointmentId id, Optional<String> reason) {
+        AgendaEntry cancelled = appointments.cancel(id, reason, clock.instant())
+                .orElseThrow(() -> refusalFor(id));       // one conditional UPDATE
 
         // Same transaction: the reminder that is no longer owed is withdrawn,
         // and the notification that IS owed is planned. No channel is touched,
         // and nothing is logged from here.
-        outbox.cancelPending(appointment.id());
-        outbox.plan(PlannedNotification.forCancellation(appointment));
+        outbox.cancelPending(id);
+        notifications.planCancellation(cancelled);
+        return cancelled;
     }
 }
 ```
@@ -258,33 +317,45 @@ counter, no version:
 
 ```java
 public record PlannedNotification(AppointmentId appointmentId,
-                                  NotificationType type,
-                                  Channel channel,
-                                  String recipient,   // E.164 or email, frozen
-                                  Locale locale,
-                                  Map<String, String> variables,
-                                  Instant scheduledAt) {
+                                  NotificationKind kind,
+                                  NotificationRecipient recipient,  // CUSTOMER | PROVIDER
+                                  Optional<String> toPhoneE164,     // frozen at planning
+                                  Optional<String> toEmail,         // frozen at planning
+                                  ContactChannel preferredChannel,
+                                  String locale,
+                                  Map<String, String> payload,
+                                  Instant owedFor,       // identity: in the key
+                                  Instant scheduledAt) { // delivery: out of it
 
     /**
      * Deterministic: a replayed transaction recomputes the identical key and
      * UNIQUE (dedupe_key) absorbs it. Collision-free across reschedules: a new
      * time is a new instant, hence a new row, while the obsolete row is
-     * cancelled in the same unit of work.
+     * cancelled in the same unit of work. No channel in it either - how a
+     * message travels is delivery, so a key that moved with it would let one
+     * appointment send the same confirmation twice.
      */
     public String dedupeKey() {
         return "appointment:" + appointmentId.value()
-             + ":" + type.name()
-             + ":" + scheduledAt.getEpochSecond();
+             + ":" + kind.name()
+             + ":" + owedFor.getEpochSecond();
     }
+}
 
-    /** scheduledAt comes from the appointment, never a fresh clock read. */
-    public static PlannedNotification reminder24h(Appointment appointment) {
-        return new PlannedNotification(
-                appointment.id(), NotificationType.REMINDER_24H, Channel.SMS,
-                appointment.customerPhone().e164(), appointment.locale(),
-                variablesOf(appointment),
-                appointment.startsAt().minus(24, ChronoUnit.HOURS));
+// In BookingNotifications, which decides what a booking owes. Both reminders
+// are kind REMINDER; what tells them apart is owedFor, and that comes from the
+// appointment and never from a clock read.
+private static Optional<PlannedNotification> reminder(AppointmentId id, Instant startsAt,
+                                                      Duration before, Instant now, …) {
+    Instant owedFor = startsAt.minus(before);
+    if (!owedFor.isAfter(now)) {
+        // A booking taken inside the lead time owes no reminder. Writing one
+        // anyway makes the worker send it on the next drain, which is a
+        // reminder about an appointment the customer is already walking to.
+        return Optional.empty();
     }
+    return Optional.of(new PlannedNotification(id, NotificationKind.REMINDER,
+            NotificationRecipient.CUSTOMER, …, owedFor, owedFor));
 }
 ```
 
@@ -292,18 +363,21 @@ The worker claims a batch, commits the claim, then sends:
 
 ```sql
 -- Claim: one short transaction. SKIP LOCKED means replicas never collide.
+-- Both instants are filtered: scheduled_at is when the message became due,
+-- retry_after_at is where the backoff pushed a failed attempt.
 UPDATE notifications
-   SET status = 'SENDING', claimed_at = now()
+   SET status = 'SENDING', updated_at = now()   -- updated_at IS the lease
  WHERE id IN (
        SELECT id
          FROM notifications
         WHERE status = 'PENDING'
-          AND scheduled_at <= now()
+          AND scheduled_at   <= now()
+          AND retry_after_at <= now()
         ORDER BY scheduled_at
         LIMIT :batchSize
         FOR UPDATE SKIP LOCKED)
-RETURNING id, provider_id, type, channel, recipient, locale, variables,
-          dedupe_key, attempts;
+RETURNING id, provider_id, kind, to_phone_e164, to_email,
+          preferred_channel, locale, payload::text, dedupe_key, attempts;
 ```
 
 ```java
@@ -315,24 +389,33 @@ public class NotificationDrainJob {
     // Scheduled entry point: no request, therefore no TenantContext and no
     // app.provider_id on this connection. The worker's own RLS policy admits
     // the rows, and the row itself carries everything the send needs.
-    @Scheduled(every = "5s", concurrentExecution = ConcurrentExecution.SKIP)
-    void drain() {
+    @Scheduled(every = "{balaaca.notification.drain-interval:5s}",
+               concurrentExecution = ConcurrentExecution.SKIP)
+    public void drain() {
         for (ClaimedNotification n : outbox.claimDue(BATCH)) {
             // provider_id is an operational identifier and goes to the MDC raw;
             // the recipient never does.
-            try (var scope = LogContext.with("provider_id", n.providerId())) {
+            MDC.put("provider_id", n.providerId().toString());
+            try {
                 dispatch(n);
+            } finally {
+                MDC.remove("provider_id");
             }
         }
     }
 
     private void dispatch(ClaimedNotification n) {
         try {
-            // The dedupe key doubles as the channel's idempotency key, so a
-            // crash between the ack and markSent costs a suppressed duplicate.
-            channels.forChannel(n.channel())
-                    .send(n.recipient(), messages.render(n), n.dedupeKey());
-            outbox.markSent(n.id(), clock.instant());   // only after the ack
+            // The router answers with the transport the message actually went
+            // out on, which is not always the one the recipient asked for: a
+            // choice with no address behind it falls back to the other, and
+            // channel_used has to record what happened, not what was wanted.
+            Channel used = router.dispatch(n);
+            outbox.markSent(n.id(), used, clock.instant());   // only after the ack
+        } catch (UndeliverableException e) {
+            // No transport has an address, so no later attempt can differ.
+            // Dead now rather than in an hour and sixteen wasted tries.
+            outbox.markDead(n.id(), e.failureCode());
         } catch (ChannelException e) {
             // failureCode() is a stable code minted by the channel adapter -
             // no provider payload, no masking call inside this method.
@@ -356,20 +439,31 @@ public Instant nextAttemptAt(int attempts, Instant now) {
 
 ```sql
 -- scheduleRetry: bounded attempts, terminal DEAD, stable failure code.
+-- retry_after_at, never scheduled_at: scheduled_at is when the message became
+-- due, and a retry has no business rewriting that. The cap is the row's own
+-- max_attempts rather than a bound constant, and RETURNING is how the caller
+-- learns this attempt was the last one - asking afterwards would be asking a
+-- row another worker may have moved.
 UPDATE notifications
-   SET attempts     = attempts + 1,
-       status       = CASE WHEN attempts + 1 >= :maxAttempts
-                           THEN 'DEAD' ELSE 'PENDING' END,
-       scheduled_at = :nextAttemptAt,
-       claimed_at   = NULL,
-       last_error   = :failureCode
- WHERE id = :id;
+   SET attempts       = attempts + 1,
+       status         = CASE WHEN attempts + 1 >= max_attempts
+                             THEN 'DEAD' ELSE 'PENDING' END,
+       retry_after_at = :nextAttemptAt,
+       last_error     = :failureCode,
+       updated_at     = now()
+ WHERE id = :id
+RETURNING status;
 
--- Reaper: a worker that died mid-send leaves a lease behind. At-least-once
--- is the contract, and the channel idempotency key absorbs the replay.
+-- Reaper: a worker that died mid-send leaves a row SENDING for ever. The lease
+-- is updated_at, because the claim is the only statement that sets it on a
+-- SENDING row. At-least-once is the contract and nothing absorbs the replay -
+-- no channel here takes an idempotency key - so the customer may read the
+-- message twice. The trade is deliberate: a duplicate is an annoyance, a
+-- confirmation that never arrives is a customer outside a closed salon.
 UPDATE notifications
-   SET status = 'PENDING', claimed_at = NULL
- WHERE status = 'SENDING' AND claimed_at < now() - interval '5 minutes';
+   SET status = 'PENDING', updated_at = now()
+ WHERE status = 'SENDING'
+   AND updated_at < now() - make_interval(secs => CAST(:leaseSeconds AS double precision));
 ```
 
 ## Sibling skills

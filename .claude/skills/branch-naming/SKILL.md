@@ -39,10 +39,13 @@ second copy anywhere in the pack, delete that copy and point at this one.
 1. **`main` is the release branch.** It is what is deployed. Nothing lands on
    it except a promotion from `develop` at a phase milestone. `main` is always
    releasable; if it is red, that outranks whatever feature is in flight.
-2. **`develop` is the integration branch and the GitHub default branch.** Every
-   topic branch is cut from `develop` and merged back into `develop` through a
-   PR. A clone of the repository lands on `develop`, and a PR opened without
-   thinking targets `develop` - that is the point of making it the default.
+2. **`develop` is the integration branch.** Every topic branch is cut from
+   `develop` and merged back into `develop` through a PR. It is *not* the GitHub
+   default branch, whatever a stale `origin/HEAD` in an old clone says: the
+   repository reports `main`. So a fresh clone lands on `main`, and a PR opened
+   without thinking targets `main`. Switch to `develop` before you cut anything,
+   and read the base of every PR before you open it. The default will not do it
+   for you, and a topic branch based on `main` merges stale.
 3. **Short-lived topic branches: `feature/<kebab-slug>`.** Branch off the latest
    `develop`, do one topic, open a PR, merge, delete. Lifetime is days, not
    weeks. Examples: `feature/appointment-exclusion-constraint`,
@@ -54,8 +57,8 @@ second copy anywhere in the pack, delete that copy and point at this one.
 5. **Optionally scope the slug by bounded context.** For clarity you may prefix
    the topic with its context: `feature/scheduling-dst-slot-tests`,
    `feature/billing-plan-entitlements`. Use one of the closed context list
-   (`shared-kernel`, `identity`, `providers`, `catalog`, `scheduling`,
-   `booking`, `billing`) or a satellite (`notification-worker`,
+   (`shared-kernel`, `platform-kernel`, `identity`, `providers`, `catalog`,
+   `scheduling`, `booking`, `billing`) or a satellite (`notification-worker`,
    `chatbot-service`).
 6. **Kebab-case only.** No `camelCase`, no `snake_case`, no spaces, no dots.
    `feature/availabilityRule` -> `feature/availability-rule`.
@@ -66,12 +69,20 @@ second copy anywhere in the pack, delete that copy and point at this one.
    too big. No long-lived per-module `catalog-dev` / `booking-v1` lines: those
    are parallel integration branches, and this project has exactly one.
 9. **Merge only on a green gate.** Build, all test levels including the booking
-   concurrency and tenant non-leak suites, ArchUnit, Semgrep, gitleaks,
-   OSV-Scanner, Trivy, coverage and mutation thresholds - all pass before merge
-   (see `ci-workflow`). A red gate never merges, not into `develop` and
-   certainly not into `main`. Commits are signed as a matter of discipline
-   (`commit-style`); the gate does not verify signatures, so do not lean on it
-   for that.
+   concurrency and tenant non-leak suites, ArchUnit, gitleaks, OSV-Scanner,
+   coverage and mutation thresholds - all pass before merge (see `ci-workflow`).
+   Semgrep and Trivy are **not** in that list and never were: no such step
+   exists in `.github/workflows/ci.yml`, there is no `.semgrep/` directory and
+   no `.trivyignore`. They came from the pack this project descends from, and
+   naming them here made the gate read broader than it is. Do not go looking for
+   them, and do not add a `.trivyignore` for a scanner that never runs. A red
+   gate never merges into `develop`, where six of the seven jobs are required
+   status checks. `main` is the weaker of the two: only `secret scan`, `shell
+   and compose` and `vulnerable dependencies` are required there, so a promotion
+   PR can go green enough to merge with `build and test` red. On a promotion,
+   read the run; the merge button is not proof. Commits are signed as a matter
+   of discipline (`commit-style`); the gate does not verify signatures, so do
+   not lean on it for that.
 10. **`develop` is promoted to `main` at phase milestones**, not per feature.
     The promotion is a PR from `develop` to `main` that runs the same gate, and
     the resulting `main` commit is what gets tagged and released. Because the
@@ -80,40 +91,53 @@ second copy anywhere in the pack, delete that copy and point at this one.
     `develop` would let the release merge through unchecked.
 11. **The `pre-push` hook guards both `main` and `develop`.** Not `main` alone:
     `develop` is where every feature integrates, so an accidental direct push
-    there skips the gate on real work just as surely. The hook has exactly one
-    documented override, for the milestone promotion (rule 12).
-12. **The override is explicit, deliberate, and per-command.** When a milestone
-    promotion genuinely cannot go through a PR - the merge is done locally and
-    the result must reach `main` - set the escape hatch on that single command:
-    `BALAACA_PROMOTE=1 git push origin main`. Never export it in a shell
-    profile, never in CI, and never for a feature branch. Record the promotion
-    in the release notes so the direct push is accounted for. `--no-verify` is
-    not the override: it disables every hook silently and leaves no trace of
-    intent.
+    there skips the gate on real work just as surely. It refuses both without
+    exception, and rule 12 says why the exception it used to document is gone.
+12. **There is no override, and its absence is the decision.** This file used to
+    document `BALAACA_PROMOTE=1 git push origin main` as a per-command escape
+    hatch for a milestone promotion done locally. The tracked hook reads no such
+    variable, and it reads no `ALLOW_MAIN_PUSH=1` either, which is the name its
+    own comment records for the version that once did. Nothing was deleted by
+    accident. Both names were written when nothing protected `main`; GitHub now
+    refuses a direct push server-side with `GH006` whatever the environment
+    says, so an override would buy a local success followed immediately by a
+    remote rejection, and a documented path that cannot work is worse than no
+    path at all. A milestone promotion goes through a PR from `develop` to
+    `main`, like everything else. `--no-verify` is not a way round it either: it
+    silences every hook, leaves no trace of intent, and the server rejects the
+    push all the same.
 
 ## Enforcement, honestly
 
-GitHub server-side branch protection is **not available on a private repository
-without a paid plan**. Until the repository is public or the plan changes, the
-interim guard is the **local `pre-push` hook** below. It is client-side and
-therefore bypassable (`--no-verify`, `BALAACA_PROMOTE=1` used carelessly, or a
-fresh clone that never pointed `core.hooksPath` at the tracked directory). Treat
-it as a guardrail against mistakes, never as a security control.
+This section used to say that server-side branch protection was unavailable on a
+private repository without a paid plan, and that the local hook was the interim
+guard. Both halves are dead. The repository is **public**, and `main` and
+`develop` are **both protected server-side**: a pull request is required,
+required status checks must be green, force-push and deletion are refused, and
+`enforce_admins` is on, so the owner is bound like everybody else. A direct push
+comes back `GH006`, with or without `--no-verify`.
 
-The CI gate is the real barrier, and it is only a barrier for work that opens a
-PR: a branch pushed straight past the hook and merged locally never gets one.
-That gap is accepted knowingly, and it closes the day branch protection becomes
-available.
+So the `pre-push` hook below is not the guarantee, and never claim it is. What it
+buys is speed and a better sentence: it refuses before the network round-trip and
+names the PR you should have opened, instead of leaving you to decode a `GH006`.
+It is still client-side and still bypassable - `--no-verify`, or a fresh clone
+that never pointed `core.hooksPath` at the tracked directory - and that no longer
+costs anything, because getting past the hook only gets you as far as the server.
+
+The gap this section used to admit, a branch merged locally and pushed straight
+past the hook so that no PR and no gate ever saw it, is closed. One honest caveat
+survives: "protected" is not "the whole pipeline was green". The two branches
+require different checks (rule 9), and `main` requires the fewer.
 
 ## Anti-patterns
 
 - Pushing straight to `develop` or `main` -> rules 1/2/11, bypasses the gate.
 - A `pre-push` hook that protects only `main` -> rule 11; `develop` carries
   every feature merge and needs the same guard.
-- Using `--no-verify` to land a promotion -> rule 12; use the named override so
-  the intent is visible, or open the promotion PR.
-- Exporting `BALAACA_PROMOTE=1` in `.zshrc` -> rule 12, that turns a one-command
-  escape hatch into a permanently disabled hook.
+- Using `--no-verify` to land a promotion -> rule 12; the hook goes quiet and
+  the server still answers `GH006`. Open the promotion PR.
+- Adding an override variable back to the hook -> rule 12; it was removed on
+  purpose and it cannot work against a protected branch.
 - A `feature/*` branch cut from `main` instead of `develop` -> rule 3; it will
   merge stale or drag a release commit back into integration.
 - A PR from `feature/*` targeting `main` -> rule 2, topic work integrates in
@@ -129,8 +153,9 @@ available.
 - A branch open three weeks accumulating five topics -> rules 3/8, split it.
 - Promoting `develop` to `main` by force-push -> rule 10; the promotion runs
   the gate like anything else.
-- Describing the hook as protection -> "Enforcement, honestly"; it stops a
-  slip of the fingers, nothing more.
+- Describing the hook as the protection -> "Enforcement, honestly"; it stops a
+  slip of the fingers and saves a round-trip. The protection is GitHub's, on
+  both branches.
 
 ## Minimal correct example
 
@@ -162,47 +187,49 @@ the `commit-msg` hook from `commit-style`):
 git config core.hooksPath .githooks
 ```
 
-```bash
-#!/usr/bin/env bash
-# .githooks/pre-push - the single authoritative copy for this project.
-#
-# Client-side only and bypassable (--no-verify, or a clone that never set
-# core.hooksPath). GitHub branch protection is unavailable on a private repo
-# without a paid plan; the CI gate on the PR is the real barrier. This only
-# stops an accidental direct push to an integration or release branch.
-#
-# Guards BOTH refs/heads/develop and refs/heads/main. The one documented
-# override is the milestone promotion of develop into main:
-#
-#     BALAACA_PROMOTE=1 git push origin main
-#
-# Set it on that single command only - never exported, never in CI, never for
-# a feature branch - and note the promotion in the release notes.
-set -euo pipefail
+This is the tracked file verbatim. It is POSIX `sh`, not bash, and it must stay
+that way: CI shellchecks it with `--shell=sh --severity=warning`, and `shell and
+compose` is a required status check on both branches. A `#!/usr/bin/env bash`
+copy with `set -euo pipefail` - which this file used to print - fails that job.
 
-protected='refs/heads/main refs/heads/develop'
+```sh
+#!/bin/sh
+# Fast local feedback on the two branches that only ever advance through a
+# merged pull request. GitHub enforces this server-side (protected branches,
+# required status checks, enforce_admins), so this hook does not provide the
+# guarantee - it just saves a network round-trip and a confusing GH006.
+#
+# There is deliberately no override. An earlier version offered
+# ALLOW_MAIN_PUSH=1 as a milestone-promotion escape hatch; that was written
+# when nothing protected main, and the server now refuses it regardless. A
+# documented path that cannot work is worse than no path at all.
 
 while read -r _local_ref _local_sha remote_ref _remote_sha; do
-  for ref in $protected; do
-    [ "$remote_ref" = "$ref" ] || continue
-    branch=${remote_ref#refs/heads/}
-
-    if [ "$remote_ref" = 'refs/heads/main' ] && [ "${BALAACA_PROMOTE:-0}" = '1' ]; then
-      echo "pre-push: milestone promotion to main, override acknowledged."
-      continue
-    fi
-
-    echo "pre-push: direct push to '${branch}' is not allowed; open a PR."
-    echo "pre-push: promoting develop to main? re-run with BALAACA_PROMOTE=1."
-    exit 1
-  done
+    case "$remote_ref" in
+        refs/heads/main)
+            printf 'pre-push: main only advances by merging a pull request.\n' >&2
+            printf '  Promote a milestone with:\n' >&2
+            printf '    gh pr create --base main --head develop\n' >&2
+            printf '  The same three checks run on it.\n' >&2
+            exit 1
+            ;;
+        refs/heads/develop)
+            printf 'pre-push: develop only advances by merging a pull request.\n' >&2
+            printf '  Open one from a feature/, fix/, chore/, docs/ or ci/ branch:\n' >&2
+            printf '    gh pr create --base develop\n' >&2
+            exit 1
+            ;;
+    esac
 done
 
 exit 0
 ```
 
-The override deliberately covers `main` only. There is no promotion into
-`develop`, so a direct push there is always a mistake and always refused.
+Both arms of the `case` exit 1 unconditionally: no environment variable, no
+argument and no branch of the code lets a push through. There is no promotion
+into `develop` and no longer a local promotion into `main`, so a direct push to
+either is always a mistake, and the hook says so in the shape of the command you
+should have run instead.
 
 ## Sibling skills
 

@@ -65,23 +65,34 @@ is a pure function so it can be exhaustively tested without a database.
    22:00–01:00 is an ordinary provider, and `<` makes it unrepresentable while
    rule 12 demands a test for exactly that case. The convention: **`end_time <
    start_time` means the window closes on the next local date**, and it is
-   resolved in `LocalWindows.window`, which advances `endDate` by one local day - one day through the zone rules, never "plus 24 hours". An equal pair is
+   resolved in `LocalWindow.on`, which advances the end date by one local day -
+   one day through the zone rules, never "plus 24 hours". An equal pair is
    rejected rather than silently read as either an empty window or a
    twenty-four-hour one, in the database by the `CHECK` and in Java by an
-   explicit throw.
+   explicit throw in `LocalWindow`'s constructor.
 5. **Overrides are local dates.** `availability_overrides` carries
-   `override_date date` and a `kind` of `CLOSED`, `REPLACED_HOURS`, or
-   `EXTRA_HOURS`, with `start_time` / `end_time` required for the last two and
-   null for the first. The aggregate is `AvailabilityOverride` - never
-   `AvailabilityException`, because a domain type that is not throwable and
+   `override_date date` and a `kind` of `CLOSED`, `CUSTOM_HOURS`, or
+   `TIME_OFF`, with `start_time` / `end_time` required for the last two and
+   null for the first. There is no `EXTRA_HOURS` and there never was: the third
+   kind that shipped, in `V024`, **subtracts**. A date may carry several rows
+   and they compose in one stated order - `CLOSED` anywhere on the date takes
+   the whole day; `CUSTOM_HOURS` windows replace that day's weekly rules and
+   union with each other; `TIME_OFF` windows are then taken out of whatever is
+   left. `TIME_OFF` is the only kind that removes time, and it exists because
+   neither of the other two could say "I am away Thursday from two to three"
+   without either closing Thursday or making the provider restate the whole day
+   by hand. Naming that third kind for *adding* hours would invert the one
+   thing a reader has to get right. The aggregate is `AvailabilityOverride` -
+   never `AvailabilityException`, because a domain type that is not throwable and
    ends in `Exception` is a trap for every reader and every `catch` block. A
    closed day is *the provider's day in the provider's zone*, not a 24-hour UTC
    block - those two differ by hours at both ends for most of the world.
 6. **The provider owns the timezone, and nothing anywhere assumes a single
-   one.** `providers.timezone text NOT NULL DEFAULT 'Africa/Conakry'`,
-   validated against `ZoneId.getAvailableZoneIds()` on write and mapped to a
-   `ZoneId` in the domain. `Africa/Conakry` appears in exactly two places - the
-   migration default and the registration default - and nowhere else.
+   one.** `providers.timezone varchar(64) NOT NULL DEFAULT 'Africa/Conakry'`
+   (`V004`), validated against `ZoneId.getAvailableZoneIds()` on write and
+   mapped to a `ZoneId` in the domain. In code `Africa/Conakry` appears in
+   exactly two places - that migration default and the registration default,
+   `ProvidersResource.DEFAULT_ZONE` - and nowhere else.
    `ZoneId.of("UTC")` as a stand-in and `ZoneId.systemDefault()` are both
    banned in business code: the JVM's zone is a deployment accident, not a
    business fact.
@@ -96,31 +107,47 @@ is a pure function so it can be exhaustively tested without a database.
    | Weekly opening hours | `DayOfWeek` + `LocalTime` | `smallint` + `time` |
    | Availability override day | `LocalDate` | `date` |
    | Override custom hours | `LocalTime` | `time` nullable |
-   | Provider timezone | `ZoneId` | `text`, IANA id |
+   | Provider timezone | `ZoneId` | `varchar(64)`, IANA id |
    | Service duration and buffers | `Duration` | `int`, `*_minutes` |
    | Minimum lead time | `Duration` | `int`, `*_minutes` |
-   | Maximum advance horizon | `Period` | `int`, `*_days` |
-   | A computed slot | `AvailabilitySlot(Instant, Instant, StaffId)` | never persisted |
+   | Maximum advance horizon | `int maxAdvanceDays` | `int`, `max_advance_days` |
+   | A computed slot | `AvailableSlot(Instant, Instant)` | never persisted |
 
 7. **Durations are `Duration` in the domain and an integer column named for its
    unit.** `duration_minutes CHECK (duration_minutes > 0)`,
    `buffer_before_minutes CHECK (buffer_before_minutes >= 0)` and
    `buffer_after_minutes CHECK (buffer_after_minutes >= 0)` on
-   `service_offerings`; `min_lead_time_minutes` and `max_horizon_days` on the
-   booking policy. A zero or negative duration is not a degenerate service, it
-   is an empty range that defeats the exclusion constraint downstream, so the
+   `service_offerings`; `min_lead_time_minutes` and `max_advance_days` on
+   `providers`, which is where the booking policy is stored. The horizon is the
+   one row of the table above that is not a `java.time` type: `BookingPolicy`
+   holds a bare `int maxAdvanceDays`, widened at the point of use with
+   `Duration.ofDays(...)`. A count of days is not a `Duration` across a DST
+   boundary, so that widening is a deliberate approximation of the horizon and
+   not a precedent for any other field. A zero or negative duration is not a
+   degenerate service, it is an empty range that defeats the exclusion
+   constraint downstream, so the
    `CHECK` is written out, not assumed. Never a bare `int duration` whose unit
    lives in a comment, never a free-form `"1h30"` string on a contract. On the
    OpenAPI document it is an integer of minutes, the unit in the snake_case
    property name (`duration_minutes`) and the range in the schema.
 8. **A `java.time.Clock` is injected everywhere; "now" is a value, not a
-   call.** One CDI producer supplies `Clock.systemUTC()` in production; tests
-   inject `Clock.fixed(...)` and get a deterministic result.
-   `LocalDateTime.now()`, `LocalDate.now()`, `Instant.now()`,
-   `System.currentTimeMillis()` and `new Date()` are forbidden in `domain/` and
-   `application/` - an ArchUnit rule fails the build on them. Code that reads
-   the wall clock it cannot control is code whose lead-time and horizon
-   behaviour cannot be tested.
+   call.** One CDI producer, `ClockProducer`, supplies `Clock.systemUTC()` in
+   production and `Clock.fixed(...)` when `balaaca.clock.pinned-to` is set, so
+   the integration suite books at fixed dates chosen for their day of week
+   instead of drifting into a Sunday and failing correctly.
+
+   The build enforces less than this rule asks for, and the gap is worth
+   knowing rather than discovering. The ArchUnit rule
+   `the_domain_never_reads_the_clock` covers `..domain..` only and names
+   exactly three members: `Instant.now`, `LocalDate.now`,
+   `ZoneId.systemDefault`.
+   `LocalDateTime.now()`, `System.currentTimeMillis()` and `new Date()` are
+   caught by nothing, and `application/` is unguarded - which is how
+   `BookAppointmentAttempt` and `RescheduleAttempt` both came to derive a local
+   date with `atZone(ZoneId.of("UTC"))`, the stand-in rule 6 bans. Write the
+   rule's version anyway: code that reads a wall clock it cannot control is
+   code whose lead-time and horizon behaviour cannot be tested, and an
+   unguarded layer is a reason to be careful in review, not a licence.
 9. **No date is ever handled as a `String`, and `LocalDateTime` is never stored
    or passed.** `LocalDateTime` is a date and a time with neither zone nor
    offset: it is not an instant and it is not a complete local rule, so it is
@@ -129,25 +156,40 @@ is a pure function so it can be exhaustively tested without a database.
    (`2026-08-29`, `09:00`, `2026-08-29T09:00:00Z`) under snake_case property
    names (`starts_at`, `ends_at`, `scheduled_at`), and the parsed type crosses
    into the domain, never the text.
-10. **The local-to-instant conversion exists in exactly one place, in
-    `shared-kernel`.** `com.balaaca.sharedkernel.time.LocalWindows` is the only
-    code in the repository that calls `.atZone(zone).toInstant()`. DST is
-    resolved there, once, deliberately, and both behaviours are pinned by a
-    test:
+10. **Opening hours become instants in one place, and it is a domain type, not
+    a utility.** That place is `com.balaaca.scheduling.domain.LocalWindow` - a
+    record of two `LocalTime`s whose `on(LocalDate, ZoneId)` returns an
+    `InstantRange`. There is no `LocalWindows` helper class and no
+    `sharedkernel.time` package: converting a window needs the window, so the
+    conversion is a method on it rather than a static passed three loose
+    arguments, and `shared-kernel` holds only what more than one context uses -
+    ids, `Money`, `PhoneNumber` - which this is not.
+
+    DST is resolved there, once, deliberately:
     - **Spring-forward gap.** `ZonedDateTime.of(date, time, zone)` does *not*
       return the first valid instant after the gap; it shifts the local time
       **later by the length of the gap**. In `Europe/Paris` on 2026-03-29 a
       one-hour gap turns 02:30 into 03:30, not into 03:00. Say what it does,
       because "first valid instant" is off by thirty minutes here and by an
-      arbitrary amount for a provider whose window starts mid-gap.
+      arbitrary amount for a provider whose window starts mid-gap. This is
+      stated in `LocalWindow`'s Javadoc and **asserted by no test** - the suite
+      pins the autumn side and the two-zone anchoring, not the gap. Of
+      everything this skill asks for and does not have, that assertion is the
+      cheapest to add.
     - **Autumn fold.** A local time that occurs twice resolves to the *earlier*
-      offset, which is already what `ZonedDateTime.of` does; the explicit
-      `.withEarlierOffsetAtOverlap()` is therefore a **no-op that documents the
-      default rather than changing it**. Keep it for the reader, and never let
-      anyone believe it is what makes the behaviour correct.
+      offset, which is what `ZonedDateTime.of` already does, so `LocalWindow`
+      simply lets it. Do not add `.withEarlierOffsetAtOverlap()` to make it so:
+      it is a no-op there, and a reader who finds it will believe it is what
+      makes the behaviour correct and then move it somewhere it silently is
+      not.
 
-    Every service, calculator and adapter that needs an instant calls
-    `LocalWindows`; none of them re-derives the rule.
+    One conversion escapes `LocalWindow` today:
+    `CalculateSlotsService.busyIn` builds the range it asks the repository for
+    with `atStartOfDay(zone)` and `atZone(zone)`, widened a day on each side so
+    a window wrapping past midnight is still covered. It resolves no opening
+    hour, which is why it is tolerable - but it is the seam to watch, because a
+    second one that *does* resolve an opening hour is how the public page and
+    the booking endpoint start disagreeing about DST.
 11. **Every temporal interval is half-open, `[start, end)`.** A 10:00–10:30
     appointment and a 10:30–11:00 appointment do not overlap. The domain's
     `InstantRange`, the SQL `tstzrange(..., '[)')` behind the GiST exclusion
@@ -167,9 +209,20 @@ is a pure function so it can be exhaustively tested without a database.
     - **The candidate is widened by the requested service's buffers, and it is
       the widened candidate that is tested against `busy`.** Skip this and the
       API advertises slots the exclusion constraint then rejects with a `409`.
-    - **`busy` is a `Map<StaffId, List<InstantRange>>`**, so the "any available
-      staff" path sees every candidate rather than a flattened union in which
-      one busy chair closes the whole salon.
+    - **`busy` is a flat `List<InstantRange>` belonging to one person, and the
+      calculator is never asked about a whole salon.** It carries no staff
+      identity at all, and `AvailableSlot` carries none either. "Any available
+      staff" is resolved one layer out: `CalculateSlotsService` asks the
+      repository who is bookable for the requested offering, runs this pure
+      function once per person with that person's own rules and own busy
+      ranges, and merges the results distinct by start instant. Pooling
+      everyone into one calculation is what it used to do, and it was wrong
+      three ways at once - every appointment in the salon read as busy for
+      everybody, so one booked braider closed an empty chair; three people on
+      identical hours emitted every slot three times into a paginated list; and
+      one person's day off shut the shop. Whichever shape `busy` has, the rule
+      underneath is the same: a slot is judged against one resource's
+      occupancy, never against a union of everybody's.
 
     Loading the inputs is the application service's job; the calculator only
     *proposes*. What is actually free is decided by PostgreSQL's exclusion
@@ -182,26 +235,41 @@ is a pure function so it can be exhaustively tested without a database.
     free to scrape - that is the reason, not a timing oracle. Opening hours may
     be published separately, as declared local hours, for UI layout.
 14. **These edge cases have named tests, and a slot calculator arriving without
-    them does not pass review.** A day with no rule at all (closed); a day with
-    two segments and a break between them; one test per override kind
-    (`CLOSED`, `REPLACED_HOURS`, `EXTRA_HOURS`); a service longer than the
-    window remaining before closing, which must yield no slot rather than a
-    slot that overruns; the minimum lead time trimming the front of the range;
-    the maximum advance horizon trimming the back; a window that spans midnight
-    into the next local day (22:00–01:00, rule 4); a DST transition in both
-    directions, spring gap and autumn fold; and - against real PostgreSQL - a property test asserting that **every slot the calculator proposes inserts
-    without `23P01`**, which is the only test that proves rules 11 and 12 hold
-    against the constraint rather than against a second copy of the same
-    assumption.
-15. **Slot property tests run under a DST zone, not only the launch zone.**
+    them does not pass review.** `SlotCalculatorTest` covers them as ordinary
+    examples: a closed day; a day with two segments and a break between them;
+    one test per override kind (`CLOSED`, `CUSTOM_HOURS`, `TIME_OFF`, plus the
+    two composition cases - closure beats custom hours, and time off does not
+    replace the weekly rules); a service longer than the window remaining
+    before closing, which must yield no slot rather than a slot that overruns;
+    the minimum lead time trimming the front of the range; the maximum advance
+    horizon trimming the back; a window that spans midnight into the next local
+    day (22:00–01:00, rule 4); and the autumn transition, where a declared
+    00:00–23:00 day is 24 hours of real time rather than 23.
+
+    Two tests this rule wants are **not written**, and neither was deleted -
+    they were never built. There is no spring-forward gap assertion, so the
+    behaviour rule 10 describes is documented and unpinned. And there is no
+    property test that inserts every proposed slot against real PostgreSQL and
+    asserts it never raises `23P01`; the only jqwik in the repository is
+    `MoneyTest`. That absence is the expensive one: it is the single test that
+    would prove rules 11 and 12 hold against the constraint rather than against
+    a second copy of the same assumption, and until it exists the calculator
+    and the exclusion constraint agree only because two people read the same
+    paragraph.
+15. **Slot tests run under a DST zone, not only the launch zone.**
     Guinea is UTC+0 the whole year and observes no DST, which means a broken
     local-to-instant conversion returns exactly the right answer in Conakry and
     the wrong answer everywhere else - the suite stays green while the code is
-    wrong. `Europe/Paris` is therefore mandatory in the zone arbitrary, and a
-    southern-hemisphere zone such as `America/Santiago` is worth adding so the
-    two transitions occur in the opposite order. CI runs the JVM with a `TZ`
-    that is neither UTC nor `Africa/Conakry`, so any leaked `systemDefault()`
-    surfaces as a failure instead of a coincidence.
+    wrong. `SlotCalculatorTest` therefore holds `Europe/Paris` beside
+    `Africa/Conakry` and exercises both; a southern-hemisphere zone such as
+    `America/Santiago` is worth adding so the two transitions occur in the
+    opposite order. Two guards this rule once claimed do not exist: there is no
+    zone arbitrary making Paris mandatory, because there are no property tests
+    here to hang one on (rule 14), and nothing sets a `TZ` - not `ci.yml`, not
+    surefire, not a `-Duser.timezone`. So a leaked `systemDefault()` would run
+    in the runner's zone and could pass by coincidence. Pinning `TZ` in CI to
+    something that is neither UTC nor `Africa/Conakry` is a one-line change and
+    is still worth making.
 
 ## Anti-patterns
 
@@ -242,15 +310,16 @@ is a pure function so it can be exhaustively tested without a database.
   injected, `LocalDate.now(clock.withZone(providerZone))` (rules 8, 9).
 - Each adapter doing its own `date.atTime(local).atZone(zone).toInstant()`, so
   the DST policy differs between the public page and the booking endpoint →
-  one `LocalWindows` in `shared-kernel` (rule 10).
+  `LocalWindow.on(date, zone)` in `scheduling/domain` (rule 10).
 - A comment or test claiming `ZonedDateTime.of` returns "the first valid
   instant after the gap" - it returns the local time shifted later by the gap
   length, so 02:30 becomes 03:30, and an assertion written to the wrong
   description will be patched until it matches the wrong code → state the real
   semantics (rule 10).
-- Treating the autumn fold as an error, or trusting
-  `.withEarlierOffsetAtOverlap()` to be what fixes it - it is a no-op after
-  `ZonedDateTime.of` → one documented, tested resolution rule (rule 10).
+- Treating the autumn fold as an error, or adding
+  `.withEarlierOffsetAtOverlap()` and believing it is what fixes it - it is a
+  no-op after `ZonedDateTime.of`, and the codebase deliberately does not call
+  it → one documented resolution rule, in `LocalWindow` (rule 10).
 - Closed intervals, so 10:00–10:30 and 10:30–11:00 are reported as a conflict
   (or `tstzrange(...)` left at its `'[)'` default in SQL while the domain uses
   `isBefore`/`isAfter` inclusively) → half-open everywhere (rule 11).
@@ -262,8 +331,11 @@ is a pure function so it can be exhaustively tested without a database.
   the constraint rejects the insert, and the customer gets a `409` on a slot
   the product just offered them → widen the candidate by the requested
   service's buffers (rule 12).
-- `List<InstantRange> busy` flattened across all staff - one busy chair closes
-  a five-chair salon → `Map<StaffId, List<InstantRange>>` (rule 12).
+- One calculator run fed the busy ranges of the whole salon - one booked chair
+  closes a five-chair shop, and three people on identical hours emit every slot
+  three times → `SlotQuery.busy` is one person's ranges, and the application
+  service runs the calculation per bookable staff member and merges distinct by
+  start (rule 12).
 - A `SlotCalculator` that injects `AppointmentRepository` and `Clock`, so
   testing one edge case needs a database and a frozen system time → a pure
   function fed by the application service (rule 12).
@@ -282,7 +354,7 @@ is a pure function so it can be exhaustively tested without a database.
 - Slot tests written only against `Africa/Conakry`, passing forever while the
   conversion is wrong → `Europe/Paris` in the zone set (rules 14, 15).
 - A "spans midnight" case handled by adding 24 hours - which is not a day
-  across a DST boundary → cross the boundary through `LocalWindows` on the
+  across a DST boundary → cross the boundary through `LocalWindow.on` on the
   next local date (rules 4, 10, 14).
 
 ## Minimal correct example
@@ -290,13 +362,14 @@ is a pure function so it can be exhaustively tested without a database.
 The schema, showing each concept in its correct SQL type:
 
 ```sql
--- V006__add_providers_timezone.sql
-ALTER TABLE providers
-    ADD COLUMN timezone text NOT NULL DEFAULT 'Africa/Conakry';
+-- V004__create_providers.sql (excerpt). The timezone was never added by a
+-- later migration: providers carried it from the day the table existed, which
+-- is why no ALTER for it appears anywhere in the series.
+    timezone varchar(64) NOT NULL DEFAULT 'Africa/Conakry',
 -- The default is the launch market, not an assumption: every read goes
 -- through this column, never through a constant.
 
--- V011__create_availability.sql
+-- V008__create_availability.sql
 CREATE TABLE availability_rules (
     id           uuid     PRIMARY KEY,
     provider_id  uuid     NOT NULL,
@@ -307,7 +380,7 @@ CREATE TABLE availability_rules (
     -- "<>" not "<": end_time < start_time is a window that closes on the
     -- NEXT local date (a bar open 22:00-01:00). Only an empty window is
     -- rejected here.
-    CONSTRAINT ck_availability_rules_window
+    CONSTRAINT ck_availability_rules_span
         CHECK (start_time <> end_time),
     CONSTRAINT fk_availability_rules_staff
         FOREIGN KEY (provider_id, staff_id)
@@ -320,16 +393,22 @@ CREATE TABLE availability_overrides (
     provider_id   uuid NOT NULL,
     staff_id      uuid NOT NULL,
     override_date date NOT NULL,
-    kind          text NOT NULL
-        CHECK (kind IN ('CLOSED', 'REPLACED_HOURS', 'EXTRA_HOURS')),
+    -- V008 shipped CLOSED and CUSTOM_HOURS; V024 added TIME_OFF, which
+    -- SUBTRACTS a window from the day rather than adding one.
+    kind          varchar(20) NOT NULL
+        CHECK (kind IN ('CLOSED', 'CUSTOM_HOURS', 'TIME_OFF')),
     start_time    time,
     end_time      time,
-    CONSTRAINT ck_availability_overrides_hours CHECK (
-        (kind =  'CLOSED' AND start_time IS NULL
-                          AND end_time   IS NULL)
-     OR (kind <> 'CLOSED' AND start_time IS NOT NULL
-                          AND end_time   IS NOT NULL
-                          AND start_time <> end_time)),
+    -- Stated over the two kinds that carry a window rather than as "not
+    -- CLOSED implies times": the negative form would admit a fourth kind by
+    -- silence on the day somebody adds one.
+    CONSTRAINT ck_availability_overrides_shape CHECK (
+        (kind = 'CLOSED' AND start_time IS NULL
+                         AND end_time   IS NULL)
+     OR (kind IN ('CUSTOM_HOURS', 'TIME_OFF')
+                         AND start_time IS NOT NULL
+                         AND end_time   IS NOT NULL
+                         AND start_time <> end_time)),
     CONSTRAINT fk_availability_overrides_staff
         FOREIGN KEY (provider_id, staff_id)
         REFERENCES provider_staff (provider_id, id)
@@ -339,12 +418,13 @@ CREATE TABLE availability_overrides (
 The temporal columns of `appointments`, as an **excerpt**. The normative
 definition - the exclusion constraint, the composite foreign keys, the
 idempotency columns, the frozen price, RLS - lives in `booking-integrity` as
-`V014__create_appointments.sql`, and this excerpt never diverges from it:
+`V009__create_appointments.sql`, and this excerpt never diverges from it:
 
 ```sql
--- EXCERPT of V014__create_appointments.sql (owned by booking-integrity).
+-- EXCERPT of V009__create_appointments.sql (owned by booking-integrity).
 -- Temporal columns only; see booking-integrity for the full table.
-CREATE EXTENSION IF NOT EXISTS btree_gist;   -- before any EXCLUDE
+-- btree_gist is created in V001, not here: the "uuid =" operator class the
+-- EXCLUDE below needs must exist before any migration reaches for it.
 
 CREATE TABLE appointments (
     id                    uuid        PRIMARY KEY,
@@ -384,60 +464,55 @@ CREATE TABLE appointments (
 
     -- Referenced by notifications (provider_id, appointment_id): a composite
     -- FK needs a matching UNIQUE or PostgreSQL raises 42830.
-    CONSTRAINT uq_appointments_tenant UNIQUE (provider_id, id)
+    CONSTRAINT uq_appointments_provider_id UNIQUE (provider_id, id)
     -- ... exclusion constraint, FKs, idempotency, price, RLS: see
     -- booking-integrity.
 );
 ```
 
-The single conversion point, in `shared-kernel`:
+The single conversion point, a domain record rather than a utility class:
 
 ```java
-package com.balaaca.sharedkernel.time;
+package com.balaaca.scheduling.domain;
 
-/** The only place local wall-clock intentions become instants. */
-public final class LocalWindows {
+/**
+ * Opening hours as the provider states them: local wall-clock time,
+ * meaningless until paired with a date and a zone. An equal pair is an error,
+ * never a silent 24-hour window; the database refuses it too, with
+ * CHECK (start_time <> end_time).
+ */
+public record LocalWindow(LocalTime start, LocalTime end) {
 
-    private LocalWindows() { }
+    public LocalWindow {
+        Objects.requireNonNull(start, "start");
+        Objects.requireNonNull(end, "end");
+        if (start.equals(end)) {
+            throw new IllegalArgumentException("start and end must differ: " + start);
+        }
+    }
 
-    /**
-     * Resolve a provider's local wall-clock time on a given local date to an
-     * instant. DST is decided here and nowhere else, and both branches are
-     * locked by LocalWindowsDstTest:
-     *
-     * - Spring-forward gap: ZonedDateTime.of shifts the local time LATER BY
-     *   THE LENGTH OF THE GAP. In Europe/Paris on 2026-03-29 a one-hour gap
-     *   turns 02:30 into 03:30 -- not into 03:00, the first valid instant.
-     * - Autumn fold: the EARLIER offset wins, which is already what
-     *   ZonedDateTime.of does. The call below documents that default; it does
-     *   not change it.
-     */
-    public static Instant toInstant(LocalDate date, LocalTime local,
-                                    ZoneId zone) {
-        return ZonedDateTime.of(date, local, zone)
-                .withEarlierOffsetAtOverlap()   // no-op, kept as documentation
-                .toInstant();
+    public boolean spansMidnight() {
+        return end.isBefore(start);
     }
 
     /**
-     * Half-open [start, end). endLocal before startLocal means the window
-     * closes on the NEXT local date: a provider open 22:00-01:00. An equal
-     * pair is an error, never a silent 24-hour window; the database rejects
-     * it too, with CHECK (start_time <> end_time).
+     * Materialises this window on a local date, in the provider's zone.
+     * Half-open [from, until).
+     *
+     * Conversion happens here and nowhere else. ZonedDateTime.of shifts a
+     * local time inside a spring-forward gap FORWARD BY THE LENGTH OF THE GAP
+     * -- 02:30 becomes 03:30 in Europe/Paris, NOT 03:00, the first valid
+     * instant -- and picks the earlier offset in an autumn overlap. Both are
+     * stated rather than assumed, because the launch market is UTC+0 with no
+     * DST and would hide a mistake here until the first provider elsewhere.
+     * withEarlierOffsetAtOverlap() is deliberately absent: after
+     * ZonedDateTime.of it changes nothing and only misleads.
      */
-    public static InstantRange window(LocalDate date,
-                                      LocalTime startLocal,
-                                      LocalTime endLocal,
-                                      ZoneId zone) {
-        if (startLocal.equals(endLocal)) {
-            throw new IllegalArgumentException(
-                    "empty availability window at " + startLocal);
-        }
-        LocalDate endDate = endLocal.isAfter(startLocal)
-                ? date
-                : date.plusDays(1);          // one local day, not +24 hours
-        return InstantRange.halfOpen(toInstant(date, startLocal, zone),
-                                     toInstant(endDate, endLocal, zone));
+    public InstantRange on(LocalDate date, ZoneId zone) {
+        ZonedDateTime from = ZonedDateTime.of(date, start, zone);
+        LocalDate endDate = spansMidnight() ? date.plusDays(1) : date;
+        ZonedDateTime until = ZonedDateTime.of(endDate, end, zone);
+        return new InstantRange(from.toInstant(), until.toInstant());
     }
 }
 ```
@@ -448,48 +523,62 @@ widens the candidate rather than the busy ranges.
 ```java
 package com.balaaca.scheduling.domain;
 
-/** Inputs of a slot computation. No repository, no clock, no tenant. */
-public record SlotQuery(ZoneId zone,
-                        Instant now,
-                        InstantRange requestedRange,
-                        List<StaffId> eligibleStaff,
+/**
+ * Inputs of a slot computation, for ONE person. No repository, no clock, no
+ * tenant, and no staff identity: who takes the slot is the booking path's
+ * problem, and pooling several people into one query is what used to let one
+ * booked chair close a five-chair salon.
+ */
+public record SlotQuery(LocalDate fromDate,
+                        LocalDate toDate,
+                        ZoneId zone,
                         List<AvailabilityRule> rules,
                         List<AvailabilityOverride> overrides,
-                        // Stored blocked_range of PENDING + CONFIRMED rows,
-                        // per staff member. Already contains each of THOSE
+                        // Stored blocked_range of this person's PENDING +
+                        // CONFIRMED rows. Already contains each of THOSE
                         // appointments' own frozen buffers: never widen it.
-                        Map<StaffId, List<InstantRange>> busy,
+                        List<InstantRange> busy,
                         Duration serviceDuration,
                         Duration bufferBefore,   // of the REQUESTED service
                         Duration bufferAfter,
-                        BookingPolicy policy) { }  // lead time, horizon, step
+                        BookingPolicy policy,    // step, lead time, horizon
+                        Instant now) { }
 
 public final class SlotCalculator {
 
     private SlotCalculator() { }
 
     /** Only bookable slots come back. There is no "available: false". */
-    public static List<AvailabilitySlot> compute(SlotQuery query) {
-        InstantRange bounded = query.requestedRange()
-                .clampStart(query.now().plus(query.policy().minLeadTime()))
-                .clampEnd(query.policy().horizonEnd(query.now(), query.zone()));
-        // ... open windows per local date via LocalWindows, minus overrides,
-        // stepped by the policy granularity, keeping only candidates that fit
-        // serviceDuration entirely inside a window and pass fitsFor below.
+    public static List<AvailableSlot> bookable(SlotQuery query) {
+        Instant earliest = query.now().plus(query.policy().minLeadTime());
+        Instant latest = query.now()
+                .plus(Duration.ofDays(query.policy().maxAdvanceDays()));
+
+        // Computed once over the whole query rather than per date, so an
+        // absence declared on Friday still bites a Thursday window that runs
+        // past midnight into it.
+        List<InstantRange> unavailable = new ArrayList<>(query.busy());
+        unavailable.addAll(timeOff(query));
+
+        // ... open windows per local date via LocalWindow.on, CLOSED and
+        // CUSTOM_HOURS applied first, stepped by the policy granularity,
+        // keeping only candidates that fit serviceDuration entirely inside a
+        // window and pass the widening below. Distinct by start at the end:
+        // two windows may legitimately overlap, and the same ten o'clock
+        // emitted twice reads as two chairs rather than one time.
     }
 
     /**
      * The candidate is widened by the REQUESTED service's buffers, and the
-     * widened candidate is what the busy ranges are tested against. This is
-     * exactly what the EXCLUDE USING gist constraint will compare at insert
-     * time, so a proposed slot never turns into a 409.
+     * widened candidate is what the unavailable ranges are tested against.
+     * This is exactly what the EXCLUDE USING gist constraint will compare at
+     * insert time, so a proposed slot never turns into a 409.
      */
-    private static boolean fitsFor(StaffId staff, InstantRange candidate,
-                                   SlotQuery query) {
-        InstantRange blocked = candidate.expand(query.bufferBefore(),
-                                                query.bufferAfter());
-        return query.busy().getOrDefault(staff, List.of()).stream()
-                .noneMatch(blocked::overlaps);
+    private static boolean fits(Instant start, Instant end, SlotQuery query,
+                                List<InstantRange> unavailable) {
+        InstantRange blocked = new InstantRange(start.minus(query.bufferBefore()),
+                                                end.plus(query.bufferAfter()));
+        return unavailable.stream().noneMatch(blocked::overlaps);
     }
 }
 ```
@@ -498,42 +587,56 @@ The application service is what touches the database, and it hands `now` in:
 
 ```java
 @ApplicationScoped
-public class ListAvailableSlotsService implements ListAvailableSlotsUseCase {
+public class CalculateSlotsService implements CalculateSlotsUseCase {
 
-    private final AvailabilityRuleRepository rules;
-    private final AvailabilityOverrideRepository overrides;
-    private final AppointmentRepository appointments;
-    private final Clock clock;                       // never Instant.now()
+    private final AvailabilityRepository availability;  // tenant is ambient
+    private final Clock clock;                          // never Instant.now()
 
     // constructor injection omitted
 
     @Override
-    public List<AvailabilitySlot> list(SlotRequest request) {
-        Provider provider = providers.requireCurrent();  // tenant is ambient
-        List<StaffId> eligible = staff.eligibleFor(request.serviceOffering());
+    @Transactional(Transactional.TxType.REQUIRED)
+    public List<AvailableSlot> bookable(SlotRequest request) {
+        ZoneId zone = availability.zoneOfCurrentProvider();
+        BookingPolicy policy = availability.policyOfCurrentProvider();
 
-        return SlotCalculator.compute(new SlotQuery(
-                provider.timezone(),
-                clock.instant(),
-                request.range(),
-                eligible,
-                rules.forStaff(eligible),
-                overrides.forStaff(eligible, request.range()),
-                // Map<StaffId, List<InstantRange>>: the stored blocked_range
-                // per staff member, so "any staff" sees every candidate.
-                appointments.busyRangesByStaff(eligible, request.range()),
-                request.serviceOffering().duration(),
-                request.serviceOffering().bufferBefore(),
-                request.serviceOffering().bufferAfter(),
-                provider.bookingPolicy()));
+        if (request.staffId().isPresent()) {
+            return SlotCalculator.bookable(queryFor(request, zone, policy));
+        }
+
+        // "Any staff" is the UNION of what each person can take, computed per
+        // person and merged, never pooled. Distinct by start: two people free
+        // at ten is one slot offered, not two.
+        return availability.bookableStaff(request.serviceOfferingId()).stream()
+                .map(request::forStaff)
+                .flatMap(one -> SlotCalculator
+                        .bookable(queryFor(one, zone, policy)).stream())
+                .collect(Collectors.toMap(AvailableSlot::startsAt, s -> s,
+                                          (a, b) -> a, TreeMap::new))
+                .values().stream()
+                .toList();
     }
 }
 ```
 
-jqwik proves the laws over generated inputs, in more than one zone:
+Transactional even though it only reads: the RLS session variable is set with
+`is_local = true`, so outside a transaction it lasts a single statement and
+every later query runs with no tenant bound - returning nothing, which reads as
+"this provider has no hours" rather than failing.
+
+What exists today is `SlotCalculatorTest`: twenty-two `@Test` examples with a
+small builder, holding `Africa/Conakry` and `Europe/Paris` as constants and
+running the temporal cases under both. It covers rule 14's list except the
+spring gap.
+
+**The two blocks that follow are not in the repository.** They are what rules
+14 and 15 ask for and nobody has written; they are printed here so the shape is
+not re-invented, not because they can be opened. Read them as a specification.
+
+jqwik would prove the laws over generated inputs, in more than one zone:
 
 ```java
-class SlotCalculatorProperties {
+class SlotCalculatorProperties {   // NOT WRITTEN - the target shape
 
     @Provide
     Arbitrary<ZoneId> zones() {
@@ -553,15 +656,15 @@ class SlotCalculatorProperties {
 
         SlotQuery query = aQuery(zone, rules,
                                  Duration.ofMinutes(durationMinutes));
-        List<AvailabilitySlot> slots = SlotCalculator.compute(query);
+        List<AvailableSlot> slots = SlotCalculator.bookable(query);
 
-        List<InstantRange> open = openWindows(rules, zone,
-                                              query.requestedRange());
+        List<InstantRange> open = openWindows(rules, zone, query);
         List<InstantRange> breaks = gapsBetween(open);
 
-        for (AvailabilitySlot slot : slots) {
-            assertThat(open).anyMatch(w -> w.contains(slot.range()));
-            assertThat(breaks).noneMatch(p -> p.overlaps(slot.range()));
+        for (AvailableSlot slot : slots) {
+            InstantRange range = new InstantRange(slot.startsAt(), slot.endsAt());
+            assertThat(open).anyMatch(w -> w.contains(range));
+            assertThat(breaks).noneMatch(p -> p.overlaps(range));
         }
     }
 
@@ -573,7 +676,7 @@ class SlotCalculatorProperties {
         SlotQuery query = aQuery(zone, rules, Duration.ofMinutes(30));
         Instant earliest = query.now().plus(query.policy().minLeadTime());
 
-        assertThat(SlotCalculator.compute(query))
+        assertThat(SlotCalculator.bookable(query))
                 .allMatch(slot -> !slot.startsAt().isBefore(earliest));
     }
 }
@@ -585,7 +688,7 @@ because the assertion *is* the constraint.
 
 ```java
 @QuarkusTest
-class ProposedSlotsAreInsertableIT {   // Testcontainers PostgreSQL 18
+class ProposedSlotsAreInsertableIT {   // NOT WRITTEN - Testcontainers PG 18
 
     @Property(tries = 200)
     void everyProposedSlotInsertsWithoutAnExclusionViolation(
@@ -595,7 +698,7 @@ class ProposedSlotsAreInsertableIT {   // Testcontainers PostgreSQL 18
         ProviderFixture provider = seedProvider(zone, rules);
         SlotQuery query = aQuery(provider);
 
-        for (AvailabilitySlot slot : SlotCalculator.compute(query)) {
+        for (AvailableSlot slot : SlotCalculator.bookable(query)) {
             // insertIfAbsent throws SlotUnavailableException on 23P01. If the
             // calculator and the constraint disagree about buffers, this is
             // where it surfaces -- not in production as a spurious 409.
@@ -606,31 +709,55 @@ class ProposedSlotsAreInsertableIT {   // Testcontainers PostgreSQL 18
 }
 ```
 
-The DST behaviour is pinned by example, not left to chance:
+The DST behaviour is pinned by example, not left to chance. These three are
+real, in `SlotCalculatorTest`:
 
 ```java
-@Test // 2026-03-29, Europe/Paris: 02:00-03:00 local does not exist
+@Test // A bar open 22:00-01:00: the window closes on the next local date
+void spansMidnight() {
+    List<AvailableSlot> slots = SlotCalculator.bookable(aQuery()
+            .on(MONDAY)                                  // 2026-09-07
+            .rule(DayOfWeek.MONDAY, window("22:00", "01:00"))
+            .service(Duration.ofMinutes(60))
+            .build());
+
+    assertThat(slots.get(0).startsAt())
+            .isEqualTo(Instant.parse("2026-09-07T22:00:00Z"));
+    assertThat(slots.get(slots.size() - 1).endsAt())
+            .isEqualTo(Instant.parse("2026-09-08T01:00:00Z"));
+}
+
+@Test // Same hours, same date, two zones
+void daylightSavingShiftsTheInstants() {
+    // Paris is at +02:00 in September, so its 09:00 is 07:00Z while Conakry's
+    // is 09:00Z. Code that treated local time as UTC would pass in Conakry and
+    // be two hours wrong in Paris.
+    assertThat(firstSlotStart(CONAKRY)).isEqualTo(Instant.parse("2026-09-07T09:00:00Z"));
+    assertThat(firstSlotStart(PARIS)).isEqualTo(Instant.parse("2026-09-07T07:00:00Z"));
+}
+
+@Test // Paris falls back on 2026-10-25: 03:00 local occurs twice
+void autumnTransitionLengthensTheDay() {
+    InstantRange open = window("00:00", "23:00")
+            .on(LocalDate.of(2026, 10, 25), PARIS);
+    // A declared 23-hour day is 24 hours of real time.
+    assertThat(Duration.between(open.from(), open.until()))
+            .isEqualTo(Duration.ofHours(24));
+}
+```
+
+The fourth is **missing**, and it is the one rule 10 leans on hardest. Nothing
+asserts the spring-forward gap, so the "02:30 becomes 03:30" semantics live
+only in a Javadoc that no failure would ever contradict:
+
+```java
+@Test // NOT WRITTEN. 2026-03-29, Europe/Paris: 02:00-03:00 local does not exist
 void springForwardGapShiftsTheLocalTimeLaterByTheGapLength() {
-    Instant resolved = LocalWindows.toInstant(
-            LocalDate.of(2026, 3, 29), LocalTime.of(2, 30), PARIS);
+    InstantRange window = new LocalWindow(LocalTime.of(2, 30), LocalTime.of(4, 0))
+            .on(LocalDate.of(2026, 3, 29), PARIS);
     // 02:30 becomes 03:30 -- shifted by the one-hour gap, NOT snapped to the
     // first valid instant (03:00).
-    assertThat(resolved).isEqualTo(Instant.parse("2026-03-29T01:30:00Z"));
-}
-
-@Test // 2026-10-25, Europe/Paris: 02:00-03:00 local happens twice
-void autumnFoldResolvesToTheEarlierOffset() {
-    Instant resolved = LocalWindows.toInstant(
-            LocalDate.of(2026, 10, 25), LocalTime.of(2, 30), PARIS);
-    assertThat(resolved).isEqualTo(Instant.parse("2026-10-25T00:30:00Z"));
-}
-
-@Test // A bar open 22:00-01:00: the window closes on the next local date
-void aWindowSpanningMidnightEndsOnTheNextLocalDate() {
-    InstantRange window = LocalWindows.window(
-            LocalDate.of(2026, 8, 29), LocalTime.of(22, 0),
-            LocalTime.of(1, 0), PARIS);
-    assertThat(window.end()).isEqualTo(Instant.parse("2026-08-29T23:00:00Z"));
+    assertThat(window.from()).isEqualTo(Instant.parse("2026-03-29T01:30:00Z"));
 }
 ```
 
@@ -646,9 +773,9 @@ void aWindowSpanningMidnightEndsOnTheNextLocalDate() {
 - `money-currency` - the sibling freeze: the buffers and the customer price are
   both snapshotted onto the appointment at booking time, both persisted in
   columns named for exactly what they hold.
-- `backend-architecture` - why `LocalWindows` belongs to `shared-kernel` and
-  why a pure `SlotCalculator` sits in `scheduling/domain` with no framework
-  import.
+- `backend-architecture` - why `LocalWindow` stays in `scheduling/domain`
+  rather than in `shared-kernel`, and why a pure `SlotCalculator` sits beside
+  it with no framework import.
 - `platform-api` - ISO-8601 in snake_case properties on `/v1` routes, and why
   the public slot response carries no occupancy information.
 - `code-language` - dates are never formatted into a user-facing string in the

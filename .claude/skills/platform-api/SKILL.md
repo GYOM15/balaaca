@@ -58,9 +58,25 @@ code that is not here.
    privilege, not identifier: `{slug}` selects a *public storefront*, while a
    `provider_id` on `GET /v1/appointments` would select *someone else's private
    agenda*. The tenant is still bound server-side, from a published provider
-   only, and the public path may do exactly two things - create a `PENDING`
-   appointment and read the public projections. It may never list appointments
-   or read customers. See [CANONICAL.md](../CANONICAL.md) section 4.2.
+   only, and the slug path may do exactly two things - create the appointment
+   and read the public projections. It may never list appointments or read
+   customers. The appointment it creates is `PENDING` **or** `CONFIRMED`
+   according to the provider's own `auto_confirm`, which defaults to true; this
+   rule said `PENDING` flatly and was wrong for almost every provider, which is
+   why the response now says which and no client has to guess. See
+   [CANONICAL.md](../CANONICAL.md) section 4.2.
+
+   A third surface has since joined those two, and a reviewer who knows only
+   the first two will refuse it on sight: the customer's own booking,
+   unauthenticated, bound by the **booking reference** minted at booking.
+   Seven published operations sit on it - `getBooking`, `rescheduleBooking`,
+   `cancelBooking`, `reportProvider`, `submitReview`, `addReviewPhoto`,
+   `removeReviewPhoto` - and the tenant comes from
+   `PublicTenantBinder.bindBooking(reference)`, from neither a slug nor a
+   token. The argument is the slug's argument again: a customer has no account
+   and will not be made to have one, and the reference is a capability the
+   server minted and handed to exactly one person. See
+   [CANONICAL.md](../CANONICAL.md) section 4.6.
 
 1. **Model capabilities, never internals.** A public operation expresses what
    a caller wants to achieve (`GET /v1/providers/{slug}`, `GET
@@ -98,9 +114,10 @@ code that is not here.
    leaked by a forgotten `if`.
 4. **Appointment creation takes an `Idempotency-Key` header, and it is
    declared in the spec.** A booking is a scarce, non-fungible resource: a
-   retried `POST /v1/appointments` that creates a second appointment burns a
-   slot nobody can use, blocks a real customer, and forces the provider to
-   clean up by hand. **Double-creating a booking is as harmful as a double
+   retried creation - `bookAppointment` on the public page, `bookWalkIn` at the
+   counter, and both require the header - that creates a second appointment
+   burns a slot nobody can use, blocks a real customer, and forces the provider
+   to clean up by hand. **Double-creating a booking is as harmful as a double
    charge**, so it gets the same protection. The header is a required
    parameter on the operation; a missing key is `400
    IDEMPOTENCY_KEY_REQUIRED`. The server stores a fingerprint of the request
@@ -112,10 +129,21 @@ code that is not here.
    contract cannot be used by a generated SDK, so an undeclared header is a
    contract bug, not an implementation detail.
 5. **One pagination convention across the whole API: cursor-based.** Every
-   collection returns `{ data: [...], next_cursor: string|null }` and accepts
-   `?cursor=&limit=`. No offset/page mixing, no endpoint inventing its own
-   envelope. Cursors are opaque strings - never a leaked primary key, never a
-   decodable row offset. `limit` has a documented default and maximum.
+   collection that can grow returns `{ data: [...], next_cursor: string|null }`
+   and accepts `?cursor=&limit=`. No offset/page mixing, no endpoint inventing
+   its own envelope. Cursors are opaque strings - never a leaked primary key,
+   never a decodable row offset. `limit` has a documented default and maximum.
+
+   A **bounded** collection is the one exception, and it is not an omission:
+   it returns the same `data` envelope with no `next_cursor` and no cursor or
+   limit parameter, and its schema states in the spec why it is bounded. Eight
+   are published that way - `LocalityList`, `AreaList`, `CategoryList`,
+   `StaffList`, `ClosureList`, `PerformerList`, `ServicePhotoList` and
+   `PublicStaffList` - because a cursor over a set that is one page by
+   construction makes every client write a loop that always runs once. The
+   envelope stays `data` either way, so nothing about the shape changes on the
+   day such a collection stops being bounded. The burden is on the author to
+   argue the bound in the spec, never to drop the cursor quietly.
 6. **Error `code`s are a published, closed, stable catalogue, and this is
    it.** Every RFC 7807 response carries a machine-readable `code` drawn from
    exactly this list, and no other file may add to it:
@@ -126,7 +154,6 @@ code that is not here.
    | `IDEMPOTENCY_KEY_REQUIRED` | 400 | A mutating operation arrived with no `Idempotency-Key`. |
    | `UNAUTHENTICATED` | 401 | No verified token, or the token is expired. |
    | `FORBIDDEN` | 403 | Authenticated, but the scope does not grant the operation. |
-   | `PLAN_LIMIT_REACHED` | 403 | The provider's subscription plan forbids the action. |
    | `RESOURCE_NOT_FOUND` | 404 | The resource does not exist, or is not the caller's. |
    | `SLOT_UNAVAILABLE` | 409 | The slot was taken between the availability read and the write. |
    | `INVALID_STATE_TRANSITION` | 409 | The aggregate cannot move to the requested state. |
@@ -149,8 +176,8 @@ code that is not here.
    Two entries carry a deliberate design decision. **`RESOURCE_NOT_FOUND` is
    one code for both a genuine miss and a cross-tenant read**, and the two
    responses must be byte-identical - same status, same `code`, same `title`,
-   same `detail`, no distinguishing header or timing. Any second code for "it
-   exists but is not yours" is precisely the existence oracle the 404 rule
+   no distinguishing header or timing. Any second code for "it exists but is
+   not yours" is precisely the existence oracle the 404 rule
    exists to prevent, and it also leaks the word *tenant*, an internal
    concept, into a public contract; there is no `TENANT_FORBIDDEN`, and there
    are no per-resource 404 codes. **`INTERNAL_ERROR` is in the list because a
@@ -158,23 +185,40 @@ code that is not here.
    required, so an unhandled failure with no code would either return a body the
    published schema forbids or force every client to handle a missing field.
    Nothing else about it is public - the cause goes to the log with the trace id
-   the response carries, and never into the body. **`PLAN_LIMIT_REACHED` is 403, never 402**:
-   `402 Payment Required` asserts a payment path this product does not have.
-   Codes are `SCREAMING_SNAKE_CASE` and **never renamed or reused** once
-   published - a client branches on them. `title`/`detail` are human text and
-   may change; the `code` may not.
+   the response carries in `instance`, and never into the body. There is no
+   `detail` property on the published `Problem` at all: `type`, `title`,
+   `status`, `code` and `instance` are the whole body, and a domain exception's
+   own `details` map is audit context that the mapper logs and never serialises.
+
+   **`PLAN_LIMIT_REACHED` was in this table and has been removed from the
+   contract**, so nothing may return it and no client may branch on it. It is
+   not a deletion to undo: it was published against a billing module that holds
+   one `package-info.java` and a `subscriptions` table with no Java behind it,
+   so no request could ever produce it, and a published code nothing can raise
+   is a worse promise than no code at all. `ErrorCatalogueTest` now fails the
+   build in both directions - a code a handler throws that the contract does
+   not publish, and a published code no path can produce - so it comes back on
+   the day plan tiers exist and not before. When it does it is `403`, never
+   `402`: `402 Payment Required` asserts a payment path this product does not
+   have. Codes are `SCREAMING_SNAKE_CASE` and **never renamed or reused** once
+   published - a client branches on them. `title` is human text and may change;
+   the `code` may not.
 7. **Authorization is part of the contract.** Each operation declares the
-   OAuth2 scope(s) it requires (`appointments:write`, `catalog:write`,
-   `schedule:write`, `dashboard:read`, `admin:providers:read`), and the spec
-   documents them. Scopes are coarse capability grants, checked at the service
-   layer as well (see `multi-tenant-rls`). **No provider identifier ever
-   appears in a request** - not as a path segment, a query parameter, a body
-   field, or a header. The tenant is resolved server-side from the verified
-   JWT subject through `users` and `provider_staff`, so a scope grants access
-   within the caller's own provider, never across providers. The public
-   `{slug}` in a discovery path is a public handle for a public page, not a
-   tenant selector: it never grants a write, and it is never accepted on a
-   dashboard operation.
+   OAuth2 scope(s) it requires, and the spec documents them. There are seven
+   and the list is closed: `dashboard:read`, `catalog:write`, `schedule:write`,
+   `appointments:write`, `profile:write`, `staff:write`, `admin:moderation`.
+   There is no `admin:providers:read`; the single grant that crosses providers
+   is `admin:moderation`, and it is shaped so the exception is obvious - it
+   reaches the whole of `/v1/admin` and nothing outside it, so it can read no
+   agenda, no customer and no catalogue. Scopes are coarse capability grants,
+   checked at the service layer as well (see `multi-tenant-rls`). **No provider
+   identifier ever appears in a request** - not as a path segment, a query
+   parameter, a body field, or a header. The tenant is resolved server-side
+   from the verified JWT subject through `users` and `provider_staff`, so a
+   scope grants access within the caller's own provider, never across
+   providers. The public `{slug}` in a discovery path is a public handle for a
+   public page, not a tenant selector: it never grants a write, and it is never
+   accepted on a dashboard operation.
 8. **The spec must be SDK-generatable, and that constrains its shape.** Every
    operation has a hand-written, stable `operationId` (`bookAppointment`, not
    `postAppointments1`); every payload is a **named schema**, never an inline
@@ -233,13 +277,13 @@ code that is not here.
   `422 IDEMPOTENCY_KEY_REUSED`.
 - One endpoint returning `{items, page, total}` and another
   `{data, next_cursor}` -> rule 5; one envelope, cursor-based, everywhere.
-- `detail: "appointment not found"` as the only signal, with no `code` ->
+- `title: "appointment not found"` as the only signal, with no `code` ->
   rule 6; clients must branch on a stable code, not on prose.
 - A `TENANT_FORBIDDEN` (or `APPOINTMENT_NOT_FOUND`, `PROVIDER_NOT_FOUND`,
   `SERVICE_NOT_FOUND`) code -> rule 6; one `RESOURCE_NOT_FOUND`, identical
   for a miss and for someone else's row.
-- `402` for a plan limit -> rule 6; `403 PLAN_LIMIT_REACHED`. There is no
-  payment path to point the client at.
+- `402` for a plan limit -> rule 6; there is no payment path to point the
+  client at, and no plan-limit code either until something can raise one.
 - Renaming `SLOT_UNAVAILABLE` after publication -> rule 6; add a new code,
   keep the old one meaning what it meant.
 - A `provider_id` query parameter "so the dashboard can pick the salon", or
@@ -265,14 +309,16 @@ code that is not here.
 paths:
   /v1/appointments:
     post:
-      operationId: bookAppointment            # stable, hand-written (rule 8)
-      summary: Book an appointment
+      operationId: bookWalkIn                 # stable, hand-written (rule 8)
+      summary: Write an appointment straight into the diary
+      # The counter route. Its public twin is bookAppointment, on
+      # POST /v1/providers/{slug}/appointments, which takes no token (rule 0).
       security: [{ oauth2: [appointments:write] }]   # scope is contract (r.7)
       parameters:
         - name: Idempotency-Key               # required on booking (rule 4)
           in: header
           required: true
-          schema: { type: string, maxLength: 64 }
+          schema: { type: string, minLength: 1, maxLength: 80 }
           description: >
             Same key + same body replays the first result. Same key +
             different body is 422 IDEMPOTENCY_KEY_REUSED. The key is
@@ -286,7 +332,11 @@ paths:
         '201':
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/AppointmentView' }
+              schema: { $ref: '#/components/schemas/AppointmentCreatedView' }
+        '200':                     # the replay, never a second create (rule 4)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppointmentCreatedView' }
         '409':
           description: SLOT_UNAVAILABLE - taken between read and write.
           content:
@@ -305,12 +355,14 @@ paths:
       description: >
         Returns only slots that can be booked. Busy time is not represented
         at all: an occupancy map of a named person is not public data.
-        Pair with listOpeningHours for grid layout.
+        Pair with listPublicOpeningHours for grid layout.
       parameters:
         - { name: slug, in: path, required: true, schema: { type: string } }
         - { name: service_offering_id, in: query, required: true,   # rule 9
             schema: { type: string, format: uuid } }
         - { name: from, in: query, required: true,
+            schema: { type: string, format: date } }
+        - { name: to, in: query, required: true,   # both bounds, both required
             schema: { type: string, format: date } }
         - { name: cursor, in: query, schema: { type: string } }     # rule 5
         - { name: limit, in: query,
@@ -323,7 +375,9 @@ paths:
 
   /v1/providers/{slug}/opening-hours:
     get:
-      operationId: listOpeningHours           # public and already public (r.3)
+      operationId: listPublicOpeningHours     # public and already public (r.3)
+      # Not listOpeningHours: that one is GET /v1/opening-hours, authenticated,
+      # one staff member's week. Two operations, two names, two schemas.
       security: []
       parameters:
         - { name: slug, in: path, required: true, schema: { type: string } }
@@ -331,7 +385,7 @@ paths:
         '200':
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/OpeningHoursView' }
+              schema: { $ref: '#/components/schemas/PublicOpeningHours' }
 
 components:
   schemas:
@@ -371,10 +425,10 @@ components:
       type: object
       required: [type, title, status, code]
       properties:
-        type:   { type: string }
-        title:  { type: string }
-        status: { type: integer }
-        detail: { type: string }
+        type:     { type: string }
+        title:    { type: string }
+        status:   { type: integer }
+        instance: { type: string }   # the trace id; there is no `detail` field
         code:
           type: string
           description: The closed catalogue owned by platform-api rule 6.
@@ -383,7 +437,6 @@ components:
             - IDEMPOTENCY_KEY_REQUIRED
             - UNAUTHENTICATED
             - FORBIDDEN
-            - PLAN_LIMIT_REACHED
             - RESOURCE_NOT_FOUND
             - SLOT_UNAVAILABLE
             - INVALID_STATE_TRANSITION
