@@ -656,6 +656,12 @@ hr { border: 0; border-top: 1px solid var(--border); margin: var(--s-8) 0; }
    -------------------------------------------------------------------------- */
 .field { display: block; }
 .field + .field { margin-top: var(--s-5); }
+/* Sauf en grille, où l'écart est déjà là. La règle ci-dessus est faite pour une
+   pile verticale ; dans `.cols` elle s'ajoute au `gap` et décale vers le bas
+   toutes les cases sauf la première, donc la première ligne d'un formulaire à
+   deux colonnes arrive désalignée de 20 px. C'était déjà le cas de Commune /
+   Quartier et des trois champs de la politique de réservation. */
+.cols > .field + .field { margin-top: 0; }
 .field__label {
   display: flex; align-items: baseline; gap: var(--s-2);
   font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text);
