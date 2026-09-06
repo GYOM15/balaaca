@@ -2516,3 +2516,13 @@ a.choice { text-decoration: none; color: inherit; }
 /* La vignette devient cliquable : on le dit au pointeur et au clavier. */
 a.svc__photo { display: block; cursor: zoom-in; }
 a.svc__photo:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+
+/* La section « a propos ». Elle etait publiee depuis toujours, tout en bas,
+   sous l'adresse et le telephone, dans « Infos pratiques » - c'est-a-dire nulle
+   part. Elle se lit avant le catalogue parce que c'est elle qui decide si on
+   regarde le catalogue. */
+.about { max-width: var(--w-text); display: grid; gap: var(--s-4); }
+/* Les retours a la ligne sont ceux que le prestataire a tapes : un texte qu'il
+   a ecrit en trois paragraphes lui appartient. */
+.about__text { white-space: pre-wrap; line-height: var(--lh-relaxed);
+  color: var(--text-secondary); overflow-wrap: anywhere; }

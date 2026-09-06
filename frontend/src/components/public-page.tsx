@@ -250,6 +250,11 @@ export function PublicPageBody({
 
       <nav className="panchors" aria-label="Sections de la page">
         <div className="page panchors__in">
+          {provider.description ? (
+            <a className="tab" href="#about">
+              À propos
+            </a>
+          ) : null}
           <a className="tab is-active" href="#services">
             Prestations{" "}
             <span className="count count--quiet">{provider.services.length}</span>
@@ -267,6 +272,26 @@ export function PublicPageBody({
           </a>
         </div>
       </nav>
+
+      {/* Before the catalogue, because it is what a customer reads to decide
+          whether to look at the catalogue at all. It was already published and
+          already editable - it sat at the very bottom, under the address and
+          the telephone, in "Infos pratiques", where nobody scrolls.
+
+          Only when there is one. A heading over an empty paragraph on every
+          new business would be worse than no heading at all. */}
+      {provider.description ? (
+        <section className="section" id="about" style={{ paddingBlock: "var(--s-10) 0" }}>
+          <div className="page">
+            <div className="about">
+              <h2 className="t-h3">À propos</h2>
+              {/* pre-wrap: what the provider typed, with the line breaks they
+                  typed. A paragraph they wrote in three is theirs to write. */}
+              <p className="about__text">{provider.description}</p>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <section className="section" id="services" style={{ paddingBlock: "var(--s-10)" }}>
         <div className="page">
@@ -531,11 +556,6 @@ export function PublicPageBody({
                   <span className="dl__val">{pageLabel(slug)}</span>
                 </div>
               </div>
-              {provider.description ? (
-                <p className="t-body" style={{ marginTop: "var(--s-6)" }}>
-                  {provider.description}
-                </p>
-              ) : null}
             </div>
           </div>
         </div>
