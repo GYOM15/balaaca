@@ -40,6 +40,22 @@ application service carry no defensive checks - not discipline, structure.
    database already constrains that column to four values, and a typo should
    be a compile error rather than a `CHECK` violation surfacing as a 500.
 
+   One carve-out exists and it is deliberate, so do not "fix" it in review:
+   `SocialLink(SocialNetwork kind, String value)` keeps its value a `String`,
+   and no Java code parses it on the way in. The contract's `pattern` on
+   `SocialHandle.value` is a coarse gate and says so: no scheme but `https`, no
+   whitespace, no query, no fragment. The exact format is per network, and the
+   one definition of it is the pair of `CHECK` constraints on `provider_links` -
+   which hold for a migration and a `psql` session as well as for us. A regular
+   expression restated in Java would be a second definition, and the two would
+   drift the first time one of them was corrected. So the write goes down, the
+   constraint refuses it, and `ProviderProfileSqlRepository` translates SQLSTATE
+   `23514` into `UnusableSocialHandleException` - a 400, not the 500 this rule
+   warns about. The real test is not "`String` or type" but *how many places
+   define this format*: a phone number has one and we own it, a social handle
+   has one and the database owns it. The `kind` beside it is still an enum,
+   because that set is closed and we do own it.
+
 3. **Parse at the edge, exactly once.** The inbound adapter turns what a client
    sent into domain objects. Nothing inward re-checks whether a phone number is
    normalised, because a `PhoneNumber` that exists is normalised. An application
@@ -101,14 +117,25 @@ application service carry no defensive checks - not discipline, structure.
 The command speaks domain types, and carries no tenant - that is ambient:
 
 ```java
-public record BookAppointmentCommand(
-        ServiceOfferingId serviceOfferingId,
-        Optional<StaffId>  staffId,       // empty: the server chooses
-        Instant            startsAt,
-        CustomerContact    customer,      // holds a parsed PhoneNumber
-        Optional<Idempotency> idempotency,
-        BookingSource      source) {}
+// Nested in BookAppointmentUseCase, not a top-level type.
+record BookAppointmentCommand(
+        ServiceOfferingId        serviceOfferingId,
+        Optional<StaffId>        staffId,          // empty: the server chooses
+        Instant                  startsAt,
+        CustomerContact          customer,         // holds a parsed PhoneNumber
+        Optional<Fulfilment>     fulfilment,       // asked only when the service offers several
+        Optional<ServiceAddress> serviceAddress,   // owed by AT_CUSTOMER, refused otherwise
+        ContactChannel           preferredChannel, // resolved at the edge, never absent
+        Optional<String>         customerNote,
+        Optional<Idempotency>    idempotency,
+        BookingSource            source) {}
 ```
+
+Ten components, not the six this example carried while the booking path was
+younger. Four of them arrived with capabilities that came later - several ways
+to obtain one service, an address for a visit, a channel to answer on, and a
+note - and every one of them landed as a domain type rather than a `String`,
+which is the point.
 
 The adapter is the only place invalid becomes valid:
 
@@ -121,18 +148,32 @@ public class BookAppointmentRequestMapper {
                                             String defaultRegion,
                                             BookingSource source) {
         return new BookAppointmentCommand(
-                ServiceOfferingId.of(request.serviceOfferingId()),
-                Optional.ofNullable(request.staffId()).map(StaffId::of),
-                request.startsAt(),
-                new CustomerContact(
-                        request.customer().fullName().trim(),
-                        // The region comes from the provider's country. A
-                        // hardcoded prefix would have to be undone by the first
-                        // provider in another market.
-                        PhoneNumber.parse(request.customer().phone(), defaultRegion),
-                        Optional.ofNullable(request.customer().email()).filter(e -> !e.isBlank())),
+                ServiceOfferingId.of(request.getServiceOfferingId()),
+                Optional.ofNullable(request.getStaffId()).map(StaffId::of),
+                // The contract says date-time, so the wire type carries an
+                // offset and the domain carries an instant. This is the one
+                // place the two meet.
+                request.getStartsAt().toInstant(),
+                toContact(request, defaultRegion),
+                Optional.ofNullable(request.getFulfilment()).map(f -> Fulfilment.valueOf(f.name())),
+                toAddress(request),
+                // An absent choice becomes WHATSAPP and EMAIL with no address
+                // is refused, here, rather than becoming notification rows
+                // addressed to nowhere that a worker finds hours later.
+                ContactChannel.chosen(preferredChannel(request), emailOf(request)),
+                Optional.ofNullable(request.getCustomerNote()).filter(n -> !n.isBlank()),
                 toIdempotency(idempotencyKey, request),
                 source);
+    }
+
+    private CustomerContact toContact(BookAppointmentRequest request, String defaultRegion) {
+        return new CustomerContact(
+                request.getCustomer().getFullName().trim(),
+                // The region comes from the provider's country. A hardcoded
+                // prefix would have to be undone by the first provider in
+                // another market.
+                PhoneNumber.parse(request.getCustomer().getPhone(), defaultRegion),
+                emailOf(request));
     }
 }
 ```
@@ -143,16 +184,30 @@ decisions, no `try/catch`:
 ```java
 tenants.bindPublished(slug);
 try {
-    var result = booking.book(mapper.toCommand(request, key, "GN", BookingSource.PUBLIC));
+    // The provider's own country, never this platform's launch market. A
+    // literal "GN" stood here while providers.country_code existed and nothing
+    // read it: a market hardcoded in the one place that had the real answer.
+    var result = booking.book(mapper.toCommand(
+            request, key,
+            providers.currentNoticeProfile().countryCode(), BookingSource.PUBLIC));
     return Response.status(result.replayed() ? 200 : 201)
-            .entity(new AppointmentCreatedResponse(result.appointmentId().value()))
+            .entity(new AppointmentCreatedView()
+                    .appointmentId(result.appointmentId().value())
+                    .reference(result.reference())
+                    .status(AppointmentStatus.fromValue(result.status().name())))
             .build();
 } finally {
     tenants.clear();
 }
 ```
 
-Note the response mapping is inline: one field, no rules, no mapper (rule 5).
+Note the response mapping is inline: three fields the result already holds and
+one enum renamed to its wire twin. Nothing is decided, so no mapper (rule 5).
+The type is `AppointmentCreatedView`, generated from the contract;
+`AppointmentCreatedResponse` names nothing in this repository, so do not go
+looking for it. It carries the `reference` and the `status` as well as the id,
+because an id alone left the customer no way to come back and no idea whether
+the salon was already expecting them.
 
 ## Sibling skills
 

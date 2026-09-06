@@ -76,11 +76,13 @@ The same discipline applies to the other market-shaped value object,
    the service name, onto the appointment row. A later catalogue price change
    never mutates a past booking - the frozen amount is the record.
    The columns are `customer_price_amount_minor` / `customer_price_currency`,
-   read back through the accessor `customerPrice()`: they mean **what the
-   customer owes for this appointment**, not "the total", not "the amount", not
-   "the price". Naming them for their meaning is what lets a platform fee or a
-   provider payout be added later as **additional** columns without making a
-   single historical row ambiguous. A column called `amount_minor` would
+   rebuilt into a `Money` the moment they are read - `Money.ofMinor(...,
+   Currency.of(...))` in `AppointmentAgendaSqlRepository.toEntry`, landing on
+   `AgendaEntry.price`: they mean **what the customer owes for this
+   appointment**, not "the total", not "the amount", not "the price". Naming
+   them for their meaning is what lets a platform fee or a provider payout be
+   added later as **additional** columns without making a single historical row
+   ambiguous. A column called `amount_minor` would
    silently change meaning the day a fee exists.
 8. **Persist money as a two-column pair `(…_amount_minor bigint NOT NULL,
    …_currency varchar(3) NOT NULL CHECK (… ~ '^[A-Z]{3}$'))`**, never a single
@@ -101,13 +103,17 @@ The same discipline applies to the other market-shaped value object,
    `taxLines[]`, a tax-inclusive flag - can be added additively precisely
    because rule 7 named the frozen columns for their meaning.
 10. **Money invariants are covered by jqwik property tests, and the
-    amount/currency pair by a persistence round-trip test.** Commutativity and
-    associativity of `add` over operands **sharing a currency**, `add`/
-    `subtract` as inverses, `allocate` summing back to the whole, and
-    currency-mixing always throwing - proven over generated amounts, not a
-    handful of examples. Separately, a Testcontainers PostgreSQL test writes a
-    `Money` to an appointment row and reads it back identical, for a scale-0
-    and a scale-2 currency, so the column pair and its mapping are locked.
+    amount/currency pair by a persistence round-trip test.** `MoneyTest` holds
+    the first half: commutativity of `add` over operands **sharing a currency**
+    (`addIsCommutative`), `add`/`subtract` as inverses (`subtractUndoesAdd`),
+    `allocate` summing back to the whole (`allocateLosesNothing`) and its shares
+    differing by at most one minor unit - proven over generated amounts, not a
+    handful of examples. Two things the rule asks for are not there yet:
+    associativity of `add` has no property, and currency-mixing is a worked
+    `@Test` rather than a property. The second half is thinner still: there is
+    no test that writes a `Money` to an appointment row and reads it back at a
+    scale-0 and a scale-2 currency. See the note above the round-trip example
+    below for what does cover the column pair today, and what does not.
 
 ## Anti-patterns
 
@@ -237,32 +243,52 @@ public record Money(long amountMinor, Currency currency) {
 
 Freeze the server price onto the appointment at booking time. The client sends
 no price, no currency, and no end time - the slot and the amount are both
-recomputed server-side:
+recomputed server-side.
+
+Do not go looking for an `Appointment` aggregate with a `book(...)` factory, or
+for a `customerPrice()` accessor to read the frozen amount back: neither was
+ever built, and nothing was deleted. `booking` keeps no appointment aggregate at
+all - the domain package holds `BookedSlot`, `AppointmentStatus`,
+`CustomerContact` and their kind, and the row itself is written by one native
+INSERT in `AppointmentSqlRepository`. The freeze is no weaker for it, because
+the thing being frozen is `catalog`'s `BookableOffering`, which carries its own
+`Money price`: the application hands the whole offering to the repository and
+the adapter writes its name and its amount into the frozen columns. What matters
+is that the price comes off the server-side offering and never off the command,
+and the command has no price field to come off:
 
 ```java
-ServiceOffering offering = catalog.requireVisible(command.serviceOfferingId());
+BookableOffering offering = offerings.requireBookable(command.serviceOfferingId());
 
-Appointment appointment = Appointment.book(
-    resolvedStaffId,                  // "any available staff" resolved first
-    customer.id(),
-    offering.id(),
-    offering.name(),                  // snapshot: name at booking time
-    offering.price(),                 // snapshot: Money, currency from the provider
-    command.startsAt(),               // instant only; duration comes from the offering
-    offering.duration(),
-    offering.buffers(),
-    clock);
+// duration and buffers come from the offering too - the client sends a start
+// instant and nothing else about the shape of the booking.
+BookedSlot slot = BookedSlot.from(command.startsAt(), offering.duration(),
+                                  offering.bufferBefore(), offering.bufferAfter());
+
+InsertOutcome outcome = appointments.insertIfAbsent(new NewAppointment(
+    AppointmentId.of(UUID.randomUUID()),
+    staffId,                          // "any available staff" resolved first
+    offering,                         // snapshot: name and Money price, frozen by the insert
+    slot,
+    customerId,
+    fulfilment,
+    address,
+    command.source(),
+    command.preferredChannel(),
+    command.customerNote(),
+    command.idempotency().map(i -> i.key()),
+    command.idempotency().map(i -> i.requestHash())));
 ```
 
 Persist as an amount/currency pair, named for what the amount means. The one
 normative `appointments` DDL - block columns, `CHECK` constraints, the
 `EXCLUDE USING gist` constraint - lives in `booking-integrity` as
-`V014__create_appointments.sql`; this is an **excerpt** showing only the
+`V009__create_appointments.sql`; this is an **excerpt** showing only the
 frozen-price columns and the composite foreign key that keeps the offering and
 its snapshot in the same tenant:
 
 ```sql
--- EXCERPT of V014__create_appointments.sql (normative copy: booking-integrity)
+-- EXCERPT of V009__create_appointments.sql (normative copy: booking-integrity)
 CREATE TABLE appointments (
     id                          uuid        PRIMARY KEY,
     provider_id                 uuid        NOT NULL,
@@ -330,21 +356,36 @@ void mixingCurrenciesThrows(@ForAll("scale0") Money a, @ForAll("scale2") Money b
 }
 ```
 
-The column pair is locked by a real-PostgreSQL round trip, at both scales:
+The column pair has no test of its own. What locks it today is incidental: the
+booking ITs book against Testcontainers PostgreSQL and read the frozen amount
+back out over HTTP, so a broken mapping would fail them - but only ever in GNF.
+
+```java
+// AgendaIT: the price written by the insert, read back through the agenda query.
+.body("data[0].price.currency", equalTo("GNF"))
+.body("data[0].price.amount_minor", equalTo(150000))
+```
+
+The test below is the one that is **missing**, named here so that nobody finding
+no trace of it concludes it was deleted by accident. It was never written. GNF
+is scale 0 and every fixture in the suite prices in GNF, so the scale-2 half of
+the mapping - the half that a stray `/ 100` in an adapter would break, and the
+half a second market arrives on - is proven by nothing at all:
 
 ```java
 @QuarkusTest
-class AppointmentPriceRoundTripTest {   // Testcontainers PostgreSQL 18
+class AppointmentPriceRoundTripTest {   // does not exist yet
 
     @ParameterizedTest
     @EnumSource(value = Currency.class, names = {"GNF", "EUR"})
     void frozenPriceSurvivesPersistence(Currency currency) {
         Money price = Money.ofMinor(5_000, currency);   // GNF: 5000, not 500000
         AppointmentId id = appointments
-                .insertIfAbsent(anAppointmentPricedAt(price)).id();
+                .insertIfAbsent(anAppointmentPricedAt(price)).appointmentId();
 
-        assertThat(appointments.findById(id).orElseThrow().customerPrice())
-            .isEqualTo(price);
+        // Read back the way production reads it: through the agenda query, so
+        // the SQL projection is under test and not just the column types.
+        assertThat(entryFor(id).price()).isEqualTo(price);
     }
 }
 ```
@@ -388,9 +429,18 @@ public record PhoneNumber(String e164) {
      */
     public static PhoneNumber parse(String rawInput, String defaultRegion) { ... }
 
-    // No toString() override. The canonical E.164 value is what callers get,
-    // including the notification send path; masking is applied at the log
-    // boundary by LogMasking.maskPhone, never here.
+    /**
+     * The dialable value. The override is deliberate and load-bearing: a record
+     * without one prints PhoneNumber[e164=+224622000000], so every
+     * concatenation and every template, the notification recipient among them,
+     * would carry the wrapper syntax instead of a number. What rule 3 forbids
+     * is a MASKED toString, not this one; masking is applied at the log
+     * boundary, never here.
+     */
+    @Override
+    public String toString() {
+        return e164;
+    }
 }
 ```
 
@@ -417,8 +467,9 @@ CREATE TABLE customers (
   under the `Idempotency-Key` contract, so a replay never re-freezes.
 - `contract-first` - how a `Money` is shaped on a REST/OpenAPI schema (an
   integer `amount_minor` plus a currency code, never a float).
-- `backend-tests` - jqwik property tests on money invariants and the
-  Testcontainers round-trip test that locks the column pair.
+- `backend-tests` - jqwik property tests on money invariants, and the
+  Testcontainers round-trip test that would lock the column pair at both scales
+  if it existed; today only the booking ITs touch it, and only in GNF.
 - `multi-tenant-rls` - priced tables carry `provider_id` and RLS like every
   tenant-scoped table; composite foreign keys keep the offering and its frozen
   price in the same tenant.

@@ -33,18 +33,30 @@ carry a co-author trailer.
 3. **No `type(scope):` prefix.** Plain imperative - no `feat:`, no `fix(...)`,
    no scope segment. This is deliberately NOT Conventional Commits.
 4. **No trailing period.** The subject ends on its last word.
-5. **Body (optional), <= 72 characters per line.** Explain *why*, not *what* - the diff already shows what. Separate it from the subject with one blank
+5. **Body (optional), <= 72 characters per line.** This is not just taste: the
+   `commit-msg` hook fails the commit on any line after the second that is
+   longer, and it counts with `wc -c` - bytes, as the subject check does - so
+   an accented character spends two of the budget. Explain *why*, not *what* -
+   the diff already shows what. Separate it from the subject with one blank
    line; reference the ADR when the change follows one.
 6. **Commits are signed, and signing is enforced locally only.** Sign every
    commit: `git commit -S`, or set `commit.gpgsign=true` once for the clone.
-   Be honest about what enforces it - **nothing server-side does**. GitHub
-   branch protection and required signature checks are unavailable on a private
-   repository without a paid plan, and the CI gate (`ci-workflow`) runs no
-   signature check. The only guard is client-side: local `commit-msg` /
-   `pre-commit` hooks plus this convention, all bypassable with `--no-verify`
-   or by a fresh clone that never installed the hooks. Treat signing as a
-   discipline the team keeps, not a barrier the platform holds, until the
-   repository is public or the plan changes.
+   Be honest about what enforces it - **nothing server-side does**. The
+   repository is public and `main` and `develop` carry real branch protection:
+   pull request required, three required status checks, force-push and
+   deletion refused, `enforce_admins` on. Required signature verification is
+   simply left off in that protection, and the CI gate (`ci-workflow`) runs no
+   signature check either. That is now a switch nobody has flipped, not a
+   limit the plan imposes. An unsigned commit merges.
+   The subject rules are a different story. `.githooks/commit-msg` is still
+   client-side, still bypassable with `--no-verify` or by a fresh clone that
+   never pointed Git at `.githooks`, but the hook itself is gated: CI's
+   `shell and compose` job feeds it seven messages and fails if it stops
+   rejecting the wrong ones, and that job is one of the three required checks.
+   So the hook cannot rot unnoticed, while a commit that skipped it still
+   merges. Treat both signing and the convention as a discipline the team
+   keeps, not a barrier the platform holds, until required signature
+   verification is switched on.
 7. **Never a `Co-Authored-By:` trailer.** Even when an AI assistant wrote the
    change, do not add co-author lines. Strict house rule.
 8. **One logical change per commit.** If the subject needs "and", split it.
@@ -69,8 +81,8 @@ carry a co-author trailer.
   good. That is why the rule is a discipline and the hook is installed on every
   clone.
 - Claiming in a doc, a PR description, or a skill file that unsigned commits are
-  "blocked at the gate" -> rule 6. There is no server-side check; writing that
-  there is creates a false sense of enforcement, which is worse than none.
+  "blocked at the gate" -> rule 6. There is no server-side signature check;
+  writing that there is creates a false sense of enforcement, worse than none.
 - A subject that names the file instead of the behaviour, such as
   `Update AppointmentService` -> rule 2, say what it does.
 
@@ -120,8 +132,8 @@ EOF
 
 ### Local enforcement, installed per clone
 
-Signing and the subject rules are held by hooks each developer installs. Keep
-them in a tracked `.githooks/` directory and point Git at it, so a fresh clone
+Signing and the subject rules are held by hooks each developer installs. They
+live in the tracked `.githooks/` directory; point Git at it, so a fresh clone
 is one command away from being guarded:
 
 ```bash
@@ -129,23 +141,81 @@ git config core.hooksPath .githooks
 git config commit.gpgsign true
 ```
 
-`.githooks/commit-msg`, client-side and bypassable with `--no-verify`:
+`.githooks/commit-msg` as tracked. It is POSIX `sh`, not bash - CI shellchecks
+it with `--shell=sh` - client-side and bypassable with `--no-verify`, and it is
+the file CI's `shell and compose` job self-tests:
 
-```bash
-#!/usr/bin/env bash
-# Client-side only. No server-side equivalent exists on a private repo
-# without a paid plan; see rule 6.
-subject=$(head -n 1 "$1")
-[ "${#subject}" -le 50 ] || { echo "Subject exceeds 50 characters."; exit 1; }
+```sh
+#!/bin/sh
+# Enforces the house commit convention. See .claude/skills/commit-style.
+# A local pre-filter only: CI re-verifies everything server-side.
+
+msg_file="$1"
+# Strip comment lines that git appends to the editor buffer.
+subject=$(grep -v '^#' "$msg_file" | sed '/^[[:space:]]*$/d' | head -1)
+
+fail() {
+    printf 'commit-msg: %s\n' "$1" >&2
+    printf '  subject: %s\n' "$subject" >&2
+    exit 1
+}
+
+# Merge and fixup commits are generated by git; leave them alone.
 case "$subject" in
-  *.) echo "Subject must not end with a period."; exit 1 ;;
+    Merge\ *|Revert\ *|fixup!\ *|squash!\ *) exit 0 ;;
 esac
-printf '%s' "$subject" | grep -Eq '^[A-Z][a-z]+ ' \
-  || { echo "Subject must start with a capitalized imperative verb."; exit 1; }
-printf '%s' "$subject" | grep -Eq '^(feat|fix|chore|docs|refactor|test|ci)(\(|:)' \
-  && { echo "No Conventional Commits type/scope prefix; see commit-style."; exit 1; }
-grep -qi '^Co-Authored-By:' "$1" \
-  && { echo "Co-Authored-By trailers are not used on this project."; exit 1; }
+
+[ -n "$subject" ] || fail 'empty subject'
+
+len=$(printf '%s' "$subject" | wc -c | tr -d ' ')
+[ "$len" -le 50 ] || fail "subject is $len characters, limit is 50"
+
+case "$subject" in
+    [A-Z]*) ;;
+    *) fail 'subject must start with a capital letter' ;;
+esac
+
+case "$subject" in
+    *.) fail 'subject must not end with a period' ;;
+esac
+
+# No Conventional Commits prefix: this project uses plain imperative subjects.
+if printf '%s' "$subject" | grep -Eq '^[a-z]+(\([^)]*\))?!?:'; then
+    fail 'no type(scope): prefix, use a plain imperative subject'
+fi
+
+# Imperative mood: reject the common past-tense and gerund forms. A generic
+# suffix rule would reject legitimate verbs such as Read or Bind.
+first=$(printf '%s' "$subject" | cut -d' ' -f1)
+case "$first" in
+    Added|Adds|Adding|Fixed|Fixes|Fixing|Updated|Updates|Updating\
+    |Removed|Removes|Removing|Deleted|Deletes|Deleting\
+    |Refactored|Refactors|Refactoring|Changed|Changes|Changing\
+    |Created|Creates|Creating|Implemented|Implements|Implementing\
+    |Improved|Improves|Improving|Hardened|Hardens|Hardening\
+    |Renamed|Renames|Renaming|Moved|Moves|Moving)
+        fail "use the imperative: '$first' is not a command form" ;;
+esac
+
+# House rule: never attribute a commit to an assistant.
+if grep -qi '^[[:space:]]*co-authored-by:' "$msg_file"; then
+    fail 'Co-Authored-By trailers are forbidden on this project'
+fi
+
+# Body lines wrap at 72.
+line_no=0
+grep -v '^#' "$msg_file" | while IFS= read -r line; do
+    line_no=$((line_no + 1))
+    [ "$line_no" -le 2 ] && continue
+    n=$(printf '%s' "$line" | wc -c | tr -d ' ')
+    if [ "$n" -gt 72 ]; then
+        printf 'commit-msg: body line %s is %s characters, limit is 72\n' \
+            "$line_no" "$n" >&2
+        printf '  %s\n' "$line" >&2
+        exit 1
+    fi
+done || exit 1
+
 exit 0
 ```
 
@@ -158,16 +228,19 @@ entirely and enforce the subject rules with the local `commit-msg` hook above. A
 hook is the lighter option here and matches the `pre-push` guard that
 `branch-naming` owns.
 
-Either way the enforcement stays **client-side**. commitlint installed as a hook
-is as bypassable as the shell script; running it in CI would only report on
-commits that already exist, and the CI gate as specified in `ci-workflow` does
-not check messages or signatures at all. Do not describe these checks as a gate.
-When the repository becomes public, or the plan changes, add required signature
-verification and a commit-message check to branch protection, and update this
-section then - not before.
+Either way the enforcement on any given commit stays **client-side**. commitlint
+installed as a hook is as bypassable as the shell script; running it in CI would
+only report on commits that already exist. What CI holds is the hook's
+behaviour, not your message: the `shell and compose` job replays seven cases
+through `.githooks/commit-msg` and fails if the answers change, which keeps the
+enforcer honest and says nothing about the commit you just wrote. Do not
+describe it as a gate on what you type. The open item is signatures. The
+repository is public and `main` and `develop` are protected, so required
+signature verification is a setting nobody has turned on, not one the plan
+withholds - turn it on, then update rule 6 and this section to say so.
 
 ## Sibling skills
 
 - `branch-naming` - the `feature/<slug>` branch these commits live on, and the single authoritative `pre-push` hook.
-- `ci-workflow` - the keyless gate, which checks build, tests and scans; it does not check signatures or messages.
+- `ci-workflow` - the keyless gate, which checks build, tests and scans; it never reads a commit message or a signature, only replays cases through the `commit-msg` hook.
 - `code-language` - English for subject and body.
