@@ -1527,7 +1527,24 @@ a.choice { text-decoration: none; color: inherit; }
 .pcard:hover .pcard__cover--mark img { transform: scale(1.03); }
 .pcard:hover .pcard__cover img { transform: scale(1.03); }
 .pcard__badges { position: absolute; left: var(--s-3); top: var(--s-3); display: flex; gap: var(--s-2); flex-wrap: wrap; }
-.pcard__logo { position: absolute; left: var(--s-4); bottom: calc(var(--s-4) * -1); width: 52px; height: 52px; border-radius: var(--r-sm); background: var(--surface); border: 2px solid var(--surface); box-shadow: var(--sh-sm); display: grid; place-items: center; overflow: hidden; }
+/* La marque POSEE sur la banniere, ronde et centree, a cheval sur le bord bas.
+   La banniere dit ou on est, la marque dit qui c'est, et les deux tiennent sans
+   que l'une deforme l'autre : c'etait le carre de 103 px flottant au milieu
+   d'une bande 16/9 qui ne marchait pas.
+   Le padding haut de .pcard__body est de --s-6, ce qui laisse exactement la
+   place a la moitie qui deborde. */
+.pcard__logo { position: absolute; left: 50%; bottom: 0;
+  transform: translate(-50%, 50%);
+  width: 64px; height: 64px; border-radius: var(--r-circle);
+  background: var(--surface); border: 3px solid var(--surface);
+  box-shadow: var(--sh-sm); display: grid; place-items: center; overflow: hidden; }
+.pcard__logo img { width: 100%; height: 100%; object-fit: cover; }
+/* La bande doit laisser deborder la pastille, donc elle ne peut pas rogner. */
+.pcard:has(.pcard__logo) .pcard__cover { overflow: visible; }
+.pcard:has(.pcard__logo) .pcard__cover img { border-radius: var(--r-md) var(--r-md) 0 0; }
+/* La pastille descend de 32 px sous la bande et le corps n'en avait que 24 :
+   elle mordait de 8 px sur la ligne du metier. Mesure, pas estimation. */
+.pcard:has(.pcard__logo) .pcard__body { padding-top: calc(var(--s-6) + 20px); }
 .pcard__body { padding: var(--s-6) var(--s-5) var(--s-4); flex: 1 1 auto; display: flex; flex-direction: column; gap: var(--s-2); }
 .pcard__name { font-size: var(--fs-h4); font-weight: var(--fw-bold); line-height: 1.25; }
 .pcard__trade { font-size: var(--fs-xs); font-weight: var(--fw-bold); color: var(--accent-strong); letter-spacing: var(--ls-wide); text-transform: uppercase; }
@@ -2391,6 +2408,14 @@ a.choice { text-decoration: none; color: inherit; }
 /* Le service et le mois, jamais un nom. Dans un marche ou tout le monde se
    connait, un prenom plus une prestation plus un quartier est une identite. */
 .review__about { font-size: var(--fs-sm); color: var(--text-tertiary); }
+/* La mention se lit sur CHAQUE avis, parce qu'elle est vraie de chacun : il n'y
+   a pas de formulaire sans la reference d'une reservation prise ici. Discrete :
+   c'est une garantie, pas une decoration, et elle ne doit pas peser plus que la
+   note qu'elle accompagne. */
+.review__verified { display: inline-flex; align-items: center; gap: 4px;
+  font-size: var(--fs-micro); font-weight: var(--fw-bold);
+  color: var(--success); letter-spacing: var(--ls-wide); }
+.review__verified .ico { color: var(--success); }
 .review__text { line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
 .review__photos { display: flex; gap: var(--s-3); flex-wrap: wrap; }
 .review__photos img { width: 96px; height: 96px; object-fit: cover;

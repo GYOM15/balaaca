@@ -599,6 +599,15 @@ function Review({ review }: { review: ReviewType }) {
     <article className="review">
       <div className="review__head">
         <StarRow value={review.rating} />
+        {/* Said on every review, because it is true of every review: there is
+            no form without the reference of a booking taken here. Amazon puts
+            "Achat vérifié" on SOME of its reviews and lets anybody write the
+            rest; here it is the only way in, and a guarantee nobody is told
+            about buys nothing. */}
+        <span className="review__verified">
+          <Icon name="check-circle" size={16} />
+          Client vérifié
+        </span>
         <span className="review__about">
           {review.service_name} &middot; {monthLabel(review.visited_month)}
         </span>

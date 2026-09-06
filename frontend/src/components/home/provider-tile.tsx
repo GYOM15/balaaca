@@ -25,16 +25,19 @@ const MODE_ORDER: Fulfilment[] = ["ON_SITE", "DROP_OFF", "AT_CUSTOMER"];
 /**
  * A provider, as the directory shows them.
  *
- * <p>The cover band shows, in order: the business's own COVER photograph, then
- * its logo, then the drawing that stands for its trade on the warm ground the
- * stylesheet gives `.pcard__cover`.
+ * <p>The band and the mark are two things, not one choice between two. The
+ * cover photograph fills the band; the logo sits ON it, round and centred,
+ * straddling its bottom edge. The band says where you are and the mark says who
+ * it is, and neither has to be distorted to stand in for the other.
  *
- * <p>The cover comes first because it is the only one of the three that was
- * drawn for a band. A logo is a square mark made to be read at the size of a
- * favicon, and this strip is four times wider than tall; putting the logo first
- * meant every card showed a small square floating in the middle of a space it
- * was never made for. `ProviderSummary` carried nothing else at the time, which
- * is why - the contract now carries `cover_url` too, additively.
+ * <p>That is what was wrong before. `ProviderSummary` carried only a logo, so
+ * the band drew a square mark - made to be read at the size of a favicon -
+ * floating in a strip four times wider than tall. Choosing one of the two was
+ * the wrong question.
+ *
+ * <p>With neither, the drawing that stands for the trade fills the band on the
+ * warm ground the stylesheet gives it, which is what a business registered this
+ * morning looks like.
  *
  * <p>The trade is shown by its label, resolved by the caller from
  * `GET /v1/categories`. The card carries the slug, and `dj-animation` is not
@@ -69,10 +72,7 @@ export function ProviderTile({
 
   return (
     <Link className="pcard" href={`/p/${provider.slug}`}>
-      <span
-        className={`pcard__cover${!cover && logo ? " pcard__cover--mark" : ""}`}
-        style={{ display: "grid", placeItems: "center" }}
-      >
+      <span className="pcard__cover" style={{ display: "grid", placeItems: "center" }}>
         {/* Plain img, not next/image: the bytes come through this server's own
             /media route and are already immutable and sized by the API. */}
         {cover ? (
@@ -85,17 +85,22 @@ export function ProviderTile({
           //
           // The intrinsic size is the FILE's and not the slot's. The wrong one
           // here is what taught the stylesheet to crop a square mark to fit a
-          // lie, which is the defect this whole branch exists to undo.
+          // lie, which is the defect this whole component exists to undo.
           // eslint-disable-next-line @next/next/no-img-element
           <img src={cover} alt="" loading="lazy" width={1600} height={400} />
-        ) : logo ? (
-          // Square is the honest guess for a logo, and the --mark rules contain
-          // it either way.
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={logo} alt="" loading="lazy" width={640} height={640} />
         ) : (
           <Sketch name={sketchForTrade(provider.category_slug)} width={160} />
         )}
+
+        {/* On the band and not instead of it, straddling its bottom edge. The
+            body's top padding is what leaves room for the half that hangs
+            below. */}
+        {logo ? (
+          <span className="pcard__logo">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={logo} alt="" loading="lazy" width={128} height={128} />
+          </span>
+        ) : null}
       </span>
       <span className="pcard__body">
         {tradeLabel ? <span className="pcard__trade">{tradeLabel}</span> : null}
