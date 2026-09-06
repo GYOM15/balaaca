@@ -69,7 +69,17 @@ async function call<T>(path: string, options: Options, accessToken: string | nul
     }
   }
 
-  const headers: Record<string, string> = { Accept: "application/json" };
+  // BOTH types, and the second is not decoration. Every refusal this API makes
+  // is an RFC 7807 document, and an operation whose only body is a refusal -
+  // `reportProvider` answers 202 with nothing, `deleteClosure` 204 - declares
+  // no other type at all. Asking for application/json alone made JAX-RS
+  // negotiate against a method that produces only problem+json and answer 406,
+  // before the handler ran: a customer pressed "Envoyer le signalement" and got
+  // "le signalement n'est pas parti", every time, with nothing logged anywhere
+  // and the row never written.
+  const headers: Record<string, string> = {
+    Accept: "application/json, application/problem+json",
+  };
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
   if (options.body !== undefined) headers["Content-Type"] = "application/json";
   if (options.bytes) headers["Content-Type"] = options.bytes.contentType;

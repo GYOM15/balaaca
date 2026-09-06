@@ -73,7 +73,17 @@ particular whether a Guinean mobile money rail allows an authorisation without a
 immediate debit. That investigation is deliberately deferred to implementation
 time.
 
+## Still open, and not an engineering decision
+
+Whether a provider may switch online payment off. A switch invites a business to
+turn it off and take the booking in the shop; no switch excludes every business
+with no mobile money account, which on day one is most of them. The two shapes
+worth weighing are written up in `docs/BACKLOG.md` under "Paying for a service on
+the platform"; neither is chosen here, because the answer decides what the
+product sells and not how it is built.
+
 ## Revisit when
 
 The subscription actually has to be collected, or payment for service offerings
-enters the plan. The investigation of the payment rails happens then, not before.
+enters the plan. The investigation of the payment rails happens then, not
+before.

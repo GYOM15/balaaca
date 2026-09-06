@@ -121,3 +121,43 @@ export async function reinstateProvider(formData: FormData): Promise<void> {
     api(`/v1/admin/providers/${encodeURIComponent(slug)}/suspension`, { method: "DELETE" }),
   );
 }
+
+/**
+ * Takes a review off a business's page, or puts it back.
+ *
+ * <p>One operation with a flag rather than two, because an operator who removed
+ * the wrong review has to be able to reverse it without anybody writing SQL at
+ * midnight - and reversal is not a rarer case than removal, it is the same
+ * case looked at again in daylight.
+ *
+ * <p>Hiding removes the review from the page, from the average and from the
+ * count in the same instant. There is nothing here that recomputes any of
+ * those: one rule in the database decides what is published, and all three read
+ * it.
+ */
+export async function setReviewVisibility(formData: FormData): Promise<void> {
+  const id = String(formData.get("review_id"));
+  const hidden = formData.get("hidden") === "1";
+  await attempt(formData, () =>
+    api(`/v1/admin/reviews/${encodeURIComponent(id)}/visibility`, {
+      method: "POST",
+      body: { hidden },
+    }),
+  );
+}
+
+/**
+ * Removes a business's answer and leaves the review standing.
+ *
+ * <p>A separate lever from the takedown, and it has to be. Hiding was the only
+ * one there was, and it is the wrong tool for a business that answers a fair
+ * complaint with an insult: it would deal with that by removing the CUSTOMER's
+ * words too, punishing the person who was wronged in order to reach the person
+ * who wronged them.
+ */
+export async function clearReviewReply(formData: FormData): Promise<void> {
+  const id = String(formData.get("review_id"));
+  await attempt(formData, () =>
+    api(`/v1/admin/reviews/${encodeURIComponent(id)}/reply`, { method: "DELETE" }),
+  );
+}

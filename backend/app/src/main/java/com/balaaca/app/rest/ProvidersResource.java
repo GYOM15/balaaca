@@ -6,6 +6,7 @@ import com.balaaca.app.api.model.LocalityRef;
 import com.balaaca.app.api.model.Money;
 import com.balaaca.app.api.model.ProviderRegisteredView;
 import com.balaaca.app.api.model.ProviderSummary;
+import com.balaaca.app.api.model.ReviewSummary;
 import com.balaaca.app.api.model.ProviderSummaryPage;
 import com.balaaca.app.api.model.RegisterProviderRequest;
 import com.balaaca.platformkernel.tenancy.AuthenticatedSubject;
@@ -95,6 +96,7 @@ public class ProvidersResource implements ProvidersApi {
                 new Account(caller.require(), caller.displayName(), caller.email()),
                 request.getSlug(),
                 request.getBusinessName(),
+                Optional.ofNullable(request.getDescription()),
                 Optional.ofNullable(request.getCategorySlug()),
                 Optional.ofNullable(request.getCity()),
                 zone(request.getTimezone())));
@@ -117,7 +119,19 @@ public class ProvidersResource implements ProvidersApi {
         found.city().ifPresent(summary::setCity);
         found.area().ifPresent(summary::setArea);
         found.logoUrl().ifPresent(summary::setLogoUrl);
+        // The band across the top of a card is 4:1 and a logo is a square mark;
+        // the card was drawing the square in the strip. Both are published, so a
+        // client can prefer the cover and fall back - the contract owns which,
+        // and neither is invented here.
+        found.coverUrl().ifPresent(summary::setCoverUrl);
         summary.setFulfilments(fulfilmentsOf(found));
+
+        // Absent rather than zero, for the same reason the price floor is: a
+        // business nobody has reviewed has no opinion attached to it, and nought
+        // out of five is an opinion every new salon would open with.
+        found.rating().ifPresent(rating -> summary.setRating(new ReviewSummary()
+                .average(rating.average())
+                .count(rating.count())));
 
         // A floor, and the copy on the card says so. Absent when no active
         // service shows a price - not zero, which reads as free.

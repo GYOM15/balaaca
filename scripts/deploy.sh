@@ -40,6 +40,50 @@ fi
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 
+# --- 0. Is Docker even here -------------------------------------------------
+# Checked first, and separately from everything else, because the failure it
+# produces otherwise is a lie. `docker: command not found` inside the pull step
+# printed "the packages are private" and "no image is tagged X" - two plausible,
+# specific, wrong explanations, and the person went and checked both.
+#
+# A tool that guesses wrong costs more than one that says nothing.
+if ! command -v docker >/dev/null 2>&1; then
+    cat >&2 <<'MISSING'
+docker is not on this machine's PATH.
+
+  Not installed at all - on a Raspberry Pi:
+      curl -fsSL https://get.docker.com | sh
+      sudo usermod -aG docker "$USER"      # then log out and back in
+
+  Installed, but only for root - check with:
+      sudo docker --version
+  If that answers, you are not in the docker group. Add yourself with the
+  usermod line above rather than running this script with sudo: everything
+  it creates would then be owned by root, including .env.prod.
+MISSING
+    exit 1
+fi
+
+if ! docker compose version >/dev/null 2>&1; then
+    echo "docker is here but the compose plugin is not." >&2
+    echo "    sudo apt-get install -y docker-compose-plugin" >&2
+    exit 1
+fi
+
+# The daemon, not the client. These are two different things and only one of
+# them being present is the common state on a fresh Pi.
+if ! docker info >/dev/null 2>&1; then
+    cat >&2 <<'DAEMON'
+The docker command works but the daemon does not answer.
+
+      sudo systemctl enable --now docker
+
+  If it is running, this user cannot reach its socket:
+      sudo usermod -aG docker "$USER"      # then log out and back in
+DAEMON
+    exit 1
+fi
+
 # --- 1. The code ------------------------------------------------------------
 say "1/5  The checkout"
 # --ff-only: a merge commit created here would be a divergence nobody is ever

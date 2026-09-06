@@ -4,6 +4,9 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { ApiError, publicApi } from "@/lib/api";
 
+/** The customer-facing half of the API, all of it addressed by the reference. */
+const API = "/v1/bookings/";
+
 /**
  * A customer calling off their own appointment.
  *
@@ -127,4 +130,106 @@ export async function reportProvider(formData: FormData): Promise<void> {
   // Nothing to revalidate: the booking did not change, and the report is not a
   // resource this customer can go and read - which is what the 202 says.
   redirect(`/bookings/${encodeURIComponent(reference)}?reported=1`);
+}
+
+/**
+ * The bytes this platform publishes, checked here as well as by the server.
+ *
+ * <p>Not the same check twice: the server reads the first bytes of the file,
+ * because a declared type is a claim, while this one only spares somebody on a
+ * slow connection a round trip to be told their video is not a photograph.
+ */
+const IMAGES = ["image/jpeg", "image/png", "image/webp"];
+
+/**
+ * How it went, said by the person who was there.
+ *
+ * <p>Stars, an optional sentence, and up to three photographs, in ONE
+ * submission. Three separate screens was the other shape and it is the one
+ * where two thirds of the people who started never finish: this is somebody
+ * standing in the street with a phone, not somebody at a desk.
+ *
+ * <p>Sending it again replaces what they said before. The API decides that, not
+ * this action, so there is nothing here that has to know whether a review
+ * already exists - which is what makes a retry after a dropped connection safe.
+ */
+export async function submitReview(formData: FormData): Promise<void> {
+  const reference = String(formData.get("reference"));
+  const rating = Number(formData.get("rating"));
+  const comment = String(formData.get("comment") ?? "").trim();
+  const back = `/bookings/${encodeURIComponent(reference)}`;
+
+  // The one thing a review cannot do without. Checked before the photographs
+  // are read, so a submission with no stars costs nothing.
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+    redirect(`${back}?review=1&review_error=NO_RATING`);
+  }
+
+  try {
+    await publicApi(`${API}${encodeURIComponent(reference)}/review`, {
+      method: "POST",
+      // Omitted rather than empty: stars with nothing written is a real answer,
+      // and an empty string is a quotation mark with nothing in it.
+      body: comment ? { rating, comment } : { rating },
+    });
+  } catch (error) {
+    if (error instanceof ApiError) {
+      redirect(`${back}?review=1&review_error=${error.code ?? "UNKNOWN"}`);
+    }
+    throw error;
+  }
+
+  // The photographs, after the review exists to hang them off. A failure here
+  // does NOT lose the review: it is already saved, and the page says which part
+  // did not go through rather than asking for the whole thing again.
+  const photos = formData
+    .getAll("photos")
+    .filter((one): one is File => one instanceof File && one.size > 0)
+    .filter((one) => IMAGES.includes(one.type))
+    .slice(0, 3);
+
+  for (const photo of photos) {
+    try {
+      await publicApi(`${API}${encodeURIComponent(reference)}/review/photos`, {
+        method: "POST",
+        bytes: { data: await photo.arrayBuffer(), contentType: photo.type },
+      });
+    } catch (error) {
+      if (error instanceof ApiError) {
+        redirect(`${back}?reviewed=1&photo_error=${error.code ?? "UNKNOWN"}`);
+      }
+      throw error;
+    }
+  }
+
+  revalidatePath(back);
+  redirect(`${back}?reviewed=1`);
+}
+
+/**
+ * Taking a photograph back off a review.
+ *
+ * <p>The slot it frees is not backfilled, which the API decides and this only
+ * reflects: renumbering would move the others, and the first photograph is the
+ * one a list shows.
+ */
+export async function removeReviewPhoto(formData: FormData): Promise<void> {
+  const reference = String(formData.get("reference"));
+  const photoId = String(formData.get("photo_id"));
+  const back = `/bookings/${encodeURIComponent(reference)}`;
+
+  try {
+    await publicApi(
+      `${API}${encodeURIComponent(reference)}/review/photos/${encodeURIComponent(photoId)}`,
+      { method: "DELETE" },
+    );
+  } catch (error) {
+    if (error instanceof ApiError) {
+      redirect(`${back}?review=1&review_error=${error.code ?? "UNKNOWN"}`);
+    }
+    throw error;
+  }
+
+  revalidatePath(back);
+  redirect(`${back}?review=1`);
 }

@@ -247,6 +247,41 @@ class OnboardingIT {
 
         given().when().get(PROFILE).then().statusCode(200)
                 .body("category_slug", nullValue())
-                .body("city", nullValue());
+                .body("city", nullValue())
+                // The about text among them, and absent rather than empty. A
+                // page draws no section for a description it does not have; one
+                // holding a space would draw a heading over nothing.
+                .body("description", nullValue());
+    }
+
+    @Test
+    @DisplayName("What a business says about itself at the door is on its page")
+    @TestSecurity(user = BookingFixtures.NEWCOMER_SUBJECT, roles = "dashboard:read")
+    @OidcSecurity(claims = @Claim(key = "sub", value = BookingFixtures.NEWCOMER_SUBJECT))
+    void keepsTheAboutTextGivenAtSignup() {
+        register("""
+                {"slug":"salon-awa","business_name":"Salon Awa",
+                 "description":"Tresses et coiffure femme a Nongo depuis 2014."}
+                """).then().statusCode(201);
+
+        given().when().get(PROFILE).then().statusCode(200)
+                .body("description",
+                      equalTo("Tresses et coiffure femme a Nongo depuis 2014."));
+    }
+
+    @Test
+    @DisplayName("A description of nothing but spaces is no description")
+    @TestSecurity(user = BookingFixtures.NEWCOMER_SUBJECT, roles = "dashboard:read")
+    @OidcSecurity(claims = @Claim(key = "sub", value = BookingFixtures.NEWCOMER_SUBJECT))
+    void refusesToStoreABlankAsAnAboutText() {
+        // Not refused with a 400 - stored as absent, which is what it means. The
+        // guarantee is in the function rather than in this edge: nullif(btrim())
+        // in V053 holds for every caller, including one that is not this API.
+        register("""
+                {"slug":"salon-awa","business_name":"Salon Awa","description":"   "}
+                """).then().statusCode(201);
+
+        given().when().get(PROFILE).then().statusCode(200)
+                .body("description", nullValue());
     }
 }

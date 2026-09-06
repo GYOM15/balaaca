@@ -624,6 +624,154 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
+  /v1/reviews:
+    get:
+      operationId: listOwnReviews
+      tags: [profile]
+      summary: What customers said about you
+      description: |
+        Newest first, including the ones an operator has taken down - a business
+        that cannot see what was said about it cannot answer the customer or ask
+        for a takedown.
+
+        Reading is all this surface allows beyond a reply. There is no operation
+        anywhere that lets a business write, raise or delete a review of itself,
+        and the reason is not that one was left out: the database role has no
+        such privilege, so no route could be built that did it.
+      security: [{ oauth2: [dashboard:read] }]
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: The reviews, newest first.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderReviewPage'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/reviews/{id}/reply:
+    post:
+      operationId: replyToReview
+      tags: [profile]
+      summary: Answer a review
+      description: |
+        A hub that publishes the accusation and refuses the answer is not
+        neutral, it is quieter about which side it takes. In this market a
+        single line is often the whole truth of a bad review.
+
+        Sending it again replaces it: these are the business's own words about
+        its own page, and a public typo it cannot fix is worse than the branch
+        that costs.
+
+        Only on a review that is still published. One an operator took down is
+        inert, and a reply attached to it would be writing into a page nobody
+        reads - that is `409`.
+
+        What this operation may touch is decided by a COLUMN privilege and not
+        by this description: the role holds `UPDATE` on the reply and its date
+        and on nothing else, so a request that tried to carry a rating would be
+        refused by the database before any handler saw it.
+      security: [{ oauth2: [profile:write] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewReplyRequest'
+      responses:
+        '200':
+          description: The review, with the answer under it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderReviewView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: |
+            `INVALID_STATE_TRANSITION` - this review was taken down, so there is
+            nothing published to answer.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+    delete:
+      operationId: withdrawReviewReply
+      tags: [profile]
+      summary: Withdraw your answer
+      description: The business's own words, taken back. The review stands.
+      security: [{ oauth2: [profile:write] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The review, with nothing under it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderReviewView'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/provider-profile/preview:
+    get:
+      operationId: previewOwnPage
+      tags: [profile]
+      summary: Your page as a customer will see it
+      description: |
+        The same projections `getProvider`, `listOpeningHours` and
+        `listProviderStaff` return, for the caller's OWN business, published or
+        not. That is the whole point: `/v1/providers/{slug}` resolves through a
+        published-only lookup, so until a business publishes there is nothing
+        there to look at - and four dashboard screens used to link to it anyway,
+        which is four buttons opening a 404 on the provider's own dashboard.
+
+        One operation rather than three, and the SAME projections rather than
+        the dashboard's own shapes. A preview assembled out of
+        `getProviderProfile`, `getOpeningHours` and `listStaff` would be a
+        second source of truth for one page, and the two would disagree on the
+        first change either side.
+
+        Reviews are not carried. A published review is a published review, and
+        what a stranger can read of an unpublished business is nothing - so the
+        preview shows the page without them rather than inventing what they
+        would look like.
+      security: [{ oauth2: [dashboard:read] }]
+      responses:
+        '200':
+          description: The page, as it would be served.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderPreviewView'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
   /v1/media/{name}:
     get:
       operationId: getMedia
@@ -2049,6 +2197,149 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimited'
 
+  /v1/bookings/{reference}/review:
+    post:
+      operationId: submitReview
+      tags: [booking]
+      summary: Say how it went
+      description: |
+        A rating out of five, and optionally a sentence.
+
+        The reference is what makes this worth reading. A review form on a
+        public page is a button a competitor three streets away can press from
+        a script all night, and a five-star form is a button the business
+        itself can press. Requiring the capability minted at booking means a
+        review comes from somebody who was actually served.
+
+        Reviewable once the appointment has ENDED and was neither cancelled nor
+        a no-show - not once it is marked `COMPLETED`. Completion is a button
+        the provider presses, and gating customer reviews behind an action a
+        busy salon never performs would have made the whole feature
+        unreachable.
+
+        Sending it again REPLACES it: the same person, the same visit, a
+        corrected opinion. A public typo its author cannot fix is worse than
+        the branch that costs. A review an operator has taken down is terminal
+        and answers `409`, so amending is not the way back out of moderation.
+
+        The published review never names the reviewer, and carries the MONTH
+        rather than the date. Public availability publishes bookable slots, and
+        a gap in them is an appointment: an exact date at a one-chair salon,
+        laid over that day's gaps, names one person.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/BookingReference'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitReviewRequest'
+      responses:
+        '200':
+          description: The review, as it now stands.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnReviewView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: |
+            `INVALID_STATE_TRANSITION` - the appointment has not happened yet,
+            it was cancelled or recorded as a no-show, or this review was taken
+            down and cannot be rewritten.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /v1/bookings/{reference}/review/photos:
+    post:
+      operationId: addReviewPhoto
+      tags: [booking]
+      summary: Show it
+      description: |
+        The bytes themselves, with their type in the header. No multipart and
+        no filename: a filename is a value the server would have to distrust
+        and would gain nothing from trusting.
+
+        Three at most, and the cap is a promise about the page. A provider page
+        already carries the catalogue's own photographs; twenty customer
+        pictures under them is a page that never finishes loading on a
+        mid-range telephone over 3G.
+
+        Every image is re-encoded and scaled. That is what strips the metadata
+        a telephone writes, and it matters more here than anywhere else in this
+        product: these are pictures taken by customers, often at home, and
+        their coordinates are an address.
+
+        The review has to exist first. Submit it, then illustrate it.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/BookingReference'
+      requestBody:
+        required: true
+        content:
+          image/jpeg:
+            schema: { type: string, format: binary }
+          image/png:
+            schema: { type: string, format: binary }
+          image/webp:
+            schema: { type: string, format: binary }
+      responses:
+        '201':
+          description: The review, with the new photograph in place.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnReviewView'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: |
+            `VALIDATION_FAILED` - not an image this platform publishes, or the
+            third slot is already taken.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /v1/bookings/{reference}/review/photos/{photo_id}:
+    delete:
+      operationId: removeReviewPhoto
+      tags: [booking]
+      summary: Take a photograph back
+      description: |
+        The freed slot is not backfilled. Renumbering would move the others,
+        and the first photograph is the one a list shows.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/BookingReference'
+        - name: photo_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: What is left of the review.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnReviewView'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
   /v1/provider-profile/contestation:
     get:
       operationId: getContestation
@@ -2394,6 +2685,120 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProviderReportView'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/admin/reviews:
+    get:
+      operationId: listReviews
+      tags: [moderation]
+      summary: What has just been published
+      description: |
+        Newest first, across every business. Unlike a report queue nothing here
+        is owed an answer, so the useful ordering is what has appeared
+        recently rather than what has waited longest.
+
+        There is no queue of REPORTED reviews and that is deliberate, the same
+        way there is no vetting at the door: what has to exist before launch is
+        the lever, because the alternative to a takedown button is a database
+        session. A route from a complaint to this list comes with the
+        complaints.
+      security: [{ oauth2: [admin:moderation] }]
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: Omit for everything.
+          schema:
+            type: string
+            enum: [VISIBLE, HIDDEN]
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: The reviews.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModeratedReviewPage'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/admin/reviews/{id}/visibility:
+    post:
+      operationId: setReviewVisibility
+      tags: [moderation]
+      summary: Take a review down, or put it back
+      description: |
+        Reversible, and one operation with a flag rather than two, because an
+        operator who took down the wrong review has to be able to put it back
+        without anybody writing SQL.
+
+        Hiding removes the review from the business's page, from its average
+        and from its count in the same instant, since all three read the one
+        rule that decides what is published.
+
+        Asking for the state it is already in is not an error: the operator
+        wanted it that way and it is that way.
+      security: [{ oauth2: [admin:moderation] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewVisibilityRequest'
+      responses:
+        '200':
+          description: The review, in the state asked for.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModeratedReviewView'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/admin/reviews/{id}/reply:
+    delete:
+      operationId: clearReviewReply
+      tags: [moderation]
+      summary: Remove a business's answer, and leave the review standing
+      description: |
+        A lever that reaches the reply alone, and it has to exist separately
+        from the takedown.
+
+        Hiding was the only one there was, and it is the wrong tool here: a
+        business that answers a fair complaint with an insult would be dealt
+        with by removing the CUSTOMER's words too. That punishes the person who
+        was wronged in order to reach the person who wronged them.
+
+        Clearing twice is not an error. The reply is gone either way, and that
+        is what the operator asked for.
+      security: [{ oauth2: [admin:moderation] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The review, with nothing under it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModeratedReviewView'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -2949,6 +3354,46 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /v1/providers/{slug}/reviews:
+    get:
+      operationId: listProviderReviews
+      tags: [discovery]
+      summary: What customers said
+      description: |
+        Newest first. Only reviews that are still published: a review an
+        operator has taken down does not appear here, is not counted in
+        `rating` on the provider or on its directory card, and disappears from
+        all three at the same instant, because all three read the same rule.
+
+        No reviewer is named, in any form. A first name plus a service plus a
+        small neighbourhood is an identity in this market, and the date is a
+        month for the same reason - public availability publishes bookable
+        slots, so an exact day at a one-chair salon identifies one person.
+      security: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: |
+            The reviews, newest first.
+
+            A handle nobody took answers with an EMPTY page rather than 404,
+            and that is deliberate: the row filter is what decides visibility
+            here, so there is nothing for this operation to look up and fail on.
+            `getProvider` is where an unknown or unpublished business is a 404,
+            and a client that draws a page draws it from there.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewPage'
+
+
 components:
 
   securitySchemes:
@@ -3450,6 +3895,300 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ProviderReportView'
+        next_cursor:
+          type: string
+          nullable: true
+
+    SubmitReviewRequest:
+      type: object
+      required: [rating]
+      properties:
+        rating:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 5
+          description: Stars. The only required half, because a customer who
+            has nothing to write still has something to say.
+        comment:
+          type: string
+          maxLength: 1000
+          description: Optional. Blank and absent are the same answer - stars
+            only - and neither renders as an empty quotation mark.
+
+    ReviewView:
+      type: object
+      description: |
+        A published review, as a stranger reads it. It carries no reviewer, no
+        identifier and no day: what it is about, when in the month it happened,
+        and what was said.
+      required: [rating, service_name, visited_month, photo_urls]
+      properties:
+        rating:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+        service_name:
+          type: string
+          description: The service as it was called on the day, frozen at the
+            time. A provider who renames or retires it does not rewrite what
+            the review is about.
+        visited_month:
+          type: string
+          pattern: '^\d{4}-(0[1-9]|1[0-2])$'
+          example: '2026-09'
+          description: |
+            The month, in the PROVIDER's timezone, and never the day. A day
+            plus a gap in published availability names one person at a
+            one-chair salon. It is a month rather than a truncated date so that
+            no client has to remember to truncate it.
+        photo_urls:
+          type: array
+          maxItems: 3
+          items:
+            type: string
+          description: In the order they were added. Where the bytes are; the
+            name discloses neither the customer nor the original file.
+        reply:
+          type: string
+          description: |
+            The business's answer, when it has written one. It is the only text
+            on this page the business itself wrote, and it is published under
+            the review rather than beside it - an answer is a reply to
+            something, and laid out level with the review it reads as a second
+            opinion of equal standing.
+
+            No date. The review carries a month and the answer would carry a
+            day, which is a mismatch a reader notices and cannot explain.
+
+    ReviewPage:
+      type: object
+      required: [data, next_cursor]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReviewView'
+        next_cursor:
+          type: string
+          nullable: true
+
+    ReviewSummary:
+      type: object
+      description: |
+        What the stars over a business add up to, over exactly the reviews
+        `listProviderReviews` would return. One rule decides what is published,
+        so this figure and that list can never disagree.
+      required: [average, count]
+      properties:
+        average:
+          type: number
+          minimum: 1
+          maximum: 5
+          example: 4.6
+          description: |
+            Rounded to one decimal HERE, so every surface prints the same
+            figure. A client that rounded for itself would be a second place
+            the number is decided, and the card and the page would eventually
+            differ by a tenth.
+        count:
+          type: integer
+          format: int32
+          minimum: 1
+          description: How many reviews it is an average of. A rating is never
+            published without it - four point six from three people and from
+            three hundred are different claims.
+
+    OwnReviewView:
+      type: object
+      description: The review as its own author sees it, which is the only view
+        that carries identifiers and the only one that admits it was taken down.
+      required: [rating, service_name, visited_month, status, photos]
+      properties:
+        rating:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+        service_name:
+          type: string
+        visited_month:
+          type: string
+          pattern: '^\d{4}-(0[1-9]|1[0-2])$'
+          example: '2026-09'
+        status:
+          type: string
+          enum: [VISIBLE, HIDDEN]
+          description: |
+            `HIDDEN` means an operator took it down. The author is told rather
+            than left to wonder why their review is not on the page, and it is
+            terminal - a further submission answers 409.
+        photos:
+          type: array
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/ServicePhotoView'
+          description: With identifiers, because its author is the one person
+            who may remove one.
+
+    ReviewReplyRequest:
+      type: object
+      required: [reply]
+      properties:
+        reply:
+          type: string
+          maxLength: 1000
+          description: The business's answer, in its own words. Blank is
+            refused; withdrawing an answer is the DELETE.
+
+    ProviderReviewView:
+      type: object
+      description: |
+        A review as the business it is about reads it - with its identifier,
+        because a reply is addressed by one, and with its state, because a
+        business is told when one of its reviews has been taken down rather than
+        left to notice the average move.
+
+        No reviewer, here either. The business knows who came at that hour; the
+        row does not say, and nothing on this surface joins it to a customer.
+      required: [review_id, rating, service_name, visited_month, status,
+                 created_at, photo_urls]
+      properties:
+        review_id:
+          type: string
+          format: uuid
+        rating:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+        service_name:
+          type: string
+        visited_month:
+          type: string
+          pattern: '^\d{4}-(0[1-9]|1[0-2])$'
+          example: '2026-09'
+        status:
+          type: string
+          enum: [VISIBLE, HIDDEN]
+          description: '`HIDDEN` means an operator removed it. It is off the
+            page, out of the average and out of the count, and it cannot be
+            answered.'
+        created_at:
+          type: string
+          format: date-time
+        photo_urls:
+          type: array
+          maxItems: 3
+          items:
+            type: string
+        reply:
+          type: string
+          description: What this business has already answered, if anything.
+
+    ProviderReviewPage:
+      type: object
+      required: [data, next_cursor]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProviderReviewView'
+        next_cursor:
+          type: string
+          nullable: true
+
+    ProviderPreviewView:
+      type: object
+      description: |
+        Everything the public page is drawn from, for the caller's own business,
+        in exactly the shapes the public routes return. One operation and one
+        set of projections, so a preview cannot drift from the page it previews.
+      required: [provider, opening_hours, staff, published]
+      properties:
+        provider:
+          $ref: '#/components/schemas/PublicProviderView'
+        opening_hours:
+          $ref: '#/components/schemas/PublicOpeningHours'
+        staff:
+          $ref: '#/components/schemas/PublicStaffList'
+        published:
+          type: boolean
+          description: |
+            Whether this page is already live. A preview of a page that is
+            published is still a preview, and saying which one the reader is
+            looking at is the difference between "this is how it will look" and
+            "this is how it looks".
+
+    ReviewVisibilityRequest:
+      type: object
+      required: [hidden]
+      properties:
+        hidden:
+          type: boolean
+          description: True takes it off the business's page, its average and
+            its count. False puts it back.
+
+    ModeratedReviewView:
+      type: object
+      description: A review as the operator reads it - with the business it is
+        about, and with the state it is in.
+      required: [review_id, provider_slug, provider_name, rating, service_name,
+                 visited_month, status, created_at, photo_count]
+      properties:
+        review_id:
+          type: string
+          format: uuid
+        provider_slug:
+          type: string
+        provider_name:
+          type: string
+        rating:
+          type: integer
+          format: int32
+        comment:
+          type: string
+        service_name:
+          type: string
+        visited_month:
+          type: string
+          pattern: '^\d{4}-(0[1-9]|1[0-2])$'
+        status:
+          type: string
+          enum: [VISIBLE, HIDDEN]
+        created_at:
+          type: string
+          format: date-time
+        hidden_at:
+          type: string
+          format: date-time
+        photo_count:
+          type: integer
+          format: int32
+          description: How many pictures hang off it. A count and not the
+            pictures - the queue is a list, and an operator opens the page to
+            look.
+        reply:
+          type: string
+          description: What the business answered, when it has. It is public
+            text with its own moderation surface, which is why it has a lever
+            of its own.
+
+    ModeratedReviewPage:
+      type: object
+      required: [data, next_cursor]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModeratedReviewView'
         next_cursor:
           type: string
           nullable: true
@@ -4499,6 +5238,25 @@ components:
             deadline has passed, or it is already cancelled or over. Absent
             rather than a date in the past, so a client does not offer a button
             that answers 422.
+        review:
+          allOf:
+            - $ref: '#/components/schemas/OwnReviewView'
+          nullable: true
+          description: |
+            What this customer has already said, if anything. Carried here
+            rather than behind a second request, so the page that shows a
+            finished appointment knows whether to offer the form or the review
+            the customer wrote - without a round trip that would be made on
+            every booking and answer nothing for most of them.
+        reviewable:
+          type: boolean
+          description: |
+            Whether a review would be accepted right now: the appointment has
+            ended, it was neither cancelled nor a no-show, and any review it
+            already has has not been taken down. A client MUST use this rather
+            than deriving it from `status` and `ends_at` - the rule lives on
+            the server, and a second copy of it in a browser is the one that
+            drifts.
 
     AppointmentCreatedView:
       type: object
@@ -4553,6 +5311,18 @@ components:
           type: string
           minLength: 1
           maxLength: 120
+        description:
+          type: string
+          maxLength: 2000
+          description: |
+            What the business wants a customer to read first. Optional, and
+            deliberately: a mandatory paragraph is a wall in front of the one
+            screen that has to be easy, and a business with nothing prepared
+            would type one word to get past it.
+
+            The same field `updateProviderProfile` writes, asked for here
+            because this is the moment a business has something to say about
+            itself and the profile form is a screen it has not found yet.
         category_slug:
           type: string
           description: One of the published categories. Omit if none fits.
@@ -4626,6 +5396,14 @@ components:
           type: boolean
         status:
           $ref: '#/components/schemas/ProviderStatus'
+        links:
+          type: array
+          maxItems: 7
+          items:
+            $ref: '#/components/schemas/SocialHandle'
+          description: |
+            As the owner typed them, so the form can put them back in the
+            fields they came from. Empty until the provider adds one.
         public_url:
           type: string
           description: |
@@ -4663,6 +5441,64 @@ components:
         by the provider, and already hides the page. Both are gone rather than
         left as states nothing can produce.
       enum: [ACTIVE, SUSPENDED]
+
+    SocialNetwork:
+      type: string
+      description: |
+        Where else a business can be found. Closed, and closed in the database
+        too: a value this list does not hold has no icon and would render as a
+        gap.
+
+        There is no `WHATSAPP`. `whatsapp_phone_e164` already holds that number
+        and the public page already draws the button; a value here would be a
+        second place holding one fact.
+      enum: [FACEBOOK, INSTAGRAM, TIKTOK, YOUTUBE, LINKEDIN, X, WEBSITE]
+
+    SocialLink:
+      type: object
+      description: |
+        One place this business also lives, ready to render.
+
+        `url` is composed by the server from the network's own base and the
+        handle the provider gave, which is why a client can put it straight
+        into an `href`. A provider-supplied URL could not be: the scheme would
+        be theirs to choose, and an Instagram icon could lead anywhere.
+      required: [kind, url]
+      properties:
+        kind:
+          $ref: '#/components/schemas/SocialNetwork'
+        url:
+          type: string
+          description: Absolute, and always `https`.
+          example: https://www.instagram.com/salon.awa
+
+    SocialHandle:
+      type: object
+      description: |
+        The same link as the owner typed it: a handle for a network, or the
+        whole address for `WEBSITE`, which has no base to compose from.
+
+        Its own shape rather than `SocialLink` because a form has to put back
+        what was entered, and because the two are not the same value - one is
+        a fragment, the other a URL.
+      required: [kind, value]
+      properties:
+        kind:
+          $ref: '#/components/schemas/SocialNetwork'
+        value:
+          type: string
+          maxLength: 200
+          description: |
+            A handle - `salon.awa`, `@salonawa`, `channel/UCxxxx` - or, for
+            `WEBSITE`, an `https` address.
+
+            The pattern here is a coarse gate: it admits no scheme but `https`,
+            no whitespace, no query and no fragment. The exact rule is per
+            network and lives in the database, which is what enforces it; a
+            handle that is well formed for the wrong network is refused there
+            with `VALIDATION_FAILED`.
+          pattern: '^(@?[A-Za-z0-9][A-Za-z0-9._-]{0,63}(/[A-Za-z0-9][A-Za-z0-9._-]{0,63}){0,3}|https://[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+(/[^\s?#]*)?)$'
+          example: salon.awa
 
     ProviderProfileRequest:
       type: object
@@ -4722,6 +5558,19 @@ components:
           maxLength: 64
         published:
           type: boolean
+        links:
+          type: array
+          maxItems: 7
+          items:
+            $ref: '#/components/schemas/SocialHandle'
+          description: |
+            Replaced whole, like the rest of this body and for the same reason:
+            a list this request omitted would be a list the save cleared, and
+            reconciling entry by entry leaves the question of what happened to
+            the ones nobody mentioned.
+
+            At most one entry per network. A second `INSTAGRAM` is refused with
+            `VALIDATION_FAILED`.
 
     PublicServiceOffering:
       type: object
@@ -4835,6 +5684,22 @@ components:
           description: Active services, in the provider's own order.
           items:
             $ref: '#/components/schemas/PublicServiceOffering'
+        rating:
+          allOf:
+            - $ref: '#/components/schemas/ReviewSummary'
+          nullable: true
+          description: |
+            Absent until somebody has reviewed. Same rule, same reviews and
+            same rounding as the directory card, because both read one
+            aggregate over what `listProviderReviews` returns.
+        links:
+          type: array
+          maxItems: 7
+          items:
+            $ref: '#/components/schemas/SocialLink'
+          description: |
+            Where else this business can be found, ready to render. Ordered by
+            `kind` so two clients cannot draw them differently.
 
     PublicOpeningHoursSegment:
       type: object
@@ -4992,6 +5857,24 @@ components:
           description: The quartier, as the provider wrote it.
         logo_url:
           type: string
+          description: |
+            The business's own mark. A fallback for the band rather than the
+            first choice: a logo is a square drawn to be read at the size of a
+            favicon, and a card's cover band is a 4:1 strip. Contained on a
+            plain ground when there is no cover, never stretched to fill it.
+        cover_url:
+          type: string
+          description: |
+            The photograph across the top of a card, and what the card should
+            draw whenever it is present. It is the same image the provider's
+            own page uses, stored at the same 4:1 the band expects, so the card
+            crops nothing and invents nothing.
+
+            Added because the card was showing the LOGO in a strip four times
+            wider than tall, which is a square mark floating in the middle of a
+            band it was never drawn for. Additive, so a client written before
+            this field keeps working - and one that has it should prefer it and
+            fall back to `logo_url`.
         fulfilments:
           type: array
           items:
@@ -5023,6 +5906,16 @@ components:
             not what this customer will pay, because what they pay depends on
             the service they pick, and a card that showed it as a price would be
             quoting a number nobody agreed to.
+        rating:
+          allOf:
+            - $ref: '#/components/schemas/ReviewSummary'
+          nullable: true
+          description: |
+            Over the same published reviews the provider's own page lists, and
+            ABSENT rather than zero when there are none. A business nobody has
+            reviewed yet has no rating; drawing that as nought out of five would
+            be the card inventing an opinion, and every new business on the hub
+            would open with the worst score it can hold.
 
     LocalityRef:
       type: object

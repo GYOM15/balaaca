@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { instantFromLocal, money } from "./format.ts";
+import { instantFromLocal, isoDatePlus, money, todayIn } from "./format.ts";
 
 /**
  * The one piece of logic on this side that can be silently wrong.
@@ -58,4 +58,39 @@ test("an amount is scaled by its own currency, never by a hundred", () => {
   assert.equal(money({ amount_minor: 150_000, currency: "GNF" }).replace(/\s/g, " "),
                new Intl.NumberFormat("fr", { style: "currency", currency: "GNF" })
                  .format(150_000).replace(/\s/g, " "));
+});
+
+test("today is read where the business is, not where the server is", () => {
+  // Fixed instant: 2026-09-06T02:30:00Z. In Conakry (UTC+0) that is the 6th;
+  // in Paris (UTC+2 in September) it is already the 6th too, but in New York
+  // (UTC-4) it is still the 5th. A provider is entitled to their own answer.
+  const fixed = new Date("2026-09-06T02:30:00Z");
+  const real = Date;
+  const globals = globalThis as unknown as { Date: DateConstructor };
+
+  globals.Date = class extends real {
+    constructor(...args: ConstructorParameters<typeof Date>) {
+      super(...(args.length ? args : [fixed.getTime()]));
+    }
+    static override now() {
+      return fixed.getTime();
+    }
+  } as unknown as DateConstructor;
+
+  try {
+    assert.equal(todayIn("Africa/Conakry"), "2026-09-06");
+    assert.equal(todayIn("America/New_York"), "2026-09-05");
+    assert.equal(todayIn("Asia/Tokyo"), "2026-09-06");
+  } finally {
+    globals.Date = real;
+  }
+});
+
+test("ninety days on is a date and never an hour that a clock change moved", () => {
+  assert.equal(isoDatePlus("2026-09-06", 90), "2026-12-05");
+  // Across a daylight change in either direction, because the arithmetic is
+  // done in UTC on a value that carries no time at all.
+  assert.equal(isoDatePlus("2026-03-28", 1), "2026-03-29");
+  assert.equal(isoDatePlus("2026-10-24", 1), "2026-10-25");
+  assert.equal(isoDatePlus("2026-12-31", 1), "2027-01-01");
 });

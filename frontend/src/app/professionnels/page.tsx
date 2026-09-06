@@ -92,6 +92,14 @@ const MODES: [string, string, string, string][] = [
  *
  * <p>"Aucun SMS ni e-mail automatique" is gone: the customer has picked their
  * own channel since V049, and the sentence had become untrue.
+ *
+ * <p>"Aucune note, aucun avis client" is gone for the opposite reason - the
+ * feature shipped. Its stated objection was that a mean of four reviews says
+ * nothing true and can be manipulated on the first day, and that objection was
+ * right, so the refusal that replaced it is the one that answers it: a review
+ * needs the reference of a booking taken here, the business cannot write or
+ * delete one, and both of those are enforced by the database rather than
+ * promised by this page. A refusal nothing enforces is marketing.
  */
 const REFUSALS: [string, string][] = [
   [
@@ -99,8 +107,8 @@ const REFUSALS: [string, string][] = [
     "Vous encaissez comme aujourd’hui, en espèces ou en mobile money, directement. Balaaca ne touche jamais votre argent et n’a donc rien à vous retenir.",
   ],
   [
-    "Aucune note, aucun avis client.",
-    "Une moyenne sur quatre avis ne dit rien de vrai sur un salon, et elle se manipule le premier jour. Tant qu’on ne sait pas la rendre honnête, on ne la met pas.",
+    "Aucun avis de quelqu’un qui n’est pas venu.",
+    "Un avis ne peut être laissé qu’avec la référence d’une réservation passée chez vous. Ni un concurrent, ni vous, ni personne ne peut en écrire un sans être passé par votre agenda — et vous ne pouvez ni modifier ni supprimer ce qui a été écrit sur vous.",
   ],
   [
     "Aucune mise en avant payante.",

@@ -9,8 +9,17 @@ import type {
   LocalityList,
   ProviderProfile,
   ReadinessView,
+  SocialHandle,
 } from "@/lib/types";
 import { groupLocalities, localityLabel } from "@/lib/localities";
+import {
+  HANDLE_PATTERN,
+  NETWORKS,
+  NETWORK_BASES,
+  NETWORK_LABELS,
+  NETWORK_PLACEHOLDERS,
+  networkIcon,
+} from "@/lib/social";
 import {
   saveProfile,
   savePolicy,
@@ -226,6 +235,7 @@ export default async function Profile({
                         type="file"
                         id={COVER_INPUT}
                         name="image"
+                        data-shrink
                         accept="image/jpeg,image/png"
                         data-preview={COVER_PREVIEW}
                       />
@@ -304,6 +314,7 @@ export default async function Profile({
                             type="file"
                             id={LOGO_INPUT}
                             name="image"
+                            data-shrink
                             accept="image/jpeg,image/png"
                             data-preview={LOGO_PREVIEW}
                           />
@@ -476,6 +487,8 @@ export default async function Profile({
                         defaultValue={profile.whatsapp_phone_e164 ?? ""}
                       />
                     </div>
+
+                    <SocialFields links={profile.links ?? []} />
                   </div>
                   <div className="card__foot">
                     <div className="row">
@@ -894,4 +907,82 @@ function Condition({
       )}
     </li>
   );
+}
+
+/**
+ * Where else this business can be found, one field per network.
+ *
+ * <p>One field per network rather than a list a provider adds rows to, and that
+ * shape does more than look tidier: the API refuses a network listed twice, and
+ * a form built this way cannot produce one. A refusal a form cannot trigger is
+ * a refusal nobody has to be shown.
+ *
+ * <p>The field takes a HANDLE and prints the address in front of it, because
+ * that is what the platform stores. A provider who pasted a whole Instagram URL
+ * would be refused, so the prefix is there to stop them reaching for one - and
+ * it is the same string the server composes with, which `social-bases.test.mts`
+ * is what guarantees.
+ *
+ * <p>`pattern` is the contract's own, so the browser refuses the shapes the API
+ * would refuse, on the field that holds them, before a round trip. It is the
+ * coarse gate rather than the per-network rule: the exact rule is a CHECK in the
+ * database and this cannot restate it without becoming a third copy.
+ */
+function SocialFields({ links }: { links: SocialHandle[] }) {
+  const current = new Map(links.map((l) => [l.kind, l.value]));
+  return (
+    <fieldset className="fieldset">
+      <legend className="fieldset__legend">Réseaux sociaux</legend>
+      <p className="field__hint" style={{ marginBottom: "var(--s-4)" }}>
+        Votre identifiant seulement, pas l’adresse complète. Laissez vide pour
+        retirer un réseau de votre page.
+      </p>
+      <div className="cols cols--2" style={{ gap: "var(--s-5)" }}>
+        {NETWORKS.map((kind) => (
+          <div className="field" key={kind}>
+            <label className="field__label" htmlFor={`p-${kind}`}>
+              <span className="row" style={{ gap: "var(--s-2)" }}>
+                <Icon name={networkIcon(kind)} size={16} />
+                {NETWORK_LABELS[kind]}
+              </span>
+              <span className="field__optional">facultatif</span>
+            </label>
+            <div className="handle">
+              {NETWORK_BASES[kind] ? (
+                <span className="handle__base">{shortBase(NETWORK_BASES[kind])}</span>
+              ) : null}
+              <input
+                className="input"
+                type="text"
+                id={`p-${kind}`}
+                name={`link_${kind}`}
+                inputMode="url"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                maxLength={200}
+                pattern={HANDLE_PATTERN}
+                title="Un identifiant sans espace, ou une adresse commençant par https://"
+                placeholder={NETWORK_PLACEHOLDERS[kind]}
+                defaultValue={current.get(kind) ?? ""}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
+/**
+ * The base, without the part nobody reads.
+ *
+ * <p>`https://www.` in front of a field on a telephone is forty pixels of
+ * boilerplate that pushes the part that matters off the screen. What a provider
+ * needs to see is which site they are typing into, so the scheme and the `www`
+ * come off for the LABEL only - the value sent is untouched, and what the
+ * server composes with is the whole base.
+ */
+function shortBase(base: string): string {
+  return base.replace(/^https:\/\/(www\.)?/, "");
 }

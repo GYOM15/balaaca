@@ -32,6 +32,7 @@ const LOCAL = new Set([
   "TOO_LARGE",
   "PHOTOS_FULL",
   "NO_MESSAGE",
+  "NO_RATING",
 ]);
 
 test("no screen branches on a code the contract does not publish", () => {

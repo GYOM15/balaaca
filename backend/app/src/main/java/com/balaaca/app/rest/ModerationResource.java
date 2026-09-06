@@ -7,7 +7,12 @@ import com.balaaca.app.api.model.LocalityRef;
 import com.balaaca.app.api.model.ModeratedProviderPage;
 import com.balaaca.app.api.model.ModeratedProviderView;
 import com.balaaca.app.api.model.ModerationView;
+import com.balaaca.app.api.model.ModeratedReviewPage;
+import com.balaaca.app.api.model.ModeratedReviewView;
 import com.balaaca.app.api.model.ProviderReportPage;
+import com.balaaca.app.api.model.ReviewVisibilityRequest;
+import com.balaaca.providers.ports.inbound.ModerateReviewsUseCase;
+import com.balaaca.providers.ports.inbound.ModerateReviewsUseCase.ModeratedReview;
 import com.balaaca.app.api.model.ProviderReportView;
 import com.balaaca.app.api.model.ProviderStatus;
 import com.balaaca.app.api.model.ReportReason;
@@ -42,9 +47,12 @@ import java.util.UUID;
 public class ModerationResource implements ModerationApi {
 
     private final ModerateProvidersUseCase moderation;
+    private final ModerateReviewsUseCase reviews;
 
-    public ModerationResource(ModerateProvidersUseCase moderation) {
+    public ModerationResource(ModerateProvidersUseCase moderation,
+                              ModerateReviewsUseCase reviews) {
         this.moderation = moderation;
+        this.reviews = reviews;
     }
 
     @Override
@@ -104,6 +112,66 @@ public class ModerationResource implements ModerationApi {
         return Response.ok(view(moderation.review(id)))
                 .header("Cache-Control", PublicCaching.NEVER)
                 .build();
+    }
+
+    @Override
+    @RolesAllowed("admin:moderation")
+    public Response listReviews(String status, String cursor, Integer limit) {
+        var page = reviews.list(
+                Optional.ofNullable(status).filter(v -> !v.isBlank()),
+                Cursors.rawId(cursor),
+                limit == null ? Cursors.DEFAULT_LIMIT : limit);
+
+        return Response.ok(new ModeratedReviewPage()
+                .data(page.entries().stream().map(ModerationResource::view).toList())
+                .nextCursor(page.next().map(Cursors::encodeRawId).orElse(null)))
+                .header("Cache-Control", PublicCaching.NEVER)
+                .build();
+    }
+
+    /**
+     * Takedown, and the flag rather than two routes.
+     *
+     * <p>Reversible on purpose: an operator who removed the wrong review has to
+     * be able to put it back without anybody writing SQL at midnight. Asking for
+     * the state it is already in is not an error - the operator wanted it that
+     * way and it is that way.
+     */
+    @Override
+    @RolesAllowed("admin:moderation")
+    public Response setReviewVisibility(UUID id, ReviewVisibilityRequest body) {
+        return Response.ok(view(reviews.setVisibility(id, Boolean.TRUE.equals(body.getHidden()))))
+                .header("Cache-Control", PublicCaching.NEVER)
+                .build();
+    }
+
+    @Override
+    @RolesAllowed("admin:moderation")
+    public Response clearReviewReply(UUID id) {
+        return Response.ok(view(reviews.clearReply(id)))
+                .header("Cache-Control", PublicCaching.NEVER)
+                .build();
+    }
+
+    private static ModeratedReviewView view(ModeratedReview r) {
+        ModeratedReviewView view = new ModeratedReviewView()
+                .reviewId(r.id())
+                .providerSlug(r.providerSlug())
+                .providerName(r.providerName())
+                .rating(r.rating())
+                .serviceName(r.serviceName())
+                // The month as the contract publishes it, and never a day: the
+                // column does not hold one, so there is nothing here to truncate
+                // and nothing a future edit could accidentally widen.
+                .visitedMonth(r.visitedMonth().toString())
+                .status(ModeratedReviewView.StatusEnum.fromValue(r.status()))
+                .createdAt(r.createdAt().atOffset(ZoneOffset.UTC))
+                .photoCount(r.photoCount());
+
+        r.comment().ifPresent(view::setComment);
+        r.reply().ifPresent(view::setReply);
+        r.hiddenAt().ifPresent(at -> view.setHiddenAt(at.atOffset(ZoneOffset.UTC)));
+        return view;
     }
 
     private static ModerationView view(Moderation m) {

@@ -57,7 +57,8 @@ public class ProviderRegistrationSqlRepository implements ProviderRegistrationRe
                             CAST(:subject AS varchar), CAST(:userId AS uuid),
                             CAST(:displayName AS varchar), CAST(:email AS varchar),
                             CAST(:providerId AS uuid), CAST(:slug AS varchar),
-                            CAST(:businessName AS varchar), CAST(:categoryId AS uuid),
+                            CAST(:businessName AS varchar),
+                            CAST(:description AS varchar), CAST(:categoryId AS uuid),
                             CAST(:city AS varchar), CAST(:timezone AS varchar),
                             CAST(:staffId AS uuid))
                     """)
@@ -68,6 +69,10 @@ public class ProviderRegistrationSqlRepository implements ProviderRegistrationRe
                     .setParameter("providerId", providerId)
                     .setParameter("slug", registration.slug())
                     .setParameter("businessName", registration.businessName())
+                    // Blank is not a description, and the function says so
+                    // rather than this line: nullif(btrim(...)) in V053 means no
+                    // caller anywhere can store a paragraph made of spaces.
+                    .setParameter("description", registration.description().orElse(null))
                     .setParameter("categoryId", categoryId.orElse(null))
                     .setParameter("city", registration.city().orElse(null))
                     .setParameter("timezone", registration.timezone().getId())

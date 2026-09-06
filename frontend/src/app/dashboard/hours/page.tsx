@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { api } from "@/lib/api";
-import { isoDate } from "@/lib/format";
+import { isoDatePlus, todayIn } from "@/lib/format";
 import { Icon } from "@/components/icon";
 import { EmptyState, Notice } from "@/components/ui";
 import type {
@@ -103,13 +103,16 @@ export default async function Hours({
   ]);
 
   const staffId = query.staff ?? me.staff_id;
-  const today = new Date();
-  const horizon = new Date(today.getTime() + 90 * 86_400_000);
+  // The date it is AT THE SALON, not on this server and not in UTC. It bounds
+  // the calendar below, and read in the wrong zone it would refuse a provider
+  // the one day they most often need to change: the one they are standing in.
+  const today = todayIn(profile.timezone);
+  const horizon = isoDatePlus(today, 90);
 
   const [hours, closures] = await Promise.all([
     api<OpeningHours>("/v1/opening-hours", { query: { staff_id: staffId } }),
     api<ClosureList>("/v1/closures", {
-      query: { staff_id: staffId, from: isoDate(today), to: isoDate(horizon) },
+      query: { staff_id: staffId, from: today, to: horizon },
     }),
   ]);
 
@@ -349,14 +352,19 @@ export default async function Hours({
                     créneaux libres</strong> sont proposés à la réservation :
                     personne ne peut voir ce que vous faites de votre journée.
                   </p>
-                  <div style={{ marginTop: "var(--s-5)" }}>
-                    <Link className="btn btn--secondary btn--block" href={`/p/${profile.slug}`}>
-                      <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
-                        <Icon name="external" size={18} />
-                      </span>
-                      <span className="btn__label--idle">Voir ma page publique</span>
-                    </Link>
-                  </div>
+                  {/* Only while the page exists: it resolves through a
+                      published-only lookup, and this button on an unpublished
+                      business opened a 404. */}
+                  {profile.published ? (
+                    <div style={{ marginTop: "var(--s-5)" }}>
+                      <Link className="btn btn--secondary btn--block" href={`/p/${profile.slug}`}>
+                        <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
+                          <Icon name="external" size={18} />
+                        </span>
+                        <span className="btn__label--idle">Voir ma page publique</span>
+                      </Link>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </aside>
@@ -413,7 +421,7 @@ export default async function Hours({
                         type="date"
                         name="date"
                         required
-                        min={isoDate(today)}
+                        min={today}
                       />
                       <p className="field__hint">
                         Une exception porte une journée. Pour des congés,

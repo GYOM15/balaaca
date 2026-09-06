@@ -2,7 +2,10 @@ package com.balaaca.app.rest;
 
 import com.balaaca.app.api.BookingApi;
 import com.balaaca.app.api.model.ErrorCode;
+import com.balaaca.app.api.model.OwnReviewView;
 import com.balaaca.app.api.model.ReportRequest;
+import com.balaaca.app.api.model.ServicePhotoView;
+import com.balaaca.app.api.model.SubmitReviewRequest;
 import com.balaaca.app.api.model.AppointmentCreatedView;
 import com.balaaca.app.api.model.AppointmentStatus;
 import com.balaaca.app.api.model.BookAppointmentRequest;
@@ -13,6 +16,8 @@ import com.balaaca.app.api.model.Money;
 import com.balaaca.booking.domain.BookingSource;
 import com.balaaca.booking.ports.inbound.BookAppointmentUseCase;
 import com.balaaca.providers.ports.inbound.LookupNoticeProfileUseCase;
+import com.balaaca.providers.ports.inbound.CustomerReviewUseCase;
+import com.balaaca.providers.ports.inbound.CustomerReviewUseCase.OwnReview;
 import com.balaaca.providers.ports.inbound.ReportProviderUseCase;
 import com.balaaca.booking.ports.inbound.CustomerBookingUseCase;
 import com.balaaca.booking.ports.inbound.CustomerBookingUseCase.CustomerBooking;
@@ -26,6 +31,7 @@ import jakarta.ws.rs.core.Response;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Locale;
+import java.util.UUID;
 import java.util.Optional;
 import java.util.function.Function;
 
@@ -65,6 +71,7 @@ public class PublicBookingResource implements BookingApi {
     private final CustomerBookingUseCase bookings;
     private final LookupNoticeProfileUseCase providers;
     private final ReportProviderUseCase reports;
+    private final CustomerReviewUseCase reviews;
     private final GuardBookingReferenceUseCase guard;
     private final HttpServerRequest httpRequest;
 
@@ -74,6 +81,7 @@ public class PublicBookingResource implements BookingApi {
                                  CustomerBookingUseCase bookings,
                                  LookupNoticeProfileUseCase providers,
                                  ReportProviderUseCase reports,
+                                 CustomerReviewUseCase reviews,
                                  GuardBookingReferenceUseCase guard,
                                  // Request-scoped and injected as a proxy, so
                                  // this singleton reads the request being served
@@ -85,6 +93,7 @@ public class PublicBookingResource implements BookingApi {
         this.bookings = bookings;
         this.providers = providers;
         this.reports = reports;
+        this.reviews = reviews;
         this.guard = guard;
         this.httpRequest = httpRequest;
     }
@@ -128,7 +137,7 @@ public class PublicBookingResource implements BookingApi {
     @Override
     public Response getBooking(String reference) {
         return byReference(reference, r -> withBooking(r,
-                () -> Response.ok(view(bookings.byReference(r)))
+                () -> Response.ok(view(bookings.byReference(r), reviews.of(r)))
                         .header("Cache-Control", PublicCaching.NEVER)
                         .build()));
     }
@@ -137,7 +146,11 @@ public class PublicBookingResource implements BookingApi {
     public Response cancelBooking(String reference, CancelAppointmentRequest body) {
         return byReference(reference, r -> withBooking(r, () -> Response.ok(view(bookings.cancel(
                 r,
-                Optional.ofNullable(body).map(CancelAppointmentRequest::getReason)))).build()));
+                Optional.ofNullable(body).map(CancelAppointmentRequest::getReason)),
+                // Read AFTER the cancellation, so `reviewable` answers for the
+                // booking as it now is. A cancelled appointment cannot be
+                // reviewed, and the page must not be handed a stale yes.
+                reviews.of(r))).build()));
     }
 
     @Override
@@ -147,7 +160,86 @@ public class PublicBookingResource implements BookingApi {
                 // The contract says date-time, so the wire type carries an
                 // offset; the domain carries an instant, and this is the one
                 // place the two meet.
-                body.getStartsAt().toInstant()))).build()));
+                body.getStartsAt().toInstant()), reviews.of(r))).build()));
+    }
+
+    /**
+     * How it went, said by the person who was there.
+     *
+     * <p>Through {@link #byReference} like every other route on this path, so a
+     * caller walking the reference space pays for it - and through
+     * {@link #withBooking}, because the read that follows the write runs under
+     * the tenant the reference resolves to.
+     *
+     * <p>200 and never 201: sending it again REPLACES what this customer said,
+     * so there is no second resource to have created. A public typo its author
+     * cannot fix is worse than the branch that costs.
+     */
+    @Override
+    public Response submitReview(String reference, SubmitReviewRequest body) {
+        return byReference(reference, r -> withBooking(r, () -> Response
+                .ok(review(reviews.submit(r, body.getRating(),
+                        Optional.ofNullable(body.getComment())
+                                .map(String::trim).filter(c -> !c.isEmpty()))))
+                .header("Cache-Control", PublicCaching.NEVER)
+                .build()));
+    }
+
+    @Override
+    public Response addReviewPhoto(String reference, java.io.File body) {
+        return byReference(reference, r -> withBooking(r, () -> Response.status(201)
+                .entity(review(reviews.addPhoto(r, read(body))))
+                .header("Cache-Control", PublicCaching.NEVER)
+                .build()));
+    }
+
+    @Override
+    public Response removeReviewPhoto(String reference, UUID photoId) {
+        return byReference(reference, r -> withBooking(r, () -> Response
+                .ok(review(reviews.removePhoto(r, photoId)))
+                .header("Cache-Control", PublicCaching.NEVER)
+                .build()));
+    }
+
+    /**
+     * The bytes, off the temporary file the runtime wrote them to.
+     *
+     * <p>An unreadable body is a malformed request and is answered as one. It
+     * used to be possible for this to arrive null, which turned a truncated
+     * upload into a 500 and told the customer the fault was ours.
+     */
+    private static byte[] read(java.io.File body) {
+        if (body == null) {
+            throw new UnreadableImageException();
+        }
+        try {
+            return java.nio.file.Files.readAllBytes(body.toPath());
+        } catch (java.io.IOException e) {
+            throw new UnreadableImageException();
+        }
+    }
+
+    private static OwnReviewView review(OwnReview own) {
+        OwnReviewView view = new OwnReviewView()
+                .rating(own.rating())
+                .serviceName(own.serviceName())
+                // The month, exactly as the column holds it. No date reached
+                // this far, so there is nothing here to truncate.
+                .visitedMonth(own.visitedMonth().toString())
+                .status(OwnReviewView.StatusEnum.fromValue(own.status().name()))
+                .photos(own.photos().stream()
+                        .map(p -> new ServicePhotoView()
+                                .photoId(p.id())
+                                // The stored name becomes a URL here and only
+                                // here, as it does everywhere else - through the
+                                // one constant, so moving the images behind a
+                                // CDN stays a change to one line.
+                                .url(ProviderProfileResource.MEDIA + p.storedName())
+                                .position(p.position()))
+                        .toList());
+
+        own.comment().ifPresent(view::setComment);
+        return view;
     }
 
     /**
@@ -255,7 +347,10 @@ public class PublicBookingResource implements BookingApi {
         }
     }
 
-    private static CustomerBookingView view(CustomerBooking booking) {
+    private static CustomerBookingView view(CustomerBooking booking,
+                                            // Qualified: the rate-limit guard next door
+                                            // calls its own answer a Verdict too.
+                                            CustomerReviewUseCase.Verdict verdict) {
         CustomerBookingView view = new CustomerBookingView()
                 .reference(booking.reference())
                 .providerSlug(booking.providerSlug())
@@ -276,6 +371,12 @@ public class PublicBookingResource implements BookingApi {
                 view.setReadyAt(OffsetDateTime.ofInstant(at, ZoneOffset.UTC)));
         booking.cancellableUntil().ifPresent(until -> view.setCancellableUntil(
                 OffsetDateTime.ofInstant(until, ZoneOffset.UTC)));
+
+        // Computed by the database function the write path also consults, never
+        // re-derived here from a status and an end time. Two copies of that rule
+        // is a page offering a button that answers 409.
+        view.setReviewable(verdict.reviewable());
+        verdict.review().map(PublicBookingResource::review).ifPresent(view::setReview);
         return view;
     }
 

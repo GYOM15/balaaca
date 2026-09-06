@@ -103,6 +103,13 @@ const SPRITE = String.raw`<svg xmlns="http://www.w3.org/2000/svg" aria-hidden="t
   <symbol id="i-briefcase" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3.4" y="7.4" width="17.2" height="12.4" rx="2.2"/><path d="M8.8 7.4V5.8c0-.9.7-1.6 1.6-1.6h3.2c.9 0 1.6.7 1.6 1.6v1.6M3.4 12.6c2.7 1.2 5.6 1.8 8.6 1.8s5.9-.6 8.6-1.8M12 13.4v1.8"/></symbol>
   <symbol id="i-tag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11.2 3.6H5a1.4 1.4 0 0 0-1.4 1.4v6.2c0 .4.15.7.4 1l8 8c.55.55 1.45.55 2 0l5.8-5.8c.55-.55.55-1.45 0-2l-8-8c-.3-.25-.6-.4-1-.4Z"/><circle fill="currentColor" stroke="none" cx="8" cy="8" r="1.4"/></symbol>
   <symbol id="i-star" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3.6 2.6 5.4 5.9.85-4.3 4.15 1 5.9-5.2-2.8-5.2 2.8 1-5.9L3.5 9.85 9.4 9Z"/></symbol>
+  <!-- The same star, painted. A rating needs BOTH, and a rule cannot make one
+       out of the other: fill="none" above is a presentation attribute, it is
+       cloned into the shadow tree with the symbol, and it beats anything the
+       outer svg could inherit down. That is this file's own note, three
+       paragraphs up, discovered again from the other side - a rating drawn as
+       five outlines with only a colour telling them apart. -->
+  <symbol id="i-star-filled" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3.6 2.6 5.4 5.9.85-4.3 4.15 1 5.9-5.2-2.8-5.2 2.8 1-5.9L3.5 9.85 9.4 9Z"/></symbol>
   <symbol id="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2.4M12 19v2.4M21.4 12H19M5 12H2.6M18.6 5.4 16.9 7.1M7.1 16.9l-1.7 1.7M18.6 18.6l-1.7-1.7M7.1 7.1 5.4 5.4"/></symbol>
   <symbol id="i-sparkle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3.4 1.9 5.1 5.1 1.9-5.1 1.9L12 17.4l-1.9-5.1L5 10.4l5.1-1.9Z"/><path d="M18.6 16.4l.8 2.1 2.1.8-2.1.8-.8 2.1-.8-2.1-2.1-.8 2.1-.8Z"/></symbol>
   <symbol id="i-chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20.4h16.4M7 20.4v-6M12 20.4V6.6M17 20.4v-9"/></symbol>
@@ -116,6 +123,36 @@ const SPRITE = String.raw`<svg xmlns="http://www.w3.org/2000/svg" aria-hidden="t
   <symbol id="i-ban" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="m6 6 12 12"/></symbol>
   <symbol id="i-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7.6 4.9 19 12 7.6 19.1Z"/></symbol>
   <symbol id="i-scan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.6 8.6V6.2a2.6 2.6 0 0 1 2.6-2.6h2.4M15.4 3.6h2.4A2.6 2.6 0 0 1 20.4 6.2v2.4M20.4 15.4v2.4a2.6 2.6 0 0 1-2.6 2.6h-2.4M8.6 20.4H6.2a2.6 2.6 0 0 1-2.6-2.6v-2.4"/><path d="M7 12h10"/></symbol>
+
+  <!-- ================= SOCIAL MARKS =================
+       Drawn in the same stroked line as everything above rather than pasted in
+       as brand logos. Two reasons, and the second decided it: a set of icons
+       stops being a set the moment one arrives in a different visual language,
+       and a directory of salons in Conakry has no need to reproduce seven
+       companies' marks in their own colours.
+
+       The ids are "i-net-" plus the contract's own enum value, lowercased, and
+       that is load-bearing rather than tidy. A lookup table from network to
+       icon name would be a second list to keep in step with the first, and a
+       "use" pointing at a symbol that does not exist draws NOTHING while
+       keeping its box - a defect that reads as a rendering quirk. Derived
+       instead, by networkIcon in lib/social.ts, and sprite-symbols.test.mts
+       walks the enum in openapi.yaml and asserts each one lands here.
+
+       i-net-website is a browser window rather than the globe already in this
+       sprite. Not to avoid copying a path: a globe is the mark this product
+       uses for a language or a region, and a business's own address is neither.
+
+       No backticks anywhere in here. This whole sprite is one String.raw
+       template, so a backtick in a comment ends it and the file stops parsing -
+       which is exactly what the first draft of this comment did. -->
+  <symbol id="i-net-facebook" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M14.4 8.3h-1.2a1.7 1.7 0 0 0-1.7 1.7v10.4M9.7 12.9h4.4"/></symbol>
+  <symbol id="i-net-instagram" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="17" height="17" rx="4.6"/><circle cx="12" cy="12" r="3.9"/><circle fill="currentColor" stroke="none" cx="16.7" cy="7.3" r="1"/></symbol>
+  <symbol id="i-net-tiktok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13.9 3.6v11a3.7 3.7 0 1 1-3.7-3.7c.4 0 .7.05 1.1.15"/><path d="M13.9 3.6a5.1 5.1 0 0 0 5.1 5.1"/></symbol>
+  <symbol id="i-net-youtube" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2.6" y="5.4" width="18.8" height="13.2" rx="3.6"/><path d="m10.2 9.4 5.5 2.6-5.5 2.6Z"/></symbol>
+  <symbol id="i-net-linkedin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="17" height="17" rx="3.2"/><path d="M8 10.7v6.1M11.8 16.8v-6.1M11.8 13.4a2.3 2.3 0 0 1 4.6 0v3.4"/><circle fill="currentColor" stroke="none" cx="8" cy="7.9" r="1"/></symbol>
+  <symbol id="i-net-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="m8.7 8.7 6.6 6.6M15.3 8.7l-6.6 6.6"/></symbol>
+  <symbol id="i-net-website" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="15" rx="2.6"/><path d="M3 9.2h18"/><circle fill="currentColor" stroke="none" cx="6.3" cy="6.9" r="0.9"/><circle fill="currentColor" stroke="none" cx="9.1" cy="6.9" r="0.9"/></symbol>
 
   <!-- ================= FULFILMENT MODES ================= -->
   <!-- Three glyphs built as one family: same base, same reading. -->

@@ -35,6 +35,39 @@ branched on something that could not happen. It comes back the day the tiers
 exist. `ErrorCatalogueTest` now checks both directions, so a published code with
 no producer breaks the build.
 
+### Paying for a service on the platform
+
+You are looking for a rail that does **split payment**, so a commission is taken
+on each transaction rather than invoiced afterwards. Nothing is built, and
+[ADR-0005](adr/0005-scope-of-payment.md) is why: the seams are prepared, the
+platform never holds the funds, and the topology decision waits for facts about
+the rails.
+
+What that ADR does **not** answer is the thing you raised, and it is a product
+decision rather than an engineering one:
+
+**Can a provider switch online payment off?** If it is a switch on the profile,
+a business can turn it off, tell its customers to pay in the shop, and keep using
+the hub for nothing. If there is no switch, a business without a mobile money
+account cannot be listed at all, which in Guinea is most of them on day one.
+
+The two shapes worth weighing, neither of them chosen:
+
+- **Payment is a property of the SERVICE, not the business.** A salon publishes
+  some services payable online and some not, and the platform's cut applies to
+  what went through it. A business that pays for nothing online is a business
+  that gets the free tier of the product.
+- **Payment is a property of the PLAN.** Online payment is what a paid tier
+  buys, and the commission replaces the subscription rather than sitting beside
+  it. This is the one that makes "turn it off to avoid the fee" incoherent,
+  because turning it off is what costs the provider the tier.
+
+Whichever it is, one thing has to be decided before the first line: **what
+"paid" does to the appointment state machine.** Today `PENDING` and `CONFIRMED`
+are the only states a slot is held in, and a payment that has been authorised but
+not captured is a third thing. Adding it later means a migration on the one table
+this schema most carefully constrains.
+
 ## Decided, scoped, not yet done
 
 ### ~~Rate-limit registrations~~ (done)
@@ -60,9 +93,19 @@ four hundred is a channel people mute, after which nothing alerts at all. One
 alert per kind per window, and the next one says how many it stands for.
 
 ### Deployment, backups
-CI builds, tests and checks the contract. **Nothing pushes to the VPS**, there is
-no scheduled `pg_dump`, and the image directory is in no backup. See
-`DEPLOYMENT.md`.
+CI builds, tests and checks the contract. **Nothing pushes to the VPS**, and
+there is no scheduled `pg_dump`.
+
+**The images go to Cloudflare R2**, decided, and that is what closes the second
+half: today they sit on the deployment's own disk, in no backup, and reviews
+have just made that content customers cannot reproduce. `ImageStore` is already
+the port for it - `store`, `read`, `discard`, and a `Shape` - so the change is
+an adapter beside the filesystem one and a property that chooses between them,
+not a change to a single caller. It was written that way on purpose.
+
+What is still owed with it: the bucket and its credentials, whether objects are
+served through R2's public domain or kept behind `/v1/media/<name>` so the
+platform can still refuse one, and what happens to the files already on disk.
 
 ## Translate the repository to English
 

@@ -97,13 +97,18 @@ export function boot(teardown) {
       var f = input.files[0];
       if (f.size > 5 * 1024 * 1024) { toast({ tone: 'danger', title: 'Fichier trop lourd', body: '5 Mo maximum. Celui-ci fait ' + Math.round(f.size / 1e5) / 10 + ' Mo.' }); input.value = ''; return; }
       if (!/^image\/(jpeg|png)$/.test(f.type)) { toast({ tone: 'danger', title: 'Format non accepté', body: 'JPEG ou PNG uniquement.' }); input.value = ''; return; }
+      // The mockup animated a progress bar on a timer and finished with
+      // "Photo ajoutee - redimensionnee a 1600 px, metadonnees supprimees".
+      // None of that had happened. The bar was a setInterval, the toast fired
+      // on CHOOSING the file, and the bytes had not left the browser - so a
+      // provider whose upload then failed had already been told twice that it
+      // worked, and went looking for the fault everywhere except the upload.
+      //
+      // What is honest to say here is that a file is selected, and to show it.
+      // Whether it was saved is the server's to answer, and it does, after.
       var url = URL.createObjectURL(f);
-      target.innerHTML = '<img src="' + url + '" alt="">' + '<span class="photo__tag">Envoi…</span><div class="photo__progress progress"><div class="progress__bar" style="width:12%"></div></div>';
-      var bar = target.querySelector('.progress__bar'), p = 12;
-      var t = setInterval(function () {
-        p += 18; bar.style.width = Math.min(p, 100) + '%';
-        if (p >= 100) { clearInterval(t); target.querySelector('.photo__tag').textContent = 'Ajoutée'; setTimeout(function(){ var tag = target.querySelector('.photo__tag'); if (tag) tag.remove(); var pr = target.querySelector('.photo__progress'); if (pr) pr.remove(); }, 900); toast({ tone: 'success', title: 'Photo ajoutée', body: 'Redimensionnée à 1600 px, métadonnées supprimées.' }); }
-      }, 220);
+      target.innerHTML = '<img src="' + url + '" alt="">'
+        + '<span class="photo__tag">Choisie, pas encore enregistrée</span>';
     });
   
     /* ---------- 7. Conditional fields ------------------------------------- */

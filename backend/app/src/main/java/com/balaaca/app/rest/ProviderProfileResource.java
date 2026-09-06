@@ -10,18 +10,31 @@ import com.balaaca.app.api.model.BookingPolicyView;
 import com.balaaca.app.api.model.LocalityRef;
 import com.balaaca.app.api.model.ProviderProfileRequest;
 import com.balaaca.app.api.model.ProviderProfileView;
+import com.balaaca.app.api.model.SocialHandle;
+import com.balaaca.app.api.model.SocialNetwork;
 import com.balaaca.app.api.model.ProviderStatus;
 import com.balaaca.app.api.model.ReadinessView;
 import com.balaaca.platformkernel.tenancy.TenantBound;
+import com.balaaca.providers.domain.SocialLink;
 import com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase;
 import com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase.BookingPolicy;
 import com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase.ProfileEdit;
 import com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase.ProviderProfile;
+import com.balaaca.app.api.model.ProviderPreviewView;
+import com.balaaca.app.api.model.ProviderReviewPage;
+import com.balaaca.app.api.model.ProviderReviewView;
+import com.balaaca.app.api.model.ReviewReplyRequest;
+import com.balaaca.catalog.ports.inbound.PublishedCatalogueUseCase;
+import com.balaaca.providers.ports.inbound.LookupPublicProviderUseCase;
+import com.balaaca.providers.ports.inbound.LookupPublicStaffUseCase;
+import com.balaaca.providers.ports.inbound.OwnReviewsUseCase;
+import com.balaaca.scheduling.ports.inbound.ManageAvailabilityUseCase;
 import io.quarkus.security.Authenticated;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.ws.rs.core.Response;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -41,13 +54,119 @@ public class ProviderProfileResource implements ProfileApi {
     private final ManageProviderProfileUseCase profiles;
     private final PublicLink links;
     private final ContestSuspensionUseCase contestations;
+    private final OwnReviewsUseCase reviews;
+    /**
+     * The four the public page is drawn from, so the preview is drawn from the
+     * same four. A preview assembled out of this resource's OWN reads would be
+     * a second source of truth for one page.
+     */
+    private final LookupPublicProviderUseCase publicPage;
+    private final PublishedCatalogueUseCase catalogue;
+    private final LookupPublicStaffUseCase staff;
+    private final ManageAvailabilityUseCase availability;
 
     public ProviderProfileResource(ManageProviderProfileUseCase profiles,
                                    PublicLink links,
-                                   ContestSuspensionUseCase contestations) {
+                                   ContestSuspensionUseCase contestations,
+                                   OwnReviewsUseCase reviews,
+                                   LookupPublicProviderUseCase publicPage,
+                                   PublishedCatalogueUseCase catalogue,
+                                   LookupPublicStaffUseCase staff,
+                                   ManageAvailabilityUseCase availability) {
         this.contestations = contestations;
         this.links = links;
         this.profiles = profiles;
+        this.reviews = reviews;
+        this.publicPage = publicPage;
+        this.catalogue = catalogue;
+        this.staff = staff;
+        this.availability = availability;
+    }
+
+    /**
+     * The page as a customer will see it, published or not.
+     *
+     * <p>No tenant is bound here and none needs to be: this route is
+     * authenticated, so the interceptor chain has already resolved the caller's
+     * membership and bound their provider. That is the ONLY difference between
+     * this and the public route - which resolves the same tenant from a slug,
+     * through a lookup that refuses an unpublished business.
+     *
+     * <p>Reviews are not carried, and that is honest rather than lazy: what a
+     * stranger can read of an unpublished business is nothing, so a preview
+     * that invented an average would be previewing a different page.
+     */
+    @Override
+    @RolesAllowed("dashboard:read")
+    public Response previewOwnPage() {
+        var provider = publicPage.publicPage();
+        return Response.ok(new ProviderPreviewView()
+                .provider(PublicPage.view(provider, catalogue.published(), Optional.empty()))
+                .openingHours(PublicPage.hours(provider.timezone().getId(),
+                                               availability.combinedOpeningHours()))
+                .staff(PublicPage.staff(staff.bookableStaff()))
+                .published(profiles.current().published()))
+                // Never cached. A provider presses this to check a change they
+                // made a moment ago, which is exactly the request a cache would
+                // answer with the version before it.
+                .header("Cache-Control", PublicCaching.NEVER)
+                .build();
+    }
+
+    @Override
+    @RolesAllowed("dashboard:read")
+    public Response listOwnReviews(String cursor, Integer limit) {
+        var page = reviews.page(Cursors.rawId(cursor),
+                                limit == null ? Cursors.DEFAULT_LIMIT : limit);
+
+        return Response.ok(new ProviderReviewPage()
+                .data(page.entries().stream()
+                        .map(ProviderProfileResource::review).toList())
+                .nextCursor(page.next().map(Cursors::encodeRawId).orElse(null)))
+                .header("Cache-Control", PublicCaching.NEVER)
+                .build();
+    }
+
+    /**
+     * The one write a business may make on a review of itself.
+     *
+     * <p>What keeps it to the reply is not this method. The role holds
+     * {@code UPDATE (reply, replied_at)} and no other column, so a statement
+     * that touched a rating would be refused by PostgreSQL before any policy
+     * was consulted - which is the only kind of guarantee worth having about
+     * whether a star can be bought back.
+     */
+    @Override
+    @RolesAllowed("profile:write")
+    public Response replyToReview(java.util.UUID id, ReviewReplyRequest body) {
+        return Response.ok(review(reviews.reply(id, body.getReply())))
+                .header("Cache-Control", PublicCaching.NEVER)
+                .build();
+    }
+
+    @Override
+    @RolesAllowed("profile:write")
+    public Response withdrawReviewReply(java.util.UUID id) {
+        return Response.ok(review(reviews.withdrawReply(id)))
+                .header("Cache-Control", PublicCaching.NEVER)
+                .build();
+    }
+
+    private static ProviderReviewView review(OwnReviewsUseCase.OwnReview own) {
+        ProviderReviewView view = new ProviderReviewView()
+                .reviewId(own.id())
+                .rating(own.rating())
+                .serviceName(own.serviceName())
+                // The month as the column holds it. No date reached this far.
+                .visitedMonth(own.visitedMonth().toString())
+                .status(ProviderReviewView.StatusEnum.fromValue(own.status()))
+                .createdAt(own.createdAt().atOffset(java.time.ZoneOffset.UTC))
+                // The stored name becomes a URL here and only here.
+                .photoUrls(own.photoNames().stream().map(n -> MEDIA + n).toList());
+
+        own.comment().ifPresent(view::setComment);
+        own.reply().ifPresent(view::setReply);
+        return view;
     }
 
     @Override
@@ -70,6 +189,7 @@ public class ProviderProfileResource implements ProfileApi {
                 Optional.ofNullable(request.getPublicPhoneE164()),
                 Optional.ofNullable(request.getPublicEmail()),
                 Optional.ofNullable(request.getWhatsappPhoneE164()),
+                handles(request.getLinks()),
                 zone(request.getTimezone()),
                 Boolean.TRUE.equals(request.getPublished()))))).build();
     }
@@ -174,7 +294,37 @@ public class ProviderProfileResource implements ProfileApi {
 
         profile.logoUrl().ifPresent(name -> view.setLogoUrl(MEDIA + name));
         profile.coverUrl().ifPresent(name -> view.setCoverUrl(MEDIA + name));
+
+        // The handle as it was typed, not the composed address: this is the
+        // read the form fills its own fields from, and a URL put back into a
+        // field that wants a handle would be refused on the next save.
+        view.setLinks(profile.links().stream()
+                .map(link -> new SocialHandle()
+                        .kind(SocialNetwork.fromValue(link.kind().name()))
+                        .value(link.value()))
+                .toList());
         return view;
+    }
+
+    /**
+     * What the request said the links are, whole.
+     *
+     * <p>Null and empty mean the same thing here and both clear the set, which
+     * is the same rule every other field in this body follows. A client that
+     * omits the list is stating that there are none, exactly as a client that
+     * omits `area` is stating that there is no quartier.
+     *
+     * <p>Nothing validates the shape. The database carries a CHECK per network
+     * and a UNIQUE per provider, and the violations arrive as SQLSTATEs this
+     * application translates - so there is one definition of what a handle is,
+     * in the only place that can enforce it for every writer.
+     */
+    private static List<SocialLink> handles(List<SocialHandle> links) {
+        return links == null ? List.of() : links.stream()
+                .map(l -> new SocialLink(
+                        com.balaaca.providers.domain.SocialNetwork.valueOf(l.getKind().name()),
+                        l.getValue()))
+                .toList();
     }
 
     /**
