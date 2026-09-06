@@ -163,7 +163,7 @@ function ReviewCard({ review }: { review: ProviderReview }) {
         </div>
       </div>
 
-      <div className="panel__body">
+      <div className="card__body">
         {review.comment ? (
           <p className="review__text">{review.comment}</p>
         ) : (

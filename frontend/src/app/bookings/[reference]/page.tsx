@@ -722,7 +722,7 @@ function DetailView({
             they thought of Thursday. */}
         {reviewable && !booking.review ? (
           <div className="panel" style={{ marginTop: "var(--s-8)" }}>
-            <div className="panel__body">
+            <div className="card__body">
               <p className="t-h4">Comment s&rsquo;est pass&eacute;e votre prestation&nbsp;?</p>
               <p className="t-sm" style={{ marginTop: "var(--s-2)" }}>
                 Votre avis aide les prochains clients de {booking.provider_name}
@@ -746,7 +746,7 @@ function DetailView({
 
         {booking.review ? (
           <div className="panel" style={{ marginTop: "var(--s-8)" }}>
-            <div className="panel__body">
+            <div className="card__body">
               <div className="row row--between" style={{ gap: "var(--s-4)", flexWrap: "wrap" }}>
                 <StarRow value={booking.review.rating} size={18} />
                 {/* Only while it stands. A review an operator removed is
