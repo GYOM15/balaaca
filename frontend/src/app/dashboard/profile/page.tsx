@@ -200,7 +200,7 @@ export default async function Profile({
                     <div className="pcover atmo grain grain--dark" id={COVER_PREVIEW}>
                       {cover ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={cover} alt="Bandeau actuel" width={1600} height={400} />
+                        <img src={cover} alt="Bandeau actuel" width={1600} height={608} />
                       ) : null}
                     </div>
                     {cover ? null : (
@@ -213,8 +213,9 @@ export default async function Profile({
                         something; a provider who knows that picks a picture
                         whose subject is not at the top. */}
                     <p className="field__hint" style={{ marginTop: "var(--s-2)" }}>
-                      <Icon name="info" size={16} /> Format 4:1, par exemple
-                      1600&nbsp;×&nbsp;400. Une photo d’une autre forme est
+                      <Icon name="info" size={16} /> Format 1600&nbsp;×&nbsp;608,
+                      la taille d’une couverture Facebook. Vous pouvez réutiliser
+                      la vôtre telle quelle. Une image d’une autre forme est
                       recadrée en son centre.
                     </p>
                     <div
