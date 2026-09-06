@@ -1552,18 +1552,18 @@ a.choice { text-decoration: none; color: inherit; }
   transition: border-color var(--dur-base) var(--ease-out), box-shadow var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out);
 }
 .pcard:hover { border-color: var(--border-strong); box-shadow: var(--sh-md); transform: translateY(-3px); }
-/* 5/2, et le chiffre vient de deux contraintes qui se rencontrent la.
-   L'API stocke une banniere en 1600x400, soit du 4:1. En 16/9 la bande rognait
-   un peu moins de la MOITIE de la largeur, au centre. En 4:1 elle ne rognerait
-   rien mais mesurerait 64 px de haut sur une carte de 257, ce qui ne porte plus
-   ni photo ni pastille. 5/2 rogne 37 % au lieu de 55 et laisse 103 px. */
-/* 4:1, parce que c'est la forme dans laquelle l'API stocke une couverture
-   (SanitisedImage.BANNER_WIDTH / BANNER_HEIGHT = 1600 / 400). Toute autre
-   valeur ici fait rogner `object-fit: cover` une SECONDE fois, en silence :
-   en 5/2 la carte coupait 37 % de la largeur d'une image que le prestataire
-   avait deja vue et approuvee. `banner-ratio.test.mts` compare desormais les
-   deux, pour toutes les bandes et plus seulement celle de la page publique. */
-.pcard__cover { position: relative; aspect-ratio: 4 / 1; background: var(--bg-sunken); overflow: hidden; }
+/* 1600/608, ecrit en toutes lettres parce que c'est EXACTEMENT la forme dans
+   laquelle l'API stocke une couverture (SanitisedImage.BANNER_WIDTH et
+   BANNER_HEIGHT). Toute autre valeur ici fait rogner `object-fit: cover` une
+   SECONDE fois, en silence : en 5/2 la carte coupait 37 % de la largeur d'une
+   image que le prestataire avait deja vue et approuvee.
+
+   Les deux valeurs ne peuvent pas etre partagees - une constante Java compilee
+   dans l'API contre une declaration CSS envoyee a un navigateur - donc elles
+   sont comparees : `banner-ratio.test.mts` lit la source Java et verifie TOUTES
+   les bandes, plus seulement celle de la page publique. C'est precisement ce
+   qui manquait le jour ou cette carte a ete ecrite. */
+.pcard__cover { position: relative; aspect-ratio: 1600 / 608; background: var(--bg-sunken); overflow: hidden; }
 .pcard__cover img { width: 100%; height: 100%; object-fit: cover; transition: transform var(--dur-slow) var(--ease-out); }
 .pcard:hover .pcard__cover img { transform: scale(1.03); }
 .pcard__badges { position: absolute; left: var(--s-3); top: var(--s-3); display: flex; gap: var(--s-2); flex-wrap: wrap; }
@@ -1606,16 +1606,24 @@ a.choice { text-decoration: none; color: inherit; }
    plafonnee n'est pas un ratio du tout : la bande allait de 2,4:1 sur un
    telephone a 6,7:1 sur un grand ecran, donc aucune forme stockee ne pouvait y
    correspondre et chaque visiteur voyait un recadrage different. Le bandeau est
-   maintenant stocke en 4:1, et jusqu'a 1360 px c'est exactement ce qui
+   stocke en 1600x608, soit 2,63:1, et jusqu'a 1210 px c'est exactement ce qui
    s'affiche - rien n'est rogne.
 
    Le plafond de hauteur garde la photo a sa place sur un tres grand ecran. Au
-   dela, la boite devient plus large que 4:1 et le rognage revient - mais sur
-   les COTES, jamais en hauteur, ou se trouve le sujet. */
-.pcover { position: relative; aspect-ratio: 4 / 1; max-height: 340px; background: var(--surface-inverse); overflow: hidden; }
-/* Sous 700 px, 4:1 ne ferait plus que 98 px de haut : une meurtriere. Le ratio
-   s'elargit, donc la aussi on rogne sur les cotes. */
-@media (max-width: 700px) { .pcover { aspect-ratio: 5 / 2; } }
+   dela, la boite devient plus large que le fichier et le rognage revient - mais
+   sur les COTES, jamais en hauteur, ou se trouve le sujet.
+
+   460 px, et le chiffre est calcule : la bande fait toute la largeur de la
+   fenetre, donc en 2,63:1 elle atteint 460 px a 1210 px de fenetre, soit la
+   largeur maximale de `.page`. Jusque-la, la couverture est entiere. Au-dela
+   seulement, les cotes rognent. En 4:1 le plafond de 340 px donnait le meme
+   comportement a 1360 px ; c'est la meme regle, deplacee avec le ratio.
+
+   L'exception a 700 px a disparu avec le changement de forme : elle existait
+   parce que 4:1 sur un telephone donnait une meurtriere de 98 px. En 2,63:1 la
+   meme largeur donne 143 px, donc il n'y a plus de deviation a maintenir. */
+.pcover { position: relative; aspect-ratio: 1600 / 608; max-height: 460px; background: var(--surface-inverse); overflow: hidden; }
+
 .pcover img { width: 100%; height: 100%; object-fit: cover; }
 .pcover::after { content:""; position:absolute; inset:0; background: linear-gradient(180deg, rgba(8,31,27,.05) 0%, rgba(8,31,27,.42) 100%); }
 .phead { position: relative; margin-top: -46px; z-index: 2; }
