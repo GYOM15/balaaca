@@ -1500,31 +1500,13 @@ a.choice { text-decoration: none; color: inherit; }
   transition: border-color var(--dur-base) var(--ease-out), box-shadow var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out);
 }
 .pcard:hover { border-color: var(--border-strong); box-shadow: var(--sh-md); transform: translateY(-3px); }
-.pcard__cover { position: relative; aspect-ratio: 16 / 9; background: var(--bg-sunken); overflow: hidden; }
+/* 5/2, et le chiffre vient de deux contraintes qui se rencontrent la.
+   L'API stocke une banniere en 1600x400, soit du 4:1. En 16/9 la bande rognait
+   un peu moins de la MOITIE de la largeur, au centre. En 4:1 elle ne rognerait
+   rien mais mesurerait 64 px de haut sur une carte de 257, ce qui ne porte plus
+   ni photo ni pastille. 5/2 rogne 37 % au lieu de 55 et laisse 103 px. */
+.pcard__cover { position: relative; aspect-ratio: 5 / 2; background: var(--bg-sunken); overflow: hidden; }
 .pcard__cover img { width: 100%; height: 100%; object-fit: cover; transition: transform var(--dur-slow) var(--ease-out); }
-/* Un logo n'est pas une photo de couverture. Rogne en 16/9 comme une photo, un
-   logo carre perd 44 % de sa hauteur et un logo haut est detruit : ce qui reste
-   n'est plus la marque. Il est donc POSE sur le fond chaud, entier et centre,
-   exactement comme le dessin de metier qui le remplace quand il n'y en a pas. */
-.pcard__cover--mark img {
-  /* Dimensionne par la HAUTEUR de la bande : un pourcentage de largeur se
-     mesure sur les 253 px de la carte et depassait la bande en 16/9. */
-  height: 72%; width: auto; max-width: 62%;
-  /* Le stockage garantit desormais un carre ; ceci le tient quand meme, pour
-     les logos deposes avant ce changement. */
-  aspect-ratio: 1;
-  object-fit: contain;
-  /* La plaque, et c'est elle le correctif. La plupart des logos arrivent en
-     JPEG, format sans transparence, donc avec leur propre fond blanc : posee
-     nue sur le beige, la marque devenait un carre blanc flottant, un
-     autocollant colle sur la carte. Sur une plaque blanche, ce meme fond se
-     confond avec elle, et un PNG transparent y est juste aussi. */
-  background: var(--surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-sm);
-  box-shadow: var(--sh-sm);
-}
-.pcard:hover .pcard__cover--mark img { transform: scale(1.03); }
 .pcard:hover .pcard__cover img { transform: scale(1.03); }
 .pcard__badges { position: absolute; left: var(--s-3); top: var(--s-3); display: flex; gap: var(--s-2); flex-wrap: wrap; }
 /* La marque POSEE sur la banniere, ronde et centree, a cheval sur le bord bas.
@@ -1535,16 +1517,18 @@ a.choice { text-decoration: none; color: inherit; }
    place a la moitie qui deborde. */
 .pcard__logo { position: absolute; left: 50%; bottom: 0;
   transform: translate(-50%, 50%);
-  width: 64px; height: 64px; border-radius: var(--r-circle);
+  width: 88px; height: 88px; border-radius: var(--r-circle);
   background: var(--surface); border: 3px solid var(--surface);
   box-shadow: var(--sh-sm); display: grid; place-items: center; overflow: hidden; }
 .pcard__logo img { width: 100%; height: 100%; object-fit: cover; }
 /* La bande doit laisser deborder la pastille, donc elle ne peut pas rogner. */
 .pcard:has(.pcard__logo) .pcard__cover { overflow: visible; }
 .pcard:has(.pcard__logo) .pcard__cover img { border-radius: var(--r-md) var(--r-md) 0 0; }
-/* La pastille descend de 32 px sous la bande et le corps n'en avait que 24 :
-   elle mordait de 8 px sur la ligne du metier. Mesure, pas estimation. */
-.pcard:has(.pcard__logo) .pcard__body { padding-top: calc(var(--s-6) + 20px); }
+/* La pastille descend de la moitie de sa hauteur sous la bande, soit 44 px, et
+   le corps n'en avait que 24 : elle mordait sur la ligne du metier. Le calcul
+   est ecrit plutot que le resultat, pour qu'agrandir la pastille une seconde
+   fois ne recasse pas ce qu'elle recouvre. */
+.pcard:has(.pcard__logo) .pcard__body { padding-top: calc(44px + var(--s-3)); }
 .pcard__body { padding: var(--s-6) var(--s-5) var(--s-4); flex: 1 1 auto; display: flex; flex-direction: column; gap: var(--s-2); }
 .pcard__name { font-size: var(--fs-h4); font-weight: var(--fw-bold); line-height: 1.25; }
 .pcard__trade { font-size: var(--fs-xs); font-weight: var(--fw-bold); color: var(--accent-strong); letter-spacing: var(--ls-wide); text-transform: uppercase; }
