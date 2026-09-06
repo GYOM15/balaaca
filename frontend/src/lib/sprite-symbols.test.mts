@@ -2,8 +2,8 @@ import { strict as assert } from "node:assert";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { networkIcon } from "./social.js";
-import type { SocialNetwork } from "./types.js";
+import { networkIcon } from "./social.ts";
+import type { SocialNetwork } from "./types.ts";
 
 /**
  * Every glyph a screen asks for is one the sprite lays down.

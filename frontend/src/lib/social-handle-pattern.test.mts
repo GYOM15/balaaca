@@ -2,7 +2,7 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { HANDLE_PATTERN } from "./social.js";
+import { HANDLE_PATTERN } from "./social.ts";
 
 /**
  * The pattern on the form is the pattern in the contract.

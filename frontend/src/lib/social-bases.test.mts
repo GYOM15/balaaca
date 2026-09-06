@@ -2,7 +2,7 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { NETWORK_BASES } from "./social.js";
+import { NETWORK_BASES } from "./social.ts";
 
 /**
  * The form's prefix and the server's composition are the same string.

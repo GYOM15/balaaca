@@ -2,8 +2,8 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { asRequest } from "./profile-request.js";
-import type { ProviderProfile } from "./types.js";
+import { asRequest } from "./profile-request.ts";
+import type { ProviderProfile } from "./types.ts";
 
 /**
  * Publishing a page must not clear half of it.
