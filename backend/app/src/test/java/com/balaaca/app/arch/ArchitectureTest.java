@@ -82,7 +82,13 @@ class ArchitectureTest {
             // has to name the enum rather than guess it.
             + "|scheduling\\.domain\\.(AvailableSlot|OpenWindow"
             + "|AvailabilityOverride(\\$Kind)?)"
-            + "|providers\\.domain\\.ProviderStatus)";
+            // SocialLink and SocialNetwork: the profile command carries a list
+            // of them and both the profile view and the public page publish
+            // one, so the edge that builds either has to name them. SocialLink
+            // is a record of an enum and a string; SocialNetwork is the one
+            // place that says what a stored handle means, which is why the
+            // composed address is asked for rather than assembled at the edge.
+            + "|providers\\.domain\\.(ProviderStatus|SocialLink|SocialNetwork))";
 
     // --- The domain is an island ------------------------------------------
 

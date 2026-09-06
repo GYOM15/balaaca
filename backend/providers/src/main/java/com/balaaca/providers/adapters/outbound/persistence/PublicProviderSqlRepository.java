@@ -1,5 +1,7 @@
 package com.balaaca.providers.adapters.outbound.persistence;
 
+import com.balaaca.providers.domain.SocialLink;
+import com.balaaca.providers.domain.SocialNetwork;
 import com.balaaca.providers.ports.inbound.LookupPublicProviderUseCase;
 import com.balaaca.providers.ports.inbound.ManageProviderProfileUseCase.LocalityRef;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -7,6 +9,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
 import java.math.BigDecimal;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -49,7 +52,34 @@ public class PublicProviderSqlRepository implements LookupPublicProviderUseCase 
                 text(r[2]), text(r[3]), text(r[4]),
                 locality(r[5], r[6]), text(r[7]), text(r[8]),
                 text(r[9]), text(r[10]), text(r[11]), text(r[12]),
+                links(),
                 ZoneId.of((String) r[13]));
+    }
+
+    /**
+     * The row of icons.
+     *
+     * <p>Its own statement rather than a join, because a provider has several
+     * of these and joining would multiply the page row by them - and then the
+     * one-row read above would have to collapse duplicates of every other
+     * column back down.
+     *
+     * <p>{@code ORDER BY kind} is the same order the owner's own read uses, so
+     * the preview a provider looks at cannot draw these differently from the
+     * page a customer reads.
+     */
+    @SuppressWarnings("unchecked")
+    private List<SocialLink> links() {
+        List<Object[]> rows = em.createNativeQuery("""
+                SELECT kind, value
+                  FROM provider_links
+                 WHERE provider_id = app_current_provider()
+                 ORDER BY kind
+                """).getResultList();
+
+        return rows.stream()
+                .map(r -> new SocialLink(SocialNetwork.valueOf((String) r[0]), (String) r[1]))
+                .toList();
     }
 
     private static Optional<String> text(Object column) {

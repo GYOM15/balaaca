@@ -45,6 +45,7 @@ public class PublishedReviewsSqlRepository implements PublishedReviewsUseCase {
 
         List<Object[]> rows = em.createNativeQuery("""
                 SELECT r.id, r.rating, r.comment, r.service_name, r.visited_month,
+                       r.reply,
                        -- The photographs of this review, in the order they were
                        -- added. A correlated aggregate rather than a second
                        -- round trip per row: (review_id, sort_order) is indexed,
@@ -79,7 +80,8 @@ public class PublishedReviewsSqlRepository implements PublishedReviewsUseCase {
                     Optional.ofNullable((String) r[2]),
                     (String) r[3],
                     CustomerReviewSqlRepository.yearMonth(r[4]),
-                    names(r[5])));
+                    names(r[6]),
+                    Optional.ofNullable((String) r[5])));
         }
 
         Optional<UUID> next = rows.size() > reviews.size() && !ids.isEmpty()

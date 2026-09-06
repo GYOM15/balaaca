@@ -15,6 +15,7 @@ import type {
   ProviderReportView,
 } from "@/lib/types";
 import {
+  clearReviewReply,
   markContestationRead,
   reinstateProvider,
   reviewReport,
@@ -819,12 +820,22 @@ function ReviewRow({ review, back }: { review: ModeratedReview; back: string }) 
         </div>
       </div>
 
-      <div className="panel__body">
+      <div className="card__body">
         {review.comment ? (
           <p className="review__text">{review.comment}</p>
         ) : (
           <p className="t-sm">Note seule, sans commentaire.</p>
         )}
+
+        {/* The business's own words, under the customer's. Public text with its
+            own lever, because removing the review to reach the reply would
+            remove the complaint that was fair. */}
+        {review.reply ? (
+          <div className="review__reply" style={{ marginTop: "var(--s-3)" }}>
+            <p className="t-overline">Réponse de l’établissement</p>
+            <p className="review__text">{review.reply}</p>
+          </div>
+        ) : null}
 
         <p className="t-xs" style={{ marginTop: "var(--s-3)" }}>
           {review.photo_count > 0
@@ -843,6 +854,18 @@ function ReviewRow({ review, back }: { review: ModeratedReview; back: string }) 
             href={`/p/${encodeURIComponent(review.provider_slug)}#avis`}
           />
           <span className="grow" />
+          {review.reply ? (
+            <form action={clearReviewReply}>
+              <input type="hidden" name="review_id" value={review.review_id} />
+              <input type="hidden" name="back" value={back} />
+              <button className="btn btn--ghost btn--sm" type="submit">
+                <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
+                  <Icon name="x-circle" size={18} />
+                </span>
+                <span className="btn__label--idle">Retirer la réponse</span>
+              </button>
+            </form>
+          ) : null}
           <form action={setReviewVisibility}>
             <input type="hidden" name="review_id" value={review.review_id} />
             <input type="hidden" name="hidden" value={hidden ? "0" : "1"} />

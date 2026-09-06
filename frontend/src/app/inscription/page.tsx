@@ -29,6 +29,7 @@ type Search = {
   slug?: string;
   name?: string;
   category?: string;
+  about?: string;
 };
 
 /**
@@ -38,9 +39,9 @@ type Search = {
  * photographers, caterers, dressmakers, hall renters - and a word that names
  * one of them tells the others this is not for them.
  *
- * <p>One screen and three fields. The readiness thread the design draws after
- * it - "activité, prestation, disponibilités, publier" - lives on the
- * dashboard, which is where those four answers are actually saved.
+ * <p>One screen and four fields, one of them optional. The readiness thread the
+ * design draws after it - "activité, prestation, disponibilités, publier" -
+ * lives on the dashboard, which is where those four answers are actually saved.
  */
 export default async function Register({
   searchParams,
@@ -58,6 +59,7 @@ export default async function Register({
   const typedSlug = query.slug?.trim() ?? "";
   const typedName = query.name?.trim() ?? "";
   const typedCategory = query.category?.trim() ?? "";
+  const typedAbout = query.about ?? "";
 
   // One account, one business - so this refusal has no remedy on this page,
   // and showing the form under it would invite a second attempt that cannot
@@ -269,6 +271,37 @@ export default async function Register({
           <p className="field__hint" id="category_hint">
             Un seul métier par établissement. Vos prestations peuvent en
             revanche être très variées.
+          </p>
+        </div>
+
+        {/* The one field a customer reads first, asked for at the one moment a
+            business has something to say about itself. Optional, and the label
+            says so: a mandatory paragraph is a wall in front of the screen that
+            has to be easiest, and somebody with nothing prepared would type one
+            word to get past it.
+
+            Capped well below the 2000 the column takes. What is wanted here is
+            a sentence, the profile form is where the long version goes, and a
+            short field is also what keeps this value harmless in the query
+            string that carries it back when a handle turns out to be taken. */}
+        <div className="field" style={{ marginTop: "var(--s-6)" }}>
+          <label className="field__label" htmlFor="description">
+            En une phrase, votre établissement
+            <span className="field__optional">facultatif</span>
+          </label>
+          <textarea
+            className="textarea"
+            id="description"
+            name="description"
+            rows={3}
+            maxLength={280}
+            defaultValue={typedAbout}
+            placeholder="Coiffure femme et tresses africaines à Nongo, depuis 2014."
+            aria-describedby="description_hint"
+          />
+          <p className="field__hint" id="description_hint">
+            C’est la première chose qu’une cliente lit sur votre page. Vous
+            pourrez la compléter ou la réécrire à tout moment.
           </p>
         </div>
 

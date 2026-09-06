@@ -111,7 +111,9 @@ export function Hero({
               </div>
               <div className="search__submit">
                 <button
-                  className="btn btn--primary btn--lg btn--block search__btn"
+                  // No search__btn: it was a hook with no rule behind it,
+                  // and the four button classes already draw this.
+                  className="btn btn--primary btn--lg btn--block"
                   type="submit"
                 >
                   <span className="btn__icon--idle" style={{ display: "inline-flex" }}>

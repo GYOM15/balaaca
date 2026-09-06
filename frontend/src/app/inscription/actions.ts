@@ -14,8 +14,8 @@ import type { ProviderRegistered } from "@/lib/types";
  *
  * <p>Nothing about the person is sent. Their name and their address come from
  * the verified token, because a caller does not get to choose who they are.
- * The body carries three fields because the contract accepts three that this
- * form asks for, and a fourth invented here would be dropped in silence.
+ * The body carries only fields the contract accepts; one invented here would be
+ * dropped in silence.
  */
 export async function register(formData: FormData): Promise<void> {
   const businessName = String(formData.get("business_name") ?? "").trim();
@@ -28,6 +28,11 @@ export async function register(formData: FormData): Promise<void> {
 
   const categorySlug = String(formData.get("category_slug") ?? "").trim();
 
+  // Optional, and the empty string is not a description: `app_register_provider`
+  // stores `nullif(btrim(...), '')` so a blank could not land anyway, but a body
+  // that says "" is a body claiming the provider wrote something.
+  const description = String(formData.get("description") ?? "").trim();
+
   try {
     await api<ProviderRegistered>("/v1/providers", {
       method: "POST",
@@ -37,6 +42,7 @@ export async function register(formData: FormData): Promise<void> {
         // Omitted when empty, never sent as "". The contract says to leave it
         // out if none fits, and the empty string is not a published category.
         ...(categorySlug ? { category_slug: categorySlug } : {}),
+        ...(description ? { description } : {}),
       },
     });
   } catch (error) {
@@ -51,8 +57,9 @@ export async function register(formData: FormData): Promise<void> {
       // fixed by anything, so the page must be able to say two different
       // things. What was typed comes back with them - a form that empties
       // itself on refusal asks the person to type it all again to change one
-      // word, and none of these three values is private.
-      redirect(refused(error.code, { slug, name: businessName, category: categorySlug }));
+      // word, and none of these four values is private.
+      redirect(refused(error.code,
+                       { slug, name: businessName, category: categorySlug, about: description }));
     }
     throw error;
   }
@@ -67,11 +74,15 @@ export async function register(formData: FormData): Promise<void> {
 
 function refused(
   code: string | null,
-  typed: { slug: string; name: string; category: string },
+  typed: { slug: string; name: string; category: string; about: string },
 ): string {
   const query = new URLSearchParams({ error: code ?? "UNKNOWN" });
   if (typed.slug) query.set("slug", typed.slug);
   if (typed.name) query.set("name", typed.name);
   if (typed.category) query.set("category", typed.category);
+  // Capped at 280 by the form, which is what makes carrying it here reasonable:
+  // a page's worth of text in a URL lands in every access log between here and
+  // the browser.
+  if (typed.about) query.set("about", typed.about);
   return `/inscription?${query.toString()}`;
 }

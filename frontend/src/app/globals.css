@@ -75,6 +75,10 @@
   --p-warning-100: #FAF0E4;
   --p-warning-border: #DEBE93;
   --p-danger-500: #A32B22;
+  /* Le survol des boutons destructeurs. Il etait appele et jamais declare, donc
+     `background: var(--btn-bg)` devenait invalide au survol et retombait sur
+     transparent : le bouton rouge devenait blanc, et son texte blanc avec. */
+  --p-danger-700: #7A201A;
   --p-danger-100: #F9EAE8;
   --p-danger-border: #DFAFAA;
   --p-info-500: #1F5F86;
@@ -652,6 +656,12 @@ hr { border: 0; border-top: 1px solid var(--border); margin: var(--s-8) 0; }
    -------------------------------------------------------------------------- */
 .field { display: block; }
 .field + .field { margin-top: var(--s-5); }
+/* Sauf en grille, où l'écart est déjà là. La règle ci-dessus est faite pour une
+   pile verticale ; dans `.cols` elle s'ajoute au `gap` et décale vers le bas
+   toutes les cases sauf la première, donc la première ligne d'un formulaire à
+   deux colonnes arrive désalignée de 20 px. C'était déjà le cas de Commune /
+   Quartier et des trois champs de la politique de réservation. */
+.cols > .field + .field { margin-top: 0; }
 .field__label {
   display: flex; align-items: baseline; gap: var(--s-2);
   font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text);
@@ -712,6 +722,52 @@ hr { border: 0; border-top: 1px solid var(--border); margin: var(--s-8) 0; }
 .input-group__suffix {
   position: absolute; right: var(--s-4); top: 50%; transform: translateY(-50%);
   color: var(--text-tertiary); font-size: var(--fs-sm); font-weight: var(--fw-bold); pointer-events: none;
+}
+
+/* Un identifiant derrière son site : le préfixe est du texte, pas un ornement.
+   Pas `.input-group`, qui positionne son icône en absolu et repousse le texte
+   de l'input : ici le préfixe occupe sa place et l'input prend le reste. */
+.handle { display: flex; align-items: stretch; min-width: 0; }
+.handle__base {
+  flex: none; display: grid; place-items: center;
+  padding-inline: var(--s-3);
+  border: 1.6px solid var(--border-strong); border-right: 0;
+  border-radius: var(--r-sm) 0 0 var(--r-sm);
+  background: var(--bg-sunken);
+  color: var(--text-tertiary); font-size: var(--fs-xs); white-space: nowrap;
+}
+.handle__base + .input { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.handle .input { min-width: 0; }
+
+/* Les réseaux d'un prestataire, sous ses infos pratiques.
+   Des puces avec le nom écrit à côté de la marque : une icône seule n'a pas de
+   nom pour un lecteur d'écran, et à 18 px sur un téléphone elle n'en a pas non
+   plus pour un œil. */
+.social { margin-top: var(--s-6); }
+.social__title {
+  font-size: var(--fs-sm); font-weight: var(--fw-bold);
+  color: var(--text-secondary); margin-bottom: var(--s-3);
+}
+.social__list {
+  list-style: none; padding: 0; margin: 0;
+  display: flex; flex-wrap: wrap; gap: var(--s-2);
+}
+.social__link {
+  display: inline-flex; align-items: center; gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  border: 1.6px solid var(--border); border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--text-secondary); font-size: var(--fs-sm); text-decoration: none;
+  transition: border-color var(--dur-fast) var(--ease-out),
+              color var(--dur-fast) var(--ease-out);
+}
+.social__link:hover { border-color: var(--border-strong); color: var(--text); }
+
+/* Un groupe de champs qui va ensemble, avec son titre. */
+.fieldset { border: 0; padding: 0; margin: 0; }
+.fieldset__legend {
+  padding: 0; margin-bottom: var(--s-2);
+  font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text);
 }
 
 /* Case à cocher et radio : dessinées, jamais natives */
@@ -1496,34 +1552,35 @@ a.choice { text-decoration: none; color: inherit; }
   transition: border-color var(--dur-base) var(--ease-out), box-shadow var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out);
 }
 .pcard:hover { border-color: var(--border-strong); box-shadow: var(--sh-md); transform: translateY(-3px); }
-.pcard__cover { position: relative; aspect-ratio: 16 / 9; background: var(--bg-sunken); overflow: hidden; }
+/* 5/2, et le chiffre vient de deux contraintes qui se rencontrent la.
+   L'API stocke une banniere en 1600x400, soit du 4:1. En 16/9 la bande rognait
+   un peu moins de la MOITIE de la largeur, au centre. En 4:1 elle ne rognerait
+   rien mais mesurerait 64 px de haut sur une carte de 257, ce qui ne porte plus
+   ni photo ni pastille. 5/2 rogne 37 % au lieu de 55 et laisse 103 px. */
+.pcard__cover { position: relative; aspect-ratio: 5 / 2; background: var(--bg-sunken); overflow: hidden; }
 .pcard__cover img { width: 100%; height: 100%; object-fit: cover; transition: transform var(--dur-slow) var(--ease-out); }
-/* Un logo n'est pas une photo de couverture. Rogne en 16/9 comme une photo, un
-   logo carre perd 44 % de sa hauteur et un logo haut est detruit : ce qui reste
-   n'est plus la marque. Il est donc POSE sur le fond chaud, entier et centre,
-   exactement comme le dessin de metier qui le remplace quand il n'y en a pas. */
-.pcard__cover--mark img {
-  /* Dimensionne par la HAUTEUR de la bande : un pourcentage de largeur se
-     mesure sur les 253 px de la carte et depassait la bande en 16/9. */
-  height: 72%; width: auto; max-width: 62%;
-  /* Le stockage garantit desormais un carre ; ceci le tient quand meme, pour
-     les logos deposes avant ce changement. */
-  aspect-ratio: 1;
-  object-fit: contain;
-  /* La plaque, et c'est elle le correctif. La plupart des logos arrivent en
-     JPEG, format sans transparence, donc avec leur propre fond blanc : posee
-     nue sur le beige, la marque devenait un carre blanc flottant, un
-     autocollant colle sur la carte. Sur une plaque blanche, ce meme fond se
-     confond avec elle, et un PNG transparent y est juste aussi. */
-  background: var(--surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-sm);
-  box-shadow: var(--sh-sm);
-}
-.pcard:hover .pcard__cover--mark img { transform: scale(1.03); }
 .pcard:hover .pcard__cover img { transform: scale(1.03); }
 .pcard__badges { position: absolute; left: var(--s-3); top: var(--s-3); display: flex; gap: var(--s-2); flex-wrap: wrap; }
-.pcard__logo { position: absolute; left: var(--s-4); bottom: calc(var(--s-4) * -1); width: 52px; height: 52px; border-radius: var(--r-sm); background: var(--surface); border: 2px solid var(--surface); box-shadow: var(--sh-sm); display: grid; place-items: center; overflow: hidden; }
+/* La marque POSEE sur la banniere, ronde et centree, a cheval sur le bord bas.
+   La banniere dit ou on est, la marque dit qui c'est, et les deux tiennent sans
+   que l'une deforme l'autre : c'etait le carre de 103 px flottant au milieu
+   d'une bande 16/9 qui ne marchait pas.
+   Le padding haut de .pcard__body est de --s-6, ce qui laisse exactement la
+   place a la moitie qui deborde. */
+.pcard__logo { position: absolute; left: 50%; bottom: 0;
+  transform: translate(-50%, 50%);
+  width: 88px; height: 88px; border-radius: var(--r-circle);
+  background: var(--surface); border: 3px solid var(--surface);
+  box-shadow: var(--sh-sm); display: grid; place-items: center; overflow: hidden; }
+.pcard__logo img { width: 100%; height: 100%; object-fit: cover; }
+/* La bande doit laisser deborder la pastille, donc elle ne peut pas rogner. */
+.pcard:has(.pcard__logo) .pcard__cover { overflow: visible; }
+.pcard:has(.pcard__logo) .pcard__cover img { border-radius: var(--r-md) var(--r-md) 0 0; }
+/* La pastille descend de la moitie de sa hauteur sous la bande, soit 44 px, et
+   le corps n'en avait que 24 : elle mordait sur la ligne du metier. Le calcul
+   est ecrit plutot que le resultat, pour qu'agrandir la pastille une seconde
+   fois ne recasse pas ce qu'elle recouvre. */
+.pcard:has(.pcard__logo) .pcard__body { padding-top: calc(44px + var(--s-3)); }
 .pcard__body { padding: var(--s-6) var(--s-5) var(--s-4); flex: 1 1 auto; display: flex; flex-direction: column; gap: var(--s-2); }
 .pcard__name { font-size: var(--fs-h4); font-weight: var(--fw-bold); line-height: 1.25; }
 .pcard__trade { font-size: var(--fs-xs); font-weight: var(--fw-bold); color: var(--accent-strong); letter-spacing: var(--ls-wide); text-transform: uppercase; }
@@ -2387,6 +2444,14 @@ a.choice { text-decoration: none; color: inherit; }
 /* Le service et le mois, jamais un nom. Dans un marche ou tout le monde se
    connait, un prenom plus une prestation plus un quartier est une identite. */
 .review__about { font-size: var(--fs-sm); color: var(--text-tertiary); }
+/* La mention se lit sur CHAQUE avis, parce qu'elle est vraie de chacun : il n'y
+   a pas de formulaire sans la reference d'une reservation prise ici. Discrete :
+   c'est une garantie, pas une decoration, et elle ne doit pas peser plus que la
+   note qu'elle accompagne. */
+.review__verified { display: inline-flex; align-items: center; gap: 4px;
+  font-size: var(--fs-micro); font-weight: var(--fw-bold);
+  color: var(--success); letter-spacing: var(--ls-wide); }
+.review__verified .ico { color: var(--success); }
 .review__text { line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
 .review__photos { display: flex; gap: var(--s-3); flex-wrap: wrap; }
 .review__photos img { width: 96px; height: 96px; object-fit: cover;
@@ -2466,3 +2531,50 @@ a.choice { text-decoration: none; color: inherit; }
 .shots__one img { width: 88px; height: 88px; object-fit: cover;
   border-radius: var(--r-sm); border: 1px solid var(--border-subtle); display: block; }
 .shots__drop { position: absolute; top: -6px; right: -6px; }
+
+/* La reponse du professionnel : SOUS l'avis et en retrait, jamais a cote. Une
+   reponse repond a quelque chose ; posee au meme niveau, elle se lit comme un
+   second avis de meme poids, ce qu'elle n'est pas. */
+.review__reply { margin-left: var(--s-5); padding-left: var(--s-4);
+  border-left: 2px solid var(--border); display: grid; gap: var(--s-2); }
+.review__reply .t-overline { color: var(--text-tertiary); }
+
+/* --------------------------------------------------------------------------
+   La visionneuse des photos de prestation
+   --------------------------------------------------------------------------
+   Ouverte par :target, pas par un script. Dans ces metiers la photo EST la
+   specification : quelqu'un qui hesite entre deux tresses achete l'image et lit
+   le texte comme une etiquette dessus. La page montrait une vignette et un
+   compteur qui ne faisait rien.
+   Sans JavaScript elle s'ouvre quand meme, et le bouton retour la referme,
+   parce que c'est une vraie navigation. */
+.lightbox { display: none; position: fixed; inset: 0; z-index: var(--z-dialog);
+  align-items: center; justify-content: center; padding: var(--gutter); }
+.lightbox:target { display: flex; }
+.lightbox__scrim { position: absolute; inset: 0; background: rgba(8, 31, 27, .72); }
+.lightbox__inner { position: relative; z-index: 1; background: var(--surface);
+  border-radius: var(--r-md); box-shadow: var(--sh-lg); overflow: hidden;
+  width: min(920px, 100%); max-height: 88vh; display: flex; flex-direction: column; }
+.lightbox__head { display: flex; align-items: center; justify-content: space-between;
+  gap: var(--s-4); padding: var(--s-4) var(--s-5);
+  border-bottom: 1px solid var(--border-subtle); }
+/* Une bande qui defile plutot qu'un carrousel : pas d'etat a garder, pas de
+   fleches a rendre accessibles, et le doigt fait deja le geste. */
+.lightbox__strip { display: flex; gap: var(--s-3); overflow-x: auto;
+  scroll-snap-type: x mandatory; padding: var(--s-4); }
+.lightbox__strip img { scroll-snap-align: center; flex: 0 0 auto;
+  max-height: 68vh; max-width: 100%; width: auto; height: auto;
+  object-fit: contain; border-radius: var(--r-sm); background: var(--bg-sunken); }
+/* La vignette devient cliquable : on le dit au pointeur et au clavier. */
+a.svc__photo { display: block; cursor: zoom-in; }
+a.svc__photo:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+
+/* La section « a propos ». Elle etait publiee depuis toujours, tout en bas,
+   sous l'adresse et le telephone, dans « Infos pratiques » - c'est-a-dire nulle
+   part. Elle se lit avant le catalogue parce que c'est elle qui decide si on
+   regarde le catalogue. */
+.about { max-width: var(--w-text); display: grid; gap: var(--s-4); }
+/* Les retours a la ligne sont ceux que le prestataire a tapes : un texte qu'il
+   a ecrit en trois paragraphes lui appartient. */
+.about__text { white-space: pre-wrap; line-height: var(--lh-relaxed);
+  color: var(--text-secondary); overflow-wrap: anywhere; }

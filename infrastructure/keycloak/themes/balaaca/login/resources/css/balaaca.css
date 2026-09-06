@@ -59,6 +59,10 @@
   --p-warning-100: #FAF0E4;
   --p-warning-border: #DEBE93;
   --p-danger-500: #A32B22;
+  /* Le survol des boutons destructeurs. Il etait appele et jamais declare, donc
+     `background: var(--btn-bg)` devenait invalide au survol et retombait sur
+     transparent : le bouton rouge devenait blanc, et son texte blanc avec. */
+  --p-danger-700: #7A201A;
   --p-danger-100: #F9EAE8;
   --p-danger-border: #DFAFAA;
   --p-info-500: #1F5F86;

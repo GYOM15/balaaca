@@ -124,6 +124,36 @@ const SPRITE = String.raw`<svg xmlns="http://www.w3.org/2000/svg" aria-hidden="t
   <symbol id="i-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7.6 4.9 19 12 7.6 19.1Z"/></symbol>
   <symbol id="i-scan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.6 8.6V6.2a2.6 2.6 0 0 1 2.6-2.6h2.4M15.4 3.6h2.4A2.6 2.6 0 0 1 20.4 6.2v2.4M20.4 15.4v2.4a2.6 2.6 0 0 1-2.6 2.6h-2.4M8.6 20.4H6.2a2.6 2.6 0 0 1-2.6-2.6v-2.4"/><path d="M7 12h10"/></symbol>
 
+  <!-- ================= SOCIAL MARKS =================
+       Drawn in the same stroked line as everything above rather than pasted in
+       as brand logos. Two reasons, and the second decided it: a set of icons
+       stops being a set the moment one arrives in a different visual language,
+       and a directory of salons in Conakry has no need to reproduce seven
+       companies' marks in their own colours.
+
+       The ids are "i-net-" plus the contract's own enum value, lowercased, and
+       that is load-bearing rather than tidy. A lookup table from network to
+       icon name would be a second list to keep in step with the first, and a
+       "use" pointing at a symbol that does not exist draws NOTHING while
+       keeping its box - a defect that reads as a rendering quirk. Derived
+       instead, by networkIcon in lib/social.ts, and sprite-symbols.test.mts
+       walks the enum in openapi.yaml and asserts each one lands here.
+
+       i-net-website is a browser window rather than the globe already in this
+       sprite. Not to avoid copying a path: a globe is the mark this product
+       uses for a language or a region, and a business's own address is neither.
+
+       No backticks anywhere in here. This whole sprite is one String.raw
+       template, so a backtick in a comment ends it and the file stops parsing -
+       which is exactly what the first draft of this comment did. -->
+  <symbol id="i-net-facebook" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M14.4 8.3h-1.2a1.7 1.7 0 0 0-1.7 1.7v10.4M9.7 12.9h4.4"/></symbol>
+  <symbol id="i-net-instagram" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="17" height="17" rx="4.6"/><circle cx="12" cy="12" r="3.9"/><circle fill="currentColor" stroke="none" cx="16.7" cy="7.3" r="1"/></symbol>
+  <symbol id="i-net-tiktok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13.9 3.6v11a3.7 3.7 0 1 1-3.7-3.7c.4 0 .7.05 1.1.15"/><path d="M13.9 3.6a5.1 5.1 0 0 0 5.1 5.1"/></symbol>
+  <symbol id="i-net-youtube" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2.6" y="5.4" width="18.8" height="13.2" rx="3.6"/><path d="m10.2 9.4 5.5 2.6-5.5 2.6Z"/></symbol>
+  <symbol id="i-net-linkedin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="17" height="17" rx="3.2"/><path d="M8 10.7v6.1M11.8 16.8v-6.1M11.8 13.4a2.3 2.3 0 0 1 4.6 0v3.4"/><circle fill="currentColor" stroke="none" cx="8" cy="7.9" r="1"/></symbol>
+  <symbol id="i-net-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="m8.7 8.7 6.6 6.6M15.3 8.7l-6.6 6.6"/></symbol>
+  <symbol id="i-net-website" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="15" rx="2.6"/><path d="M3 9.2h18"/><circle fill="currentColor" stroke="none" cx="6.3" cy="6.9" r="0.9"/><circle fill="currentColor" stroke="none" cx="9.1" cy="6.9" r="0.9"/></symbol>
+
   <!-- ================= FULFILMENT MODES ================= -->
   <!-- Three glyphs built as one family: same base, same reading. -->
   <symbol id="i-mode-onsite" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.4 20.4V9.8L12 4l7.6 5.8v10.6"/><path d="M3 20.4h18"/><circle cx="12" cy="12.6" r="1.9"/><path d="M8.9 18.1c.35-1.6 1.6-2.6 3.1-2.6s2.75 1 3.1 2.6"/></symbol>
