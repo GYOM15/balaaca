@@ -39,7 +39,16 @@ export default async function PreviewPage() {
     <>
       {/* A banner and not a badge. Somebody who forgets they are looking at a
           preview will press a button, find it inert, and blame the page. */}
-      <div style={{ marginBottom: "var(--s-6)" }}>
+      {/* The page below is full-bleed on purpose - it IS the public page, and
+          it carries its own margins. Only this banner needs the dashboard's
+          inner padding, or it sits flush against the sidebar. */}
+      <div
+        className="app__inner"
+        // The gutter comes from .app__main on every other screen, and this page
+        // has none: its body is the public page, full-bleed and carrying its
+        // own margins. Only the banner needs them, so only the banner gets them.
+        style={{ padding: "var(--s-6) var(--gutter) 0" }}
+      >
         <Notice
           tone={preview.published ? "info" : "warning"}
           icon={preview.published ? "eye" : "eye-off"}

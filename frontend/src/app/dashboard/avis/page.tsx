@@ -46,13 +46,40 @@ export default async function ReviewsPage({
     query: { cursor: query.cursor || undefined, limit: 20 },
   });
 
+  const shown = page.data.length;
+
   return (
     <>
+      {/* The dashboard's own shell: an appbar, then app__main / app__inner.
+          Without it the content sits flush against the sidebar, which is what
+          it did - every other screen in here carries this and it is not
+          optional decoration, it is the page's margins. */}
+      <div className="appbar">
+        <div className="appbar__in">
+          <a
+            className="btn btn--ghost btn--icon btn--sm hide-lg"
+            href="#sections"
+            aria-label="Menu"
+          >
+            <Icon name="menu" />
+          </a>
+          <div>
+            <h1 className="appbar__title">Avis</h1>
+            <div className="appbar__sub">
+              {shown === 0
+                ? "Aucun avis pour l’instant"
+                : `${shown}${page.next_cursor ? "+" : ""} avis, les plus récents en premier`}
+            </div>
+          </div>
+          <div className="appbar__actions" />
+        </div>
+      </div>
+
+      <main id="contenu" className="app__main has-tabbar">
+        <div className="app__inner">
       <div style={{ marginBottom: "var(--s-6)" }}>
-        <h1 className="t-h2">Avis</h1>
-        <p className="t-body" style={{ marginTop: ".35rem" }}>
-          Les plus récents en premier. Seules les personnes qui ont réservé chez
-          vous peuvent en laisser un.
+        <p className="t-body">
+          Seules les personnes qui ont réservé chez vous peuvent laisser un avis.
         </p>
       </div>
 
@@ -111,6 +138,8 @@ export default async function ReviewsPage({
         déplaît. Si un avis est mensonger ou insultant, écrivez-nous&nbsp;: il
         sera examiné. Vous pouvez toujours y répondre publiquement.
       </p>
+        </div>
+      </main>
     </>
   );
 }

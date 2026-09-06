@@ -659,14 +659,27 @@ function ServiceRow({
   const photos = service.photos ?? [];
   const photo = mediaUrl(photos[0]);
   const mode = MODES[service.fulfilment];
+  const row = `svc-${service.service_offering_id}`;
+  const gallery = `photos-${service.service_offering_id}`;
 
   return (
-    <div className="svc">
-      <div className="svc__photo">
-        {photo ? (
-          // eslint-disable-next-line @next/next/no-img-element
+    <div className="svc" id={row}>
+      {/* Clickable when there is something to open, and a plain frame when
+          there is not. In these trades the photograph IS the specification -
+          somebody choosing between two braids buys the picture and reads the
+          text as a label on it - and the page showed one thumbnail with a
+          count badge that did nothing. */}
+      {photo ? (
+        <a className="svc__photo" href={`#${gallery}`} aria-label={`Photos : ${service.name}`}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={photo} alt="" loading="lazy" width={400} height={300} />
-        ) : (
+          <span className="svc__photo-count">
+            <Icon name="image" size={16} />
+            {photos.length > 1 ? photos.length : null}
+          </span>
+        </a>
+      ) : (
+        <div className="svc__photo">
           <span
             style={{
               display: "grid",
@@ -677,14 +690,40 @@ function ServiceRow({
           >
             <Icon name="image" size={24} />
           </span>
-        )}
-        {photos.length > 1 ? (
-          <span className="svc__photo-count">
-            <Icon name="image" size={16} />
-            {photos.length}
-          </span>
-        ) : null}
-      </div>
+        </div>
+      )}
+
+      {/* Opened by :target and not by a script. A customer on a telephone whose
+          JavaScript has not arrived - or never will - still gets to see what
+          they are buying, and the back button closes it because it is a real
+          navigation. The scrim and the cross both lead back to this row, not to
+          the top of the page, so closing does not lose the reader's place. */}
+      {photo ? (
+        <div className="lightbox" id={gallery}>
+          <a className="lightbox__scrim" href={`#${row}`} aria-label="Fermer" />
+          <div className="lightbox__inner" role="group" aria-label={`Photos : ${service.name}`}>
+            <div className="lightbox__head">
+              <p className="t-strong">{service.name}</p>
+              <a className="btn btn--ghost btn--icon btn--sm" href={`#${row}`} aria-label="Fermer">
+                <Icon name="x" size={18} />
+              </a>
+            </div>
+            <div className="lightbox__strip">
+              {photos.map((name, index) => (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  key={name}
+                  src={mediaUrl(name)}
+                  alt={`${service.name}, photo ${index + 1} sur ${photos.length}`}
+                  loading="lazy"
+                  width={1600}
+                  height={1200}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="grow">
         <h3 className="svc__name">{service.name}</h3>
