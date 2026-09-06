@@ -14,18 +14,26 @@ about.
 
 ## 1. Modules
 
-Eight Maven modules. The list is closed.
+Nine Maven modules, declared in `backend/pom.xml`. The list is closed.
 
 | Module | Holds | Framework? |
 |---|---|---|
-| `shared-kernel` | `money`, `time`, `phone`, `error`, `pagination` | **no** - zero framework imports |
-| `platform-kernel` | `tenancy`, `logging`, `ratelimit` | yes - CDI, MicroProfile JWT, Agroal |
-| `identity` | `users`, the Keycloak subject link | yes |
-| `providers` | providers, staff, categories - the tenant root | yes |
+| `shared-kernel` | `money`, `phone`, `error`, `ids` | **no** - zero framework imports |
+| `platform-kernel` | `tenancy`, `audit`, `media`, `ratelimit`, `time` | yes - CDI, MicroProfile JWT, Agroal |
+| `identity` | nothing yet | - |
+| `providers` | providers, staff, categories, reviews, links - the tenant root | yes |
 | `catalog` | service offerings | yes |
 | `scheduling` | availability rules, overrides, slot calculation | yes |
 | `booking` | appointments, customers, the state machine | yes |
-| `billing` | subscriptions, plan entitlements | yes |
+| `billing` | nothing yet | - |
+| `app` | the deployable: REST resources, the contract, the migrations | yes |
+
+**Two of those modules are empty, and it is deliberate.** `identity` and
+`billing` each hold a single `package-info.java` saying so: "Empty until
+authentication is built" and "Empty until the first quota is enforced". They are
+reserved names, not code. Anything this document once pinned inside them -
+`CheckEntitlementUseCase`, `Entitlement`, `PlanLimitReachedException` - was
+never written. Do not code against it.
 
 Satellites, separate deployables: `notification-worker`, `chatbot-service`.
 
@@ -37,10 +45,16 @@ framework free" rule would still pass because it only inspects direct imports.
 **no `domain/` package may depend on it**.
 
 Packages: `com.balaaca.<module>.<layer>`, layers
-`domain | ports.inbound | ports.outbound | application | adapters.inbound.rest |
-adapters.outbound.persistence`. The two kernels are exempt from the layer rule:
-`com.balaaca.sharedkernel.{money,time,phone,error,pagination}` and
-`com.balaaca.platformkernel.{tenancy,logging,ratelimit}`.
+`domain | ports.inbound | ports.outbound | application | adapters.outbound.persistence`.
+
+There is **no `adapters.inbound`** anywhere, and that is the architecture rather
+than an omission: a path is served by exactly one JAX-RS resource, so every REST
+resource lives in the deployable, in `com.balaaca.app.rest`. A context that grew
+its own inbound adapter would be a second router for the same paths.
+
+The two kernels are exempt from the layer rule:
+`com.balaaca.sharedkernel.{money,phone,error,ids}` and
+`com.balaaca.platformkernel.{tenancy,audit,media,ratelimit,time}`.
 
 ---
 
@@ -51,9 +65,33 @@ on**, `UNIQUE (provider_id, id)` included. A composite foreign key whose target
 lacks that UNIQUE fails with `42830` (**verified**), so a UNIQUE added later
 than its first referencing migration breaks a fresh database.
 
+**No migration creates a role.** Flyway connects as `balaaca_migrator`, which
+therefore has to exist before the first one runs, and V001 says so in its own
+first lines. Roles come from `infrastructure/postgres/bootstrap.sh`, which
+PostgreSQL runs only against an empty data directory - which is why
+`docs/DEPLOYMENT.md` requires replaying it by hand before every deployment, and
+why a migration needing a role the cluster predates fails at startup.
+
+There are **six** roles, not five:
+
+| Role | What it can do |
+|---|---|
+| `balaaca_migrator` | owns the schema, runs Flyway, never used at runtime |
+| `balaaca_app` | the application connection; neither owner nor `BYPASSRLS` |
+| `balaaca_resolver` | `NOLOGIN`, owns the resolution functions, read only |
+| `balaaca_registrar` | `NOLOGIN`, owns the one function that creates a provider |
+| `balaaca_notification_worker` | `SELECT`/`UPDATE` on `notifications`, nothing else |
+| `balaaca_moderator` | `NOLOGIN`, owns the moderation and review functions |
+
+The table below stops at `V023`. Thirty further migrations exist, `V024`
+through `V053`, and this document does not enumerate them: the directory is the
+list, and a table that lags it is worse than no table. What the later ones added
+that a reader needs to know is in the sections that follow, each pinned to the
+migration that settled it.
+
 | Version | Creates | Also declares |
 |---|---|---|
-| `V001__create_roles_and_extensions.sql` | roles `balaaca_migrator`, `balaaca_app`, `balaaca_resolver`, `balaaca_registrar`, `balaaca_notification_worker`; extensions `btree_gist`, `citext`, `pg_trgm` | `app_current_provider()` |
+| `V001__create_extensions_and_functions.sql` | extensions `btree_gist`, `citext`, `pg_trgm` | `app_current_provider()` |
 | `V002__create_users.sql` | `users` | |
 | `V003__create_provider_categories.sql` | `provider_categories` | |
 | `V004__create_providers.sql` | `providers` | |
@@ -166,10 +204,13 @@ generated.
 
 ---
 
-## 4. Tenant resolution - the two sources
+## 4. Tenant resolution - the four sources
 
 The tenant is **never** taken from a request field, a header, or a JWT claim. It
-has exactly two server-side sources, and **verified** SQL for each.
+has exactly four server-side sources, and **verified** SQL for each: a Keycloak
+subject (4.1), a published slug (4.2), a booking reference (4.6) and an
+invitation code (4.7). The first two are the ones a reader meets first; the
+other two are capabilities a customer or an invitee already holds.
 
 ### 4.1 Authenticated staff - from the Keycloak subject
 
@@ -177,7 +218,9 @@ has exactly two server-side sources, and **verified** SQL for each.
 circular: the GUC is not bound yet, `FORCE ROW LEVEL SECURITY` binds the owner
 too, and a plain read returns zero rows - **nobody could ever authenticate**.
 A `SECURITY DEFINER` function owned by a role with its own narrow policy is what
-breaks the circle, and it returns exactly one uuid.
+breaks the circle. It returns a **row**, not a uuid: the tenant, the staff
+member, the user and the role, because the audit trail needs to name who acted
+and a second lookup would be a second chance to disagree.
 
 ```sql
 CREATE POLICY provider_staff_resolution ON provider_staff
@@ -186,12 +229,25 @@ CREATE POLICY provider_staff_resolution ON provider_staff
 CREATE FUNCTION app_resolve_membership(p_subject varchar)
 RETURNS TABLE (provider_id uuid, staff_id uuid, user_id uuid, staff_role varchar)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS
-$$ SELECT ps.provider_id FROM provider_staff ps JOIN users u ON u.id = ps.user_id
-    WHERE u.keycloak_user_id = p_subject AND ps.status = 'ACTIVE' $$;
+$$ SELECT ps.provider_id, ps.id, u.id, ps.role
+     FROM provider_staff ps
+     JOIN users u     ON u.id = ps.user_id
+     JOIN providers p ON p.id = ps.provider_id
+    WHERE u.keycloak_user_id = p_subject
+      AND ps.status = 'ACTIVE'
+      AND u.status  = 'ACTIVE'
+      -- Every standing a provider can hold, kept rather than dropped so the
+      -- next person to add a value to ck_providers_status has to decide, here,
+      -- whether it may sign in. A SUSPENDED provider keeps its dashboard and
+      -- loses only the public path (4.5).
+      AND p.status IN ('ACTIVE', 'SUSPENDED') $$;
 ALTER FUNCTION app_resolve_membership(varchar) OWNER TO balaaca_resolver;
-REVOKE ALL ON FUNCTION app_resolve_provider(varchar) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION app_resolve_provider(varchar) TO balaaca_app;
+REVOKE ALL ON FUNCTION app_resolve_membership(varchar) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app_resolve_membership(varchar) TO balaaca_app;
 ```
+
+The body above is V036's. An earlier `app_resolve_provider(varchar)` returning a
+single uuid existed in V013 and was **dropped in V015**; nothing may call it.
 
 **Verified**: `balaaca_app` reading `provider_staff` directly with no GUC sees
 zero rows; the function still resolves; and calling it cannot widen a read.
@@ -209,7 +265,8 @@ POST /v1/providers/{slug}/appointments
 ```sql
 CREATE FUNCTION app_resolve_published_provider(p_slug varchar) RETURNS uuid
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS
-$$ SELECT id FROM providers WHERE slug = p_slug AND published $$;
+$$ SELECT id FROM providers
+     WHERE slug = p_slug AND published AND status = 'ACTIVE' $$;
 ALTER FUNCTION app_resolve_published_provider(varchar) OWNER TO balaaca_resolver;
 ```
 
@@ -435,40 +492,49 @@ Two rules follow.
 ```java
 // platformkernel.tenancy - implemented in providers
 public interface ProviderMembershipResolver {
-    ProviderId requireFor(String keycloakSubject);   // throws NoProviderMembershipException
-    ProviderId requirePublished(ProviderSlug slug);  // throws ProviderNotFoundException
+    Membership requireFor(String keycloakSubject);          // the whole row, not just an id
+    ProviderId requirePublished(String slug);
+    java.util.Optional<ProviderId> resolveBooking(String reference);
 }
 
 // catalog.ports.inbound
 public interface LookupServiceOfferingUseCase {
-    ServiceOffering require(ServiceOfferingId id);   // throws ServiceOfferingNotFoundException
+    BookableOffering requireBookable(ServiceOfferingId id);
 }
 
 // scheduling.ports.inbound
 public interface CalculateSlotsUseCase {
-    List<AvailableSlot> bookable(SlotQuery query);
-}
-
-// billing.ports.inbound
-public interface CheckEntitlementUseCase {
-    void require(Entitlement entitlement);           // throws PlanLimitReachedException
+    List<AvailableSlot> bookable(SlotRequest request);
+    boolean isWithinAvailability(Instant startsAt, SlotRequest request);
 }
 
 // booking.ports.inbound
 public interface BookAppointmentUseCase {
-    AppointmentId book(BookAppointmentCommand command);
+    BookingResult book(BookAppointmentCommand command);
 }
 
 // booking.ports.outbound
 public interface AppointmentRepository {
-    InsertOutcome insertIfAbsent(Appointment appointment);
-    int compareAndAdvance(AppointmentId id, AppointmentStatus expected,
-                          AppointmentStatus next, long version);
-    Map<StaffId, List<InstantRange>> busyRanges(Set<StaffId> staff, InstantRange window);
-}
+    InsertOutcome insertIfAbsent(NewAppointment appointment);
+    Optional<InsertOutcome> replayOf(String idempotencyKey, String requestHash);
+    List<StaffId> eligibleStaff(ServiceOfferingId serviceOfferingId);
+    boolean performs(StaffId staffId, ServiceOfferingId serviceOfferingId);
+    boolean canBeAssigned(StaffId staffId, boolean mustBeBookable);
+    CustomerId upsertCustomer(CustomerContact contact);
+    boolean isBlocked(PhoneNumber phone);
 
-public record InsertOutcome(Appointment appointment, boolean replayed) {}
+    record InsertOutcome(AppointmentId appointmentId, String reference,
+                         AppointmentStatus status, boolean replayed) {
+    }
+}
 ```
+
+Three things this block used to say that were never built, and are named here so
+nobody codes against them again: **`billing.ports.inbound.CheckEntitlementUseCase`
+does not exist** (the module is empty); **`compareAndAdvance` does not exist** -
+the conditional state transition is `transition(...)` on `AppointmentStateRepository`,
+a different port; **`busyRanges` is not on this port** - it belongs to scheduling
+and takes `Optional<StaffId>`, not a `Set`.
 
 `insertIfAbsent` is `INSERT ... ON CONFLICT (provider_id, idempotency_key) DO
 NOTHING` followed by a `SELECT`. An explicit conflict target arbitrates only that
@@ -503,16 +569,25 @@ public abstract class DomainException extends RuntimeException {
 |---|---|---|
 | `SlotUnavailableException(Instant startsAt)` | 409 | `SLOT_UNAVAILABLE` |
 | `SlotOutsideAvailabilityException(Instant)` | 422 | `SLOT_OUTSIDE_AVAILABILITY` |
-| `AppointmentConflictException(AppointmentId)` | 409 | `APPOINTMENT_CONFLICT` |
 | `InvalidStateTransitionException(from, to)` | 409 | `INVALID_STATE_TRANSITION` |
 | `CancellationDeadlinePassedException(Instant)` | 422 | `CANCELLATION_DEADLINE_PASSED` |
 | `NoEligibleStaffException(Instant)` | 409 | `SLOT_UNAVAILABLE` |
 | `IdempotencyKeyReusedException(String key)` | 422 | `IDEMPOTENCY_KEY_REUSED` |
-| `PlanLimitReachedException(Entitlement)` | 403 | `PLAN_LIMIT_REACHED` |
 | `CurrencyMismatchException(a, b)` | 422 | `CURRENCY_MISMATCH` |
 | `NoProviderMembershipException(String subject)` | 403 | `FORBIDDEN` |
-| `ResourceNotFoundException(String kind, String id)` | 404 | `RESOURCE_NOT_FOUND` |
-| `CrossTenantAccessException(String kind, String id)` | 404 | `RESOURCE_NOT_FOUND` |
+
+**Not a complete list, and it never was.** There are seventy
+`DomainException` subclasses across the contexts and the deployable, each naming the thing it
+refuses; the rows above are the ones whose (code, status) pairing is worth
+pinning because more than one context reaches for them. `SlotOutsideAvailability`
+takes two arguments, `(Instant startsAt, String why)`, not one.
+
+Three rows this table used to carry named classes that **do not exist**:
+`AppointmentConflictException`, `PlanLimitReachedException`, and a generic
+`ResourceNotFoundException` / `CrossTenantAccessException` pair. `404
+RESOURCE_NOT_FOUND` is raised by per-resource classes that each name their own
+kind, and a cross-tenant read reaches none of them: RLS removes the row before
+the statement runs, so the miss is genuine rather than dressed up as one.
 
 `SlotUnavailableException`'s message never names the staff member: on the
 any-staff path the server chose them, so naming them discloses who is busy to a
@@ -520,21 +595,31 @@ caller who never asked. The staff id goes in `details`, which the audit log read
 and the client never sees.
 
 A cross-tenant read and a genuine miss are **byte-identical**: same 404, same
-`RESOURCE_NOT_FOUND`. `PlanLimitReachedException` is 403, never 402 - there is no
-payment path to require.
+`RESOURCE_NOT_FOUND`. That is not a rule anybody has to remember, which is the
+point: the row is gone before the query sees it.
 
 ---
 
 ## 7. Published error codes - closed catalogue
 
-`RESOURCE_NOT_FOUND` · `VALIDATION_FAILED` · `UNAUTHENTICATED` · `FORBIDDEN` ·
-`RATE_LIMITED` · `SLOT_UNAVAILABLE` · `SLOT_OUTSIDE_AVAILABILITY` ·
-`APPOINTMENT_CONFLICT` · `INVALID_STATE_TRANSITION` ·
-`CANCELLATION_DEADLINE_PASSED` · `IDEMPOTENCY_KEY_REQUIRED` ·
-`IDEMPOTENCY_KEY_REUSED` · `PLAN_LIMIT_REACHED` · `CURRENCY_MISMATCH` ·
-`INTERNAL_ERROR` · `SLUG_UNAVAILABLE` · `ALREADY_REGISTERED`
+Fifteen, and the list is the `ErrorCode` enum in
+`app/src/main/resources/META-INF/openapi.yaml`. That file is the catalogue; this
+is a copy of it:
+
+`VALIDATION_FAILED` · `IDEMPOTENCY_KEY_REQUIRED` · `UNAUTHENTICATED` ·
+`FORBIDDEN` · `RESOURCE_NOT_FOUND` · `SLOT_UNAVAILABLE` ·
+`INVALID_STATE_TRANSITION` · `SLOT_OUTSIDE_AVAILABILITY` ·
+`CANCELLATION_DEADLINE_PASSED` · `CURRENCY_MISMATCH` · `IDEMPOTENCY_KEY_REUSED` ·
+`RATE_LIMITED` · `INTERNAL_ERROR` · `SLUG_UNAVAILABLE` · `ALREADY_REGISTERED`
 
 No other code exists. Adding one is an OpenAPI change. Renaming one is forbidden.
+
+Two are **gone** and their absence is load-bearing. `APPOINTMENT_CONFLICT` was
+published while nothing raised it. `PLAN_LIMIT_REACHED` was published while no
+path could reach it, because the tiers it gated were never decided; a client
+branching on it branched on something that could not happen.
+`ErrorCatalogueTest` now checks BOTH directions, so a code with no producer
+breaks the build as surely as a producer with no code.
 
 The last two were added with the signup path (4.4), and only because neither was
 expressible. A taken public handle and an account that already runs a business
@@ -547,16 +632,28 @@ cheaper change and the wrong one.
 
 ## 8. Commands and wire shapes
 
-```java
-public record BookAppointmentCommand(
-        ServiceOfferingId  serviceOfferingId,
-        Optional<StaffId>  staffId,        // empty = the server chooses
-        Instant            startsAt,
-        CustomerContact    customer,       // fullName + PhoneNumber + optional email
-        IdempotencyRequest idempotency) {} // key + requestHash
+Both records are nested in `BookAppointmentUseCase`, not top-level types.
 
-public record IdempotencyRequest(String key, String requestHash) {}
+```java
+record BookAppointmentCommand(
+        ServiceOfferingId        serviceOfferingId,
+        Optional<StaffId>        staffId,          // empty = the server chooses
+        Instant                  startsAt,
+        CustomerContact          customer,         // name + PhoneNumber + contact
+        Optional<Fulfilment>     fulfilment,       // asked only when the service offers several
+        Optional<ServiceAddress> serviceAddress,   // required by AT_CUSTOMER, refused otherwise
+        ContactChannel           preferredChannel, // how to reach them back
+        Optional<String>         customerNote,
+        Optional<Idempotency>    idempotency,
+        BookingSource            source) {}        // which door the booking came through
+
+record Idempotency(String key, String requestHash) {}
 ```
+
+Ten components, not five. Five of them arrived with capabilities this document
+predates: several ways to obtain one service, an address for a visit, a channel
+to answer on, a note, and which door the booking came through. There is no type
+named `IdempotencyRequest`.
 
 `requestHash` is SHA-256 of the **client's** canonicalised body only -
 `service_offering_id`, `starts_at`, `staff_id` including its absence, and the
@@ -582,16 +679,29 @@ Collections: `{ "data": [...], "next_cursor": string|null }`, `?cursor=&limit=`.
 
 ## 9. Interceptor order
 
+**There is exactly one interceptor binding in this codebase**, and this table
+used to list five. Four of them - tracing, `@RateLimited`, `@Audited` and their
+classes - were never written. Do not import them.
+
 | Binding | Class | Priority |
 |---|---|---|
-| tracing | `TracingInterceptor` | `PLATFORM_BEFORE + 5` |
 | `@TenantBound` | `TenantBoundInterceptor` | `PLATFORM_BEFORE + 10` |
-| `@RateLimited` | `RateLimitInterceptor` | `PLATFORM_BEFORE + 20` |
 | `@Transactional` | Quarkus | `PLATFORM_BEFORE + 200` |
-| `@Audited` | `AuditLoggingInterceptor` | `PLATFORM_BEFORE + 210` |
 
-Audit sits inside the transaction so an audit row commits with the change it
-describes. The GUC hook is **not** an interceptor (section 4.3).
+The three that are absent are absent for reasons worth keeping, because each is
+a thing somebody will propose again:
+
+- **Rate limiting is a call, not an annotation.** `AttemptLimiter` is invoked
+  explicitly where a limit applies, because the decision needs the caller's own
+  identifier and a `Retry-After` on the response - neither of which an
+  interceptor can supply without the method telling it.
+- **Auditing is a port with two methods**, invoked by name. One transaction rule
+  cannot cover both cases: an audited success must commit with the change it
+  describes, and an audited refusal must survive the rollback of the thing it
+  refused. An interceptor would have to pick one.
+- **Tracing** is what the platform already does at the HTTP boundary.
+
+The GUC hook is **not** an interceptor either (section 4.3).
 
 ---
 
@@ -676,14 +786,19 @@ it only reads.**
 ### A second policy makes RLS stop identifying one row
 
 Policies are OR'd. `providers` carries the tenant policy plus a public-read
-policy, so the hub can list published providers with no tenant bound. With a
-tenant bound, a bare `SELECT ... FROM providers` therefore returns my provider
-**and** every published one.
+policy, so the hub can list published providers with no tenant bound. As first
+written, that meant a bare `SELECT ... FROM providers` with a tenant bound
+returned my provider **and** every published one.
 
-Any query meaning "the current tenant's row" must say so:
-`WHERE id = app_current_provider()`. RLS gives singularity only where the tenant
-policy is the sole policy - which is true of every other table here, and not of
-this one.
+**That trap is closed**, and by the policy rather than by discipline: V017 and
+V035 both carry `AND app_current_provider() IS NULL` in the public-read
+predicate, so the two policies are now mutually exclusive and only one can ever
+admit a row.
+
+Write `WHERE id = app_current_provider()` anyway wherever a query means "the
+current tenant's row". The predicate costs nothing, it says out loud which row
+is wanted, and it is what keeps this correct the day somebody loosens a policy -
+which is exactly how the hole opened the first time.
 
 ### ON CONFLICT cannot see a partial index by itself
 
@@ -708,8 +823,11 @@ DO NOTHING
 ## 13. Types at the boundary
 
 Identifiers are distinct types, not raw uuids:
-`ServiceOfferingId`, `StaffId`, `CustomerId`, `AppointmentId` in
-`com.balaaca.sharedkernel.ids`, each a record implementing `EntityId`. Passing a
+`ServiceOfferingId`, `StaffId`, `CustomerId`, `AppointmentId`, `UserId` in
+`com.balaaca.sharedkernel.ids`, each a record implementing `EntityId`.
+`ProviderId` is the exception and sits in `platformkernel.tenancy` instead,
+because the tenant is bound by the platform rather than passed around by the
+domain. Passing a
 customer id where a staff id belongs stops being a runtime mystery and becomes a
 compile error.
 
