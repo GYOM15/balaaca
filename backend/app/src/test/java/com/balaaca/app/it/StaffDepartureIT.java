@@ -60,8 +60,17 @@ class StaffDepartureIT {
                               BookingFixtures.SALON, LEAVER));
     }
 
-    private static String bookWithLeaver() {
-        return given().contentType("application/json")
+    /**
+     * A booking with the leaver, still to come by the DATABASE's clock.
+     *
+     * <p>V038 refuses the departure on {@code starts_at >= now()}, and now() is
+     * PostgreSQL's, not the pinned one. The literal date this used to carry was
+     * future when it was written and became past on 2026-09-08, at which point
+     * the diary read as clear and the refusal this class exists to prove
+     * stopped happening.
+     */
+    private String bookWithLeaver() {
+        String reference = given().contentType("application/json")
                 .header("Idempotency-Key", "k-" + UUID.randomUUID())
                 .body("""
                       {"staff_id":"%s","service_offering_id":"%s",
@@ -70,6 +79,8 @@ class StaffDepartureIT {
                       """.formatted(LEAVER, BookingFixtures.SALON_OFFERING))
                 .when().post("/v1/providers/salon-fatou/appointments")
                 .then().statusCode(201).extract().path("reference");
+        fixtures.stillToCome(reference);
+        return reference;
     }
 
     private static io.restassured.response.ValidatableResponse retire() {
