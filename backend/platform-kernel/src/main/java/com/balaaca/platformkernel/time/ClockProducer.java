@@ -38,11 +38,28 @@ public class ClockProducer {
      * would still drift across a weekend and fail on whichever day the fixtures
      * are shut.
      *
-     * <p>Safe to pin ONLY because nothing in this codebase reads the time any
-     * other way: no `Instant.now()`, no `LocalDate.now()`, no
-     * `ZoneId.systemDefault()`, and the two `now()` calls in SQL compare
-     * against effective dates the fixtures leave null. If that stops being
-     * true, this stops being safe.
+     * <p>Safe to pin ONLY because nothing in Java reads the time any other way:
+     * no `Instant.now()`, no `LocalDate.now()`, no `ZoneId.systemDefault()`.
+     *
+     * <p>It is NOT safe for SQL, and this comment used to say it was. It
+     * claimed the `now()` calls in the schema compared against effective dates
+     * the fixtures leave null, and added that if that stopped being true, this
+     * would stop being safe. It stopped being true, twice:
+     *
+     * <ul>
+     *   <li>V038 refuses to retire a staff member on `starts_at >= now()`
+     *   <li>V050's `app_may_review` decides on `p_ends_at <= now()`
+     * </ul>
+     *
+     * <p>Both judge an APPOINTMENT against real time while the fixture that
+     * placed it was written against this pinned instant, so the two disagree by
+     * one more day every day. Four tests asserted the opposite of what they
+     * meant on 2026-09-08, having passed the day before.
+     *
+     * <p>The rule that follows, and `BookingFixtures.stillToCome` exists for
+     * it: a fixture whose outcome a SQL `now()` decides must place its row
+     * RELATIVE to `now()`, never at a literal date. A literal date in such a
+     * test is not a value, it is an expiry.
      */
     @ConfigProperty(name = "balaaca.clock.pinned-to")
     Optional<String> pinnedTo;
