@@ -670,6 +670,22 @@ hr { border: 0; border-top: 1px solid var(--border); margin: var(--s-8) 0; }
 .field__optional { font-weight: var(--fw-medium); color: var(--text-tertiary); font-size: var(--fs-xs); }
 .field__req { color: var(--danger); font-weight: var(--fw-bold); }
 .field__hint { margin-top: var(--s-2); font-size: var(--fs-xs); color: var(--text-tertiary); }
+/* L'adresse que le lien va former, sous le champ qui la compose. Elle vit ici
+   et non dans le champ : le prefixe y etait dessine en absolu avec un
+   `padding-left` fixe cense degager le texte, et cette largeur ne peut pas etre
+   connue puisque l'hote vient de la configuration. Sur telephone le prefixe
+   passait par-dessus ce que la personne tapait. */
+.slug-preview {
+  margin-top: var(--s-2); font-size: var(--fs-xs); color: var(--text-tertiary);
+  display: flex; flex-wrap: wrap; gap: 0 var(--s-1); align-items: baseline;
+}
+.slug-preview__url {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text-secondary);
+  /* Un identifiant long ne doit pas elargir la page : il se coupe. */
+  overflow-wrap: anywhere; min-width: 0;
+}
+.slug-preview__url strong { color: var(--text); font-weight: var(--fw-bold); }
 .field__error {
   margin-top: var(--s-2); font-size: var(--fs-xs); color: var(--danger-text);
   font-weight: var(--fw-semibold); display: flex; align-items: flex-start; gap: var(--s-2);
