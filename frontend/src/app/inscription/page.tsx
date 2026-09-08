@@ -7,6 +7,7 @@ import { Icon } from "@/components/icon";
 import { ActionButton, Button, Notice, Wordmark } from "@/components/ui";
 import type { CategoryList } from "@/lib/types";
 import { register } from "./actions";
+import { SlugField } from "./slug-field";
 
 /** The taxonomy grows by migration, and a stale copy hides a trade. */
 export const dynamic = "force-dynamic";
@@ -178,69 +179,12 @@ export default async function Register({
           </p>
         </div>
 
-        <div className="field">
-          <label className="field__label" htmlFor="slug">
-            Adresse de votre page <span className="field__req" aria-hidden="true">*</span>
-          </label>
-          <div className="input-group input-group--suffix">
-            <input
-              className="input"
-              id="slug"
-              name="slug"
-              type="text"
-              required
-              minLength={3}
-              maxLength={60}
-              // The contract's own pattern, to the character. The browser
-              // refuses a malformed handle before the round trip; the server
-              // refuses it again, because a pattern in HTML is a convenience
-              // and never a guarantee.
-              pattern="[a-z0-9]([a-z0-9-]{1,58}[a-z0-9])"
-              inputMode="url"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-              autoComplete="off"
-              defaultValue={typedSlug}
-              placeholder="salon-aissatou"
-              style={{ paddingLeft: "9.5rem" }}
-              aria-describedby="slug_hint"
-              aria-invalid={taken ? true : undefined}
-            />
-            <span
-              className="input-group__icon"
-              style={{
-                pointerEvents: "none",
-                left: "var(--s-4)",
-                color: "var(--text-tertiary)",
-                fontSize: "var(--fs-sm)",
-                fontWeight: 600,
-              }}
-            >
-              {PUBLIC_HOST}/p/
-            </span>
-          </div>
-          {taken ? (
-            // The refusal replaces the hint, under the box it is about, with a
-            // neighbouring handle to try. Only the server knows what is free,
-            // so it is offered rather than substituted.
-            <p className="field__error" id="slug_hint">
-              <Icon name="alert-circle" size={16} /> Cette adresse est déjà
-              utilisée.
-              {suggestion ? (
-                <>
-                  {" "}
-                  Essayez <strong>{suggestion}</strong>.
-                </>
-              ) : null}
-            </p>
-          ) : (
-            <p className="field__hint" id="slug_hint">
-              <Icon name="lock" size={16} /> Cette adresse ne changera jamais :
-              elle sera imprimée sur votre QR code et envoyée à vos clients.
-            </p>
-          )}
-        </div>
+        <SlugField
+          host={PUBLIC_HOST}
+          defaultValue={typedSlug}
+          taken={taken}
+          suggestion={suggestion ?? undefined}
+        />
 
         <div className="field">
           <label className="field__label" htmlFor="category_slug">
