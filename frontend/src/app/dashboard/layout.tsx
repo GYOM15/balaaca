@@ -126,14 +126,36 @@ export default async function DashboardLayout({
     // an account and not a salon, which is a different thing from being signed
     // out - so they are told, rather than bounced back to a sign-in that would
     // succeed and land them here again.
+    //
+    // This screen offers the two ways out and does NOT redirect to either, and
+    // that is the whole decision. A 403 here has two causes wearing one status:
+    // somebody who just confirmed their address and has no business yet, and
+    // somebody invited to a colleague's team who has not entered their code.
+    // Sending the second one to `/inscription` would have them create a
+    // business, and `uq_provider_staff_one_active_membership` (V005) allows one
+    // active membership per account - so the invitation they were sent becomes
+    // unusable, permanently, with no undo. A convenience redirect cannot tell
+    // the two apart, because a pending invitation is held against a CODE and
+    // not against an account. Two doors, and the person picks.
     if (error instanceof ApiError && error.status === 403) {
       return (
         <main className="page page--narrow section" id="contenu">
           <EmptyState
             sketch="storefront"
-            title="Aucune activité rattachée à ce compte"
-            body="Votre compte existe, mais il n’est rattaché à aucune activité. Si un collègue vous a invité, ouvrez le lien qu’il vous a envoyé."
-            action={<SignOut />}
+            title="Il vous reste une étape"
+            body="Votre compte est créé. Pour ouvrir votre tableau de bord, créez la page de votre établissement. Si un collègue vous a invité à rejoindre le sien, entrez plutôt le code qu’il vous a envoyé : un compte ne peut appartenir qu’à un seul établissement."
+            action={
+              <>
+                <Link className="btn btn--primary" href="/inscription">
+                  <span className="btn__label--idle">Créer ma page</span>
+                  <Icon name="arrow-right" size={18} className="ico--arrow" />
+                </Link>
+                <Link className="btn btn--secondary" href="/rejoindre">
+                  <span className="btn__label--idle">J’ai un code d’invitation</span>
+                </Link>
+                <SignOut />
+              </>
+            }
           />
         </main>
       );
