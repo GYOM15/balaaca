@@ -399,6 +399,42 @@ public class BookingFixtures {
         }
     }
 
+    /**
+     * Moves a booking into the future, measured by the DATABASE's clock.
+     *
+     * <p>The application's clock is pinned and PostgreSQL's is not, so "in the
+     * future" means two different things at once and they drift apart by a day
+     * every day. A booking placed at a literal date is future for the pinned
+     * clock when it is written and past for {@code now()} soon after, and the
+     * two SQL predicates that judge an appointment against real time then
+     * answer the opposite of what the test meant:
+     *
+     * <ul>
+     *   <li>{@code app_may_review}, V050: {@code p_ends_at <= now()}
+     *   <li>the staff-departure guard, V038: {@code starts_at >= now()}
+     * </ul>
+     *
+     * <p>So a test that needs an appointment still to come says so here rather
+     * than naming a date. The mirror of {@code served} in ReviewIT, which moves
+     * one into the past for the same reason.
+     *
+     * <p>The block window is DERIVED from the row's own frozen buffers, because
+     * {@code ck_appointments_block_derived} pins it to exactly that. A fixture
+     * is not exempt from the schema.
+     */
+    public void stillToCome(String reference) {
+        run("""
+            UPDATE appointments
+               SET starts_at     = now() + interval '3 days',
+                   ends_at       = now() + interval '3 days' + interval '1 hour',
+                   blocked_from  = now() + interval '3 days'
+                                   - make_interval(mins => buffer_before_minutes),
+                   blocked_until = now() + interval '3 days' + interval '1 hour'
+                                   + make_interval(mins => buffer_after_minutes)
+             WHERE public_reference = '%s'
+            """.formatted(reference));
+    }
+
     /** One number, off the superuser connection, for a test that needs to count. */
     public long count(String sql) {
         return query(sql);

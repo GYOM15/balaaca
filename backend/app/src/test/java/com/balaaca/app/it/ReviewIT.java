@@ -150,6 +150,7 @@ class ReviewIT {
     @DisplayName("The booking carries what its own customer said, and whether they still may")
     void thePageKnowsWithoutAsking() {
         String reference = aBooking("622000002");
+        fixtures.stillToCome(reference);
 
         // Before the visit: no review, and the form must not be offered.
         given().when().get("/v1/bookings/" + reference).then().statusCode(200)
@@ -230,6 +231,11 @@ class ReviewIT {
     @DisplayName("A visit that has not happened cannot be reviewed")
     void nothingToReviewYet() {
         String reference = aBooking("622000005");
+        // Future by the DATABASE's clock, which is what app_may_review reads.
+        // A literal date would be future for the pinned application clock and
+        // past for now(), and this test would then assert the opposite of what
+        // it means - which is exactly what it started doing on 2026-09-08.
+        fixtures.stillToCome(reference);
         review(reference, "{\"rating\":5}").statusCode(409)
                 .body("code", equalTo("INVALID_STATE_TRANSITION"));
     }
