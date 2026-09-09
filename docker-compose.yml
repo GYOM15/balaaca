@@ -135,6 +135,12 @@ services:
       # Keycloak posts its own mail, over SMTP - it cannot use an HTTP API, so
       # EMAIL_API_URL is no help to it. Unset, these point at the mailpit
       # service below and every message lands in a web inbox on this machine.
+      # Read by init-realm.sh, which disables balaaca-dev-cli - a PUBLIC client
+      # with the password grant - unless this says true. Defaulted to false
+      # HERE as well as in the script: an unset variable must leave a public
+      # password endpoint off. .env.example carries true for a developer,
+      # scripts/generate-env.sh writes false into a deployment.
+      KEYCLOAK_DEV_CLIENT_ENABLED: ${KEYCLOAK_DEV_CLIENT_ENABLED:-false}
       KEYCLOAK_SMTP_HOST: ${KEYCLOAK_SMTP_HOST:-mailpit}
       KEYCLOAK_SMTP_PORT: ${KEYCLOAK_SMTP_PORT:-1025}
       KEYCLOAK_SMTP_FROM: ${KEYCLOAK_SMTP_FROM:-bonjour@balaaca.local}
