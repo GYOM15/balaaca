@@ -130,3 +130,32 @@ test("the service worker never answers for the API or for media", () => {
   assert.equal(puts.length, 1, "the worker writes to a cache somewhere new");
   assert.match(worker, /pathname\.startsWith\("\/_next\/static\/"\)/);
 });
+
+test("the worker is registered before anything can return early", () => {
+  const component = readFileSync(
+    join(import.meta.dirname, "..", "components", "install-prompt.tsx"),
+    "utf8",
+  );
+
+  // This shipped the wrong way round once, with a comment two lines below the
+  // call claiming the opposite of what the code did. Registration sat under
+  // `if (standalone) return` and under the "already declined" return, so the
+  // INSTALLED window - the one with no browser chrome and no error page of its
+  // own - was the only place with no service worker, and one press of "Plus
+  // tard" disabled the worker permanently. The card is an offer; the worker is
+  // the product, and it cannot be conditional on the offer.
+  const registers = component.indexOf("serviceWorker.register(");
+  assert.notEqual(registers, -1, "the component no longer registers a worker");
+
+  const effect = component.indexOf("useEffect(");
+  assert.ok(effect !== -1 && effect < registers);
+
+  for (const early of ["if (standalone) return;", "getItem(DECLINED)) return;"]) {
+    const at = component.indexOf(early);
+    assert.notEqual(at, -1, `${early} is gone; this guard needs rewriting`);
+    assert.ok(
+      registers < at,
+      `the worker is registered after \`${early}\`, so somebody never gets one`,
+    );
+  }
+});

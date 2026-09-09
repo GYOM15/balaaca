@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Icon } from "@/components/icon";
+import { chooseOffer, isIOS, type Offer } from "@/lib/install-offer";
 
 /**
  * The event Chromium fires when it is willing to install this, which is not in
@@ -19,27 +20,6 @@ type InstallEvent = Event & {
 /** Set once the person has said no, so the card does not ask again. */
 const DECLINED = "balaaca.install.declined";
 
-/**
- * What the browser in front of us can actually do about installing.
- *
- * <p>Three answers, and they are genuinely different products:
- *
- * <p>`prompt` - Chromium on Android fired `beforeinstallprompt`, we kept it,
- * and a button can open the real install dialog. This is the case the owner
- * asked for, and the only one where a tap is enough.
- *
- * <p>`menu` - Chromium, installable, but the event fired before this component
- * was listening. That happens on a RETURN visit: the service worker is already
- * registered and controlling, so the browser can judge installability during
- * load, before React has hydrated anything. The honest answer is to name the
- * menu item, because the browser's own menu still offers it.
- *
- * <p>`share` - iOS. There is no event, no `prompt()`, and no API of any kind:
- * Apple has never shipped one, and a button that claims to install on iPhone
- * would be a lie. Safari's share sheet carries "Sur l'écran d'accueil" and that
- * is the whole mechanism, so the card explains where it is.
- */
-type Offer = "prompt" | "menu" | "share" | null;
 
 /**
  * The install card, and the service worker registration that has to precede it.
@@ -65,6 +45,24 @@ export function InstallPrompt() {
   const [done, setDone] = useState(false);
 
   useEffect(() => {
+    // The worker first, and BEFORE every early return below. It said so in a
+    // comment and did the opposite: registration sat under two `return`s, so
+    // the two people who need it most never got it. Somebody who installed the
+    // application ran the standalone branch and returned, which meant the
+    // INSTALLED window - the one with no browser chrome and no error page of
+    // its own - was the only place with no service worker and no offline page.
+    // And somebody who pressed "Plus tard" once disabled the worker for good.
+    // The card is an offer; the worker is the product.
+    //
+    // `serviceWorker` is absent from `navigator` outside a secure context, so
+    // this is also the guard for plain http on anything but localhost.
+    if ("serviceWorker" in navigator) {
+      // No await, no `.then` that does anything: a failed registration is not
+      // a reason to withhold the rest of the dashboard, and there is nothing
+      // useful to tell a provider about it.
+      navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {});
+    }
+
     // Already installed: standalone is the modern signal, navigator.standalone
     // is Safari's own, which predates it and is still the only one iOS sets.
     const standalone =
@@ -76,18 +74,8 @@ export function InstallPrompt() {
       if (window.localStorage.getItem(DECLINED)) return;
     } catch {
       // Private browsing refuses localStorage entirely. Asking again is a far
-      // smaller failure than not registering the worker at all, so this falls
-      // through rather than returning.
-    }
-
-    // The worker first. Nothing below can happen without it, and it is also
-    // the half that has to run for somebody who installed months ago and will
-    // never see this card again.
-    if ("serviceWorker" in navigator) {
-      // No await, no .then that does anything: registration failing is not a
-      // reason to withhold the rest of the dashboard, and there is nothing
-      // useful to tell a provider about it.
-      navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {});
+      // smaller failure than saying nothing, so this falls through rather than
+      // returning.
     }
 
     const capture = (event: Event) => {
@@ -109,21 +97,27 @@ export function InstallPrompt() {
     };
     window.addEventListener("appinstalled", installed);
 
-    // Nothing was captured within a moment of mounting, so either this browser
-    // never fires the event, or it fired it before we were listening. Both end
-    // in instructions rather than a button, and which instructions depends on
-    // the platform.
-    const ua = navigator.userAgent;
-    const iOS =
-      /iPad|iPhone|iPod/.test(ua) ||
-      // iPadOS reports itself as a Macintosh and gives itself away by having a
-      // touch screen. A real Mac reports maxTouchPoints 0.
-      (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
-    const chromium = "onbeforeinstallprompt" in window;
+    // Nothing captured yet, so fall back to instructions - but only after
+    // giving the event a real chance, and only where they would be true.
+    //
+    // SIX seconds, not one and a half. Chrome does not judge a page
+    // installable until a service worker is registered AND controlling it, and
+    // on a FIRST visit that worker is still installing while this effect runs.
+    // A short timer therefore lands on the fallback every first visit, before
+    // the event it was meant to be a fallback FOR has had any chance to fire.
+    // A long one costs nothing: `capture` still upgrades the card to a real
+    // button whenever the event arrives, however late.
+    const browser = {
+      ios: isIOS(navigator.userAgent, navigator.maxTouchPoints),
+      // A family, not a capability. `chooseOffer` is what refuses to act on it
+      // alone, and install-offer.test.mts is what keeps that true.
+      chromium: "onbeforeinstallprompt" in window,
+      secure: window.isSecureContext,
+    };
 
     const settle = window.setTimeout(() => {
-      setOffer((current) => current ?? (iOS ? "share" : chromium ? "menu" : null));
-    }, 1500);
+      setOffer((current) => current ?? chooseOffer({ ...browser, captured: false }));
+    }, 6000);
 
     return () => {
       window.removeEventListener("beforeinstallprompt", capture);
@@ -155,8 +149,16 @@ export function InstallPrompt() {
           {offer === "prompt"
             ? "Ouvrez votre agenda d’un seul geste, sans passer par le navigateur."
             : offer === "share"
-              ? "Appuyez sur Partager en bas de l’écran, puis sur « Sur l’écran d’accueil »."
-              : "Ouvrez le menu du navigateur, puis « Installer l’application »."}
+              ? // Not "en bas de l’écran": every browser on iOS reaches this,
+                // and they do not all put the control in the same place. Safari
+                // on iPhone has it in the bottom bar, Chrome behind its menu,
+                // and an iPad in landscape puts the toolbar at the top.
+                "Ouvrez le menu de partage, puis « Sur l’écran d’accueil »."
+              : // Chrome names it "Installer l’application" when the page is
+                // installable and "Ajouter à l’écran d’accueil" when it is not.
+                // Both are said, because from here we cannot tell which one the
+                // person is looking at.
+                "Ouvrez le menu du navigateur, puis « Installer l’application » ou « Ajouter à l’écran d’accueil »."}
         </p>
 
         <div className="install__actions">
