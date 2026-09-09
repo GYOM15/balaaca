@@ -9,6 +9,18 @@ import { CurrentLink } from "@/components/current-link";
 /** A diary. Cached, it would be stale before it was drawn. */
 export const dynamic = "force-dynamic";
 
+/**
+ * The install manifest, declared HERE and nowhere else.
+ *
+ * <p>Next's `app/manifest.ts` file convention would put this link in the head
+ * of every page on the site, and the build output confirms it does. That would
+ * offer a customer reading a provider's page an application whose `start_url`
+ * is this dashboard: they would install it, tap it, and land on a sign-in for
+ * an account they have no reason to have. Declared on this layout, the offer
+ * reaches only somebody who is already behind the sign-in.
+ */
+export const metadata = { manifest: "/manifest.webmanifest" };
+
 type Entry = {
   href: string;
   icon: string;
