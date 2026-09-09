@@ -159,3 +159,30 @@ test("the worker is registered before anything can return early", () => {
     );
   }
 });
+
+test("iOS is told the dashboard is an application, in both spellings", () => {
+  const dashboard = readFileSync(
+    join(app, "dashboard", "layout.tsx"),
+    "utf8",
+  );
+
+  // Without a capable tag, "Sur l'écran d'accueil" on an iPhone produces a
+  // bookmark that reopens Safari with its address bar - a shortcut, not an
+  // application. It is the single tag the whole iOS install depends on.
+  //
+  // And `appleWebApp: { capable: true }` does not write the Apple-prefixed
+  // one: Next 16 substitutes the standardised `mobile-web-app-capable`, which
+  // was verified by building a page carrying this metadata and reading its
+  // head. Which spelling a given iPhone reads is a fact about Safari that
+  // nothing here can test, so both are emitted and this is what keeps them.
+  assert.match(dashboard, /appleWebApp:\s*\{/);
+  assert.match(dashboard, /capable:\s*true/);
+  assert.ok(
+    dashboard.includes('"apple-mobile-web-app-capable": "yes"'),
+    "the legacy spelling is gone, and Next does not write it for you",
+  );
+
+  // The name under the icon. Without it iOS uses the document title, so a home
+  // screen would read "Agenda · Balaaca".
+  assert.match(dashboard, /title:\s*"Balaaca"/);
+});
