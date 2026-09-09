@@ -1181,6 +1181,11 @@ a.choice { text-decoration: none; color: inherit; }
 .hdr__nav { display: none; align-items: center; gap: var(--s-1); margin-left: var(--s-4); }
 @media (min-width: 900px) { .hdr__nav { display: flex; } }
 .hdr__link {
+  /* inline-flex plutot qu'inline : le lien de retour porte desormais une
+     fleche, et une icone posee dans un flux de texte s'assoit sur la ligne de
+     base au lieu d'etre centree sur le mot. Sans icone, le rendu est identique
+     a ce qu'il etait. */
+  display: inline-flex; align-items: center; gap: var(--s-2);
   padding: var(--s-2) var(--s-3); border-radius: var(--r-xs);
   font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text-secondary);
   text-decoration: none; transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);

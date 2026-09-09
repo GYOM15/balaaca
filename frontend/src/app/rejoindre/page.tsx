@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { BackLink } from "@/components/back-link";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { isSignedIn } from "@/lib/api";
@@ -45,9 +46,7 @@ export default async function Join({ searchParams }: { searchParams: Promise<Sea
         <div className="page hdr__in">
           <Wordmark size={34} />
           <div className="hdr__actions">
-            <Link className="hdr__link" href="/">
-              Retour à l’accueil
-            </Link>
+            <BackLink fallback="/" label="Retour" />
             <span className="t-xs" style={{ display: "none" }} data-show-md="">
               Besoin d’aide&nbsp;?{" "}
               <Link
