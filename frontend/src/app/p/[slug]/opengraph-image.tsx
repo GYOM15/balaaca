@@ -88,21 +88,10 @@ export default async function Image({ params }: { params: Promise<{ slug: string
           flexDirection: "column",
           justifyContent: "space-between",
           padding: "72px 80px",
-          backgroundImage: "linear-gradient(135deg, #081F1B 0%, #123C35 52%, #1B5148 100%)",
+          background: "#FBF7EE",
           fontFamily: "Clash",
         }}
       >
-        <div
-          style={{
-            position: "absolute",
-            right: -260,
-            bottom: -300,
-            width: 900,
-            height: 900,
-            backgroundImage:
-              "radial-gradient(circle at center, rgba(201,168,106,0.30) 0%, rgba(201,168,106,0.12) 42%, rgba(201,168,106,0) 70%)",
-          }}
-        />
 
         <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
           {line ? (
@@ -112,7 +101,7 @@ export default async function Image({ params }: { params: Promise<{ slug: string
                 fontSize: 30,
                 letterSpacing: 4,
                 textTransform: "uppercase",
-                color: "#C9A86A",
+                color: "#A5844A",
               }}
             >
               {line}
@@ -127,7 +116,7 @@ export default async function Image({ params }: { params: Promise<{ slug: string
               fontSize: name.length > 26 ? 76 : 104,
               fontWeight: 800,
               letterSpacing: -2,
-              color: "#FBF7EE",
+              color: "#0C302A",
               lineHeight: 1.05,
             }}
           >
@@ -136,8 +125,8 @@ export default async function Image({ params }: { params: Promise<{ slug: string
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-          <div style={{ display: "flex", width: 44, height: 4, background: "#C9A86A" }} />
-          <div style={{ display: "flex", fontSize: 30, color: "#DCE7E4" }}>
+          <div style={{ display: "flex", width: 44, height: 4, background: "#A5844A" }} />
+          <div style={{ display: "flex", fontSize: 30, color: "#4A5A55" }}>
             Réservez en ligne, sans créer de compte
           </div>
         </div>
