@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { DM_Sans } from "next/font/google";
 import localFont from "next/font/local";
+import { env } from "@/lib/env";
 import { Suspense } from "react";
 import { Presentation } from "@/components/presentation";
 import { Sprite } from "@/components/sprite";
@@ -70,6 +71,24 @@ export const metadata: Metadata = {
   },
   description:
     "Trouvez un professionnel près de chez vous et réservez votre créneau en ligne.",
+  // Without these a shared link is a bare grey rectangle with a URL under it,
+  // which is what this file's own comment above says must not happen: a link on
+  // WhatsApp is often the first thing anyone sees of this product, and in Guinea
+  // that link IS the distribution.
+  //
+  // No `images` here on purpose. `app/opengraph-image.tsx` is the file
+  // convention and Next attaches it to every route that does not carry one of
+  // its own; naming an image here would override it everywhere, including on a
+  // provider's page where the cover is the better picture.
+  metadataBase: new URL(env.publicOrigin),
+  openGraph: {
+    type: "website",
+    siteName: "Balaaca",
+    locale: "fr_FR",
+    title: "Balaaca, trouver un professionnel",
+    description:
+      "Trouvez un professionnel près de chez vous et réservez votre créneau en ligne.",
+  },
 };
 
 export const viewport: Viewport = {

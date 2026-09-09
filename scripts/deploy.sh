@@ -17,6 +17,11 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+# One definition of which images this checkout wants, shared with
+# scripts/publish-images.sh. The two run on different machines days apart and
+# have to arrive at the same string.
+# shellcheck source=scripts/lib/image-tag.sh
+. scripts/lib/image-tag.sh
 
 ENV_FILE=.env.prod
 TAG=""
@@ -100,7 +105,7 @@ git pull --ff-only
 # serving classes from two builds at once, surfacing as a 500 with no
 # compilation error anywhere near it. Here it would be subtler - new code,
 # old containers - and nothing would say so.
-IMAGE_COMMIT=$(git log -1 --format=%h -- backend frontend docker)
+IMAGE_COMMIT=$(image_tag)
 if [ -z "$TAG" ]; then
     TAG="$IMAGE_COMMIT"
 fi
