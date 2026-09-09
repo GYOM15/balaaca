@@ -308,6 +308,26 @@ else
     echo "[init-realm]   brute force: 5 failures, then 60s doubling to 900s"
 fi
 
+# Thirty minutes on a link somebody has to receive, find and open.
+#
+# Keycloak's default is FIVE, and nothing here had ever changed it, so every
+# confirmation and every password reset died five minutes after it was sent. A
+# message that lands in a spam folder, or that a relay holds for six minutes,
+# arrives already dead - and a link that expired before it was opened looks
+# exactly like a link that never arrived. That is the failure this was reported
+# as.
+#
+# Realm-wide, so it covers the registration confirmation and the password reset
+# together. Both are one-use tokens sent to an address the realm already knows,
+# so the window is what somebody needs to walk to their telephone, not an
+# attacker's opportunity.
+if ! $KCADM update "realms/$REALM" \
+        -s actionTokenGeneratedByUserLifespan=1800 >/dev/null 2>&1; then
+    echo "[init-realm] WARNING: action token lifespan not applied - links expire in 5 minutes" >&2
+else
+    echo "[init-realm]   confirmation and reset links valid 30 minutes"
+fi
+
 # --- The development client ---------------------------------------------------
 #
 # balaaca-dev-cli is a PUBLIC client with the password grant enabled. Its own

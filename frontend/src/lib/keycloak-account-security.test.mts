@@ -60,6 +60,20 @@ test("neither is written where Keycloak would never read it again", () => {
   }
 });
 
+test("a link somebody has to find in their inbox lives longer than five minutes", () => {
+  // Keycloak's default is 300 seconds, and nothing here had ever changed it, so
+  // every confirmation and every password reset died five minutes after it was
+  // sent. A message held six minutes by a relay, or filed as spam and found
+  // later, arrived already dead - and a link that expired before it was opened
+  // is indistinguishable from a link that never arrived.
+  const lifespan = init.match(/-s actionTokenGeneratedByUserLifespan=(\d+)/);
+  assert.ok(lifespan, "no action token lifespan is set, so links live 5 minutes");
+  assert.ok(
+    Number(lifespan[1]) >= 900,
+    `${lifespan[1]} seconds is not enough to receive, find and open a message`,
+  );
+});
+
 test("the public password-grant client is off unless something asks for it", () => {
   // balaaca-dev-cli is a PUBLIC client with directAccessGrantsEnabled. Its own
   // description claims a production realm does not carry it, and that was never
