@@ -7,6 +7,7 @@ import { Icon } from "@/components/icon";
 import { ActionButton, Button, Notice, Wordmark } from "@/components/ui";
 import type { CategoryList } from "@/lib/types";
 import { register } from "./actions";
+import { BackLink } from "@/components/back-link";
 import { SlugField } from "./slug-field";
 
 /** The taxonomy grows by migration, and a stale copy hides a trade. */
@@ -283,9 +284,11 @@ function Shell({ children }: { children: React.ReactNode }) {
         <div className="page hdr__in">
           <Wordmark size={34} />
           <div className="hdr__actions">
-            <Link className="hdr__link" href="/professionnels">
-              Retour
-            </Link>
+            {/* Back to where they came from when that is knowable. Somebody
+                arriving from the dashboard's two choices used to land on
+                /professionnels and could only reach the other choice with the
+                browser's own button. */}
+            <BackLink fallback="/professionnels" />
             <span className="t-xs" style={{ display: "none" }} data-show-md="">
               Besoin d’aide&nbsp;?{" "}
               <Link
