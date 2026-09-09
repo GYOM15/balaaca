@@ -95,8 +95,38 @@ Nothing secret is inside one: every credential arrives as environment at run
 time, and none is a build argument, because a build argument is readable in the
 image's own history by anyone who can pull it.
 
-Built from the repository root, for the architecture of the machine that will
-run them:
+One command, from the machine that can build natively:
+
+```
+scripts/publish-images.sh                          # for a Raspberry Pi
+scripts/publish-images.sh --platform linux/amd64   # for a VPS
+scripts/publish-images.sh --dry-run                # say what would happen
+```
+
+It refuses before it starts rather than failing halfway, on the things that are
+knowable: not on `main`, not level with `origin/main`, uncommitted changes under
+`backend/`, `frontend/` or `docker/`, a daemon that is not answering.
+
+Disk space is REPORTED, not enforced. How much a build needs depends on what the
+layer cache already holds, and a threshold picked without measuring it would
+refuse runs that would have finished. What is worth having is the right
+explanation afterwards: a disk that fills does not fail the build, it kills the
+daemon, and the message that surfaces then is "cannot connect to the Docker
+daemon" - which sends you to restart Docker rather than to free space. The
+script says so when it actually happens. `--min-free N` adds a gate for anybody
+who wants one.
+
+The tag is computed, never typed, and by the same function `deploy.sh` uses:
+`scripts/lib/image-tag.sh`. That is the whole reason the file exists. The two
+scripts run on different machines days apart, and if their idea of the tag ever
+diverges, the deployment pulls something nobody published - and `deploy.sh`'s
+own failure message does not name that as a possibility.
+
+The images are pushed only after all three have built. A half-published set is a
+deployment that pulls two new images and one old one, which starts and is
+wrong.
+
+By hand, if you ever need to see what it does:
 
 ```
 docker build --platform linux/arm64 -f docker/api.Dockerfile    -t ghcr.io/gyom15/balaaca-api:latest .
