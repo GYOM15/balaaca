@@ -2623,3 +2623,25 @@ a.svc__photo:focus-visible { outline: 2px solid var(--focus-ring); outline-offse
    a ecrit en trois paragraphes lui appartient. */
 .about__text { white-space: pre-wrap; line-height: var(--lh-relaxed);
   color: var(--text-secondary); overflow-wrap: anywhere; }
+
+/* --------------------------------------------------------------------------
+   La carte « installer »
+   --------------------------------------------------------------------------
+   Elle ne s'affiche que dans le tableau de bord, et seulement au prestataire.
+   Un client arrive par un lien envoye dans une conversation et reserve une
+   fois : lui demander d'installer quelque chose d'abord, c'est un mur devant la
+   seule chose pour laquelle il est venu. Un prestataire ouvre son agenda tous
+   les matins, et c'est exactement ce a quoi sert une icone sur l'ecran.
+   Elle est cachee tant qu'on est deja dans la fenetre installee, donc elle est
+   ecrite pour ne se voir qu'une seule fois dans une vie. */
+.install {
+  display: flex; gap: var(--s-3); align-items: flex-start;
+  padding: var(--s-4) var(--s-5);
+  border: 1px solid var(--brand-soft); border-radius: var(--r-sm);
+  background: var(--bg-sunken);
+  font-size: var(--fs-sm); line-height: 1.5;
+}
+.install__icon { flex: none; margin-top: 1px; color: var(--brand); }
+.install__title { font-weight: var(--fw-bold); }
+.install__body { color: var(--text-secondary); margin-top: 2px; }
+.install__actions { margin-top: var(--s-3); display: flex; gap: var(--s-2); flex-wrap: wrap; }
