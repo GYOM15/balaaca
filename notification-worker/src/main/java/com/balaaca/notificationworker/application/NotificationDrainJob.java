@@ -13,7 +13,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.Map;
-import java.util.random.RandomGenerator;
+import java.util.Random;
 import org.jboss.logging.Logger;
 import org.jboss.logging.MDC;
 
@@ -48,7 +48,27 @@ public class NotificationDrainJob {
                                 Alerter alerts) {
         this.outbox = outbox;
         this.router = router;
-        this.backoff = new Backoff(RandomGenerator.getDefault());
+        // `new Random()`, and NOT `RandomGenerator.getDefault()`.
+        //
+        // getDefault() names an algorithm - L32X64MixRandom - and resolves it
+        // through ServiceLoader at runtime. In the packaged application that
+        // lookup finds nothing and throws IllegalArgumentException from this
+        // constructor, so the bean is never created and @Scheduled drain()
+        // throws on every tick. On the Raspberry Pi it did exactly that, every
+        // five seconds for thirteen hours, while the container reported healthy
+        // and not one notification was ever claimed.
+        //
+        // Every test passed. @QuarkusTest runs in JVM test mode, where the
+        // application classes sit on the system classpath and the JDK's own
+        // providers are found; the packaged artefact does not, and nothing here
+        // tests the packaged artefact. So the rule is the one ArchitectureTest
+        // now enforces: no service-loaded JDK factory in this application.
+        //
+        // java.util.Random needs no lookup, implements RandomGenerator, and is
+        // thread-safe. This is jitter on a retry delay - there is nothing here
+        // that wants a better generator, and Backoff still takes the interface
+        // so a test can hand it a fixed one.
+        this.backoff = new Backoff(new Random());
         this.clock = clock;
         this.alerts = alerts;
     }
