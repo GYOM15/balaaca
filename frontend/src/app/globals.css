@@ -2625,23 +2625,55 @@ a.svc__photo:focus-visible { outline: 2px solid var(--focus-ring); outline-offse
   color: var(--text-secondary); overflow-wrap: anywhere; }
 
 /* --------------------------------------------------------------------------
-   La carte « installer »
+   Le bouton « installer »
    --------------------------------------------------------------------------
-   Elle ne s'affiche que dans le tableau de bord, et seulement au prestataire.
-   Un client arrive par un lien envoye dans une conversation et reserve une
-   fois : lui demander d'installer quelque chose d'abord, c'est un mur devant la
-   seule chose pour laquelle il est venu. Un prestataire ouvre son agenda tous
-   les matins, et c'est exactement ce a quoi sert une icone sur l'ecran.
-   Elle est cachee tant qu'on est deja dans la fenetre installee, donc elle est
-   ecrite pour ne se voir qu'une seule fois dans une vie. */
-.install {
-  display: flex; gap: var(--s-3); align-items: flex-start;
-  padding: var(--s-4) var(--s-5);
-  border: 1px solid var(--brand-soft); border-radius: var(--r-sm);
-  background: var(--bg-sunken);
-  font-size: var(--fs-sm); line-height: 1.5;
+   C'etait une carte dans le flux de l'agenda, et elle ne marchait pas : non
+   pas parce qu'elle echouait, mais parce que personne ne l'atteignait. Mesuree
+   sur cette feuille a 375x812, son bord haut tombait a 1110 px du haut du
+   document, derriere l'alerte de completion et le panneau « Publier votre
+   page » - deux ecrans et demi de defilement apres ce qu'on demande justement
+   a un nouveau prestataire de faire en premier. Elle s'affichait a chaque
+   fois, elle n'a jamais ete vue.
+   Donc un bouton qui reste suspendu au-dessus de la barre du bas, sur tous les
+   ecrans du tableau de bord, et qui ne bouge pas quand la page defile. Sur
+   telephone seulement : c'est la qu'il y a un ecran d'accueil, et « Mon
+   compte » porte la meme chose en permanence pour les autres. */
+.install-fab {
+  position: fixed; right: var(--gutter);
+  bottom: calc(var(--tabbar-h) + var(--s-4) + env(safe-area-inset-bottom));
+  z-index: var(--z-header);
+  width: 48px; height: 48px; border-radius: var(--r-circle);
+  display: grid; place-items: center;
+  background: var(--brand); color: #fff; border: 0;
+  box-shadow: var(--sh-lg); cursor: pointer;
 }
-.install__icon { flex: none; margin-top: 1px; color: var(--brand); }
-.install__title { font-weight: var(--fw-bold); }
-.install__body { color: var(--text-secondary); margin-top: 2px; }
-.install__actions { margin-top: var(--s-3); display: flex; gap: var(--s-2); flex-wrap: wrap; }
+.install-fab:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
+@media (min-width: 1000px) { .install-fab { display: none; } }
+
+/* Le voile. C'est un <button> et pas un <div> : il ferme la feuille, donc il
+   se presse - et au clavier comme au doigt. */
+.install-scrim {
+  position: fixed; inset: 0; z-index: var(--z-drawer);
+  background: rgba(8, 31, 27, .55); border: 0; padding: 0; cursor: pointer;
+}
+.install-sheet {
+  position: fixed; inset: auto 0 0 0; z-index: var(--z-drawer);
+  background: var(--surface); border-radius: var(--r-md) var(--r-md) 0 0;
+  box-shadow: var(--sh-lg);
+  padding: var(--s-5) var(--gutter) calc(var(--s-8) + env(safe-area-inset-bottom));
+}
+@media (min-width: 700px) {
+  .install-sheet { inset: auto auto var(--s-6) var(--s-6); width: 420px;
+    border-radius: var(--r-md); }
+}
+/* list-style redeclare : la remise a zero de la ligne 342 enleve les puces a
+   tous les ul et ol du produit, et ici les numeros SONT l'information - ce
+   sont trois gestes dans un ordre, pas une liste de faits. */
+.install-steps { margin: var(--s-4) 0 0; padding-left: var(--s-5);
+  display: grid; gap: var(--s-3); list-style: decimal;
+  font-size: var(--fs-sm); line-height: 1.5; color: var(--text); }
+.install-steps li::marker { color: var(--brand); font-weight: var(--fw-bold); }
+/* L'icone Partager se lit DANS la phrase. Le composant Icon rend un <svg>, que
+   le reset du produit passe en display:block ailleurs ; sans ceci elle tombe
+   sur sa propre ligne au milieu du mot. */
+.install-steps svg { display: inline-block; vertical-align: -3px; }

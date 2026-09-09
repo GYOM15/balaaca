@@ -186,3 +186,36 @@ test("iOS is told the dashboard is an application, in both spellings", () => {
   // screen would read "Agenda · Balaaca".
   assert.match(dashboard, /title:\s*"Balaaca"/);
 });
+test("the icons a platform crops carry no transparency", () => {
+  // iOS composites an apple-touch-icon's alpha onto BLACK, and a launcher
+  // crops a maskable icon to its own shape and paints its own colour through
+  // whatever transparency it finds. Both were pointed at favicon-512, which is
+  // a circle in a square and therefore 20 percent transparent by construction:
+  // on a home screen it was a green circle with a white halo in a black tile.
+  //
+  // A PNG's colour type is byte 25: 6 is RGBA, 4 is grey+alpha, 3 is a palette
+  // which may carry a tRNS chunk. Only 2 (RGB) and 0 (grey) cannot be
+  // transparent at all, which is what these two files have to be.
+  const layout = readFileSync(join(app, "layout.tsx"), "utf8");
+  const apple = layout.match(/apple:\s*"([^"]+)"/);
+  assert.ok(apple, "the root layout declares no apple touch icon");
+
+  const maskable = manifestSource.match(
+    /\{ src: "([^"]+)"[^}]*purpose: "maskable" \}/,
+  );
+  assert.ok(maskable, "the manifest declares no maskable icon");
+
+  for (const src of [apple[1], maskable[1]]) {
+    const bytes = readFileSync(join(root, "public", src.replace(/^\//, "")));
+    const colourType = bytes[25];
+    assert.ok(
+      colourType === 0 || colourType === 2,
+      `${src} has an alpha channel (PNG colour type ${colourType}), so a home screen paints black through it`,
+    );
+    assert.equal(
+      bytes.includes(Buffer.from("tRNS")),
+      false,
+      `${src} carries a tRNS chunk, which is transparency by another name`,
+    );
+  }
+});

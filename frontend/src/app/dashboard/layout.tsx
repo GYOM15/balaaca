@@ -6,6 +6,7 @@ import { ActionButton, EmptyState, Wordmark, initials } from "@/components/ui";
 import { ApiError, api, isSignedIn } from "@/lib/api";
 import type { AppointmentPage, CurrentMember, ProviderProfile } from "@/lib/types";
 import { CurrentLink } from "@/components/current-link";
+import { InstallPrompt } from "@/components/install-prompt";
 
 /** A diary. Cached, it would be stale before it was drawn. */
 export const dynamic = "force-dynamic";
@@ -243,6 +244,14 @@ export default async function DashboardLayout({
 
   return (
     <>
+      {/* Fixed, so where it sits in this tree changes nothing about the
+          layout - and here rather than on the agenda so it is on every screen
+          behind the sign-in. As a card in the agenda's flow it was 1110 px
+          down the document on a telephone, under the panel telling a new
+          provider to publish their page: it rendered every time and was never
+          seen. It also carries the service worker registration. */}
+      <InstallPrompt />
+
       <div className="app">
         <aside className="side">
           <div className="side__brand">

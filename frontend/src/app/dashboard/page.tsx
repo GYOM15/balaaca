@@ -3,7 +3,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Fragment } from "react";
 import { Icon, Scene } from "@/components/icon";
-import { InstallPrompt } from "@/components/install-prompt";
 import {
   ActionButton,
   Badge,
@@ -394,13 +393,6 @@ export default async function Agenda({
               itself are refused to an employee, and a list of jobs somebody
               cannot do is a dead end. */}
           {owner && !suspended ? <Readiness readiness={readiness} provider={provider} services={services} team={team.data} /> : null}
-
-          {/* Last of the four things that can sit above the diary, because it
-              is the only one that is not about today. It draws nothing at all
-              once the application is installed, or once the person has said no,
-              which is most mornings for most people. It also carries the
-              service worker registration - see the component. */}
-          <InstallPrompt />
 
           <div className="toolbar" style={{ marginBottom: "var(--s-6)" }}>
             {view === "dropoffs" ? null : (

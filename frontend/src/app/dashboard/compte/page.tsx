@@ -158,6 +158,70 @@ export default async function Account() {
                 </p>
               </div>
             </div>
+
+            {/* The permanent way in, and the reason it is not only the floating
+                button on the diary.
+
+                That button is drawn on telephones alone, it can be dismissed
+                for good, and it is drawn by a script - so it is absent on a
+                computer, absent for anybody who has said no once, and absent if
+                the island never boots. This is a server component: it is here
+                on the first paint, on every device, for ever, and "Mon compte"
+                is where somebody goes looking for a thing about their own
+                account.
+
+                Both platforms are named because the server cannot know which
+                one is reading. And on iOS that is not a shortcoming of ours:
+                Apple ships no interface for installing a web application at
+                all, so the steps ARE the mechanism. */}
+            <div className="panel" style={{ marginTop: "var(--s-6)" }}>
+              <div className="panel__head">
+                <div>
+                  <div className="panel__title">Balaaca sur votre écran d’accueil</div>
+                  <div className="panel__sub">Ouvrir votre agenda sans passer par le navigateur</div>
+                </div>
+              </div>
+              <div className="card__body">
+                <p className="field__hint">
+                  Une icône comme celle d’une application, et un agenda en plein
+                  écran. Rien à télécharger sur une boutique&nbsp;: c’est le
+                  navigateur qui l’installe, en trois gestes.
+                </p>
+
+                <div className="cols cols--2" style={{ gap: "var(--s-5)", marginTop: "var(--s-5)" }}>
+                  <div>
+                    <div className="t-overline" style={{ marginBottom: "var(--s-3)" }}>
+                      Sur iPhone et iPad
+                    </div>
+                    <ol className="install-steps" style={{ marginTop: 0 }}>
+                      <li>
+                        Appuyez sur <Icon name="share" size={16} />{" "}
+                        <strong>Partager</strong>, dans la barre de Safari.
+                      </li>
+                      <li>
+                        Faites défiler, puis choisissez{" "}
+                        <strong>«&nbsp;Sur l’écran d’accueil&nbsp;»</strong>.
+                      </li>
+                      <li>
+                        Appuyez sur <strong>Ajouter</strong>.
+                      </li>
+                    </ol>
+                  </div>
+                  <div>
+                    <div className="t-overline" style={{ marginBottom: "var(--s-3)" }}>
+                      Sur Android et sur ordinateur
+                    </div>
+                    <ol className="install-steps" style={{ marginTop: 0 }}>
+                      <li>Ouvrez le menu du navigateur.</li>
+                      <li>
+                        Choisissez <strong>«&nbsp;Installer l’application&nbsp;»</strong> ou{" "}
+                        <strong>«&nbsp;Ajouter à l’écran d’accueil&nbsp;»</strong>.
+                      </li>
+                    </ol>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </main>
