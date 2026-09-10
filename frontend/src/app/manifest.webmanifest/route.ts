@@ -53,11 +53,16 @@ const MANIFEST: MetadataRoute.Manifest = {
   dir: "ltr",
   categories: ["business", "productivity"],
   icons: [
-    // `any` and `maskable` from one file. A maskable icon is cropped to
-    // whatever shape the launcher uses, and this mark is a rounded tile with
-    // its own padding, so it survives the crop; a bare glyph would not.
+    // Two files, not one, and the comment here used to claim one was enough.
+    //
+    // `any` is drawn as given: the circle, which is the mark. `maskable` is
+    // CROPPED by the launcher to whatever shape it uses, and only the middle
+    // 80 % survives - so it has to be a full-bleed OPAQUE square, or the crop
+    // exposes transparency and the launcher paints its own colour through the
+    // corners. favicon-512 is 20 % transparent by construction, being a circle
+    // in a square, and was declared for both.
     { src: "/brand/favicon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
-    { src: "/brand/favicon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+    { src: "/brand/app-icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
   ],
 };
 

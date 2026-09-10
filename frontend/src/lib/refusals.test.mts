@@ -33,6 +33,11 @@ const LOCAL = new Set([
   "PHOTOS_FULL",
   "NO_MESSAGE",
   "NO_RATING",
+  // A day ticked open in the week editor with "--" in both its lists. Refused
+  // in weekFrom before the API is called at all - see src/lib/week-hours.ts -
+  // because the alternative is storing a closed day for somebody who asked for
+  // an open one, or dropping it in silence.
+  "HOURS_DAY_WITHOUT_TIMES",
 ]);
 
 test("no screen branches on a code the contract does not publish", () => {

@@ -151,7 +151,19 @@ const SPRITE = String.raw`<svg xmlns="http://www.w3.org/2000/svg" aria-hidden="t
   <symbol id="i-net-tiktok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13.9 3.6v11a3.7 3.7 0 1 1-3.7-3.7c.4 0 .7.05 1.1.15"/><path d="M13.9 3.6a5.1 5.1 0 0 0 5.1 5.1"/></symbol>
   <symbol id="i-net-youtube" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2.6" y="5.4" width="18.8" height="13.2" rx="3.6"/><path d="m10.2 9.4 5.5 2.6-5.5 2.6Z"/></symbol>
   <symbol id="i-net-linkedin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="17" height="17" rx="3.2"/><path d="M8 10.7v6.1M11.8 16.8v-6.1M11.8 13.4a2.3 2.3 0 0 1 4.6 0v3.4"/><circle fill="currentColor" stroke="none" cx="8" cy="7.9" r="1"/></symbol>
-  <symbol id="i-net-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="m8.7 8.7 6.6 6.6M15.3 8.7l-6.6 6.6"/></symbol>
+  <!-- i-net-x is the one mark here that is filled rather than stroked, and
+       that is deliberate. Drawn like its neighbours it was a cross inside a
+       circle, which is the universal glyph for dismissing something: on a
+       page of links it read as a close button rather than as a brand. This
+       mark is a letterform, so it is set as one.
+
+       Stroking its contour instead was tried and is worse. An outline draws
+       two edges where a fill draws one, and on arms this thin the two edges
+       meet: at 16px the counter closes and the letter turns into a blob.
+       Filled, it stays the lightest of the three at every size the product
+       uses. Still one ink, still currentColor, so nothing about the palette
+       changes. -->
+  <symbol id="i-net-x" viewBox="0 0 24 24"><path fill="currentColor" d="M13.9 10.6 20.4 3h-1.5l-5.7 6.6L8.7 3H3.4l6.9 10L3.4 21h1.5l6-7 4.8 7h5.3l-7.1-10.4zm-2.1 2.5-.7-1L5.5 4.2h2.4l4.5 6.4.7 1 5.9 8.4h-2.4l-4.8-6.9z"/></symbol>
   <symbol id="i-net-website" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="15" rx="2.6"/><path d="M3 9.2h18"/><circle fill="currentColor" stroke="none" cx="6.3" cy="6.9" r="0.9"/><circle fill="currentColor" stroke="none" cx="9.1" cy="6.9" r="0.9"/></symbol>
 
   <!-- ================= FULFILMENT MODES ================= -->

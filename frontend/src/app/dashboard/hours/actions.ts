@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { ApiError, api } from "@/lib/api";
 import { type SuccessCode, succeed } from "@/lib/feedback";
+import { timeOf, weekFrom } from "@/lib/week-hours";
 
 const DAYS = [1, 2, 3, 4, 5, 6, 7];
 
@@ -40,30 +41,17 @@ function week(staffId: string, error?: string): string {
  * <p>Whole and not day by day, because the API takes it whole: a per-day edit
  * leaves the days nobody mentioned ambiguous, which is how a Saturday gets
  * emptied that nobody meant to close. So the form posts every day it knows
- * about, and a day left blank is a day off - stated, not inferred.
+ * about, and a day the provider unticked is a day off - stated, not inferred.
  */
-/**
- * The hour the two lists agreed on.
- *
- * <p>The screen posts `<name>_h` and `<name>_m` rather than one time field,
- * because a native time input commits a half-typed hour on a timer and sets one
- * the provider never chose. Half a time is no time: a field left at "--" reads
- * as empty, which is how a day is declared closed.
- */
-function timeOf(formData: FormData, name: string): string {
-  const hour = String(formData.get(`${name}_h`) ?? "");
-  const minute = String(formData.get(`${name}_m`) ?? "");
-  return hour && minute ? `${hour}:${minute}` : "";
-}
-
 export async function replaceHours(formData: FormData): Promise<void> {
   const staffId = String(formData.get("staff_id"));
 
-  const data = DAYS.flatMap((day) => {
-    const start = timeOf(formData, `start_${day}`);
-    const end = timeOf(formData, `end_${day}`);
-    return start && end ? [{ day_of_week: day, start_time: start, end_time: end }] : [];
-  });
+  // weekFrom carries the whole rule, and the reason it is not written here:
+  // this file is "use server" and cannot be loaded by the test runner, and
+  // getting this wrong replaces somebody's week with an empty one.
+  const posted = weekFrom(formData);
+  if (posted.refusal) redirect(week(staffId, posted.refusal));
+  const data = posted.segments;
 
   try {
     await api("/v1/opening-hours", {

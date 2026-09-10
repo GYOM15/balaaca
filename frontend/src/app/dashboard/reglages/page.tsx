@@ -1,7 +1,7 @@
 import { Icon } from "@/components/icon";
 import { api } from "@/lib/api";
 import type { BookingPolicy } from "@/lib/types";
-import { savePolicy } from "../profile/actions";
+import { savePolicy } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -114,17 +114,60 @@ export default async function BookingRules() {
                   </label>
                 </div>
 
-                {/* Carried, not drawn: see the note on the component above. */}
-                <input
-                  type="hidden"
-                  name="slot_granularity_minutes"
-                  value={policy.slot_granularity_minutes}
-                />
-                <input
-                  type="hidden"
-                  name="min_lead_time_minutes"
-                  value={policy.min_lead_time_minutes}
-                />
+              </div>
+            </div>
+
+            <div className="panel">
+              <div className="panel__head">
+                <div className="panel__title">Espacement et délai</div>
+              </div>
+              <div className="card__body">
+                <div className="field">
+                  <label className="field__label" htmlFor="s-slot">
+                    Intervalle entre deux horaires proposés
+                  </label>
+                  <div className="input-group input-group--suffix">
+                    <input
+                      className="input"
+                      id="s-slot"
+                      type="number"
+                      name="slot_granularity_minutes"
+                      inputMode="numeric"
+                      required
+                      step={1}
+                      defaultValue={policy.slot_granularity_minutes}
+                    />
+                    <span className="input-group__suffix">minutes</span>
+                  </div>
+                  <p className="field__hint">
+                    <Icon name="info" size={16} /> Sur 30, vous proposez 9h00,
+                    9h30, 10h00. Quinze convient à un salon, soixante à qui
+                    travaille en demi-journées. Ce n’est pas la durée d’un
+                    rendez-vous&nbsp;: celle-là est sur la prestation.
+                  </p>
+                </div>
+                <div className="field" style={{ marginTop: "var(--s-5)" }}>
+                  <label className="field__label" htmlFor="s-lead">
+                    Le client doit réserver au moins
+                  </label>
+                  <div className="input-group input-group--suffix">
+                    <input
+                      className="input"
+                      id="s-lead"
+                      type="number"
+                      name="min_lead_time_minutes"
+                      inputMode="numeric"
+                      required
+                      step={1}
+                      defaultValue={policy.min_lead_time_minutes}
+                    />
+                    <span className="input-group__suffix">minutes à l’avance</span>
+                  </div>
+                  <p className="field__hint">
+                    Le temps qu’il vous faut pour vous préparer. Zéro&nbsp;: on
+                    peut réserver le créneau qui suit.
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -145,9 +188,11 @@ export default async function BookingRules() {
                     <input
                       className="input"
                       id="s-delai"
+                      type="number"
                       name="cancellation_deadline_minutes"
                       inputMode="numeric"
                       required
+                      step={1}
                       defaultValue={policy.cancellation_deadline_minutes}
                     />
                     <span className="input-group__suffix">minutes</span>
@@ -173,12 +218,13 @@ export default async function BookingRules() {
                     <input
                       className="input"
                       id="s-horizon"
+                      type="number"
                       name="max_advance_days"
                       inputMode="numeric"
                       required
+                      step={1}
                       defaultValue={policy.max_advance_days}
                     />
-                    <span className="input-group__suffix">jours</span>
                   </div>
                   <p className="field__hint">
                     Au-delà, les créneaux ne sont pas proposés.
