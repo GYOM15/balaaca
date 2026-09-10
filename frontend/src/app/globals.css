@@ -2677,10 +2677,6 @@ a.svc__photo:focus-visible { outline: 2px solid var(--focus-ring); outline-offse
    le reset du produit passe en display:block ailleurs ; sans ceci elle tombe
    sur sa propre ligne au milieu du mot. */
 .install-steps svg { display: inline-block; vertical-align: -3px; }
-.install__icon { flex: none; margin-top: 1px; color: var(--brand); }
-.install__title { font-weight: var(--fw-bold); }
-.install__body { color: var(--text-secondary); margin-top: 2px; }
-.install__actions { margin-top: var(--s-3); display: flex; gap: var(--s-2); flex-wrap: wrap; }
 
 /* La semaine type : une journée decochee.
    Ses heures restent affichees - la recocher ne doit pas obliger a les retaper -
