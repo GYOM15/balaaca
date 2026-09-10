@@ -119,15 +119,19 @@ export default async function BookingRules() {
 
             <div className="panel">
               <div className="panel__head">
-                <div className="panel__title">Horaires proposés</div>
+                <div className="panel__title">Créneaux proposés</div>
               </div>
               <div className="card__body">
-                {/* Not under "Ouverture des reservations": that panel is the
-                    window a customer may book INSIDE, near edge and far edge.
-                    This one decides WHICH times the window is cut into, which
-                    is a different question with a different answer. It was a
-                    hidden input until now, carried so the whole-resource PUT
-                    would not clear it and readable by nobody. */}
+                {/* These two shape the list of times inside a day, and they
+                    are counted in minutes: the first sets the spacing of the
+                    grid, the second drops the ones too close to now. What is
+                    NOT here is the horizon, which opens or closes whole days
+                    and is counted in days. Same screen, different question,
+                    so a different panel.
+
+                    Both were hidden inputs until recently, carried so the
+                    whole-resource PUT would not clear them and readable by
+                    nobody. */}
                 <div className="field">
                   <label className="field__label" htmlFor="s-slot">
                     Intervalle entre deux horaires proposés
@@ -150,6 +154,28 @@ export default async function BookingRules() {
                     9h30, 10h00. Quinze convient à un salon, soixante à qui
                     travaille en demi-journées. Ce n’est pas la durée d’un
                     rendez-vous&nbsp;: celle-là est sur la prestation.
+                  </p>
+                </div>
+                <div className="field" style={{ marginTop: "var(--s-5)" }}>
+                  <label className="field__label" htmlFor="s-lead">
+                    Le client doit réserver au moins
+                  </label>
+                  <div className="input-group input-group--suffix">
+                    <input
+                      className="input"
+                      id="s-lead"
+                      type="number"
+                      name="min_lead_time_minutes"
+                      inputMode="numeric"
+                      required
+                      step={1}
+                      defaultValue={policy.min_lead_time_minutes}
+                    />
+                    <span className="input-group__suffix">minutes à l’avance</span>
+                  </div>
+                  <p className="field__hint">
+                    Le temps qu’il vous faut pour vous préparer. Zéro&nbsp;: on
+                    peut réserver le créneau qui suit.
                   </p>
                 </div>
               </div>
@@ -195,28 +221,6 @@ export default async function BookingRules() {
               </div>
               <div className="card__body">
                 <div className="field">
-                  <label className="field__label" htmlFor="s-lead">
-                    Le client doit réserver au moins
-                  </label>
-                  <div className="input-group input-group--suffix">
-                    <input
-                      className="input"
-                      id="s-lead"
-                      type="number"
-                      name="min_lead_time_minutes"
-                      inputMode="numeric"
-                      required
-                      step={1}
-                      defaultValue={policy.min_lead_time_minutes}
-                    />
-                    <span className="input-group__suffix">minutes à l’avance</span>
-                  </div>
-                  <p className="field__hint">
-                    Le temps qu’il vous faut pour vous préparer. Zéro&nbsp;: on
-                    peut réserver le créneau qui suit.
-                  </p>
-                </div>
-                <div className="field" style={{ marginTop: "var(--s-5)" }}>
                   <label className="field__label" htmlFor="s-horizon">
                     Jusqu’à combien de jours à l’avance
                   </label>
