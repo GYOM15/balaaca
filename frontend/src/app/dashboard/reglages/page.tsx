@@ -1,7 +1,7 @@
 import { Icon } from "@/components/icon";
 import { api } from "@/lib/api";
 import type { BookingPolicy } from "@/lib/types";
-import { savePolicy } from "../profile/actions";
+import { savePolicy } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -114,17 +114,6 @@ export default async function BookingRules() {
                   </label>
                 </div>
 
-                {/* Carried, not drawn: see the note on the component above. */}
-                <input
-                  type="hidden"
-                  name="slot_granularity_minutes"
-                  value={policy.slot_granularity_minutes}
-                />
-                <input
-                  type="hidden"
-                  name="min_lead_time_minutes"
-                  value={policy.min_lead_time_minutes}
-                />
               </div>
             </div>
 
@@ -165,7 +154,60 @@ export default async function BookingRules() {
                 <div className="panel__title">Ouverture des réservations</div>
               </div>
               <div className="card__body">
+                {/* These two were carried as hidden inputs so the whole-resource
+                    PUT would not clear them, which kept the save honest and left
+                    the settings unreachable: a provider could not see what they
+                    were, let alone change them. Drawn now, with the wording the
+                    profile card had. */}
                 <div className="field">
+                  <label className="field__label" htmlFor="s-slot">
+                    Intervalle entre deux horaires proposés
+                  </label>
+                  <div className="input-group input-group--suffix">
+                    <input
+                      className="input"
+                      id="s-slot"
+                      type="number"
+                      name="slot_granularity_minutes"
+                      inputMode="numeric"
+                      required
+                      min={5}
+                      max={120}
+                      defaultValue={policy.slot_granularity_minutes}
+                    />
+                    <span className="input-group__suffix">minutes</span>
+                  </div>
+                  <p className="field__hint">
+                    <Icon name="info" size={16} /> Sur 30, vous proposez 9h00,
+                    9h30, 10h00. Quinze convient à un salon, soixante à qui
+                    travaille en demi-journées. Ce n’est pas la durée d’un
+                    rendez-vous&nbsp;: celle-là est sur la prestation.
+                  </p>
+                </div>
+                <div className="field" style={{ marginTop: "var(--s-5)" }}>
+                  <label className="field__label" htmlFor="s-lead">
+                    Le client doit réserver au moins
+                  </label>
+                  <div className="input-group input-group--suffix">
+                    <input
+                      className="input"
+                      id="s-lead"
+                      type="number"
+                      name="min_lead_time_minutes"
+                      inputMode="numeric"
+                      required
+                      min={0}
+                      max={20160}
+                      defaultValue={policy.min_lead_time_minutes}
+                    />
+                    <span className="input-group__suffix">minutes à l’avance</span>
+                  </div>
+                  <p className="field__hint">
+                    Le temps qu’il vous faut pour vous préparer. Zéro&nbsp;: on
+                    peut réserver le créneau qui suit.
+                  </p>
+                </div>
+                <div className="field" style={{ marginTop: "var(--s-5)" }}>
                   <label className="field__label" htmlFor="s-horizon">
                     Jusqu’à combien de jours à l’avance
                   </label>
