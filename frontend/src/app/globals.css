@@ -794,7 +794,9 @@ hr { border: 0; border-top: 1px solid var(--border); margin: var(--s-8) 0; }
 .social__link:hover { border-color: var(--border-strong); color: var(--text); }
 
 /* Un groupe de champs qui va ensemble, avec son titre. */
-.fieldset { border: 0; padding: 0; margin: 0; }
+/* Une légende collée au champ qui la précède ne se lit pas comme un titre de
+   section. Rien ne les séparait : la légende n'avait qu'une marge basse. */
+.fieldset { border: 0; padding: 0; margin: var(--s-6) 0 0; }
 .fieldset__legend {
   padding: 0; margin-bottom: var(--s-2);
   font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text);
