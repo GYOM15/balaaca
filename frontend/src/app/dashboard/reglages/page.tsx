@@ -119,6 +119,44 @@ export default async function BookingRules() {
 
             <div className="panel">
               <div className="panel__head">
+                <div className="panel__title">Horaires proposés</div>
+              </div>
+              <div className="card__body">
+                {/* Not under "Ouverture des reservations": that panel is the
+                    window a customer may book INSIDE, near edge and far edge.
+                    This one decides WHICH times the window is cut into, which
+                    is a different question with a different answer. It was a
+                    hidden input until now, carried so the whole-resource PUT
+                    would not clear it and readable by nobody. */}
+                <div className="field">
+                  <label className="field__label" htmlFor="s-slot">
+                    Intervalle entre deux horaires proposés
+                  </label>
+                  <div className="input-group input-group--suffix">
+                    <input
+                      className="input"
+                      id="s-slot"
+                      type="number"
+                      name="slot_granularity_minutes"
+                      inputMode="numeric"
+                      required
+                      step={1}
+                      defaultValue={policy.slot_granularity_minutes}
+                    />
+                    <span className="input-group__suffix">minutes</span>
+                  </div>
+                  <p className="field__hint">
+                    <Icon name="info" size={16} /> Sur 30, vous proposez 9h00,
+                    9h30, 10h00. Quinze convient à un salon, soixante à qui
+                    travaille en demi-journées. Ce n’est pas la durée d’un
+                    rendez-vous&nbsp;: celle-là est sur la prestation.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="panel">
+              <div className="panel__head">
                 <div className="panel__title">Annulation par le client</div>
               </div>
               <div className="card__body">
@@ -134,9 +172,11 @@ export default async function BookingRules() {
                     <input
                       className="input"
                       id="s-delai"
+                      type="number"
                       name="cancellation_deadline_minutes"
                       inputMode="numeric"
                       required
+                      step={1}
                       defaultValue={policy.cancellation_deadline_minutes}
                     />
                     <span className="input-group__suffix">minutes</span>
@@ -154,37 +194,7 @@ export default async function BookingRules() {
                 <div className="panel__title">Ouverture des réservations</div>
               </div>
               <div className="card__body">
-                {/* These two were carried as hidden inputs so the whole-resource
-                    PUT would not clear them, which kept the save honest and left
-                    the settings unreachable: a provider could not see what they
-                    were, let alone change them. Drawn now, with the wording the
-                    profile card had. */}
                 <div className="field">
-                  <label className="field__label" htmlFor="s-slot">
-                    Intervalle entre deux horaires proposés
-                  </label>
-                  <div className="input-group input-group--suffix">
-                    <input
-                      className="input"
-                      id="s-slot"
-                      type="number"
-                      name="slot_granularity_minutes"
-                      inputMode="numeric"
-                      required
-                      min={5}
-                      max={120}
-                      defaultValue={policy.slot_granularity_minutes}
-                    />
-                    <span className="input-group__suffix">minutes</span>
-                  </div>
-                  <p className="field__hint">
-                    <Icon name="info" size={16} /> Sur 30, vous proposez 9h00,
-                    9h30, 10h00. Quinze convient à un salon, soixante à qui
-                    travaille en demi-journées. Ce n’est pas la durée d’un
-                    rendez-vous&nbsp;: celle-là est sur la prestation.
-                  </p>
-                </div>
-                <div className="field" style={{ marginTop: "var(--s-5)" }}>
                   <label className="field__label" htmlFor="s-lead">
                     Le client doit réserver au moins
                   </label>
@@ -196,8 +206,7 @@ export default async function BookingRules() {
                       name="min_lead_time_minutes"
                       inputMode="numeric"
                       required
-                      min={0}
-                      max={20160}
+                      step={1}
                       defaultValue={policy.min_lead_time_minutes}
                     />
                     <span className="input-group__suffix">minutes à l’avance</span>
@@ -215,12 +224,13 @@ export default async function BookingRules() {
                     <input
                       className="input"
                       id="s-horizon"
+                      type="number"
                       name="max_advance_days"
                       inputMode="numeric"
                       required
+                      step={1}
                       defaultValue={policy.max_advance_days}
                     />
-                    <span className="input-group__suffix">jours</span>
                   </div>
                   <p className="field__hint">
                     Au-delà, les créneaux ne sont pas proposés.
