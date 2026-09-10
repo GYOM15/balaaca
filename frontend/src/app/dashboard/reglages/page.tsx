@@ -119,19 +119,9 @@ export default async function BookingRules() {
 
             <div className="panel">
               <div className="panel__head">
-                <div className="panel__title">Créneaux proposés</div>
+                <div className="panel__title">Espacement et délai</div>
               </div>
               <div className="card__body">
-                {/* These two shape the list of times inside a day, and they
-                    are counted in minutes: the first sets the spacing of the
-                    grid, the second drops the ones too close to now. What is
-                    NOT here is the horizon, which opens or closes whole days
-                    and is counted in days. Same screen, different question,
-                    so a different panel.
-
-                    Both were hidden inputs until recently, carried so the
-                    whole-resource PUT would not clear them and readable by
-                    nobody. */}
                 <div className="field">
                   <label className="field__label" htmlFor="s-slot">
                     Intervalle entre deux horaires proposés
