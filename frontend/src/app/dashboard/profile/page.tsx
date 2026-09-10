@@ -5,7 +5,6 @@ import { Icon } from "@/components/icon";
 import { Notice, initials } from "@/components/ui";
 import type {
   AreaList,
-  BookingPolicy,
   LocalityList,
   ProviderProfile,
   ReadinessView,
@@ -22,7 +21,6 @@ import {
 } from "@/lib/social";
 import {
   saveProfile,
-  savePolicy,
   setPublished,
   uploadCover,
   uploadLogo,
@@ -88,10 +86,9 @@ export default async function Profile({
   searchParams: Promise<{ error?: string }>;
 }) {
   const query = await searchParams;
-  const [profile, readiness, policy, localities, areas] = await Promise.all([
+  const [profile, readiness, localities, areas] = await Promise.all([
     api<ProviderProfile>("/v1/provider-profile"),
     api<ReadinessView>("/v1/provider-profile/readiness"),
-    api<BookingPolicy>("/v1/booking-policy"),
     api<LocalityList>("/v1/localities"),
     // Every quartier already written, not only those of this provider's own
     // commune: the form has no JavaScript, so the list cannot follow a change
@@ -510,174 +507,6 @@ export default async function Profile({
                 </form>
               </div>
 
-              {/* --- The booking policy ---
-                  The design gives this its own room. It stays here until that
-                  room carries all five fields: `PUT /v1/booking-policy`
-                  replaces the resource whole, so a screen that posts three of
-                  them wipes the other two. */}
-              <div className="panel">
-                <div className="panel__head">
-                  <div>
-                    <div className="panel__title">Règles de réservation</div>
-                    <div className="panel__sub">
-                      Comment tourne votre carnet, ce qu’aucune cliente ne lit
-                    </div>
-                  </div>
-                </div>
-                {/* Its own form for its own resource: correcting an address
-                    must never reset a notice period. */}
-                <form action={savePolicy}>
-                  <div className="card__body">
-                    <div className="cols cols--2" style={{ gap: "var(--s-5)" }}>
-                      <div className="field">
-                        {/* "Pas des creneaux" reads as "no slots" before it
-                            reads as a step, and the two meanings are opposite.
-                            It is not the length of an appointment either - that
-                            belongs to the service - so the label says what the
-                            number actually sets: the spacing of the grid. */}
-                        <label className="field__label" htmlFor="b-slot">
-                          Intervalle entre deux horaires proposés
-                        </label>
-                        <div className="input-group input-group--suffix">
-                          <input
-                            className="input"
-                            id="b-slot"
-                            type="number"
-                            name="slot_granularity_minutes"
-                            inputMode="numeric"
-                            required
-                            min={5}
-                            max={120}
-                            defaultValue={policy.slot_granularity_minutes}
-                          />
-                          <span className="input-group__suffix">minutes</span>
-                        </div>
-                        <p className="field__hint">
-                          <Icon name="info" size={16} /> Sur 30, vous proposez
-                          9h00, 9h30, 10h00. Quinze convient à un salon, soixante
-                          à qui travaille en demi-journées. Ce n’est pas la durée
-                          d’un rendez-vous&nbsp;: celle-là est sur la prestation.
-                        </p>
-                      </div>
-                      <div className="field">
-                        {/* "Délai de prévenance" is what a scheduling system
-                            calls this and it is not what a provider calls
-                            anything. It is one field with one meaning - how
-                            early a customer has to book - so it says that,
-                            and the suffix finishes the sentence the label
-                            starts. Its neighbour below is the other end of the
-                            same window and now reads the same way. */}
-                        <label className="field__label" htmlFor="b-lead">
-                          Le client doit réserver au moins
-                        </label>
-                        <div className="input-group input-group--suffix">
-                          <input
-                            className="input"
-                            id="b-lead"
-                            type="number"
-                            name="min_lead_time_minutes"
-                            inputMode="numeric"
-                            required
-                            min={0}
-                            max={20160}
-                            defaultValue={policy.min_lead_time_minutes}
-                          />
-                          <span className="input-group__suffix">minutes à l’avance</span>
-                        </div>
-                        <p className="field__hint">
-                          Le temps qu’il vous faut pour vous préparer. Zéro&nbsp;:
-                          on peut réserver le créneau qui suit.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="cols cols--2" style={{ gap: "var(--s-5)" }}>
-                      <div className="field">
-                        <label className="field__label" htmlFor="b-horizon">
-                          Le client peut réserver jusqu’à
-                        </label>
-                        <div className="input-group input-group--suffix">
-                          <input
-                            className="input"
-                            id="b-horizon"
-                            type="number"
-                            name="max_advance_days"
-                            inputMode="numeric"
-                            required
-                            min={1}
-                            max={365}
-                            defaultValue={policy.max_advance_days}
-                          />
-                          <span className="input-group__suffix">jours à l’avance</span>
-                        </div>
-                        <p className="field__hint">
-                          Au-delà, les créneaux ne sont pas proposés.
-                        </p>
-                      </div>
-                      <div className="field">
-                        <label className="field__label" htmlFor="b-cancel">
-                          Annulation possible jusqu’à
-                        </label>
-                        <div className="input-group input-group--suffix">
-                          <input
-                            className="input"
-                            id="b-cancel"
-                            type="number"
-                            name="cancellation_deadline_minutes"
-                            inputMode="numeric"
-                            required
-                            min={0}
-                            max={20160}
-                            defaultValue={policy.cancellation_deadline_minutes}
-                          />
-                          <span className="input-group__suffix">minutes</span>
-                        </div>
-                        <p className="field__hint">
-                          Avant le rendez-vous. Passé ce délai, le client ne peut
-                          plus annuler seul&nbsp;: il devra vous appeler.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div style={{ marginTop: "var(--s-5)" }}>
-                      <label className="switch" style={{ width: "100%" }}>
-                        <input
-                          type="checkbox"
-                          name="auto_confirm"
-                          defaultChecked={policy.auto_confirm}
-                        />
-                        <span className="switch__track" />
-                        <span className="grow">
-                          <span className="t-sm t-strong">
-                            Confirmer automatiquement les demandes
-                          </span>
-                          <span className="t-xs" style={{ display: "block" }}>
-                            Désactivée, chaque demande attend votre accord dans
-                            l’agenda. Une saisie au comptoir est confirmée dans
-                            tous les cas&nbsp;: c’est vous qui l’écrivez.
-                          </span>
-                        </span>
-                      </label>
-                    </div>
-                  </div>
-                  <div className="card__foot">
-                    <div className="row">
-                      <span className="grow" />
-                      <button className="btn btn--primary" type="submit">
-                        <span className="btn__label--idle">Enregistrer les règles</span>
-                        <span className="btn__icon--busy">
-                          <Icon name="loader" size={18} className="ico--spin" />
-                        </span>
-                        <span className="btn__label--busy">Enregistrement…</span>
-                        <span className="btn__icon--done">
-                          <Icon name="check" size={18} />
-                        </span>
-                        <span className="btn__label--done">Enregistré</span>
-                      </button>
-                    </div>
-                  </div>
-                </form>
-              </div>
             </div>
 
             <aside className="sticky-aside" style={{ display: "grid", gap: "var(--s-5)" }}>

@@ -134,35 +134,6 @@ export async function setPublished(formData: FormData): Promise<void> {
 }
 
 /**
- * How the diary runs, which is not what a customer reads.
- *
- * <p>Its own form for its own resource. Mixing the two would mean an edit to an
- * address could quietly reset a notice period - a loss nobody notices until a
- * customer books too late.
- */
-export async function savePolicy(formData: FormData): Promise<void> {
-  try {
-    await api("/v1/booking-policy", {
-      method: "PUT",
-      body: {
-        slot_granularity_minutes: Number(formData.get("slot_granularity_minutes")),
-        min_lead_time_minutes: Number(formData.get("min_lead_time_minutes")),
-        max_advance_days: Number(formData.get("max_advance_days")),
-        cancellation_deadline_minutes: Number(formData.get("cancellation_deadline_minutes")),
-        auto_confirm: formData.get("auto_confirm") === "on",
-      },
-    });
-  } catch (error) {
-    if (error instanceof ApiError) {
-      redirect(`/dashboard/profile?error=${error.code ?? "UNKNOWN"}`);
-    }
-    throw error;
-  }
-  revalidatePath("/dashboard/profile");
-  succeed("/dashboard/profile", "POLICY_SAVED");
-}
-
-/**
  * The logo and the cover.
  *
  * <p>The contract takes the BYTES, with their type in Content-Type - no
