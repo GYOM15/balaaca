@@ -268,6 +268,97 @@ else
     $KCADM update "realms/$REALM" -s verifyEmail=false >/dev/null 2>&1 || true
 fi
 
+# --- What guards an account ---------------------------------------------------
+#
+# Here rather than in the template, and that is not a style choice: --import-realm
+# leaves an EXISTING realm alone, so anything written into the template takes
+# effect on the first boot of a fresh database and never again. Every deployment
+# already past its first boot would keep exactly what it had.
+#
+# None of this existed. A provider could register with a ONE-CHARACTER password,
+# and an attacker had unlimited attempts against the token endpoint with no delay
+# and no lockout - Keycloak sets no password policy and leaves bruteForceProtected
+# false on a new realm. The two compound: no floor on the secret, no ceiling on
+# the guesses.
+#
+# Eight characters, and not the account's own name or address. Keycloak applies a
+# policy when a password is SET, never retroactively, so no existing provider is
+# locked out by this and no one is asked to change anything.
+if ! $KCADM update "realms/$REALM" \
+        -s 'passwordPolicy=length(8) and notUsername and notEmail' >/dev/null 2>&1; then
+    echo "[init-realm] WARNING: password policy not applied" >&2
+else
+    echo "[init-realm]   password policy: 8 characters, not the name, not the e-mail"
+fi
+
+# Five failures, then a minute, doubling to a quarter of an hour. NOT permanent:
+# a permanent lockout is a denial-of-service anybody can aim at any provider by
+# guessing their address five times, and this product has no support desk to
+# unlock them again.
+if ! $KCADM update "realms/$REALM" \
+        -s bruteForceProtected=true \
+        -s failureFactor=5 \
+        -s waitIncrementSeconds=60 \
+        -s maxFailureWaitSeconds=900 \
+        -s quickLoginCheckMilliSeconds=1000 \
+        -s minimumQuickLoginWaitSeconds=60 \
+        -s permanentLockout=false >/dev/null 2>&1; then
+    echo "[init-realm] WARNING: brute force protection not applied" >&2
+else
+    echo "[init-realm]   brute force: 5 failures, then 60s doubling to 900s"
+fi
+
+# Thirty minutes on a link somebody has to receive, find and open.
+#
+# Keycloak's default is FIVE, and nothing here had ever changed it, so every
+# confirmation and every password reset died five minutes after it was sent. A
+# message that lands in a spam folder, or that a relay holds for six minutes,
+# arrives already dead - and a link that expired before it was opened looks
+# exactly like a link that never arrived. That is the failure this was reported
+# as.
+#
+# Realm-wide, so it covers the registration confirmation and the password reset
+# together. Both are one-use tokens sent to an address the realm already knows,
+# so the window is what somebody needs to walk to their telephone, not an
+# attacker's opportunity.
+if ! $KCADM update "realms/$REALM" \
+        -s actionTokenGeneratedByUserLifespan=1800 >/dev/null 2>&1; then
+    echo "[init-realm] WARNING: action token lifespan not applied - links expire in 5 minutes" >&2
+else
+    echo "[init-realm]   confirmation and reset links valid 30 minutes"
+fi
+
+# --- The development client ---------------------------------------------------
+#
+# balaaca-dev-cli is a PUBLIC client with the password grant enabled. Its own
+# description in the template says "a production realm is provisioned separately
+# and does not carry this client" - and that was never true of this stack:
+# docker-compose.prod.yml imports the same template. So production shipped an
+# unauthenticated password endpoint against a realm that had, until the two
+# blocks above, no password policy and no lockout.
+#
+# Disabled unless something explicitly asks for it, and that direction is the
+# point: a forgotten variable leaves the client OFF, which costs a local smoke
+# check, rather than ON, which costs the realm. scripts/generate-env.sh writes
+# false into a deployment's .env, and .env.example carries true for a developer.
+#
+# Note for whoever runs it: infrastructure/keycloak/smoke.sh needs this client
+# and says so in its own header - "Local only". Against a deployment it now
+# fails, which is correct.
+DEV_CID=$(client_id_of "balaaca-dev-cli")
+if [ -n "$DEV_CID" ]; then
+    if [ "${KEYCLOAK_DEV_CLIENT_ENABLED:-false}" = "true" ]; then
+        $KCADM update "clients/$DEV_CID" -r "$REALM" -s enabled=true >/dev/null 2>&1 \
+            && echo "[init-realm]   balaaca-dev-cli ENABLED (development)"
+    elif ! $KCADM update "clients/$DEV_CID" -r "$REALM" -s enabled=false >/dev/null 2>&1; then
+        echo "[init-realm] FATAL: could not disable balaaca-dev-cli." >&2
+        echo "[init-realm]        A public password-grant client is still live." >&2
+        exit 1
+    else
+        echo "[init-realm]   balaaca-dev-cli disabled"
+    fi
+fi
+
 # Only now. The sentinel is what the compose healthcheck waits on, so touching
 # it after a failed step is the same as reporting a realm that works.
 touch "$SENTINEL"
