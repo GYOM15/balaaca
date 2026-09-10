@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Icon } from "@/components/icon";
@@ -5,6 +6,7 @@ import { ActionButton, EmptyState, Wordmark, initials } from "@/components/ui";
 import { ApiError, api, isSignedIn } from "@/lib/api";
 import type { AppointmentPage, CurrentMember, ProviderProfile } from "@/lib/types";
 import { CurrentLink } from "@/components/current-link";
+import { InstallPrompt } from "@/components/install-prompt";
 
 /** A diary. Cached, it would be stale before it was drawn. */
 export const dynamic = "force-dynamic";
@@ -19,7 +21,52 @@ export const dynamic = "force-dynamic";
  * an account they have no reason to have. Declared on this layout, the offer
  * reaches only somebody who is already behind the sign-in.
  */
-export const metadata = { manifest: "/manifest.webmanifest" };
+export const metadata: Metadata = {
+  manifest: "/manifest.webmanifest",
+  /**
+   * Apple's own, which predate the manifest and are still what iOS reads.
+   *
+   * <p>`capable` is the one that matters. Without it, "Sur l'écran d'accueil"
+   * on an iPhone produces a bookmark: tapping it reopens Safari, address bar
+   * and tab bar and all, which is a shortcut and not an application. With it,
+   * the window has no browser chrome - which is also why `BackLink` had to
+   * exist first, since the browser's own back button goes with it.
+   *
+   * <p>`title` is the name under the icon, and it is not the `<title>` of the
+   * page: without this, iOS uses the document title, so the icon on somebody's
+   * home screen would have read "Agenda · Balaaca".
+   *
+   * <p>`default` for the status bar rather than `black-translucent`. The
+   * translucent one lets the page paint under the clock and the battery, and
+   * this layout's top bar is a solid green band that would sit behind them.
+   *
+   * <p>Declared here and not in the root layout for the same reason the
+   * manifest is: a customer who added a provider's page to their home screen
+   * would get a chrome-less window with no back button and no way out of it.
+   */
+  appleWebApp: {
+    capable: true,
+    title: "Balaaca",
+    statusBarStyle: "default",
+  },
+  /**
+   * The legacy spelling, by hand, because Next will not write it.
+   *
+   * <p>`appleWebApp.capable: true` above does NOT emit
+   * `apple-mobile-web-app-capable`. Next 16.3.3 emits the standardised
+   * `mobile-web-app-capable` in its place - verified by building a page with
+   * this metadata and reading the head: the Apple-prefixed title and status
+   * bar tags come out, and the Apple-prefixed capable tag does not.
+   *
+   * <p>Which spelling a given iPhone reads is a fact about Safari that this
+   * repository cannot test, and getting it wrong is not a small failure: it is
+   * the difference between an application and a bookmark that reopens Safari
+   * with its address bar. So both are emitted. The cost is one tag; the cost
+   * of choosing wrong is the whole feature, discovered by whoever installed
+   * it.
+   */
+  other: { "apple-mobile-web-app-capable": "yes" },
+};
 
 type Entry = {
   href: string;
@@ -197,6 +244,14 @@ export default async function DashboardLayout({
 
   return (
     <>
+      {/* Fixed, so where it sits in this tree changes nothing about the
+          layout - and here rather than on the agenda so it is on every screen
+          behind the sign-in. As a card in the agenda's flow it was 1110 px
+          down the document on a telephone, under the panel telling a new
+          provider to publish their page: it rendered every time and was never
+          seen. It also carries the service worker registration. */}
+      <InstallPrompt />
+
       <div className="app">
         <aside className="side">
           <div className="side__brand">

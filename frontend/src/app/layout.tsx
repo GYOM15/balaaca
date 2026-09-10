@@ -60,7 +60,15 @@ export const metadata: Metadata = {
   // it.
   icons: {
     icon: [{ url: "/brand/favicon-512.png", type: "image/png", sizes: "512x512" }],
-    apple: "/brand/favicon-512.png",
+    // A DIFFERENT file, and the difference is the whole point. favicon-512 is
+    // a circle on transparency, which is right for a tab: no platform masks a
+    // favicon, and a circle survives being drawn at 16 px. iOS masks an
+    // apple-touch-icon with its own squircle AND composites what is left of
+    // the alpha onto BLACK - so the same file on a home screen is a green
+    // circle with a white halo sitting in a black tile. app-icon-512 is the
+    // brand sheet's square tile, fully opaque, with the mark inside the 80 %
+    // safe circle that Android's maskable crop also needs.
+    apple: "/brand/app-icon-512.png",
   },
   title: {
     default: "Balaaca, trouver un professionnel",
