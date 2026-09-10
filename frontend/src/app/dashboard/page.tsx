@@ -1795,9 +1795,9 @@ function WalkInDialog({
                 Il apparaîtra dans l’agenda et bloquera le créneau.
               </p>
               <Notice tone="info" title="Ici, c’est votre carnet">
-                Vos horaires publiés et votre délai de prévenance ne s’appliquent pas&nbsp;: la
-                seule chose qui reste refusée, c’est deux personnes sur la même chaise à la même
-                heure.
+                Vos horaires publiés ne s’appliquent pas, ni le temps d’avance exigé de vos
+                clients&nbsp;: la seule chose qui reste refusée, c’est deux personnes sur la même
+                chaise à la même heure.
               </Notice>
 
               <div className="field" style={{ marginTop: "var(--s-5)" }}>

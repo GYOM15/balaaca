@@ -67,7 +67,29 @@ const REFUSALS: Record<string, string> = {
   VALIDATION_FAILED:
     "Une journée fermée ne porte pas d’heures ; une absence et des horaires exceptionnels en demandent deux.",
   RESOURCE_NOT_FOUND: "Cette personne ou cette exception n’existe plus.",
+  // Ours, not the API's. A day ticked open with "--" in its lists is somebody
+  // who meant to open it and has not said when; storing that as a closed day
+  // would be answering a question they did not ask.
+  HOURS_DAY_WITHOUT_TIMES:
+    "Une journée cochée doit porter une heure d’ouverture et une heure de fermeture. Décochez-la pour la fermer.",
 };
+
+/**
+ * A time out of the query string, in the two halves the lists post.
+ *
+ * <p>The mirror of `timeOf` in actions.ts: `TimeField` emits `<name>_h` and
+ * `<name>_m`, and a GET form puts both in the address under those same names.
+ * Half a time is no time, exactly as it is on submit.
+ */
+function queryTime(query: Record<string, string | undefined>, name: string): string {
+  const hour = query[`${name}_h`] ?? "";
+  const minute = query[`${name}_m`] ?? "";
+  // Two digits each, or nothing. A query string is typed by anybody, and a
+  // value from here is rendered straight back into a select.
+  if (!/^\d{2}$/.test(hour) || !/^\d{2}$/.test(minute)) return "";
+  if (Number(hour) > 23 || Number(minute) > 59) return "";
+  return `${hour}:${minute}`;
+}
 
 /** The stack's gap, written the way the design writes it. */
 const gap = (value: string) => ({ "--stack-gap": value }) as React.CSSProperties;
@@ -117,6 +139,22 @@ export default async function Hours({
   ]);
 
   const byDay = new Map(hours.data.map((s) => [s.day_of_week, s]));
+
+  // "Appliquer a toute la semaine", and the reason it travels in the address.
+  //
+  // Filling seven days by hand is twenty-eight lists, and a provider open the
+  // same hours six days a week did all of it. This carries one pair instead -
+  // but it must not SAVE, or the person would be made to store a week they do
+  // not want on the way to the one they do. So the button is a GET: it writes
+  // the pair into the query, the week below renders with it, and nothing has
+  // changed anywhere until Enregistrer. Which also means the address is the
+  // whole state, so a reload or a back button lands exactly where it was.
+  //
+  // Same shape as the staff selector in the aside, which is already a GET form
+  // for the same reason.
+  const template = queryTime(query, "all_start") && queryTime(query, "all_end")
+    ? { start: queryTime(query, "all_start"), end: queryTime(query, "all_end") }
+    : null;
 
   return (
     <>
@@ -172,46 +210,104 @@ export default async function Hours({
                     </div>
                   </div>
                 </div>
+                {/* A GET, and outside the week's form because a form cannot
+                    contain another. It saves nothing: it puts one pair of
+                    hours in the address and the seven rows below render with
+                    it, every day ticked. The provider then unticks Sunday and
+                    presses Enregistrer once. */}
+                <form
+                  method="get"
+                  action="/dashboard/hours"
+                  className="card__body"
+                  style={{ borderBottom: "1px solid var(--border-subtle)" }}
+                >
+                  <input type="hidden" name="staff" value={staffId} />
+                  <div
+                    className="row row--between"
+                    style={{ gap: "var(--s-4)", flexWrap: "wrap" }}
+                  >
+                    <span className="t-sm t-strong week-day__name">
+                      Toute la semaine
+                    </span>
+                    <div className="row" style={{ gap: "var(--s-2)", flexWrap: "wrap" }}>
+                      <TimeField name="all_start" value={template?.start} label="Ouverture, toute la semaine" />
+                      <span className="t-xs">à</span>
+                      <TimeField name="all_end" value={template?.end} label="Fermeture, toute la semaine" />
+                      <button className="btn btn--secondary btn--sm" type="submit">
+                        <span className="btn__label--idle">Appliquer</span>
+                      </button>
+                    </div>
+                  </div>
+                  <p className="field__hint" style={{ marginTop: "var(--s-3)" }}>
+                    <Icon name="info" size={16} /> Remplit les sept jours sans rien
+                    enregistrer. Décochez ensuite ceux que vous ne travaillez pas.
+                  </p>
+                </form>
+
                 {/* The week is replaced whole, so every day is posted: a day
                     left empty is a day of rest, stated rather than guessed. */}
                 <form action={replaceHours} id={WEEK_FORM}>
                   <div className="card__body">
                     <input type="hidden" name="staff_id" value={staffId} />
+                    {/* Which shape this form is, so the action can tell a day
+                        nobody ticked from a form that has no ticks to give.
+                        Without it, a page left open across a deployment would
+                        post no `open` at all and the action would read that as
+                        "every day closed" - and wipe the week of somebody who
+                        pressed Enregistrer on a screen that looked normal. */}
+                    <input type="hidden" name="week_form" value="ticked" />
                     {DAYS.map(([day, label]) => {
                       const segment = byDay.get(day);
+                      // The template wins over what is stored: applying it is
+                      // a request to see the whole week as that pair, and a
+                      // day it did not touch would make the button a liar.
+                      const start = template?.start ?? segment?.start_time;
+                      const end = template?.end ?? segment?.end_time;
+                      const open = template ? true : Boolean(segment);
                       return (
-                        <div className="row row--between" key={day} style={ROW}>
-                          <span className="t-sm t-strong" style={{ minWidth: 160 }}>
-                            {label}
-                          </span>
+                        <div className="row row--between week-day" key={day} style={ROW}>
+                          {/* The day's name IS the tick. Closing a Sunday used
+                              to mean putting four lists back to "--" on a
+                              telephone; it is one tap now, and "open" stops
+                              being something the reader has to infer from two
+                              empty boxes. */}
+                          <label className="check week-day__name">
+                            <input
+                              type="checkbox"
+                              name="open"
+                              value={day}
+                              defaultChecked={open}
+                            />
+                            <span className="check__box">
+                              <Icon name="check" />
+                            </span>
+                            <span className="check__text t-strong">{label}</span>
+                          </label>
                           <div className="row" style={{ gap: "var(--s-2)", flexWrap: "wrap" }}>
                             <TimeField
                               name={`start_${day}`}
-                              value={segment?.start_time}
+                              value={start}
                               label={`Ouverture ${label}`}
                             />
                             <span className="t-xs">à</span>
                             <TimeField
                               name={`end_${day}`}
-                              value={segment?.end_time}
+                              value={end}
                               label={`Fermeture ${label}`}
                             />
-                            {segment ? null : (
-                              <span className="t-sm" style={{ color: "var(--text-tertiary)" }}>
-                                Fermé toute la journée
-                              </span>
-                            )}
                           </div>
                         </div>
                       );
                     })}
-                    {/* The design closes a day with a switch. Nothing here
-                        writes JavaScript and the week is posted as times, so
-                        the two empty fields are what closes it - said, because
-                        an empty field that means something has to be. */}
+                    {/* The design closes a day with a switch, and this is
+                        that switch: a tick, posted as a name the action reads.
+                        The week used to be posted as times alone, so two empty
+                        lists were what closed a day - which worked and had to
+                        be explained in a sentence underneath, because an empty
+                        field that means something always does. */}
                     <p className="field__hint" style={{ marginTop: "var(--s-4)" }}>
-                      <Icon name="info" size={16} /> Une journée laissée vide est
-                      une journée de repos&nbsp;: c’est dit, pas deviné.
+                      <Icon name="info" size={16} /> Une journée décochée est une
+                      journée de repos&nbsp;: elle ne propose aucun créneau.
                     </p>
                   </div>
                 </form>

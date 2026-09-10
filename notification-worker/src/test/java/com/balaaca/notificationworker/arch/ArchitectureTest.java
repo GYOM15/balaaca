@@ -4,6 +4,8 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
 import com.tngtech.archunit.core.importer.ImportOption;
+import java.util.random.RandomGenerator;
+
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
@@ -52,6 +54,36 @@ class ArchitectureTest {
                     .because("TenantContext is request-scoped and a scheduled drain "
                              + "has no request; the worker's own RLS policy admits "
                              + "the rows and it resolves nothing");
+
+    /**
+     * Nothing here asks the runtime to go and find an implementation for it.
+     *
+     * <p>`RandomGenerator.getDefault()` names an algorithm and resolves it
+     * through ServiceLoader. That lookup succeeds under `@QuarkusTest`, where
+     * the application sits on the system classpath, and fails in the PACKAGED
+     * application, which is what actually ships. On the Raspberry Pi it threw
+     * `IllegalArgumentException: No implementation of the random number
+     * generator algorithm "L32X64MixRandom" is available` from a bean
+     * constructor, every five seconds for thirteen hours, while the container
+     * reported healthy and not one notification was ever sent.
+     *
+     * <p>Every test in this project passed throughout. The gap is that nothing
+     * here boots the packaged artefact, so a rule that reads the source is the
+     * honest guard: it is narrow, it names exactly the API that did this, and
+     * it costs nothing.
+     */
+    @ArchTest
+    static final ArchRule nothing_resolves_a_generator_at_runtime =
+            noClasses().should().callMethod(RandomGenerator.class, "getDefault")
+                    .orShould().dependOnClassesThat()
+                    .haveFullyQualifiedName("java.util.random.RandomGeneratorFactory")
+                    .because("both resolve an algorithm through ServiceLoader, which "
+                             + "finds it under @QuarkusTest and not in the packaged "
+                             + "application - a bean constructor that threw every five "
+                             + "seconds for thirteen hours on the Pi behind a green "
+                             + "healthcheck. java.util.Random needs no lookup. The "
+                             + "RandomGenerator INTERFACE is deliberately still allowed: "
+                             + "Backoff takes it so a test can hand it a fixed one");
 
     @ArchTest
     static final ArchRule persistence_stays_plain_jdbc =

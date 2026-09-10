@@ -2677,3 +2677,25 @@ a.svc__photo:focus-visible { outline: 2px solid var(--focus-ring); outline-offse
    le reset du produit passe en display:block ailleurs ; sans ceci elle tombe
    sur sa propre ligne au milieu du mot. */
 .install-steps svg { display: inline-block; vertical-align: -3px; }
+.install__icon { flex: none; margin-top: 1px; color: var(--brand); }
+.install__title { font-weight: var(--fw-bold); }
+.install__body { color: var(--text-secondary); margin-top: 2px; }
+.install__actions { margin-top: var(--s-3); display: flex; gap: var(--s-2); flex-wrap: wrap; }
+
+/* La semaine type : une journée decochee.
+   Ses heures restent affichees - la recocher ne doit pas obliger a les retaper -
+   mais elles ne decident plus rien, et il faut que ça se voie d'un coup d'oeil.
+   En :has() plutot qu'en script : la page entiere se passe de JavaScript, et
+   l'etat suit la case a l'instant ou on la decoche, sans hydratation. */
+.week-day:has(input[name="open"]:not(:checked)) .input { opacity: .48; }
+
+/* Et la ligne elle-meme. Elle ne passait pas sur un telephone : un nom de jour
+   large de 160 px pose a cote de quatre listes de 76 px demande 490 px, et
+   l'ecran en fait 375 - les heures sortaient par la droite, hors de la page,
+   sur l'appareil meme pour lequel tout ceci est fait. Le nom prend la largeur
+   en dessous de 620 px et les heures passent dessous. */
+.week-day { flex-wrap: wrap; }
+.week-day__name { min-width: 160px; }
+@media (max-width: 620px) {
+  .week-day__name { min-width: 100%; }
+}
