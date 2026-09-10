@@ -560,8 +560,15 @@ export default async function Profile({
                         </p>
                       </div>
                       <div className="field">
+                        {/* "Délai de prévenance" is what a scheduling system
+                            calls this and it is not what a provider calls
+                            anything. It is one field with one meaning - how
+                            early a customer has to book - so it says that,
+                            and the suffix finishes the sentence the label
+                            starts. Its neighbour below is the other end of the
+                            same window and now reads the same way. */}
                         <label className="field__label" htmlFor="b-lead">
-                          Délai de prévenance
+                          Le client doit réserver au moins
                         </label>
                         <div className="input-group input-group--suffix">
                           <input
@@ -575,11 +582,11 @@ export default async function Profile({
                             max={20160}
                             defaultValue={policy.min_lead_time_minutes}
                           />
-                          <span className="input-group__suffix">minutes</span>
+                          <span className="input-group__suffix">minutes à l’avance</span>
                         </div>
                         <p className="field__hint">
-                          Le temps qu’il vous faut pour réagir. Zéro&nbsp;: on
-                          peut réserver le créneau suivant.
+                          Le temps qu’il vous faut pour vous préparer. Zéro&nbsp;:
+                          on peut réserver le créneau qui suit.
                         </p>
                       </div>
                     </div>
@@ -587,7 +594,7 @@ export default async function Profile({
                     <div className="cols cols--2" style={{ gap: "var(--s-5)" }}>
                       <div className="field">
                         <label className="field__label" htmlFor="b-horizon">
-                          Ouverture des réservations
+                          Le client peut réserver jusqu’à
                         </label>
                         <div className="input-group input-group--suffix">
                           <input
@@ -601,7 +608,7 @@ export default async function Profile({
                             max={365}
                             defaultValue={policy.max_advance_days}
                           />
-                          <span className="input-group__suffix">jours</span>
+                          <span className="input-group__suffix">jours à l’avance</span>
                         </div>
                         <p className="field__hint">
                           Au-delà, les créneaux ne sont pas proposés.
