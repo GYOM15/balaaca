@@ -734,10 +734,24 @@ hr { border: 0; border-top: 1px solid var(--border); margin: var(--s-8) 0; }
   position: absolute; left: var(--s-4); top: 50%; transform: translateY(-50%);
   color: var(--text-tertiary); pointer-events: none;
 }
-.input-group--suffix .input { padding-left: var(--s-4); padding-right: 4.5rem; }
+/* Le suffixe prend sa place plutôt que de flotter sur le champ. Il était en
+   absolu derrière une réserve figée de 4.5rem : elle tenait pour « minutes »
+   et a cessé de tenir le jour où il a fallu lire « minutes à l'avance », le
+   texte passant alors sous les flèches du champ numérique, que rien ici
+   n'avait jamais masquées. Même leçon que `.handle` plus bas, appliquée à
+   l'autre bout du champ. */
+.input-group--suffix .input {
+  padding-left: var(--s-4); padding-right: var(--s-3); min-width: 0;
+  border-top-right-radius: 0; border-bottom-right-radius: 0;
+}
 .input-group__suffix {
-  position: absolute; right: var(--s-4); top: 50%; transform: translateY(-50%);
-  color: var(--text-tertiary); font-size: var(--fs-sm); font-weight: var(--fw-bold); pointer-events: none;
+  flex: none; display: grid; place-items: center;
+  padding-inline: var(--s-3);
+  border: 1.6px solid var(--border-strong); border-left: 0;
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: var(--bg-sunken);
+  color: var(--text-tertiary); font-size: var(--fs-sm); font-weight: var(--fw-bold);
+  white-space: nowrap; pointer-events: none;
 }
 
 /* Un identifiant derrière son site : le préfixe est du texte, pas un ornement.
