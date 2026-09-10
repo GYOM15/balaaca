@@ -82,6 +82,12 @@ umask 077
             # Inside the compose network, by service name. The browser never
             # addresses the API, so this must NOT become a public address.
             BALAACA_API_BASE_URL=*) printf 'BALAACA_API_BASE_URL=http://api:8080\n' ;;
+            # A public client with the password grant. It exists for a
+            # developer's terminal and for the local smoke check, and its own
+            # description in the realm template claims production does not
+            # carry it - which was false, because the same template is
+            # imported everywhere. This is what makes the claim true.
+            KEYCLOAK_DEV_CLIENT_ENABLED=*) printf 'KEYCLOAK_DEV_CLIENT_ENABLED=false\n' ;;
             *) printf '%s\n' "$line" ;;
         esac
     done < .env.example
