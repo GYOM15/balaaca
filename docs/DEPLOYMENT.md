@@ -26,8 +26,17 @@ password is never reapplied. Replaying it against an up-to-date database does
 nothing.
 
 ```bash
-docker compose exec -T postgres bash /docker-entrypoint-initdb.d/bootstrap.sh
+docker compose exec -T postgres bash /docker-entrypoint-initdb.d/10-bootstrap.sh
 ```
+
+The mounted name is not the repository's name. Compose mounts
+`infrastructure/postgres/bootstrap.sh` as `/docker-entrypoint-initdb.d/10-bootstrap.sh`,
+because the image runs that directory in lexical order. This page said
+`bootstrap.sh` for a while and the command answered "No such file or directory",
+which is a poor thing to discover while an application will not start.
+
+You will rarely type it: `scripts/deploy.sh` runs it for you, at the only moment
+it is any use.
 
 The variables it needs are already in the container's environment, set by
 compose. The role **names** are not among them: they are fixed, because the
@@ -59,6 +68,13 @@ HINT:  This migration adds a role the cluster predates. Re-run
 1. `git pull` on the target machine.
 2. **`bootstrap.sh`** (above). Always, even if nothing seems to have changed.
 3. Rebuild and restart: Flyway applies the migrations at startup.
+
+`scripts/deploy.sh` performs 1 to 3, in that order, and the order is the whole
+reason it exists. Step 2 has to happen while PostgreSQL is up and the API is
+NOT: bringing the stack up first and running bootstrap afterwards is too late,
+because the API has already tried to migrate and died. The script brings
+PostgreSQL up alone, replays bootstrap against it, and only then starts
+everything else. Run the script rather than the steps.
 4. `infrastructure/keycloak/smoke.sh` - checks that a real token carries a `sub`,
    the right audience and the expected scopes. A realm that starts is not a realm
    that works.
@@ -151,11 +167,15 @@ configuration - all of which are mounted from the repository. So the machine
 needs a checkout as well as a pull:
 
 ```
-git pull
 docker login ghcr.io                       # once, with a personal access token
-docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+scripts/deploy.sh                          # the images matching this checkout
+scripts/deploy.sh --tag latest             # or whatever latest points at
 ```
+
+This page used to list the four compose commands the script wraps. They brought
+the whole stack up at once and never replayed bootstrap, which is the failure
+this document opens with. The script is not a convenience over them; it is the
+order they were missing.
 
 `.env` must name addresses a BROWSER can reach, which on a Pi is the machine on
 your network and never `localhost` - localhost on a visitor's telephone is the
