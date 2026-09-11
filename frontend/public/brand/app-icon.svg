@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Balaaca">
+  <rect width="512" height="512" fill="#123C35"/>
+  <g transform="translate(256,256) scale(1.05) translate(-236.5,-263.5)">
+    <path d="M136 246 L170 222 L170 328 L136 352 Z" fill="#C9A86A"/>
+    <g fill="none" stroke="#FFFFFF" stroke-width="28" stroke-linejoin="round">
+      <path d="M152 158 H270 A32 46 0 0 1 270 250 H212"/>
+      <path d="M212 250 H270 A52 58 0 0 1 270 367 H210"/>
+    </g>
+  </g>
+</svg>
