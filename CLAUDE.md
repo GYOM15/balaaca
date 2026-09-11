@@ -59,6 +59,13 @@ The repository is **English**: code, comments, commit messages, PR descriptions,
 documentation, and **route names**. Only customer-facing copy is French. No em
 dashes anywhere, in prose or in code.
 
+**A comment records a hazard, not a preference.** This file's neighbours are
+dense with comments and every one of them earns its place by naming something
+that has bitten or will: a `PUT` that replaces a resource whole, a backtick that
+ends a `String.raw`, a fixed reserve that held until the text grew. Why a name
+was chosen over another is not that; it belongs in the commit message, where the
+history keeps it and the code stays readable. See `.claude/skills/code-comments`.
+
 ## The three things most likely to bite
 
 **The tenant is never in a request.** Not a path segment, not a query parameter,
