@@ -4,9 +4,10 @@ import { redirect } from "next/navigation";
 import { Icon } from "@/components/icon";
 import { ActionButton, EmptyState, Wordmark, initials } from "@/components/ui";
 import { ApiError, api, isSignedIn } from "@/lib/api";
-import type { AppointmentPage, CurrentMember, ProviderProfile } from "@/lib/types";
+import type { AppointmentPage, CurrentMember, ProviderProfile, ReadinessView } from "@/lib/types";
 import { CurrentLink } from "@/components/current-link";
 import { InstallPrompt } from "@/components/install-prompt";
+import { NextStep } from "@/components/next-step";
 
 /** A diary. Cached, it would be stale before it was drawn. */
 export const dynamic = "force-dynamic";
@@ -175,10 +176,16 @@ export default async function DashboardLayout({
 
   let me: CurrentMember;
   let provider: ProviderProfile;
+  let readiness: ReadinessView;
   try {
-    [me, provider] = await Promise.all([
+    [me, provider, readiness] = await Promise.all([
       api<CurrentMember>("/v1/me"),
       api<ProviderProfile>("/v1/provider-profile"),
+      // Read in the shell rather than per page, because the strip below appears
+      // on all of them. One call for the whole setup, and it stops being made
+      // the day the page is live: the component returns null and nothing here
+      // is worth guarding for a request this cheap.
+      api<ReadinessView>("/v1/provider-profile/readiness"),
     ]);
   } catch (error) {
     // A verified token whose subject belongs to no active business. They have
@@ -312,6 +319,7 @@ export default async function DashboardLayout({
         </aside>
 
         <div>
+          <NextStep readiness={readiness} owner={me.role === "OWNER"} />
           {children}
 
           {/* The bar's last slot lands here. The design gives this list its own
