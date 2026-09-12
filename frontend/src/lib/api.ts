@@ -17,6 +17,12 @@ export class ApiError extends Error {
     /** The stable code from the API's closed catalogue, when it sent one. */
     readonly code: string | null,
     readonly detail: string | null,
+    /**
+     * The fields the server refused, as the CONTRACT spells them, and empty
+     * when it named none. Paths, never values: a path is safe to put in a URL
+     * and a customer's telephone number is not.
+     */
+    readonly fields: readonly string[] = [],
   ) {
     super(`${status} ${code ?? "?"}`);
   }
@@ -111,8 +117,15 @@ async function call<T>(path: string, options: Options, accessToken: string | nul
  */
 async function problemFrom(response: Response): Promise<ApiError> {
   try {
-    const body = (await response.json()) as { code?: string; detail?: string };
-    return new ApiError(response.status, body.code ?? null, body.detail ?? null);
+    const body = (await response.json()) as {
+      code?: string;
+      detail?: string;
+      errors?: { field?: string }[];
+    };
+    const fields = (body.errors ?? [])
+      .map((entry) => entry.field)
+      .filter((field): field is string => Boolean(field));
+    return new ApiError(response.status, body.code ?? null, body.detail ?? null, fields);
   } catch {
     return new ApiError(response.status, null, null);
   }

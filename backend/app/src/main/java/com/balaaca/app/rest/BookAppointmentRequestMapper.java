@@ -86,7 +86,11 @@ public class BookAppointmentRequestMapper {
     private CustomerContact toContact(BookAppointmentRequest request, String defaultRegion) {
         return new CustomerContact(
                 request.getCustomer().getFullName().trim(),
-                PhoneNumber.parse(request.getCustomer().getPhone(), defaultRegion),
+                // Named, because a caller who mistyped one digit was told only
+                // that "the request is not valid" and left to guess which of
+                // four boxes the server meant.
+                RefusedFieldException.at("customer.phone",
+                        () -> PhoneNumber.parse(request.getCustomer().getPhone(), defaultRegion)),
                 emailOf(request));
     }
 

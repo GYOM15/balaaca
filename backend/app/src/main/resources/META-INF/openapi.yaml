@@ -3625,6 +3625,45 @@ components:
           type: string
           description: The trace id for this request. Quote it in a bug report;
             it is what ties the response to the server log.
+        errors:
+          type: array
+          description: |
+            Which fields were refused. EMPTY, not absent, for every other
+            code: a taken slot and a suspended provider refuse a request rather
+            than a box on a form, and the generated model carries the list
+            either way. A client reads "the server named a field" as a non-empty
+            array and nothing else.
+
+            It exists because the code alone cost a booking. `VALIDATION_FAILED`
+            answers a missing name, an unparseable telephone, an address owed by
+            a call-out and an e-mail owed by a channel choice, and the form that
+            would have said which box was wrong is behind the customer by then.
+            The page could only list all four as possibilities, which reads as
+            "something is wrong somewhere" and sends people away.
+          items:
+            $ref: '#/components/schemas/FieldError'
+
+    FieldError:
+      type: object
+      description: One refused field. `field` is the stable value a client
+        branches on; `detail` is human text and may change, exactly as
+        `Problem.code` is to `Problem.title`.
+      required: [field]
+      properties:
+        field:
+          type: string
+          description: The wire path of the field, spelled as the REQUEST
+            spells it and never as the server names it internally. A client
+            points at its own input with this, so `customer.phone` is the
+            contract and `CustomerContact.phoneNumber` would be a leak.
+          example: customer.phone
+          maxLength: 120
+        detail:
+          type: string
+          description: Why, in one sentence, for a log or a developer. Never
+            shown to a customer untranslated - the client owns the wording it
+            puts next to its own field.
+          maxLength: 200
 
     ErrorCode:
       type: string
