@@ -87,7 +87,7 @@ export async function book(formData: FormData): Promise<void> {
     // string is written into history, into the address bar and into every log
     // along the way. Retyping where you live is cheaper than publishing it.
     if (error instanceof ApiError) {
-      redirect(refusalUrl(slug, serviceId, staffId, date, error.code));
+      redirect(refusalUrl(slug, serviceId, staffId, date, error.code, error.fields));
     }
     throw error;
   }
@@ -125,11 +125,15 @@ function refusalUrl(
   staffId: string,
   date: string,
   code: string | null,
+  fields: readonly string[],
 ): string {
   const query = new URLSearchParams({ etape: "3", service: serviceId });
   if (staffId) query.set("staff", staffId);
   if (date) query.set("date", date);
   query.set("error", code ?? "UNKNOWN");
+  // Paths, not values. The rule two comments up keeps the customer's details
+  // out of the address bar; `customer.phone` names a box, not what was in it.
+  if (fields.length > 0) query.set("fields", fields.join(","));
   return `/p/${encodeURIComponent(slug)}/reserver?${query.toString()}`;
 }
 

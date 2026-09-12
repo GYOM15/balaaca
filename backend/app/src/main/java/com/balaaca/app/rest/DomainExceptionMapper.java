@@ -1,10 +1,12 @@
 package com.balaaca.app.rest;
 
 import com.balaaca.app.api.model.ErrorCode;
+import com.balaaca.app.api.model.FieldError;
 import com.balaaca.sharedkernel.error.DomainException;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.ExceptionMapper;
 import jakarta.ws.rs.ext.Provider;
+import java.util.List;
 import org.jboss.logging.Logger;
 import org.jboss.logging.MDC;
 
@@ -41,7 +43,17 @@ public class DomainExceptionMapper implements ExceptionMapper<DomainException> {
         return Response.status(e.status())
                 .type("application/problem+json")
                 .entity(Problems.of(ErrorCode.fromValue(e.code()), e.status(),
-                                    e.getMessage(), traceId))
+                                    e.getMessage(), traceId, refusedFields(e)))
                 .build();
+    }
+
+    /**
+     * The field, when the edge named one. Empty otherwise, which is most of
+     * them: a taken slot and a suspended provider refuse a request, not a box.
+     */
+    private static List<FieldError> refusedFields(DomainException e) {
+        return e instanceof RefusedFieldException refused
+                ? List.of(new FieldError().field(refused.field()))
+                : List.of();
     }
 }

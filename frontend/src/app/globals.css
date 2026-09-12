@@ -804,7 +804,18 @@ hr { border: 0; border-top: 1px solid var(--border); margin: var(--s-8) 0; }
 
 /* Case à cocher et radio : dessinées, jamais natives */
 .check { display: flex; align-items: flex-start; gap: var(--s-3); cursor: pointer; }
-.check input { position: absolute; opacity: 0; width: 0; height: 0; }
+/* Sized, not collapsed, and the size is the drawn box's on purpose.
+   At width 0 a `required` checkbox is a control the browser cannot point at:
+   it refuses the submit, has nowhere to anchor "Veuillez cocher cette case",
+   and the button goes dead in silence. On the booking form that was the whole
+   bug - somebody filled everything in, pressed Confirmer, and nothing at all
+   happened. Absolute at its static position puts it over `.check__box`, which
+   follows it in the DOM, so the bubble lands on the box a reader is looking
+   at. Still `opacity: 0`: what is seen is the drawn box, not this. */
+.check input {
+  position: absolute; opacity: 0; margin: 0;
+  width: 22px; height: 22px;
+}
 .check__box {
   flex: none; width: 22px; height: 22px; margin-top: 1px;
   border: 1.6px solid var(--border-strong); border-radius: var(--r-xs);
