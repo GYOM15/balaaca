@@ -80,7 +80,55 @@ const REFUSALS: Record<string, string> = {
  * behind the customer. So both sentences name it as a possibility rather than
  * a fact.
  */
-function refusalText(code: string, service: PublicServiceOffering | undefined): string {
+const FIELD_NAMES: Record<string, string> = {
+  "customer.full_name": "le nom",
+  "customer.phone": "le numéro de téléphone",
+  "customer.email": "l'adresse e-mail",
+};
+
+/**
+ * The refused boxes, named, when the server said which.
+ *
+ * <p>Everything under `service_address` collapses into one phrase: a customer
+ * who mistyped a quartier is not helped by being told the refusal was on
+ * `service_address.area` rather than on `service_address.locality_slug`, and
+ * the form puts those two side by side anyway.
+ *
+ * <p>A path this page has not been taught yields nothing rather than a guess.
+ * Naming a box that does not exist on screen is worse than naming none: it
+ * sends somebody hunting for a field they cannot find.
+ */
+function namedFields(fields: string): string[] {
+  const named = fields
+    .split(",")
+    .map((field) => (field.startsWith("service_address.") ? "service_address" : field))
+    .map((field) =>
+      field === "service_address" ? "les indications pour vous trouver" : FIELD_NAMES[field],
+    )
+    .filter((name): name is string => Boolean(name));
+  return [...new Set(named)];
+}
+
+/** "le nom et le numéro", never "le nom, le numéro". */
+function joined(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} et ${names[names.length - 1]}`;
+}
+
+function refusalText(
+  code: string,
+  service: PublicServiceOffering | undefined,
+  fields: string | undefined,
+): string {
+  // The server named the boxes, so this says which rather than listing every
+  // field the code could have meant. That list was the whole defect: four
+  // possibilities read as "something is wrong somewhere".
+  if (code === "VALIDATION_FAILED" && fields) {
+    const names = namedFields(fields);
+    if (names.length > 0) {
+      return `Vérifiez ${joined(names)} : le professionnel a besoin d'un moyen de vous joindre.`;
+    }
+  }
   if (code === "VALIDATION_FAILED" && service?.fulfilment === "AT_CUSTOMER") {
     return "Vérifiez le nom, le numéro de téléphone, les indications pour vous trouver et, si vous avez demandé l'e-mail, l'adresse : le professionnel a besoin de tout cela pour se déplacer.";
   }
@@ -114,6 +162,7 @@ type Search = {
   time?: string;
   ref?: string;
   error?: string;
+  fields?: string;
 };
 
 export default async function BookingFlow({
@@ -211,7 +260,7 @@ export default async function BookingFlow({
         </span>
         <div className="grow">
           <div className="alert__title">La réservation n'a pas abouti</div>
-          <div className="alert__body">{refusalText(query.error, service)}</div>
+          <div className="alert__body">{refusalText(query.error, service, query.fields)}</div>
         </div>
       </div>
     </div>
@@ -837,7 +886,7 @@ function TimeStep({
             <span className="btn__icon--idle" style={{ display: "inline-flex" }}>
               <Icon name="arrow-left" size={18} />
             </span>
-            <span className="btn__label--idle">Changer de jour</span>
+            <span className="btn__label--idle">Retour</span>
           </Link>
         </div>
       </div>
