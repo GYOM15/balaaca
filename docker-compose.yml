@@ -71,8 +71,16 @@ services:
   # the confirmation flow can be exercised end to end today, with no account to
   # open and no address that could be reached by accident.
   #
-  # Production replaces it by setting KEYCLOAK_SMTP_* to a real relay.
+  # `dev` PROFILE, so it does not exist in production. docker-compose.prod.yml
+  # is an OVERLAY on this file and not a replacement - deploy.sh passes both
+  # with -f - so every service declared here ran on the Pi too, this one
+  # included. A catcher on a production host is not merely a wasted container:
+  # paired with the `:-mailpit` default that used to stand in the environment
+  # blocks, a relay missing from .env.prod sent every confirmation into it,
+  # marked SENT, received by nobody. The default is now a hard failure - see
+  # docker-compose.prod.yml - and the catcher is not there to fall back to.
   mailpit:
+    profiles: [dev]
     image: axllent/mailpit:v1.21
     restart: unless-stopped
     environment:
@@ -170,8 +178,11 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      mailpit:
-        condition: service_healthy
+      # NOT on mailpit. It waited for the catcher to be healthy, which made
+      # Keycloak undeployable the moment the catcher stopped existing - and the
+      # wait bought nothing: SMTP is opened when a message is sent, minutes or
+      # days after boot, not during it. A relay that is down delays one mail;
+      # it must not delay a sign-in.
     healthcheck:
       # The image carries no curl and no wget. Bash can open a TCP socket, so
       # that is the probe - but it must be invoked as bash explicitly:

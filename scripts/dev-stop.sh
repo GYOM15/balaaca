@@ -13,6 +13,6 @@ pkill -f next-server 2>/dev/null
 pkill -f 'backend/app/target/quarkus-app/quarkus-run.jar' 2>/dev/null && echo "api stopped"
 pkill -f 'notification-worker/target/quarkus-app/quarkus-run.jar' 2>/dev/null \
     && echo "worker stopped"
-docker compose stop postgres keycloak redis mailpit >/dev/null 2>&1 \
+docker compose --profile dev stop postgres keycloak redis mailpit >/dev/null 2>&1 \
     && echo "containers stopped"
 echo "The data is kept."
