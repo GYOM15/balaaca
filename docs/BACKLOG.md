@@ -93,8 +93,13 @@ four hundred is a channel people mute, after which nothing alerts at all. One
 alert per kind per window, and the next one says how many it stands for.
 
 ### Deployment, backups
-CI builds, tests and checks the contract. **Nothing pushes to the VPS**, and
-there is no scheduled `pg_dump`.
+CI builds, tests and checks the contract. **Nothing pushes to the VPS.**
+
+`pg_dump` and its restore exist now (`scripts/backup.sh`, `scripts/restore.sh`,
+rehearsed - see docs/DEPLOYMENT.md), and they write to the same disk as the
+thing they copy. That covers a bad migration and a wrong `DELETE`; it does not
+cover the disk. **Off-site is the same conversation as the images below**, and
+neither moves until there is a bucket.
 
 **The images go to Cloudflare R2**, decided, and that is what closes the second
 half: today they sit on the deployment's own disk, in no backup, and reviews
@@ -107,27 +112,19 @@ What is still owed with it: the bucket and its credentials, whether objects are
 served through R2's public domain or kept behind `/v1/media/<name>` so the
 platform can still refuse one, and what happens to the files already on disk.
 
-## Translate the repository to English
+## ~~Translate the repository to English~~ (done)
 
-**The last step, deliberately.** `code-language` has required English for
-everything a developer reads since the pack was written - down to the ADRs and
-the commit messages - and it was broken anyway: this README, this file, the
-deployment runbook and the nine ADRs are French. Pull request descriptions were
-too.
+The criterion was that `language-waivers.txt` should hold nothing but comments,
+which a build can check rather than a feeling. It does. The thirteen documents
+it named - this file included - are English, and the nine ADRs were renamed out
+of French with them, because a file name is something a developer reads too.
 
-`RepositoryLanguageTest` now freezes that debt. Nothing new can be written in
-French, and `language-waivers.txt` lists exactly what is owed. **The pass is
-finished when that file holds nothing but comments** - which is a completion
-criterion a build can check, rather than a feeling.
-
-Order, when the time comes: `README.md` first (the first thing anyone reads),
-then `DEPLOYMENT.md` (an operator is the reader least likely to speak French),
-then this file, then the ADRs as one set - a half-French decision log is worse
-than a French one.
+The waiver file is kept, empty. `RepositoryLanguageTest` reads it, and a debt
+with nowhere to be written down is a debt that gets written into the code.
 
 What a **customer** reads is untouched by this. User-facing copy stays French
-first for the launch market, from an i18n catalogue. The rule is that the
-repository is English, not that the product is.
+first for the launch market. The rule is that the repository is English, not
+that the product is.
 
 ## What the design shows and the contract does not serve
 
@@ -169,10 +166,20 @@ by one.
   per service offering.
 - `CustomerSummaryView` has neither `has_notes` nor `no_show_count`;
   `CustomerVisitView` carries no amount: the price of each visit in the history.
-- **Moderation: no operation lists the businesses.** The design's
-  `moderation/businesses` screen has no source. `ProviderProfileView` has no
-  `report_count`, `ProviderReportView` does not carry the booking reference, and
-  nothing returns the operator's identity.
+- ~~**Moderation: no operation lists the businesses.**~~ (done)
+  `GET /v1/admin/providers` publishes every business with its standing, so the
+  suspension lever is no longer keyed on a slug nobody could look up. What is
+  still owed on that screen: `ProviderProfileView` has no `report_count`, and
+  `ProviderReportView` does not carry the booking reference.
+
+  **Who did it** is answered off-screen rather than in a view. Every write those
+  routes perform now writes `audit_logs` with `actor_role = 'OPERATOR'`, and
+  with one operator that is enough - see docs/DEPLOYMENT.md for the query. A
+  journal screen and a name beside the row come with the second operator, and so
+  do the fine-grained capabilities: the nine routes already carry
+  `@RolesAllowed`, so swapping a blanket check for a per-capability one is an
+  afternoon on one file, while the audit rows are the half that cannot be
+  backfilled. Trigger: the day somebody other than the owner is given access.
 - **Compte and Reglages**: neither e-mail verification nor password change on the
   contract side, that is Keycloak. The controls are drawn and disabled, with the
   sentence that says so.

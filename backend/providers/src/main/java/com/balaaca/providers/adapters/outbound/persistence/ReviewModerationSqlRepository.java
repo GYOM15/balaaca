@@ -1,7 +1,7 @@
 package com.balaaca.providers.adapters.outbound.persistence;
 
-import com.balaaca.providers.domain.ReviewNotFoundException;
-import com.balaaca.providers.ports.inbound.ModerateReviewsUseCase;
+import com.balaaca.providers.ports.inbound.ModerateReviewsUseCase.ModeratedReview;
+import com.balaaca.providers.ports.outbound.ReviewModerationRepository;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceException;
@@ -30,7 +30,7 @@ import java.util.function.UnaryOperator;
  * found nothing, told the operator the row did not exist while it sat there.
  */
 @ApplicationScoped
-public class ReviewModerationSqlRepository implements ModerateReviewsUseCase {
+public class ReviewModerationSqlRepository implements ReviewModerationRepository {
 
     /** Raised deliberately by V050 when a statement matched nothing. */
     private static final String NO_SUCH_REVIEW = "Z0007";
@@ -43,49 +43,37 @@ public class ReviewModerationSqlRepository implements ModerateReviewsUseCase {
 
     @Override
     @Transactional(Transactional.TxType.REQUIRED)
-    public ReviewPage list(Optional<String> status, Optional<UUID> after, int limit) {
-        List<ModeratedReview> fetched = rows("""
+    public List<ModeratedReview> list(Optional<String> status, Optional<UUID> after, int limit) {
+        return rows("""
                 SELECT * FROM app_list_reviews(CAST(:status AS varchar),
                                                CAST(:after AS uuid),
                                                CAST(:limit AS int))
                 """,
                 q -> q.setParameter("status", status.orElse(null))
                       .setParameter("after", after.orElse(null))
-                      // One more than asked, so the caller can tell a full page
-                      // from the last one without a second query.
-                      .setParameter("limit", limit + 1))
+                      .setParameter("limit", limit))
                 .stream().map(ReviewModerationSqlRepository::toReview).toList();
-
-        // The extra row asked for above is the only thing that says whether
-        // there is a next page, and it is never returned.
-        boolean more = fetched.size() > limit;
-        List<ModeratedReview> entries = more ? fetched.subList(0, limit) : fetched;
-
-        return new ReviewPage(List.copyOf(entries),
-                more ? Optional.of(entries.get(entries.size() - 1).id()) : Optional.empty());
     }
 
     @Override
     @Transactional(Transactional.TxType.REQUIRED)
-    public ModeratedReview setVisibility(UUID reviewId, boolean hidden) {
+    public Optional<ModeratedReview> setVisibility(UUID reviewId, boolean hidden) {
         return rows("""
                 SELECT * FROM app_set_review_visibility(CAST(:id AS uuid),
                                                         CAST(:hidden AS boolean))
                 """,
                 q -> q.setParameter("id", reviewId).setParameter("hidden", hidden))
                 .stream().findFirst()
-                .map(ReviewModerationSqlRepository::toReview)
-                .orElseThrow(() -> new ReviewNotFoundException(reviewId));
+                .map(ReviewModerationSqlRepository::toReview);
     }
 
     @Override
     @Transactional(Transactional.TxType.REQUIRED)
-    public ModeratedReview clearReply(UUID reviewId) {
+    public Optional<ModeratedReview> clearReply(UUID reviewId) {
         return rows("SELECT * FROM app_clear_review_reply(CAST(:id AS uuid))",
                     q -> q.setParameter("id", reviewId))
                 .stream().findFirst()
-                .map(ReviewModerationSqlRepository::toReview)
-                .orElseThrow(() -> new ReviewNotFoundException(reviewId));
+                .map(ReviewModerationSqlRepository::toReview);
     }
 
     private static ModeratedReview toReview(Object[] r) {

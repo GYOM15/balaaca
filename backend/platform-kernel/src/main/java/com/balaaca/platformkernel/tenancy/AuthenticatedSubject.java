@@ -58,6 +58,19 @@ public class AuthenticatedSubject {
         return token().flatMap(t -> claim(t, "email"));
     }
 
+    /**
+     * Whether this caller operates the PLATFORM rather than a business.
+     *
+     * <p>Not authorisation - {@code @RolesAllowed} on the routes is that. This
+     * is for the audit trail, which labels a line with the role behind it and
+     * had nothing to write for an operator: no membership means no
+     * provider_staff role, so every platform action was filed under no role at
+     * all, indistinguishable from a caller the trail could not identify.
+     */
+    public boolean isPlatformOperator() {
+        return identity.hasRole(PlatformRoles.OPERATOR);
+    }
+
     private Optional<JsonWebToken> token() {
         Principal principal = identity.getPrincipal();
         return principal instanceof JsonWebToken t ? Optional.of(t) : Optional.empty();

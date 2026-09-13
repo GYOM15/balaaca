@@ -62,6 +62,94 @@ HINT:  This migration adds a role the cluster predates. Re-run
 | `balaaca_resolver` | `NOLOGIN`, owns the resolution functions, **read only** | resolving a tenant before a tenant is bound |
 | `balaaca_registrar` | `NOLOGIN`, owns the only function that creates a provider | "what can bring a salon into being" has a single answer |
 | `balaaca_notification_worker` | `SELECT`/`UPDATE` on `notifications`, nothing else | a drain bug does not become a cross-tenant leak |
+| `balaaca_moderator` | `NOLOGIN`, owns the review and moderation functions | the only role that sees a hidden review or reads across tenants |
+
+No provider is a database role, and none ever will be. A business is a row in
+`providers`; what keeps one out of another's data is row-level security on the
+single `balaaca_app` connection, forced on every table that carries a
+`provider_id`. Only `postgres` is a superuser, and nothing runs as it.
+
+## Who may open the back office
+
+`/admin` and the nine `/v1/admin` routes require the role `admin:moderation`,
+which **nobody holds by default and no client grants**.
+
+The distinction matters more than it looks. Roles reach the API from the token's
+`scope` claim, and a Keycloak *client scope* belongs to a client: the six
+provider scopes are optional on `balaaca-frontend`, so any account signing in
+through it may ask for them. Harmless there - what confines a provider is
+row-level security and the tenant bound server-side. Fatal on the admin routes,
+where the scope IS the guard: published as a client scope, every provider on the
+platform could have requested it and suspended anybody.
+
+So the grant is a **realm role on one named account**. `init-realm.sh` creates
+`platform-admin` and assigns it to no one; `PlatformOperatorAugmentor` turns it
+into the scope the routes check.
+
+To grant it, on the machine running Keycloak:
+
+```
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh config credentials \
+    --server http://localhost:8080 --realm master \
+    --user "$KEYCLOAK_ADMIN" --password "$KEYCLOAK_ADMIN_PASSWORD"
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh add-roles \
+    -r balaaca --uusername somebody@example.com --rolename platform-admin
+```
+
+`remove-roles`, same arguments, takes it away. The account must exist first: a
+support person signs up like anybody else and simply creates no business, and
+you promote them afterwards. Nobody types anybody else's password.
+
+Every write those routes perform lands in `audit_logs` with `actor_role` set to
+`OPERATOR` - suspension, reinstatement, a report marked reviewed, a contestation
+read, a review hidden or restored, a business's reply cleared. There is no
+screen for it yet; read it with `psql` until there is more than one operator:
+
+```
+docker compose exec postgres psql -U postgres -d balaaca -c \
+  "SELECT occurred_at, action, entity_id, metadata FROM audit_logs \
+    WHERE actor_role = 'OPERATOR' ORDER BY occurred_at DESC LIMIT 50"
+```
+
+`actor_ip` stays NULL, deliberately, and will until there is somebody other than
+you clicking.
+
+## Backups, and the half that matters
+
+```
+scripts/backup.sh                    # into ./backups, keeping fourteen
+scripts/restore.sh backups/<file>    # THIS DESTROYS what is there now
+```
+
+Two artefacts per run, under one timestamp: a custom-format `pg_dump` and a tar
+of the media volume. Neither means anything without the other - the rows name
+the files, and a database restored without its images is a catalogue of broken
+pictures that reads like a bug in the product. `restore.sh` refuses to run
+without the pair unless you pass `--database-only` and say you meant it.
+
+**Rehearse it now, while the data is disposable.** A backup that has never been
+restored is a file, not a backup, and the morning the disk dies is the wrong
+morning to learn that. That rehearsal has already earned itself once: the
+restore carried `--no-owner`, which moved all twenty-two tables from
+`balaaca_migrator` to `postgres` with every row intact - so it looked perfect,
+and the NEXT deployment would have failed on a migration, weeks later, with
+nobody connecting the two.
+
+```
+scripts/backup.sh
+scripts/restore.sh backups/$(ls -1t backups/*.dump | head -1 | xargs basename)
+```
+
+It prints what it restored, in counts. Zero providers means it restored nothing.
+
+Nightly, at three in the morning, in the deploying user's crontab:
+
+```
+0 3 * * * cd /home/guy-olivier/balaaca && scripts/backup.sh >> backups/backup.log 2>&1
+```
+
+`--keep` decides how many pairs stay; the default is fourteen and they are
+dropped in pairs, because a dump whose media is gone restores broken images.
 
 ## The order of a deployment
 
@@ -202,8 +290,11 @@ Stated here rather than discovered on a Sunday:
 
 - **no deployment pipeline.** CI builds, tests and checks the contract; nothing
   pushes anything to the VPS. Deployment is manual.
-- **no documented backup.** There is no scheduled `pg_dump` and no tested
-  restore.
+- **no OFF-SITE backup.** `scripts/backup.sh` and `scripts/restore.sh` exist and
+  the restore has been rehearsed, but the copy lands on the same disk as the
+  thing it copies: it survives a bad migration, a wrong `DELETE` and a
+  deployment that went badly, and not the disk dying. Off-site arrives with the
+  object store, which the images are waiting for too (docs/BACKLOG.md).
 - **no alerting** on notifications that turned `DEAD`, in the sense of an alerting
   system. The worker now logs every death at `ERROR`, with the `provider_id`, the
   kind and the dedupe key (never the recipient), which is enough for a search but

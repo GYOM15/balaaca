@@ -253,4 +253,72 @@ class ReviewReplyIT {
         given().when().delete("/v1/admin/reviews/" + UUID.randomUUID() + "/reply")
                 .then().statusCode(404);
     }
+
+    @Test
+    @DisplayName("Taking a review down and putting it back both reach the trail")
+    @TestSecurity(user = "kc-operator", roles = "admin:moderation")
+    @OidcSecurity(claims = @Claim(key = "sub", value = "kc-operator"))
+    void aTakedownIsOnTheRecord() {
+        aReview("622100006", 1, "Jamais venue.");
+        String id = given().when().get("/v1/admin/reviews").then().statusCode(200)
+                .extract().path("data[0].review_id");
+
+        given().contentType("application/json").body("{\"hidden\":true}")
+                .when().post("/v1/admin/reviews/" + id + "/visibility").then().statusCode(200);
+        given().contentType("application/json").body("{\"hidden\":false}")
+                .when().post("/v1/admin/reviews/" + id + "/visibility").then().statusCode(200);
+
+        // Suspending a business has written a line since the day it was built
+        // and this wrote nothing, which is the more contestable of the two: a
+        // provider who finds a review gone has somebody to ask, and the
+        // platform had no answer. Both directions, because putting one back is
+        // as much a decision as taking it down.
+        var trail = fixtures.auditTrail().stream()
+                .filter(row -> "REVIEW_VISIBILITY_SET".equals(row.action()))
+                .toList();
+
+        assertEquals(2, trail.size(), "both directions belong on the trail");
+        // Spaces squeezed out: the column is jsonb and PostgreSQL renders it
+        // back with one after every colon, which is a fact about the engine and
+        // not about what was recorded.
+        assertTrue(tight(trail.get(0).metadata()).contains("\"hidden\":\"true\""));
+        assertTrue(tight(trail.get(1).metadata()).contains("\"hidden\":\"false\""));
+        // Named, not NULL. An operator has no membership, so this column was
+        // blank for every platform action - which reads exactly like a line the
+        // trail could not attribute at all.
+        assertEquals("OPERATOR", trail.get(0).actorRole());
+        // The business, so the trail can be read by provider when a takedown is
+        // contested. The customer's words are deliberately not here.
+        assertTrue(trail.get(0).metadata().contains("salon-fatou"));
+    }
+
+    /** jsonb comes back pretty-printed by the engine; the trail is what it says. */
+    private static String tight(String json) {
+        return json.replace(", ", ",").replace(": ", ":");
+    }
+
+    @Test
+    @DisplayName("Clearing an answer reaches the trail too")
+    @TestSecurity(user = "kc-operator", roles = "admin:moderation")
+    @OidcSecurity(claims = @Claim(key = "sub", value = "kc-operator"))
+    void clearingAnAnswerIsOnTheRecord() {
+        aReview("622100007", 4, "Bien.");
+        String id = given().when().get("/v1/admin/reviews").then().statusCode(200)
+                .extract().path("data[0].review_id");
+
+        fixtures.execute("""
+                UPDATE provider_reviews
+                   SET reply = 'Cette cliente ment.', replied_at = now()
+                 WHERE id = '%s'
+                """.formatted(id));
+
+        given().when().delete("/v1/admin/reviews/" + id + "/reply").then().statusCode(200);
+
+        var trail = fixtures.auditTrail().stream()
+                .filter(row -> "REVIEW_REPLY_CLEARED".equals(row.action()))
+                .toList();
+
+        assertEquals(1, trail.size());
+        assertEquals("OPERATOR", trail.get(0).actorRole());
+    }
 }
