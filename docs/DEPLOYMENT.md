@@ -86,33 +86,29 @@ So the grant is a **realm role on one named account**. `init-realm.sh` creates
 `platform-admin` and assigns it to no one; `PlatformOperatorAugmentor` turns it
 into the scope the routes check.
 
-To grant it, from the checkout on the machine running Keycloak. Both lines
-carry `--env-file` and both compose files, exactly as `deploy.sh` does: a bare
-`docker compose` reads `.env`, which does not exist on a deployment, and every
-variable resolves to the empty string. It still finds the container by name, so
-it half works and then fails somewhere unrelated.
+To grant it, on the deployment:
 
 ```
-COMPOSE="docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.prod.yml"
-
-$COMPOSE exec keycloak sh -c '/opt/keycloak/bin/kcadm.sh config credentials \
-    --server http://localhost:8080 --realm master \
-    --user "$KEYCLOAK_ADMIN" --password "$KEYCLOAK_ADMIN_PASSWORD"'
-
-$COMPOSE exec keycloak /opt/keycloak/bin/kcadm.sh add-roles \
-    -r balaaca --uusername somebody@example.com --rolename platform-admin
+scripts/grant-operator.sh somebody@example.com
+scripts/grant-operator.sh --revoke somebody@example.com
+scripts/grant-operator.sh --list
 ```
 
-**The single quotes on the first line are load bearing.** They stop the host's
-shell expanding those two names, so the container's own shell does it - and the
-container has them, from compose. Double quotes would expand them on the host,
-where they are unset, and Keycloak would be handed an empty user and an empty
-password. Nothing secret reaches the shell history either way.
+The account must exist first: a support person signs up like anybody else and
+simply creates no business, and you promote them afterwards. Nobody types
+anybody else's password.
 
-`config credentials` must come first and is a separate command: it writes a
-session inside the running container, which the second line then uses. Skipping
-it answers `Session has expired. Login again with 'kcadm.sh config
-credentials'`, which reads like the session lapsed rather than never existed.
+It reads back what it did, because `add-roles` and `remove-roles` both succeed
+in SILENCE - a typo in an address is refused loudly, while a grant that changed
+nothing is not. And it says out loud that the person has to sign out and back
+in: a token already issued does not gain a role granted after it.
+
+This was four commands copied out of a chat window until it was a script, and
+two of them failed in ways that named something else. If you ever run them by
+hand, the traps are: a bare `docker compose` reads `.env`, which does not exist
+on a deployment, so every variable resolves to empty while it still finds the
+container by name; and the credentials line must be expanded by the CONTAINER's
+shell, or Keycloak is handed an empty user and an empty password.
 
 ### `Role not found for name: platform-admin`
 
@@ -122,8 +118,9 @@ road from the code that reads it. Two halves, and BOTH are needed before
 
 - **The role** is created by `init-realm.sh`, which is this container's
   entrypoint and is BIND MOUNTED from the checkout. So it appears after a
-  `git pull` and a restart of that container, with no image involved:
-  `$COMPOSE restart keycloak`.
+  `git pull` and a restart of that container, with no image involved.
+  `deploy.sh` now does that restart itself, and only when the pull actually
+  changed that file.
 - **The translation** from that realm role to the `admin:moderation` the routes
   check lives in `PlatformOperatorAugmentor`, inside the API image. That one
   needs `scripts/publish-images.sh` on the build machine and `scripts/deploy.sh`
@@ -190,6 +187,27 @@ Nightly, at three in the morning, in the deploying user's crontab:
 
 `--keep` decides how many pairs stay; the default is fourteen and they are
 dropped in pairs, because a dump whose media is gone restores broken images.
+
+## Which build is running
+
+The commit is a LABEL on each image, put there by `publish-images.sh`:
+
+```
+docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' \
+    ghcr.io/gyom15/balaaca-api:latest
+```
+
+`unknown` means somebody built it by hand without `--build-arg BALAACA_REVISION`.
+That is honest; a wrong answer would not be.
+
+There was a `/q/build-info` endpoint for this and it has been removed. It
+returned the Maven version, `0.1.0-SNAPSHOT`, identical on every build ever
+made, while its own comment said it confirmed which build was running - and the
+first time somebody needed the answer, it had none. The label replaces it rather
+than the endpoint returning a real value, because this repository is public:
+publishing which commit is deployed tells anybody which known issues are not
+fixed here. A label is read by whoever has a shell on the host, which is
+whoever is asking.
 
 ## The order of a deployment
 
