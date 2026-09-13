@@ -59,15 +59,24 @@ set -a
 . "./$ENV_FILE"
 set +a
 
+# The superuser is POSTGRES_SUPERUSER in the env file and POSTGRES_USER inside
+# the container, because docker-compose.yml maps one onto the other. Reading the
+# container's name out here found nothing and fell back to `postgres`, which is
+# right today and right by accident: the day that value is anything else, this
+# would have dumped as a user that does not exist, and the fallback is what
+# would have hidden it.
+DB_USER="${POSTGRES_SUPERUSER:-${POSTGRES_USER:-postgres}}"
+DB_NAME="${POSTGRES_DB:-balaaca}"
+
 COMPOSE=(docker compose --env-file "$ENV_FILE"
          -f docker-compose.yml -f docker-compose.prod.yml)
 
 if [ "$YES" != yes ]; then
-    echo "This replaces the database ${POSTGRES_DB:-balaaca} and the images, from"
+    echo "This replaces the database $DB_NAME and the images, from"
     echo "    $DUMP"
     printf 'Type the database name to confirm: '
     read -r answer
-    [ "$answer" = "${POSTGRES_DB:-balaaca}" ] || { echo "not confirmed."; exit 1; }
+    [ "$answer" = "$DB_NAME" ] || { echo "not confirmed."; exit 1; }
 fi
 
 echo "==> stopping the application"
@@ -100,7 +109,7 @@ done
 # operator to ignore the status entirely, which is worse.
 set +e
 "${COMPOSE[@]}" exec -T postgres \
-    pg_restore --username "${POSTGRES_USER:-postgres}" --dbname "${POSTGRES_DB:-balaaca}" \
+    pg_restore --username "$DB_USER" --dbname "$DB_NAME" \
                --clean --if-exists < "$DUMP"
 status=$?
 set -e
@@ -122,7 +131,7 @@ echo "==> starting the application"
 # cheapest way to see that before walking away.
 echo
 "${COMPOSE[@]}" exec -T postgres psql -qtA \
-    --username "${POSTGRES_USER:-postgres}" --dbname "${POSTGRES_DB:-balaaca}" -c "
+    --username "$DB_USER" --dbname "$DB_NAME" -c "
     SELECT '    providers:    ' || count(*) FROM providers
     UNION ALL SELECT '    appointments: ' || count(*) FROM appointments
     UNION ALL SELECT '    reviews:      ' || count(*) FROM provider_reviews
