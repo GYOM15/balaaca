@@ -2,6 +2,7 @@ package com.balaaca.app.it;
 
 import static io.restassured.RestAssured.given;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.equalTo;
 
 import io.quarkus.test.common.QuarkusTestResource;
@@ -209,23 +210,50 @@ class PublicBookingIT {
     class Validation {
 
         @Test
-        @DisplayName("an unparseable phone number is a malformed request")
+        @DisplayName("an unparseable phone number says it was the phone")
         void rejectsBadPhone() {
             // 400, not 422: the published catalogue puts VALIDATION_FAILED at
             // 400, and a client branches on the code, not on the prose.
+            //
+            // The field matters as much as the code here. VALIDATION_FAILED
+            // also answers a missing name, an address a call-out owes and an
+            // e-mail a channel choice owes, so the code alone left a customer
+            // reading "check the name, the number and the address" with one
+            // digit wrong in one box. `customer.phone` is the path the REQUEST
+            // used, not the server's own name for it.
             book("2026-09-06T10:00:00Z", "not-a-number")
-                    .statusCode(400).body("code", equalTo("VALIDATION_FAILED"));
+                    .statusCode(400).body("code", equalTo("VALIDATION_FAILED"))
+                    .body("errors[0].field", equalTo("customer.phone"));
         }
 
         @Test
         @DisplayName("a missing body is rejected before anything is touched")
         void rejectsEmptyBody() {
+            // No field asserted. An empty body is a malformed client rather
+            // than somebody who mistyped a box, and bean validation reports it
+            // at the parameter rather than at a field, which leaves nothing
+            // honest to name. The guard that matters is on the telephone above.
             given().contentType("application/json").header("Idempotency-Key", "key-" + UUID.randomUUID())
                     .body("{}")
                     .when().post(SALON)
                     .then().statusCode(400).body("code", equalTo("VALIDATION_FAILED"));
 
             assertThat(fixtures.activeAppointments(BookingFixtures.SALON)).isZero();
+        }
+
+        @Test
+        @DisplayName("a refusal that is not about a field names none")
+        void namesNoFieldWhenNoneWasRefused() {
+            // The guard on the two tests above would pass just as well if
+            // `errors` were filled for everything, which would make it noise a
+            // client learns to ignore. A slot nobody can have is a refusal of
+            // the request, not of a box on the form.
+            given().contentType("application/json")
+                    .header("Idempotency-Key", "key-" + UUID.randomUUID())
+                    .body(body(UUID.randomUUID(), "2026-09-04T10:00:00Z", "622000020"))
+                    .when().post(SALON)
+                    .then().statusCode(404).body("code", equalTo("RESOURCE_NOT_FOUND"))
+                    .body("errors", empty());
         }
 
         @Test

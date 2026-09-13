@@ -74,6 +74,14 @@ class BookingConcurrencyIT {
         assertThat(byStatus.getOrDefault(503, 0L))
                 .as("a loser is told the slot is taken, never that the system is busy")
                 .isZero();
+        // 429 is the same defect wearing the published code for it, and it is
+        // how this escaped: the counts above allowed it, and eight of ten
+        // racers landed on it the first time a loaded runner slowed the
+        // winner's COMMIT down. The read that answers a spent budget now waits
+        // for that commit instead of racing it.
+        assertThat(byStatus.getOrDefault(429, 0L))
+                .as("nor that too many bookings arrived, for a slot that is gone")
+                .isZero();
 
         assertThat(fixtures.activeAppointments(BookingFixtures.SOLO))
                 .as("the database holds one row, whatever the API said")

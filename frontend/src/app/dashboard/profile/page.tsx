@@ -176,7 +176,7 @@ export default async function Profile({
               <div className="panel">
                 <div className="panel__head">
                   <div>
-                    <div className="panel__title">Bandeau et logo</div>
+                    <div className="panel__title">Photo de couverture et logo</div>
                     <div className="panel__sub">Ce que l’on voit en premier</div>
                   </div>
                 </div>
@@ -197,12 +197,12 @@ export default async function Profile({
                     <div className="pcover atmo grain grain--dark" id={COVER_PREVIEW}>
                       {cover ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={cover} alt="Bandeau actuel" width={1600} height={608} />
+                        <img src={cover} alt="Photo de couverture actuelle" width={1600} height={608} />
                       ) : null}
                     </div>
                     {cover ? null : (
                       <p className="t-xs" style={{ marginTop: "var(--s-2)" }}>
-                        Sans bandeau, votre page ouvre sur ce fond.
+                        Sans photo de couverture, votre page ouvre sur ce fond.
                       </p>
                     )}
                     {/* Said before the choice rather than discovered after it.
@@ -226,7 +226,7 @@ export default async function Profile({
                         <span className="btn__icon--idle" style={ICON_IDLE}>
                           <Icon name="camera" size={18} />
                         </span>
-                        <span className="btn__label--idle">Choisir un bandeau</span>
+                        <span className="btn__label--idle">Choisir une photo de couverture</span>
                       </label>
                       <input
                         className="sr-only"
@@ -252,15 +252,15 @@ export default async function Profile({
                         <span className="btn__icon--idle" style={ICON_IDLE}>
                           <Icon name="upload" size={18} />
                         </span>
-                        <span className="btn__label--idle">Enregistrer le bandeau</span>
+                        <span className="btn__label--idle">Enregistrer la photo</span>
                         <span className="btn__icon--busy">
                           <Icon name="loader" size={18} className="ico--spin" />
                         </span>
-                        <span className="btn__label--busy">Envoi du bandeau…</span>
+                        <span className="btn__label--busy">Envoi de la photo…</span>
                         <span className="btn__icon--done">
                           <Icon name="check" size={18} />
                         </span>
-                        <span className="btn__label--done">Bandeau enregistré</span>
+                        <span className="btn__label--done">Photo enregistrée</span>
                       </button>
                     </div>
                   </form>

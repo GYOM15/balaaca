@@ -130,7 +130,12 @@ test("the dashboard preview announces the size the API actually stores", () => {
   // The intrinsic size on the preview img. It reserves the box before the
   // bytes arrive, so a wrong one makes the panel jump on load - and it is the
   // number a provider reads as "what is expected of me".
-  const found = /alt="Bandeau actuel"\s+width=\{(\d+)\}\s+height=\{(\d+)\}/.exec(page);
+  // Anchored on the alt text, which is customer-facing French and therefore
+  // moves: "Bandeau actuel" became "Photo de couverture actuelle" the day
+  // somebody decided that jargon was not clear to every reader. The guard
+  // followed, which is the guard working - but it is worth knowing that this
+  // regex is the second place that wording lives.
+  const found = /alt="Photo de couverture actuelle"\s+width=\{(\d+)\}\s+height=\{(\d+)\}/.exec(page);
   assert.ok(found, "the cover preview declares no intrinsic size");
 
   assert.equal(Number(found[1]), constant("BANNER_WIDTH"));

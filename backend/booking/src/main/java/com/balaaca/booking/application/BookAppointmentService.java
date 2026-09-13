@@ -87,19 +87,56 @@ public class BookAppointmentService implements BookAppointmentUseCase {
     }
 
     /**
+     * How long to keep asking the database before answering "busy".
+     *
+     * <p>Ten racers on one slot exhaust the deadlock budget in under a
+     * millisecond, and the winner's COMMIT is not instant. A read taken the
+     * moment the budget runs out therefore sees a free chair and says the
+     * system is congested - which is the one answer this class exists to
+     * avoid, because it sends a customer back to a slot that is gone. It is
+     * not a hypothetical: it is what ten racers produced on a loaded CI runner
+     * while passing on a fast machine, and the test that caught it was right.
+     *
+     * <p>Bounded rather than closed. Nothing can distinguish "another
+     * transaction is inserting and will commit" from "and will roll back"
+     * without waiting for it, so this waits, briefly, and then answers
+     * honestly. Three reads over sixty milliseconds cost nothing on the path
+     * where they run - a request that has already lost every attempt it had.
+     */
+    private static final int TRUTH_READS = 3;
+    private static final long TRUTH_PAUSE_MS = 20;
+
+    /**
      * What to tell a caller whose attempts are spent.
      *
      * <p>Not the counter's answer, the database's. A deadlock says this
      * transaction lost, never why; and on this schema a storm of them is
      * exactly what N racers on one slot produce. Reporting congestion to every
-     * loser sends a customer back to a slot that is gone, so the committed data
-     * is read once, here, where there is nothing left to attempt and the read
-     * can no longer be raced by this request.
+     * loser sends a customer back to a slot that is gone.
+     *
+     * <p>Read more than once, because the winner may still be committing. The
+     * first read is immediate: on the common path - one racer, a slot genuinely
+     * free, a transient fault - it answers without waiting at all.
      */
     private RuntimeException exhausted(BookAppointmentCommand command) {
-        return attempt.everyChairIsTaken(command)
-                ? new SlotUnavailableException(command.startsAt())
-                : new BookingContendedException(command.startsAt());
+        for (int read = 0; read < TRUTH_READS; read++) {
+            if (attempt.everyChairIsTaken(command)) {
+                return new SlotUnavailableException(command.startsAt());
+            }
+            if (read < TRUTH_READS - 1) {
+                pause();
+            }
+        }
+        return new BookingContendedException(command.startsAt());
+    }
+
+    /** Interruption is not swallowed: the flag is restored and the wait ends. */
+    private static void pause() {
+        try {
+            Thread.sleep(TRUTH_PAUSE_MS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     /**
