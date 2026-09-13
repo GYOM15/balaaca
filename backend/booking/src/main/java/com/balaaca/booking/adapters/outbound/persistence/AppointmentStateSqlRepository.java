@@ -260,12 +260,16 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
     @Override
     @SuppressWarnings("unchecked")
     public Optional<AgendaEntry> transition(AppointmentId id, Set<AppointmentStatus> from,
-                                            AppointmentStatus to, Instant at) {
+                                            AppointmentStatus to, Instant at,
+                                            boolean onlyOnceStarted) {
         // The accepted states are bound as an array rather than interpolated:
         // the set comes from the application layer, and a set that reached SQL
         // as text would be one place where it could stop being a set.
         String[] accepted = from.stream().map(Enum::name).toArray(String[]::new);
 
+        // In the WHERE beside the states, not in an if above it. A provider
+        // pressing "Terminer" at the same second the appointment begins is the
+        // only case this is close on, and the row is what decides it.
         List<Object[]> rows = em.createNativeQuery("""
                 UPDATE appointments
                    SET status = CAST(:to AS varchar),
@@ -273,6 +277,7 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                        updated_at = :at
                  WHERE id = :id
                    AND status = ANY(CAST(:accepted AS varchar[]))
+                   AND (NOT :onlyOnceStarted OR starts_at <= :at)
                 RETURNING id, starts_at, ends_at, status, service_name,
                           customer_price_amount_minor, customer_price_currency,
                           customer_id, customer_note, staff_id, ready_by, ready_at,
@@ -283,6 +288,7 @@ public class AppointmentStateSqlRepository implements AppointmentStateRepository
                 .setParameter("to", to.name())
                 .setParameter("accepted", "{" + String.join(",", accepted) + "}")
                 .setParameter("at", Timestamp.from(at))
+                .setParameter("onlyOnceStarted", onlyOnceStarted)
                 .getResultList();
 
         return rows.isEmpty() ? Optional.empty() : Optional.of(toEntry(rows.get(0)));

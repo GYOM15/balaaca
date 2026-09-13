@@ -2,6 +2,7 @@ package com.balaaca.booking.application;
 
 import com.balaaca.booking.domain.AppointmentStatus;
 import com.balaaca.booking.domain.BookingExceptions.AppointmentNotFoundException;
+import com.balaaca.booking.domain.BookingExceptions.AppointmentNotStartedException;
 import com.balaaca.booking.domain.BookingExceptions.BookingContendedException;
 import com.balaaca.booking.domain.BookingExceptions.InvalidStateTransitionException;
 import com.balaaca.booking.domain.BookingExceptions.NotADropOffException;
@@ -159,7 +160,8 @@ public class MoveAppointmentService implements MoveAppointmentUseCase {
     }
 
     private AgendaEntry move(AppointmentId id, Set<AppointmentStatus> from, AppointmentStatus to) {
-        return appointments.transition(id, from, to, clock.instant())
+        return appointments.transition(id, from, to, clock.instant(),
+                                       to.meansItAlreadyHappened())
                 .orElseThrow(() -> refusalFor(id, to));
     }
 
@@ -173,8 +175,23 @@ public class MoveAppointmentService implements MoveAppointmentUseCase {
      */
     private RuntimeException refusalFor(AppointmentId id, AppointmentStatus wanted) {
         return appointments.snapshotOf(id)
-                .<RuntimeException>map(s -> new InvalidStateTransitionException(s.status(), wanted))
+                .<RuntimeException>map(s -> notStartedYet(s, wanted)
+                        ? new AppointmentNotStartedException(wanted, s.startsAt())
+                        : new InvalidStateTransitionException(s.status(), wanted))
                 .orElseGet(() -> new AppointmentNotFoundException(id.value()));
+    }
+
+    /**
+     * Whether the statement found no row because of WHEN rather than because of
+     * WHAT. Asked in this order: a cancelled appointment is refused for its
+     * state whatever the date, and telling its provider to come back on Friday
+     * would send them to wait for a button that will never appear.
+     */
+    private boolean notStartedYet(AppointmentStateRepository.AppointmentSnapshot snapshot,
+                                  AppointmentStatus wanted) {
+        return wanted.meansItAlreadyHappened()
+                && snapshot.status().canBecome(wanted)
+                && snapshot.startsAt().isAfter(clock.instant());
     }
 
 }

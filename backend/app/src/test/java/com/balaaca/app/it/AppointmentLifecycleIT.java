@@ -72,6 +72,10 @@ class AppointmentLifecycleIT {
         String id = book(SLOT, "622000001");
 
         post(id, "confirmation").statusCode(200).body("status", equalTo("CONFIRMED"));
+        // The slot is booked in the future, which is the only way to book one.
+        // Completing says the customer came, so the appointment has to have
+        // begun before it can be said - see refusesToCloseOutTheFuture below.
+        fixtures.alreadyStarted(id);
         post(id, "completion").statusCode(200).body("status", equalTo("COMPLETED"));
     }
 
@@ -80,6 +84,7 @@ class AppointmentLifecycleIT {
     void recordsANoShow() {
         String id = book(SLOT, "622000002");
         post(id, "confirmation").statusCode(200);
+        fixtures.alreadyStarted(id);
 
         // Kept apart from cancellation deliberately: a customer who cancelled
         // and one who simply did not come are different facts about the same
@@ -88,9 +93,47 @@ class AppointmentLifecycleIT {
     }
 
     @Test
+    @DisplayName("Neither verb is available before the appointment has begun")
+    void refusesToCloseOutTheFuture() {
+        String id = book(SLOT, "622000009");
+        post(id, "confirmation").statusCode(200);
+
+        // Nothing moved it, so it is still days away. Both verbs are claims
+        // about a visit that has happened, and a provider could make either of
+        // them a week in advance: the diary closed itself out, and the month's
+        // takings counted work nobody had started.
+        post(id, "completion").statusCode(409)
+                .body("code", equalTo("INVALID_STATE_TRANSITION"))
+                .body("title", equalTo("That appointment has not started yet"));
+        post(id, "no-show").statusCode(409)
+                .body("title", equalTo("That appointment has not started yet"));
+
+        // And the row is untouched, which the 200 below proves: a refusal that
+        // had moved it halfway would leave nothing for the real completion to
+        // do, and CONFIRMED is the only state completion accepts.
+        fixtures.alreadyStarted(id);
+        post(id, "completion").statusCode(200).body("status", equalTo("COMPLETED"));
+    }
+
+    @Test
+    @DisplayName("A cancelled appointment is refused for its state, not for its date")
+    void saysWhichRefusalItIs() {
+        String id = book(SLOT, "622000010");
+        given().contentType("application/json").body("{}")
+                .when().post("/v1/appointments/" + id + "/cancellation").then().statusCode(200);
+
+        // In the future AND cancelled. "Come back on Thursday" would send a
+        // provider to wait for a button that will never appear, so the state
+        // is what the refusal names.
+        post(id, "completion").statusCode(409)
+                .body("title", equalTo("That appointment can no longer change"));
+    }
+
+    @Test
     @DisplayName("A pending appointment cannot be completed, nor a completed one confirmed")
     void refusesIllegalMoves() {
         String id = book(SLOT, "622000003");
+        fixtures.alreadyStarted(id);
 
         post(id, "completion").statusCode(409).body("code", equalTo("INVALID_STATE_TRANSITION"));
 

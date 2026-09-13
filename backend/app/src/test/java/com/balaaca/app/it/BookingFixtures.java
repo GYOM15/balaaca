@@ -435,6 +435,32 @@ public class BookingFixtures {
             """.formatted(reference));
     }
 
+    /**
+     * Moves an appointment to a moment the APPLICATION believes is past.
+     *
+     * <p>Anchored to {@link #APPLICATION_NOW} and not to `now()`: the clock the
+     * application reads is pinned and PostgreSQL's is not, so `now() - 3 days`
+     * is a date this suite's own code would still call the future. Completing
+     * and marking absent are refused before an appointment begins, and a
+     * fixture that missed that distinction would make those refusals look like
+     * a bug in the endpoint.
+     *
+     * <p>The block window is re-derived from the row's frozen buffers, because
+     * `ck_appointments_block_derived` pins it to exactly that.
+     */
+    public void alreadyStarted(String appointmentId) {
+        run("""
+            UPDATE appointments
+               SET starts_at     = %1$s - interval '2 hours',
+                   ends_at       = %1$s - interval '1 hour',
+                   blocked_from  = %1$s - interval '2 hours'
+                                   - make_interval(mins => buffer_before_minutes),
+                   blocked_until = %1$s - interval '1 hour'
+                                   + make_interval(mins => buffer_after_minutes)
+             WHERE id = '%2$s'
+            """.formatted(APPLICATION_NOW, appointmentId));
+    }
+
     /** One number, off the superuser connection, for a test that needs to count. */
     public long count(String sql) {
         return query(sql);

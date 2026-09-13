@@ -1010,6 +1010,11 @@ function Appointment({
   const look = lookOf(appointment);
   const where = fulfilment(appointment);
   const phone = appointment.customer.phone;
+  // "Terminé" and "Absent" are claims about something that has happened, and
+  // the API refuses both before the appointment begins. Drawn from the same
+  // fact so the screen agrees with the server: a button that is there and
+  // answers 409 teaches a provider that the diary is unreliable.
+  const begun = Date.parse(appointment.starts_at) <= now().getTime();
   const cancelId = `dlg-cancel-${scope}-${id}`;
   const moveId = `dlg-move-${scope}-${id}`;
   const chairId = `dlg-chair-${scope}-${id}`;
@@ -1090,7 +1095,7 @@ function Appointment({
         {status === "PENDING" ? (
           <Verb action={confirm} id={id} back={back} label="Confirmer" icon="check" primary />
         ) : null}
-        {status === "CONFIRMED" ? (
+        {status === "CONFIRMED" && begun ? (
           <Verb action={complete} id={id} back={back} label="Terminer" icon="check" />
         ) : null}
 
@@ -1117,7 +1122,7 @@ function Appointment({
                   Changer de personne
                 </button>
                 <span className="menu__sep" />
-                {status === "CONFIRMED" ? (
+                {status === "CONFIRMED" && begun ? (
                   <MenuVerb
                     action={markNoShow}
                     id={id}
