@@ -1358,6 +1358,33 @@ a.choice { text-decoration: none; color: inherit; }
 .app__inner--wide { max-width: 1400px; }
 
 /* Barre d'onglets mobile : prestataire */
+/* --------------------------------------------------------------------------
+   Le menu du tableau de bord, sur telephone
+   --------------------------------------------------------------------------
+   Cache par defaut, ouvert par :target, comme la visionneuse plus bas. Il etait
+   simplement pose a la suite du contenu, sur CHAQUE ecran : on lisait ses
+   prestations, puis en dessous toute la navigation empilee, puis la barre
+   d'onglets. Une navigation qui fait partie de chaque page n'est pas un menu,
+   c'est un pied de page repete partout, et on ne voit plus ou la page s'arrete.
+
+   Sans JavaScript il s'ouvre quand meme, et le bouton retour le referme, parce
+   que c'est une vraie navigation - la meme raison que pour la visionneuse.
+
+   Pas de !important : .hide-lg en porte un et doit gagner au-dessus de 1000px,
+   ou le menu s'ouvrirait par-dessus une barre laterale qui est deja la. */
+#sections { display: none; }
+#sections:target {
+  display: block;
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-drawer);
+  background: var(--bg);
+  overflow-y: auto;
+  /* Le doigt qui arrive en bas de la liste ne doit pas se mettre a faire
+     defiler la page en dessous. */
+  overscroll-behavior: contain;
+}
+
 .apptabs {
   position: fixed; inset: auto 0 0 0; z-index: var(--z-header);
   display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
