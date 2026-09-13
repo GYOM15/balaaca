@@ -45,6 +45,15 @@ set -a
 . "./$ENV_FILE"
 set +a
 
+# The superuser is POSTGRES_SUPERUSER in the env file and POSTGRES_USER inside
+# the container, because docker-compose.yml maps one onto the other. Reading the
+# container's name out here found nothing and fell back to `postgres`, which is
+# right today and right by accident: the day that value is anything else, this
+# would have dumped as a user that does not exist, and the fallback is what
+# would have hidden it.
+DB_USER="${POSTGRES_SUPERUSER:-${POSTGRES_USER:-postgres}}"
+DB_NAME="${POSTGRES_DB:-balaaca}"
+
 COMPOSE=(docker compose --env-file "$ENV_FILE"
          -f docker-compose.yml -f docker-compose.prod.yml)
 
@@ -67,7 +76,7 @@ MEDIA="$INTO/balaaca-$STAMP-media.tar.gz"
 # day it is needed is the day nobody checks.
 echo "==> database"
 "${COMPOSE[@]}" exec -T postgres \
-    pg_dump --username "${POSTGRES_USER:-postgres}" --dbname "${POSTGRES_DB:-balaaca}" \
+    pg_dump --username "$DB_USER" --dbname "$DB_NAME" \
             --format=custom --compress=6 > "$DUMP.part"
 mv "$DUMP.part" "$DUMP"
 
