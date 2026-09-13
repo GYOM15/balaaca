@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Brings the whole stack up on this machine, in one command.
 #
-# There are four moving parts and they have to start in order: PostgreSQL and
-# Keycloak in containers, the API as a jar against them, and the front against
-# the API. Doing it by hand means remembering three environment overrides that
-# only apply to a local run, and forgetting one of them fails in a way that
-# does not name itself - a media upload answering 500, or the API resolving
-# "postgres" to nothing.
+# There are five moving parts and they have to start in order: PostgreSQL and
+# Keycloak in containers, the API as a jar against them, the notification
+# worker as a second jar beside it, and the front against the API. Doing it by
+# hand means remembering three environment overrides that only apply to a local
+# run, and forgetting one of them fails in a way that does not name itself - a
+# media upload answering 500, or the API resolving "postgres" to nothing.
 #
 # Stop it all with scripts/dev-stop.sh.
 set -euo pipefail
@@ -36,6 +36,26 @@ export REDIS_HOST=localhost
 export REDIS_HOST_PORT="${REDIS_HOST_PORT:-56379}"
 export QUARKUS_OIDC_AUTH_SERVER_URL="${KEYCLOAK_ISSUER_URL}"
 export QUARKUS_HTTP_PORT="${BACKEND_PORT:-8080}"
+# The mail catcher, ALWAYS, overriding whatever .env names - the same reason as
+# the two hosts above, with a sharper edge. .env describes PRODUCTION's relay
+# and it is a real mailbox: left alone, every booking made while trying
+# something out on this machine sends a real message to a real address from the
+# business's own account, and every Keycloak verification mail does too. `:-`
+# would not do, because a value read from .env is a value that is set.
+#
+# Exported BEFORE `docker compose up`, because that is what Keycloak's container
+# reads and the shell wins over .env there. `mailpit` is its name on the compose
+# network; the worker is a jar on the host and gets `localhost` at its own
+# launch, which is the one place the two differ.
+#
+# To exercise a real relay, override it for that one run:
+#   KEYCLOAK_SMTP_HOST=smtp.gmail.com scripts/dev.sh
+export KEYCLOAK_SMTP_HOST=mailpit
+export KEYCLOAK_SMTP_PORT=1025
+export KEYCLOAK_SMTP_USER=
+export KEYCLOAK_SMTP_PASSWORD=
+export KEYCLOAK_SMTP_STARTTLS=false
+
 # The production default is /var/lib/balaaca/media, where a developer cannot
 # write. Without this line, the first logo upload answers 500 saying nothing.
 export BALAACA_MEDIA_ROOT="${BALAACA_MEDIA_ROOT_LOCAL:-$ROOT/.dev-media}"
@@ -44,8 +64,8 @@ mkdir -p "$BALAACA_MEDIA_ROOT"
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 
 # --- 1. The infrastructure --------------------------------------------------
-say "1/4  PostgreSQL, Keycloak and Redis"
-docker compose up -d postgres keycloak redis
+say "1/5  PostgreSQL, Keycloak, Redis and the mail catcher"
+docker compose up -d postgres keycloak redis mailpit
 
 printf '     keycloak '
 for _ in $(seq 1 60); do
@@ -86,13 +106,13 @@ sources_newer_than() {
 # longer contained it. Flyway then refused every subsequent start, against a
 # history row nothing could explain.
 if [ ! -f "$JAR" ]; then
-    say "2/4  The API is not built yet, building it"
+    say "2/5  The API is not built yet, building it"
     (cd backend && mvn -q -pl app -am -DskipTests -Djacoco.skip=true clean package)
 elif [ -n "$(sources_newer_than "$JAR")" ]; then
-    say "2/4  The API changed since it was built, rebuilding it"
+    say "2/5  The API changed since it was built, rebuilding it"
     (cd backend && mvn -q -pl app -am -DskipTests -Djacoco.skip=true clean package)
 else
-    say "2/4  The API"
+    say "2/5  The API"
 fi
 
 # When this script last started an API. A marker file rather than the process
@@ -105,12 +125,12 @@ STARTED="$LOGS/.api-started"
 # already happening. It is restarted three lines down whatever we say, so all
 # this has to do is NAME it - the person who rebuilt by hand and did not restart
 # has no other way to learn that what answered them was not their code.
-if pgrep -f quarkus-run.jar >/dev/null 2>&1 \
+if pgrep -f "$JAR" >/dev/null 2>&1 \
    && [ -f "$STARTED" ] && [ "$JAR" -nt "$STARTED" ]; then
     echo "     the API that is running predates this jar - restarting it" >&2
 fi
 
-pkill -f quarkus-run.jar 2>/dev/null || true
+pkill -f "$JAR" 2>/dev/null || true
 nohup java -jar "$JAR" > "$LOGS/api.log" 2>&1 &
 touch "$STARTED"
 
@@ -160,8 +180,76 @@ PY
     exit 1
 fi
 
-# --- 3. The front -----------------------------------------------------------
-say "3/4  The front"
+# --- 3. The notification worker ---------------------------------------------
+# The outbox is a table and nothing in the API drains it. Without this step a
+# booking writes its confirmation row and there the row stays: the flow looks
+# like it worked, nothing is ever sent, and the only way to find out is to read
+# the table. That was the state of every local run until now - "la confirmation
+# par e-mail ne part toujours pas", and it never could.
+#
+# Its own reactor, so `cd backend && mvn verify` says nothing about it.
+say "3/5  The notification worker"
+WORKER_JAR="$ROOT/notification-worker/target/quarkus-app/quarkus-run.jar"
+
+worker_sources_newer() {
+    find notification-worker \
+        -path '*/target' -prune -o \
+        -type f \( -name '*.java' -o -name '*.properties' \) -newer "$1" -print -quit
+}
+
+if [ ! -f "$WORKER_JAR" ] || [ -n "$(worker_sources_newer "$WORKER_JAR")" ]; then
+    echo "     building it"
+    (cd notification-worker && mvn -q -DskipTests -Djacoco.skip=true clean package)
+fi
+
+# smtp first, console behind it. WhatsApp is deliberately absent: named with no
+# credentials behind it, the adapter claims every row and walks the backlog to
+# DEAD, which is worse than logging them. So a customer who chose e-mail gets a
+# real message into mailpit, and one who chose WhatsApp gets a line in the log
+# that says what would have gone out.
+export BALAACA_NOTIFICATION_CHANNEL="${BALAACA_NOTIFICATION_CHANNEL:-smtp,console}"
+
+
+WORKER_PORT="${NOTIFICATION_WORKER_PORT:-8090}"
+
+pkill -f "$WORKER_JAR" 2>/dev/null || true
+# QUARKUS_HTTP_PORT is exported above FOR THE API, and every Quarkus process
+# started from this shell reads it. Unset here rather than exported at the
+# worker's value, because the worker's own properties already name
+# NOTIFICATION_WORKER_PORT and two variables saying where it listens is one of
+# them being wrong later. Without this the worker died on "Port 8080 seems to
+# be in use" and the loop below said "ready" anyway.
+# KEYCLOAK_SMTP_HOST is `mailpit` for the containers and has to be `localhost`
+# for this one, which is a jar outside that network reaching the port compose
+# publishes. One variable, two right answers, and this is the seam.
+env -u QUARKUS_HTTP_PORT \
+    NOTIFICATION_WORKER_PORT="$WORKER_PORT" \
+    KEYCLOAK_SMTP_HOST=localhost \
+    KEYCLOAK_SMTP_PORT="${MAILPIT_SMTP_PORT:-1025}" \
+    nohup java -jar "$WORKER_JAR" > "$LOGS/worker.log" 2>&1 &
+
+printf '     worker '
+worker_ready=no
+for _ in $(seq 1 30); do
+    code=$(curl -s -o /dev/null -w '%{http_code}' \
+        "http://localhost:$WORKER_PORT/q/health/ready" || true)
+    if [ "$code" = 200 ]; then worker_ready=yes; break; fi
+    printf '.'; sleep 2
+done
+if [ "$worker_ready" = yes ]; then
+    echo " ready"
+else
+    # Named, not swallowed. A worker that is down looks exactly like a worker
+    # with nothing to do - both send nothing - so the only moment this can be
+    # noticed is here.
+    echo " NOT RUNNING"
+    echo "     Nothing will be sent. The last error it logged:" >&2
+    grep -o '"message":"[^"]*"' "$LOGS/worker.log" | tail -3 >&2
+    echo "     The whole log is in $LOGS/worker.log" >&2
+fi
+
+# --- 4. The front -----------------------------------------------------------
+say "4/5  The front"
 if [ ! -d frontend/node_modules ]; then
     (cd frontend && npm ci)
 fi
@@ -178,15 +266,16 @@ for _ in $(seq 1 40); do
 done
 echo " ready"
 
-say "4/4  Everything is up"
+say "5/5  Everything is up"
 cat <<EOF
      The site       http://localhost:3000
      A page         http://localhost:3000/p/salon-fatou
      The diary      http://localhost:3000/dashboard
      The API        http://localhost:$QUARKUS_HTTP_PORT/q/health/ready
      Keycloak       ${KEYCLOAK_ISSUER_URL%/realms/*}
+     The mail       http://localhost:${MAILPIT_WEB_PORT:-8025}
 
-     The logs       $LOGS/api.log  and  $LOGS/front.log
+     The logs       $LOGS/api.log, $LOGS/worker.log and $LOGS/front.log
      To stop        scripts/dev-stop.sh
      Some data      scripts/seed.sh
 EOF
