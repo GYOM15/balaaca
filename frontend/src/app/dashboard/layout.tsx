@@ -122,7 +122,7 @@ const GROUPS: Group[] = [
       {
         href: "/dashboard/reglages",
         icon: "sliders",
-        label: "Règles de réservation",
+        label: "Prise de rendez-vous",
         ownerOnly: true,
       },
       { href: "/dashboard/compte", icon: "user", label: "Mon compte" },

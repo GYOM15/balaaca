@@ -39,7 +39,7 @@ export default async function BookingRules() {
             <Icon name="menu" />
           </a>
           <div>
-            <h1 className="appbar__title">Règles de réservation</h1>
+            <h1 className="appbar__title">Prise de rendez-vous</h1>
             <div className="appbar__sub">Comment vos clients peuvent réserver</div>
           </div>
           <div className="appbar__actions">
@@ -164,8 +164,10 @@ export default async function BookingRules() {
                     <span className="input-group__suffix">minutes à l’avance</span>
                   </div>
                   <p className="field__hint">
-                    Le temps qu’il vous faut pour vous préparer. Zéro&nbsp;: on
-                    peut réserver le créneau qui suit.
+                    <Icon name="info" size={16} /> Sur 120, il est 9h00 et le
+                    premier horaire proposé est 11h00. Deux heures laissent le
+                    temps de se préparer, une journée entière écarte les clients
+                    pressés. Zéro&nbsp;: l’horaire qui suit est réservable.
                   </p>
                 </div>
               </div>
