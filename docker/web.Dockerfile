@@ -41,6 +41,25 @@ RUN npm run build
 
 # --- Run ---------------------------------------------------------------------
 FROM node:22-alpine
+
+# What commit this image was built from, in the one place that travels WITH the
+# image. It replaces a /q/build-info endpoint that existed to answer exactly
+# this and could not: it returned the Maven version, `0.1.0-SNAPSHOT`, identical
+# on every build ever made, while its own comment said it confirmed which build
+# was running. The first time somebody actually needed the answer, it had none.
+#
+# A label rather than the endpoint coming back with a real value, and the repo
+# is why: it is public, so publishing which commit is deployed tells anybody
+# which known issues are not fixed here. On the image it is read by whoever has
+# a shell on the host, which is whoever is asking:
+#
+#   docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' <image>
+#
+# Unset it is "unknown", never a wrong answer: publish-images.sh passes the sha
+# it is publishing under, and a hand-rolled `docker build` says so honestly.
+ARG BALAACA_REVISION=unknown
+LABEL org.opencontainers.image.revision=$BALAACA_REVISION \
+      org.opencontainers.image.source=https://github.com/GYOM15/balaaca
 WORKDIR /app
 
 ENV NODE_ENV=production

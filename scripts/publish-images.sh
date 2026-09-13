@@ -126,7 +126,15 @@ for image in $BALAACA_IMAGES; do
         echo "       would: docker build --platform $PLATFORM -f docker/$image.Dockerfile ..."
         continue
     fi
+    # The sha travels INTO the image as a label, not just onto it as a tag. A
+    # tag can be moved, and `latest` is moved on every publish - so an image
+    # pulled from here and later asked what it is has only the label to answer
+    # with. Read it back with:
+    #
+    #   docker inspect --format \
+    #     '{{index .Config.Labels "org.opencontainers.image.revision"}}' <image>
     if ! docker build --platform "$PLATFORM" \
+            --build-arg "BALAACA_REVISION=$TAG" \
             -f "docker/$image.Dockerfile" \
             -t "$BALAACA_REGISTRY/balaaca-$image:$TAG" \
             -t "$BALAACA_REGISTRY/balaaca-$image:latest" \
