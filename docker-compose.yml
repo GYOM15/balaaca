@@ -81,6 +81,12 @@ services:
       MP_SMTP_AUTH_ALLOW_INSECURE: "true"
     ports:
       - "127.0.0.1:${MAILPIT_WEB_PORT:-8025}:8025"
+      # SMTP, published for the ONE thing that is not on this network: the
+      # notification worker, which scripts/dev.sh runs as a jar on the host.
+      # Inside compose the worker reaches it as `mailpit` and needs nothing
+      # here; on the host its default is localhost:1025 and without this line
+      # every confirmation fails to send with "connection refused".
+      - "127.0.0.1:${MAILPIT_SMTP_PORT:-1025}:1025"
     healthcheck:
       test: ["CMD", "/mailpit", "readyz"]
       interval: 5s

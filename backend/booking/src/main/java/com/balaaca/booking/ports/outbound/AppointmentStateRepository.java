@@ -73,11 +73,16 @@ public interface AppointmentStateRepository {
      *
      * @param from  the states the move is legal from; the UPDATE carries them,
      *              so two racing callers produce one affected row and one zero
-     * @return the appointment as it now stands, or empty when no row was in one
-     *         of those states
+     * @param onlyOnceStarted whether the row must already have begun. Carried
+     *              in the same WHERE as the states, and for the same reason: a
+     *              clock read in Java and compared there is a decision taken
+     *              against a row nothing is holding
+     * @return the appointment as it now stands, or empty when no row met all of
+     *         that
      */
     Optional<AgendaEntry> transition(AppointmentId id, Set<AppointmentStatus> from,
-                                     AppointmentStatus to, Instant at);
+                                     AppointmentStatus to, Instant at,
+                                     boolean onlyOnceStarted);
 
     /**
      * Records that a dropped-off job is ready.

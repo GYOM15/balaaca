@@ -215,6 +215,23 @@ by one.
   index, which the `ILIKE` then reads. `translate` and `lower` are IMMUTABLE,
   `unaccent()` is not and therefore does not index directly. Budget half a day.
   Found by running the stack.
+- **A provider can be their own customer, and code cannot stop them.** Booking
+  from the public page needs no account and no verified telephone number, which
+  is the product working as intended: a customer in Conakry has neither. So a
+  provider can take a slot on their own page under any name and leave a review
+  on it afterwards. What that costs them is now real rather than nothing:
+  a review needs `ends_at <= now()` (V050, unchanged), so the slot has to be
+  a genuine slot that has genuinely passed, and `COMPLETED` is refused before
+  the appointment begins, so the diary cannot be closed out in advance.
+
+  **What is deliberately NOT built**: any detection of it. The one signal
+  available - the customer's number equalling the provider's published one -
+  is defeated by a second SIM and refuses a salon owner booking for their own
+  mother, and there is no second signal, because the public route sees no token
+  even when the browser is signed in. This product's answer to a bad-faith
+  provider is the one already decided: no vetting at the door, the sanction
+  before launch, the back-office after a report. A review can already be taken
+  down. Revisit if and when reports say it is actually happening.
 - **`chatbot-service`**: out of scope. It will be a completely detached Python
   service, and not now.
 

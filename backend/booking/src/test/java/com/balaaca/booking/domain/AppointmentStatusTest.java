@@ -60,4 +60,25 @@ class AppointmentStatusTest {
         assertThat(AppointmentStatus.PENDING.isTerminal()).isFalse();
         assertThat(AppointmentStatus.CONFIRMED.isTerminal()).isFalse();
     }
+
+    @ParameterizedTest
+    @EnumSource(AppointmentStatus.class)
+    @DisplayName("Only completed and absent claim a visit that already happened")
+    void namesTheTwoThatLookBackwards(AppointmentStatus status) {
+        boolean backwards = status == AppointmentStatus.COMPLETED
+                || status == AppointmentStatus.NO_SHOW;
+
+        // What hangs on this: those two, and only those two, are refused by the
+        // UPDATE until the appointment has begun. Adding a third state here
+        // without meaning to would quietly put a date gate on it.
+        assertThat(status.meansItAlreadyHappened()).as("%s", status).isEqualTo(backwards);
+    }
+
+    @Test
+    @DisplayName("Cancelling is not a claim about the visit, so no date gates it")
+    void cancellingIsNotBackwardsLooking() {
+        // A customer cancelling on Monday for Thursday is the ordinary case, and
+        // a date gate on this state would be a cancellation nobody could make.
+        assertThat(AppointmentStatus.CANCELLED.meansItAlreadyHappened()).isFalse();
+    }
 }
