@@ -48,13 +48,24 @@ export QUARKUS_HTTP_PORT="${BACKEND_PORT:-8080}"
 # network; the worker is a jar on the host and gets `localhost` at its own
 # launch, which is the one place the two differ.
 #
-# To exercise a real relay, override it for that one run:
-#   KEYCLOAK_SMTP_HOST=smtp.gmail.com scripts/dev.sh
-export KEYCLOAK_SMTP_HOST=mailpit
-export KEYCLOAK_SMTP_PORT=1025
-export KEYCLOAK_SMTP_USER=
-export KEYCLOAK_SMTP_PASSWORD=
-export KEYCLOAK_SMTP_STARTTLS=false
+# To exercise a real relay, name it and the overrides step aside:
+#   BALAACA_DEV_REAL_RELAY=1 scripts/dev.sh
+#
+# A plain `KEYCLOAK_SMTP_HOST=smtp.gmail.com scripts/dev.sh` cannot work and
+# used to be documented here as if it could: `export` below overwrites whatever
+# the caller set, which is the entire point of these lines. A second variable is
+# the honest way to say "I mean it", and it has to be a deliberate word rather
+# than a value that could be inherited from a shell somebody forgot about.
+if [ -z "${BALAACA_DEV_REAL_RELAY:-}" ]; then
+    export KEYCLOAK_SMTP_HOST=mailpit
+    export KEYCLOAK_SMTP_PORT=1025
+    export KEYCLOAK_SMTP_USER=
+    export KEYCLOAK_SMTP_PASSWORD=
+    export KEYCLOAK_SMTP_STARTTLS=false
+else
+    echo "BALAACA_DEV_REAL_RELAY is set: mail goes to ${KEYCLOAK_SMTP_HOST:-?}," >&2
+    echo "    for real, from ${KEYCLOAK_SMTP_FROM:-?}. Ctrl-C now if that is not what you meant." >&2
+fi
 
 # The production default is /var/lib/balaaca/media, where a developer cannot
 # write. Without this line, the first logo upload answers 500 saying nothing.
@@ -65,7 +76,11 @@ say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 
 # --- 1. The infrastructure --------------------------------------------------
 say "1/5  PostgreSQL, Keycloak, Redis and the mail catcher"
-docker compose up -d postgres keycloak redis mailpit
+# --profile dev, because the catcher is declared behind one so that it cannot
+# exist in production. Without the flag compose silently skips it, Keycloak
+# comes up with a relay nobody is listening on, and the first confirmation
+# fails with "connection refused".
+docker compose --profile dev up -d postgres keycloak redis mailpit
 
 printf '     keycloak '
 for _ in $(seq 1 60); do
@@ -221,11 +236,20 @@ pkill -f "$WORKER_JAR" 2>/dev/null || true
 # be in use" and the loop below said "ready" anyway.
 # KEYCLOAK_SMTP_HOST is `mailpit` for the containers and has to be `localhost`
 # for this one, which is a jar outside that network reaching the port compose
-# publishes. One variable, two right answers, and this is the seam.
+# publishes. One variable, two right answers, and this is the seam - unless the
+# caller asked for a real relay, which is reached the same way from either side.
+if [ -z "${BALAACA_DEV_REAL_RELAY:-}" ]; then
+    WORKER_SMTP_HOST=localhost
+    WORKER_SMTP_PORT="${MAILPIT_SMTP_PORT:-1025}"
+else
+    WORKER_SMTP_HOST="$KEYCLOAK_SMTP_HOST"
+    WORKER_SMTP_PORT="$KEYCLOAK_SMTP_PORT"
+fi
+
 env -u QUARKUS_HTTP_PORT \
     NOTIFICATION_WORKER_PORT="$WORKER_PORT" \
-    KEYCLOAK_SMTP_HOST=localhost \
-    KEYCLOAK_SMTP_PORT="${MAILPIT_SMTP_PORT:-1025}" \
+    KEYCLOAK_SMTP_HOST="$WORKER_SMTP_HOST" \
+    KEYCLOAK_SMTP_PORT="$WORKER_SMTP_PORT" \
     nohup java -jar "$WORKER_JAR" > "$LOGS/worker.log" 2>&1 &
 
 printf '     worker '

@@ -79,6 +79,32 @@ type Entry = {
 
 type Group = { title: string; entries: Entry[] };
 
+/** Where the outward link is anchored, so the two stay side by side. */
+const PREVIEW = "/dashboard/preview";
+
+/**
+ * The link out to the page a customer reads, beside the preview of it.
+ *
+ * <p>It used to sit in the sidebar's foot, below every group and immediately
+ * above Déconnexion, in identical styling. Two problems, and the second is
+ * worse than the first: a provider looking for their own page did not find it,
+ * and the row they were aiming for shared an edge with the one that ends their
+ * session.
+ *
+ * <p>Beside "Aperçu" because they are one errand - look at my page - and being
+ * two rows apart is what made three separate entrances to it read as three
+ * different things.
+ *
+ * <p>Only while the page exists. `/p/{slug}` resolves through a published-only
+ * lookup, so this on an unpublished business is a link to a 404 - which is what
+ * it was, on every screen, from signup until publication.
+ */
+function livePage(provider: { published: boolean; slug: string }): Entry[] {
+  return provider.published
+      ? [{ href: `/p/${provider.slug}`, icon: "external", label: "Voir ma page publique" }]
+      : [];
+}
+
 /**
  * Every room behind the sign-in, grouped and in the order a provider needs it.
  *
@@ -237,7 +263,9 @@ export default async function DashboardLayout({
   // on the server; this only stops the refusal being the first they hear of it.
   const rooms = GROUPS.map((group) => ({
     title: group.title,
-    entries: group.entries.filter((entry) => !entry.ownerOnly || owner),
+    entries: group.entries
+        .filter((entry) => !entry.ownerOnly || owner)
+        .flatMap((entry) => (entry.href === PREVIEW ? [entry, ...livePage(provider)] : [entry])),
   })).filter((group) => group.entries.length > 0);
 
   const appeal = APPEAL.ownerOnly && !owner ? [] : [APPEAL];
@@ -247,7 +275,16 @@ export default async function DashboardLayout({
     ...(!suspended && appeal.length > 0 ? [{ title: "Plateforme", entries: appeal }] : []),
   ];
 
-  const bottom = navigation.flatMap((group) => group.entries).slice(0, BOTTOM_SLOTS);
+  // Rooms only. The bar is the navigation of the application on a telephone,
+  // and a link that LEAVES it is not one of its rooms: carried here it would
+  // occupy a slot and answer by unloading the dashboard. It also stops the
+  // slots depending on where in the list an outward link happens to sit -
+  // which for an employee, whose owner-only rows are already filtered out,
+  // silently pushed Avis off the bar.
+  const bottom = navigation
+      .flatMap((group) => group.entries)
+      .filter((entry) => entry.href.startsWith("/dashboard"))
+      .slice(0, BOTTOM_SLOTS);
 
   return (
     <>
@@ -294,17 +331,6 @@ export default async function DashboardLayout({
           ))}
 
           <div className="side__foot">
-            {/* Only while the page exists. `/p/{slug}` resolves through a
-                published-only lookup, so this link on an unpublished business
-                was a link to a 404 - shown to every provider on every screen,
-                from the day they signed up until the day they published. The
-                badge above already says which of the two states they are in. */}
-            {provider.published ? (
-              <Link className="side__link" href={`/p/${provider.slug}`}>
-                <Icon name="external" size={18} />
-                <span className="grow">Voir ma page publique</span>
-              </Link>
-            ) : null}
             {/* Styled as a nav row rather than as a button: it sits on the dark
                 green, where a light-surface button would be the only thing on
                 the panel that does not belong to it. POST, because a sign-out
@@ -357,21 +383,14 @@ export default async function DashboardLayout({
                   </div>
                 ))}
 
+                {/* No heading of its own any more. It was titled "Ma page
+                    publique" and held that link plus the sign-out, which is how
+                    the two ended up adjacent here as well. The link is in the
+                    list above now, beside Aperçu, and what is left is the one
+                    thing that belongs at the end. */}
                 <div>
-                  <div className="t-overline" style={{ marginBottom: "var(--s-3)" }}>
-                    Ma page publique
-                  </div>
                   <div className="panel">
                     <div className="list" style={{ borderTop: 0 }}>
-                      {provider.published ? (
-                        <Link className="list__item list__item--link" href={`/p/${provider.slug}`}>
-                          <span className="choice__icon" style={{ width: 34, height: 34 }}>
-                            <Icon name="external" size={18} />
-                          </span>
-                          <span className="grow t-sm t-strong">Voir ma page</span>
-                          <Icon name="chevron-right" size={18} />
-                        </Link>
-                      ) : null}
                       <form method="post" action="/api/auth/logout">
                         <button
                           type="submit"
