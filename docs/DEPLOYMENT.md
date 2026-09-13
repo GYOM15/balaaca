@@ -190,12 +190,26 @@ dropped in pairs, because a dump whose media is gone restores broken images.
 
 ## Which build is running
 
-The commit is a LABEL on each image, put there by `publish-images.sh`:
+The commit is a LABEL on each image, put there by `publish-images.sh`. Ask the
+RUNNING CONTAINERS, not a tag:
 
 ```
-docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' \
-    ghcr.io/gyom15/balaaca-api:latest
+for s in api worker web; do
+    printf '%-7s %s\n' "$s" "$(docker inspect --format \
+        '{{index .Config.Labels "org.opencontainers.image.revision"}}' \
+        "$($COMPOSE ps -q $s)")"
+done
 ```
+
+Not `ghcr.io/gyom15/balaaca-<x>:latest`, which is the obvious thing to type and
+answers nothing here: `deploy.sh` pulls each image by the sha tag this checkout
+computes, so `latest` on a deployment is whatever happened to be pulled under
+that name some other day, or nothing at all - and `docker inspect` on an image
+that is not there prints a blank line to stdout with its complaint on stderr,
+which reads exactly like a label that is missing.
+
+A container carries its image's labels, so this says what is actually serving
+requests rather than what a tag currently points at.
 
 `unknown` means somebody built it by hand without `--build-arg BALAACA_REVISION`.
 That is honest; a wrong answer would not be.
