@@ -86,15 +86,52 @@ So the grant is a **realm role on one named account**. `init-realm.sh` creates
 `platform-admin` and assigns it to no one; `PlatformOperatorAugmentor` turns it
 into the scope the routes check.
 
-To grant it, on the machine running Keycloak:
+To grant it, from the checkout on the machine running Keycloak. Both lines
+carry `--env-file` and both compose files, exactly as `deploy.sh` does: a bare
+`docker compose` reads `.env`, which does not exist on a deployment, and every
+variable resolves to the empty string. It still finds the container by name, so
+it half works and then fails somewhere unrelated.
 
 ```
-docker compose exec keycloak /opt/keycloak/bin/kcadm.sh config credentials \
+COMPOSE="docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.prod.yml"
+
+$COMPOSE exec keycloak sh -c '/opt/keycloak/bin/kcadm.sh config credentials \
     --server http://localhost:8080 --realm master \
-    --user "$KEYCLOAK_ADMIN" --password "$KEYCLOAK_ADMIN_PASSWORD"
-docker compose exec keycloak /opt/keycloak/bin/kcadm.sh add-roles \
+    --user "$KEYCLOAK_ADMIN" --password "$KEYCLOAK_ADMIN_PASSWORD"'
+
+$COMPOSE exec keycloak /opt/keycloak/bin/kcadm.sh add-roles \
     -r balaaca --uusername somebody@example.com --rolename platform-admin
 ```
+
+**The single quotes on the first line are load bearing.** They stop the host's
+shell expanding those two names, so the container's own shell does it - and the
+container has them, from compose. Double quotes would expand them on the host,
+where they are unset, and Keycloak would be handed an empty user and an empty
+password. Nothing secret reaches the shell history either way.
+
+`config credentials` must come first and is a separate command: it writes a
+session inside the running container, which the second line then uses. Skipping
+it answers `Session has expired. Login again with 'kcadm.sh config
+credentials'`, which reads like the session lapsed rather than never existed.
+
+### `Role not found for name: platform-admin`
+
+The role has to exist before it can be granted, and it arrives by a different
+road from the code that reads it. Two halves, and BOTH are needed before
+`/admin` opens:
+
+- **The role** is created by `init-realm.sh`, which is this container's
+  entrypoint and is BIND MOUNTED from the checkout. So it appears after a
+  `git pull` and a restart of that container, with no image involved:
+  `$COMPOSE restart keycloak`.
+- **The translation** from that realm role to the `admin:moderation` the routes
+  check lives in `PlatformOperatorAugmentor`, inside the API image. That one
+  needs `scripts/publish-images.sh` on the build machine and `scripts/deploy.sh`
+  here.
+
+Grant the role against an API that predates the augmentor and the token will
+carry `platform-admin` faithfully while every admin route still answers 403 -
+which looks like the grant failed, and it did not. Deploy first, then grant.
 
 `remove-roles`, same arguments, takes it away. The account must exist first: a
 support person signs up like anybody else and simply creates no business, and
@@ -106,10 +143,13 @@ read, a review hidden or restored, a business's reply cleared. There is no
 screen for it yet; read it with `psql` until there is more than one operator:
 
 ```
-docker compose exec postgres psql -U postgres -d balaaca -c \
+$COMPOSE exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
   "SELECT occurred_at, action, entity_id, metadata FROM audit_logs \
-    WHERE actor_role = 'OPERATOR' ORDER BY occurred_at DESC LIMIT 50"
+    WHERE actor_role = '"'"'OPERATOR'"'"' ORDER BY occurred_at DESC LIMIT 50"'
 ```
+
+Same `$COMPOSE` as above, and the same reason for the single quotes: the
+database name and the superuser are the container's, not the host's.
 
 `actor_ip` stays NULL, deliberately, and will until there is somebody other than
 you clicking.
