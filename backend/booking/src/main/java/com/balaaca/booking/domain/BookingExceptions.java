@@ -80,6 +80,24 @@ public final class BookingExceptions {
         }
     }
 
+    /**
+     * Closing out an appointment that has not begun.
+     *
+     * <p>{@code INVALID_STATE_TRANSITION} rather than a code of its own, for
+     * the reason the catalogue's own description gives: a published code needs
+     * a client that branches on it, and every client that meets this one has
+     * the same single thing to do - print the sentence and leave the row
+     * alone. The MESSAGE is what separates it from a transition refused for
+     * what the row is rather than for when it is.
+     */
+    public static final class AppointmentNotStartedException extends DomainException {
+        public AppointmentNotStartedException(AppointmentStatus to, Instant startsAt) {
+            super("INVALID_STATE_TRANSITION", 409,
+                  "That appointment has not started yet",
+                  Map.of("to", to.name(), "starts_at", startsAt.toString()));
+        }
+    }
+
     /** Same idempotency key, different request body. */
     public static final class IdempotencyKeyReusedException extends DomainException {
         public IdempotencyKeyReusedException(String key) {

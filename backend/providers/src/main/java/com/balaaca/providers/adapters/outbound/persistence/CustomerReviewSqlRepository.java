@@ -2,6 +2,7 @@ package com.balaaca.providers.adapters.outbound.persistence;
 
 import com.balaaca.providers.domain.ReviewNotYetPossibleException;
 import com.balaaca.providers.domain.ReviewTakenDownException;
+import com.balaaca.providers.domain.SelfReviewException;
 import com.balaaca.providers.domain.UnknownBookingReferenceException;
 import com.balaaca.providers.ports.inbound.CustomerReviewUseCase.OwnReview;
 import com.balaaca.providers.ports.inbound.CustomerReviewUseCase.Photo;
@@ -42,6 +43,7 @@ public class CustomerReviewSqlRepository implements CustomerReviewRepository {
     private static final String NO_SUCH_BOOKING = "Z0005";
     private static final String NOT_YET = "Z0011";
     private static final String TAKEN_DOWN = "Z0012";
+    private static final String THE_BUSINESS_ITSELF = "Z0013";
 
     private final EntityManager em;
 
@@ -161,6 +163,9 @@ public class CustomerReviewSqlRepository implements CustomerReviewRepository {
             }
             if (TAKEN_DOWN.equals(state)) {
                 throw new ReviewTakenDownException();
+            }
+            if (THE_BUSINESS_ITSELF.equals(state)) {
+                throw new SelfReviewException();
             }
             throw e;
         }

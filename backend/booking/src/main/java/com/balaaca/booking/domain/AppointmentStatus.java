@@ -45,4 +45,19 @@ public enum AppointmentStatus {
     public boolean isTerminal() {
         return LEGAL.get(this).isEmpty();
     }
+
+    /**
+     * Whether reaching this state is a claim about an appointment that has
+     * already happened.
+     *
+     * <p>Both of them are: "terminé" says the work was done and "absent" says
+     * the customer did not come to it. Neither can be true of a Thursday while
+     * it is Monday, and nothing stopped a provider saying so - the button sat
+     * on every confirmed row whatever its date, so a diary could be closed out
+     * a week in advance and the month's takings counted from work nobody had
+     * started. It is not the enforcement: the UPDATE that carries this is.
+     */
+    public boolean meansItAlreadyHappened() {
+        return this == COMPLETED || this == NO_SHOW;
+    }
 }

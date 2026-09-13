@@ -93,6 +93,13 @@ class ReviewIT {
                 """.formatted(reference));
     }
 
+    /** The number the salon publishes, as its own public page shows it. */
+    private void publishes(String phone) {
+        fixtures.execute(
+                "UPDATE providers SET public_phone_e164 = '%s' WHERE slug = 'salon-fatou'"
+                        .formatted(phone));
+    }
+
     private static byte[] photo() {
         BufferedImage image = new BufferedImage(400, 300, BufferedImage.TYPE_INT_RGB);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -112,6 +119,71 @@ class ReviewIT {
     private static io.restassured.response.ValidatableResponse illustrate(String reference) {
         return given().contentType("image/jpeg").body(photo())
                 .when().post("/v1/bookings/" + reference + "/review/photos").then();
+    }
+
+    // ---------------------------------------------------------------------
+    // What the business cannot say about itself
+    // ---------------------------------------------------------------------
+
+    @Test
+    @DisplayName("A salon cannot review itself from the number it publishes")
+    void theBusinessIsNotItsOwnCustomer() {
+        publishes("+224622999002");
+        String reference = aBooking("622999002");
+        served(reference);
+
+        review(reference, "{\"rating\":5,\"comment\":\"Le meilleur de Conakry.\"}")
+                .statusCode(403).body("code", equalTo("FORBIDDEN"));
+    }
+
+    @Test
+    @DisplayName("Nor from the WhatsApp number, which is the likelier handset")
+    void norFromTheWhatsAppNumber() {
+        // The fixture publishes this one on salon-fatou from the start, and in
+        // this market it is the number actually in the owner's hand. Comparing
+        // public_phone_e164 alone would have left it a free pass.
+        String reference = aBooking("622999001");
+        served(reference);
+
+        review(reference, "{\"rating\":5}").statusCode(403);
+    }
+
+    @Test
+    @DisplayName("The refusal survives row-level security, which could have swallowed it")
+    void theCheckCanActuallySeeTheCustomer() {
+        // The assertion the whole rule rests on. The comparison happens inside
+        // a SECURITY DEFINER function owned by balaaca_moderator, and
+        // `customers` carries FORCED row-level security whose only policy for
+        // that role is the tenant one. If the join could not see the row, the
+        // customer's number would read NULL, the predicate would be false, and
+        // the refusal would never fire - silently, with every happy-path test
+        // still green.
+        //
+        // So: two bookings one digit apart. One is refused and one is not,
+        // which is only possible if the function actually read the number.
+        publishes("+224622999003");
+        String mine = aBooking("622999003");
+        // Served BEFORE the second is booked, not after. aBooking always takes
+        // the same slot, and the exclusion constraint is right to refuse the
+        // second one while the first still holds it.
+        served(mine);
+        String theirs = aBooking("622999004");
+        served(theirs);
+
+        review(mine, "{\"rating\":5}").statusCode(403);
+        review(theirs, "{\"rating\":5}").statusCode(200).body("rating", equalTo(5));
+    }
+
+    @Test
+    @DisplayName("Booking with that number is still allowed, only reviewing is not")
+    void bookingYourOwnServiceIsFine() {
+        publishes("+224622999005");
+
+        // No assertion beyond the 201 aBooking already makes. An owner books
+        // for their mother, and the person who built this books on his own page
+        // to check the flow works: refusing here would have broken the one
+        // person who exercises it most.
+        aBooking("622999005");
     }
 
     // ---------------------------------------------------------------------

@@ -83,8 +83,18 @@ services:
       BALAACA_DB_WORKER_PASSWORD: ${BALAACA_DB_WORKER_PASSWORD}
       # The SAME relay Keycloak uses, from the SAME variables. One SMTP
       # account, one sending reputation, one place to change when Gmail stops
-      # being enough. Unset, they land on mailpit.
-      KEYCLOAK_SMTP_HOST: ${KEYCLOAK_SMTP_HOST:-mailpit}
+      # being enough.
+      #
+      # `:?` and not `:-`. The default here was the literal host `mailpit`, and
+      # the base file's catcher ran on the Pi alongside everything else because
+      # this file is an overlay on it. So a relay missing from .env.prod did
+      # not fail: every confirmation and every reminder went into the catcher,
+      # was marked SENT, and reached nobody - the worst way a notification
+      # system can break, because it reports success. Unset now, compose
+      # refuses to read this file and deploy.sh stops before it starts
+      # anything. One occurrence is enough to stop the whole deployment, and
+      # this is the service the silence would have hurt most.
+      KEYCLOAK_SMTP_HOST: ${KEYCLOAK_SMTP_HOST:?name the SMTP relay in .env.prod - unset, mail is silently swallowed}
       KEYCLOAK_SMTP_PORT: ${KEYCLOAK_SMTP_PORT:-1025}
       KEYCLOAK_SMTP_FROM: ${KEYCLOAK_SMTP_FROM:-bonjour@balaaca.local}
       KEYCLOAK_SMTP_FROM_DISPLAY: ${KEYCLOAK_SMTP_FROM_DISPLAY:-Balaaca}
