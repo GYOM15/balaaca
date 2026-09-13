@@ -348,13 +348,28 @@ export default async function DashboardLayout({
           <NextStep readiness={readiness} owner={me.role === "OWNER"} />
           {children}
 
-          {/* The bar's last slot lands here. The design gives this list its own
-              route; a sheet would be the nicer gesture and would cost a script.
-              This is the same list, addressable, and it works on the first
-              paint. */}
+          {/* Where the bar's last slot and the appbar's hamburger both point.
+              Hidden until one of them is tapped - see #sections in globals.css.
+              It used to be laid out here unconditionally, which put the whole
+              navigation under the content of every single screen: you read your
+              services, then the entire menu stacked below them, then the tab
+              bar. A navigation that is part of every page is not a menu.
+
+              Still :target and not a script, so it opens on the first paint and
+              the back button closes it. */}
           <nav className="app__main has-tabbar hide-lg" id="sections" aria-label="Toutes les sections">
             <div className="app__inner">
               <div className="stack" style={{ "--stack-gap": "var(--s-6)" } as React.CSSProperties}>
+                {/* A way out that is not the back button. Tapping "Plus" again
+                    does nothing - the fragment is already the target - so
+                    without this the only exits are leaving the page or a
+                    gesture. `#` clears the fragment, which closes it. */}
+                <div className="row row--between">
+                  <span className="t-h3">Toutes les sections</span>
+                  <a className="btn btn--ghost btn--icon btn--sm" href="#" aria-label="Fermer le menu">
+                    <Icon name="x" size={18} />
+                  </a>
+                </div>
                 {navigation.map((group) => (
                   <div key={group.title}>
                     <div className="t-overline" style={{ marginBottom: "var(--s-3)" }}>
