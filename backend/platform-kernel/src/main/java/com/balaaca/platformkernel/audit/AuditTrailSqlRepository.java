@@ -74,8 +74,7 @@ public class AuditTrailSqlRepository implements AuditTrail {
                 """)
                 .setParameter("actorUserId",
                         membership.map(m -> m.userId().value()).orElse(null))
-                .setParameter("actorRole",
-                        membership.map(m -> m.role().name()).orElse(null))
+                .setParameter("actorRole", actorRole(membership))
                 .setParameter("providerId",
                         tenantContext.current().map(ProviderId::value).orElse(null))
                 .setParameter("action", event.action())
@@ -84,6 +83,25 @@ public class AuditTrailSqlRepository implements AuditTrail {
                 .setParameter("outcome", event.outcome().name())
                 .setParameter("metadata", json(withSubject(event.metadata())))
                 .executeUpdate();
+    }
+
+    /**
+     * The role behind the line.
+     *
+     * <p>A member's own role when there is a membership. OPERATOR when there is
+     * not and the caller holds the platform role: a suspension and a takedown
+     * used to be written with this column NULL, which read exactly like a line
+     * the trail could not attribute at all.
+     *
+     * <p>Still NULL for anyone else, and that stays true on purpose - a refusal
+     * recorded for a token belonging to nobody here has no role to name, and
+     * inventing one would put a claim in evidence.
+     */
+    private String actorRole(Optional<Membership> membership) {
+        if (membership.isPresent()) {
+            return membership.get().role().name();
+        }
+        return caller.isPlatformOperator() ? "OPERATOR" : null;
     }
 
     /**
