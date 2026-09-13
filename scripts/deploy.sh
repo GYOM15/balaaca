@@ -91,9 +91,36 @@ fi
 
 # --- 1. The code ------------------------------------------------------------
 say "1/5  The checkout"
+
+# The branch, and it is checked here because the other half of this rule already
+# is. publish-images.sh refuses to build from anything but main, so the Mac side
+# was guarded and this one was not - and a checkout that had drifted onto
+# develop deployed happily for weeks, because the two branches computed the same
+# image tag as long as main was only develop plus merge commits. The day they
+# diverge, this pulls a tag nobody published and the failure names the registry
+# instead of the branch.
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+if [ "$BRANCH" != main ]; then
+    echo "     On branch $BRANCH. Deployments run from main, which is what" >&2
+    echo "     publish-images.sh builds from - see docs/DEPLOYMENT.md." >&2
+    echo >&2
+    echo "         git checkout main && git pull --ff-only" >&2
+    exit 1
+fi
+
+# What the Keycloak container runs as its ENTRYPOINT, and a bind mount rather
+# than something baked into an image. So a pull can change it while the
+# container keeps running the version it started with - which is how a realm
+# role added to this file was missing from a deployment that had already pulled
+# it, with nothing anywhere saying why.
+REALM_SCRIPT=infrastructure/keycloak/init-realm.sh
+REALM_BEFORE=$(git hash-object "$REALM_SCRIPT" 2>/dev/null || echo none)
+
 # --ff-only: a merge commit created here would be a divergence nobody is ever
 # going to resolve on a Raspberry Pi over SSH.
 git pull --ff-only
+
+REALM_AFTER=$(git hash-object "$REALM_SCRIPT" 2>/dev/null || echo none)
 
 # --- 2. Which images ---------------------------------------------------------
 # The last commit that could have changed an image, which is not the same as the
@@ -150,7 +177,22 @@ echo " ready"
 
 # --- 4. Everything else ------------------------------------------------------
 say "4/5  The application"
-"${COMPOSE[@]}" up -d
+# --remove-orphans, so a service DELETED from the compose files stops running
+# here too. Without it compose leaves it alone and only warns, which is how a
+# mail catcher that had been moved behind a dev profile went on running in
+# production - a container nobody wanted, beside a relay it could have
+# swallowed every message into.
+"${COMPOSE[@]}" up -d --remove-orphans
+
+# Only when the file actually changed, and never on an ordinary deployment: the
+# restart drops every session Keycloak is holding, and paying that on every
+# deploy to cover the rare case would be the wrong trade. `up -d` above does NOT
+# cover it - the script is mounted, not baked, so the container's configuration
+# is unchanged and compose has no reason to recreate anything.
+if [ "$REALM_BEFORE" != "$REALM_AFTER" ]; then
+    echo "     $REALM_SCRIPT changed: restarting Keycloak so it runs again"
+    "${COMPOSE[@]}" restart keycloak
+fi
 
 # --- 5. Say whether it worked ------------------------------------------------
 say "5/5  Health"
