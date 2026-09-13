@@ -114,6 +114,43 @@ docker compose exec postgres psql -U postgres -d balaaca -c \
 `actor_ip` stays NULL, deliberately, and will until there is somebody other than
 you clicking.
 
+## Backups, and the half that matters
+
+```
+scripts/backup.sh                    # into ./backups, keeping fourteen
+scripts/restore.sh backups/<file>    # THIS DESTROYS what is there now
+```
+
+Two artefacts per run, under one timestamp: a custom-format `pg_dump` and a tar
+of the media volume. Neither means anything without the other - the rows name
+the files, and a database restored without its images is a catalogue of broken
+pictures that reads like a bug in the product. `restore.sh` refuses to run
+without the pair unless you pass `--database-only` and say you meant it.
+
+**Rehearse it now, while the data is disposable.** A backup that has never been
+restored is a file, not a backup, and the morning the disk dies is the wrong
+morning to learn that. That rehearsal has already earned itself once: the
+restore carried `--no-owner`, which moved all twenty-two tables from
+`balaaca_migrator` to `postgres` with every row intact - so it looked perfect,
+and the NEXT deployment would have failed on a migration, weeks later, with
+nobody connecting the two.
+
+```
+scripts/backup.sh
+scripts/restore.sh backups/$(ls -1t backups/*.dump | head -1 | xargs basename)
+```
+
+It prints what it restored, in counts. Zero providers means it restored nothing.
+
+Nightly, at three in the morning, in the deploying user's crontab:
+
+```
+0 3 * * * cd /home/guy-olivier/balaaca && scripts/backup.sh >> backups/backup.log 2>&1
+```
+
+`--keep` decides how many pairs stay; the default is fourteen and they are
+dropped in pairs, because a dump whose media is gone restores broken images.
+
 ## The order of a deployment
 
 1. `git pull` on the target machine.
@@ -253,8 +290,11 @@ Stated here rather than discovered on a Sunday:
 
 - **no deployment pipeline.** CI builds, tests and checks the contract; nothing
   pushes anything to the VPS. Deployment is manual.
-- **no documented backup.** There is no scheduled `pg_dump` and no tested
-  restore.
+- **no OFF-SITE backup.** `scripts/backup.sh` and `scripts/restore.sh` exist and
+  the restore has been rehearsed, but the copy lands on the same disk as the
+  thing it copies: it survives a bad migration, a wrong `DELETE` and a
+  deployment that went badly, and not the disk dying. Off-site arrives with the
+  object store, which the images are waiting for too (docs/BACKLOG.md).
 - **no alerting** on notifications that turned `DEAD`, in the sense of an alerting
   system. The worker now logs every death at `ERROR`, with the `provider_id`, the
   kind and the dedupe key (never the recipient), which is enough for a search but

@@ -93,8 +93,13 @@ four hundred is a channel people mute, after which nothing alerts at all. One
 alert per kind per window, and the next one says how many it stands for.
 
 ### Deployment, backups
-CI builds, tests and checks the contract. **Nothing pushes to the VPS**, and
-there is no scheduled `pg_dump`.
+CI builds, tests and checks the contract. **Nothing pushes to the VPS.**
+
+`pg_dump` and its restore exist now (`scripts/backup.sh`, `scripts/restore.sh`,
+rehearsed - see docs/DEPLOYMENT.md), and they write to the same disk as the
+thing they copy. That covers a bad migration and a wrong `DELETE`; it does not
+cover the disk. **Off-site is the same conversation as the images below**, and
+neither moves until there is a bucket.
 
 **The images go to Cloudflare R2**, decided, and that is what closes the second
 half: today they sit on the deployment's own disk, in no backup, and reviews
