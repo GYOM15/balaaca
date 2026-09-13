@@ -207,6 +207,7 @@ jobs:
             infrastructure/keycloak/smoke.sh \
             scripts/dev.sh scripts/dev-stop.sh \
             scripts/generate-env.sh scripts/deploy.sh \
+            scripts/backup.sh scripts/restore.sh \
             scripts/publish-images.sh scripts/lib/image-tag.sh
           # The entrypoint is POSIX sh: the Keycloak image has no bash.
           shellcheck --shell=sh --severity=warning \

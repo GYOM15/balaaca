@@ -54,3 +54,4 @@ backend/**/target/
 # What scripts/dev.sh writes locally. None of it is ever committed.
 .dev-logs/
 .dev-media/
+backups/
