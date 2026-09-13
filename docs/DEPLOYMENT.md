@@ -62,6 +62,57 @@ HINT:  This migration adds a role the cluster predates. Re-run
 | `balaaca_resolver` | `NOLOGIN`, owns the resolution functions, **read only** | resolving a tenant before a tenant is bound |
 | `balaaca_registrar` | `NOLOGIN`, owns the only function that creates a provider | "what can bring a salon into being" has a single answer |
 | `balaaca_notification_worker` | `SELECT`/`UPDATE` on `notifications`, nothing else | a drain bug does not become a cross-tenant leak |
+| `balaaca_moderator` | `NOLOGIN`, owns the review and moderation functions | the only role that sees a hidden review or reads across tenants |
+
+No provider is a database role, and none ever will be. A business is a row in
+`providers`; what keeps one out of another's data is row-level security on the
+single `balaaca_app` connection, forced on every table that carries a
+`provider_id`. Only `postgres` is a superuser, and nothing runs as it.
+
+## Who may open the back office
+
+`/admin` and the nine `/v1/admin` routes require the role `admin:moderation`,
+which **nobody holds by default and no client grants**.
+
+The distinction matters more than it looks. Roles reach the API from the token's
+`scope` claim, and a Keycloak *client scope* belongs to a client: the six
+provider scopes are optional on `balaaca-frontend`, so any account signing in
+through it may ask for them. Harmless there - what confines a provider is
+row-level security and the tenant bound server-side. Fatal on the admin routes,
+where the scope IS the guard: published as a client scope, every provider on the
+platform could have requested it and suspended anybody.
+
+So the grant is a **realm role on one named account**. `init-realm.sh` creates
+`platform-admin` and assigns it to no one; `PlatformOperatorAugmentor` turns it
+into the scope the routes check.
+
+To grant it, on the machine running Keycloak:
+
+```
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh config credentials \
+    --server http://localhost:8080 --realm master \
+    --user "$KEYCLOAK_ADMIN" --password "$KEYCLOAK_ADMIN_PASSWORD"
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh add-roles \
+    -r balaaca --uusername somebody@example.com --rolename platform-admin
+```
+
+`remove-roles`, same arguments, takes it away. The account must exist first: a
+support person signs up like anybody else and simply creates no business, and
+you promote them afterwards. Nobody types anybody else's password.
+
+Every write those routes perform lands in `audit_logs` with `actor_role` set to
+`OPERATOR` - suspension, reinstatement, a report marked reviewed, a contestation
+read, a review hidden or restored, a business's reply cleared. There is no
+screen for it yet; read it with `psql` until there is more than one operator:
+
+```
+docker compose exec postgres psql -U postgres -d balaaca -c \
+  "SELECT occurred_at, action, entity_id, metadata FROM audit_logs \
+    WHERE actor_role = 'OPERATOR' ORDER BY occurred_at DESC LIMIT 50"
+```
+
+`actor_ip` stays NULL, deliberately, and will until there is somebody other than
+you clicking.
 
 ## The order of a deployment
 

@@ -156,6 +156,35 @@ assign_scope() {
         && echo "[init-realm]   $2 -> $1 ($_kind)"
 }
 
+# The platform's own back office, and the ONE thing here that is granted to a
+# PERSON rather than to a client.
+#
+# It is a realm role and deliberately not a client scope. Roles reach the API
+# from the token's `scope` claim, and a client scope belongs to a client: the
+# six below are optional on balaaca-frontend, so any account signing in through
+# it may ask for them. Harmless there, because what confines a provider is
+# row-level security and the tenant bound server-side. Fatal here, because on
+# the nine /v1/admin routes the scope IS the guard - published that way, every
+# provider on the platform could have asked for it and suspended anybody.
+#
+# Assigned to NOBODY by this script, and that is the point. Granting it is a
+# deliberate act against one named account:
+#
+#   kcadm.sh add-roles -r balaaca --uusername <email> --rolename platform-admin
+#
+# and revoking it is `remove-roles` with the same arguments. See
+# docs/DEPLOYMENT.md. PlatformOperatorAugmentor turns it into the scope the
+# routes check.
+create_realm_role() {
+    $KCADM get "roles/$1" -r "$REALM" >/dev/null 2>&1 && return
+    $KCADM create roles -r "$REALM" -s "name=$1" -s "description=$2" >/dev/null 2>&1 \
+        && echo "[init-realm]   realm role $1 created"
+}
+
+echo "[init-realm] realm roles..."
+create_realm_role "platform-admin" \
+    "Operates the platform's back office. Granted per account, never by default."
+
 echo "[init-realm] client scopes..."
 create_scope "balaaca-audience" "Puts balaaca-backend in the token's audience."
 create_scope "dashboard:read" "Read the caller's own agenda and settings."
