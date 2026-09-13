@@ -2219,6 +2219,14 @@ paths:
         itself can press. Requiring the capability minted at booking means a
         review comes from somebody who was actually served.
 
+        A booking made from the number the business PUBLISHES answers `403`.
+        Booking your own service is allowed and stays allowed - an owner books
+        for their mother - but reviewing it is not. Call it what it is: a speed
+        bump. A second telephone walks past it, and a real defence would need a
+        verified identity that a customer here does not have and will not be
+        asked for. What it stops is the attempt made with the handset in the
+        room, which is the one that happens.
+
         Reviewable once the appointment has ENDED and was neither cancelled nor
         a no-show - not once it is marked `COMPLETED`. Completion is a button
         the provider presses, and gating customer reviews behind an action a
@@ -2252,6 +2260,16 @@ paths:
                 $ref: '#/components/schemas/OwnReviewView'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '403':
+          description: |
+            `FORBIDDEN` - this booking carries the number the business
+            publishes. The message does not say how that was established:
+            a sentence naming the comparison would hand anybody holding a
+            reference a way to ask whether a given number is the business's own.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
