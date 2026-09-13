@@ -862,7 +862,16 @@ hr { border: 0; border-top: 1px solid var(--border); margin: var(--s-8) 0; }
   background: var(--surface); padding: var(--s-4);
   transition: border-color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
 }
-.choice input { position: absolute; opacity: 0; width: 0; height: 0; }
+/* Sized for the same reason `.check input` is, twenty lines up: a control at
+   width 0 is one the browser cannot point at, so a `required` one kills its own
+   submit in silence. None of these is required today - which is exactly why it
+   is worth fixing now rather than the next time somebody adds a star to a
+   choice grid and spends an afternoon on a dead button. Top left of the card,
+   under the drawn mark, so a validation bubble lands on the card it is about. */
+.choice input {
+  position: absolute; top: var(--s-3); left: var(--s-3); opacity: 0;
+  width: 22px; height: 22px; margin: 0;
+}
 .choice:hover { border-color: var(--p-warm-400); }
 .choice:has(input:checked) { border-color: var(--brand); background: var(--brand-soft); box-shadow: inset 0 0 0 1px var(--brand); }
 .choice:has(input:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
