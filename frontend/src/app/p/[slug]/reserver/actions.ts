@@ -3,6 +3,7 @@
 import { randomUUID } from "node:crypto";
 import { redirect } from "next/navigation";
 import { ApiError, publicApi } from "@/lib/api";
+import { refusalKeepsTheHour } from "@/lib/refusal";
 import type { AppointmentCreated, ServiceAddress } from "@/lib/types";
 
 /**
@@ -87,7 +88,10 @@ export async function book(formData: FormData): Promise<void> {
     // string is written into history, into the address bar and into every log
     // along the way. Retyping where you live is cheaper than publishing it.
     if (error instanceof ApiError) {
-      redirect(refusalUrl(slug, serviceId, staffId, date, error.code, error.fields));
+      redirect(
+        refusalUrl(slug, serviceId, staffId, date, text(formData, "starts_at"),
+                   error.code, error.fields),
+      );
     }
     throw error;
   }
@@ -118,12 +122,13 @@ function addressFrom(formData: FormData): ServiceAddress | null {
   };
 }
 
-/** Back to the third step, as the customer left it, with the reason attached. */
+/** Back to where the customer was, with the reason attached. */
 function refusalUrl(
   slug: string,
   serviceId: string,
   staffId: string,
   date: string,
+  startsAt: string,
   code: string | null,
   fields: readonly string[],
 ): string {
@@ -131,6 +136,9 @@ function refusalUrl(
   if (staffId) query.set("staff", staffId);
   if (date) query.set("date", date);
   query.set("error", code ?? "UNKNOWN");
+  // The hour survives a refusal of the boxes and nothing else, and the page
+  // reads the same function to decide where to land.
+  if (refusalKeepsTheHour(code) && startsAt) query.set("time", startsAt);
   // Paths, not values. The rule two comments up keeps the customer's details
   // out of the address bar; `customer.phone` names a box, not what was in it.
   if (fields.length > 0) query.set("fields", fields.join(","));

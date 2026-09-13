@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Icon, Scene } from "@/components/icon";
+import { ProviderClock } from "@/components/provider-clock";
 import { Avatar, Wordmark } from "@/components/ui";
 import { SiteFooter, SiteHeader, TabBar } from "@/components/site";
 import { ApiError, publicApi } from "@/lib/api";
@@ -19,6 +20,7 @@ import type {
   PublicStaffMember,
 } from "@/lib/types";
 import { groupLocalities, localityLabel } from "@/lib/localities";
+import { refusalKeepsTheHour } from "@/lib/refusal";
 import { book } from "./actions";
 
 /** Live availability. Cached, this sends a customer to a slot that is gone. */
@@ -279,6 +281,7 @@ export default async function BookingFlow({
         places={places}
         labels={labels}
         current={current}
+        refusal={refusal}
       />
     );
   } else if (step === 4 && service && day) {
@@ -307,6 +310,7 @@ export default async function BookingFlow({
         from={from}
         to={to}
         today={today}
+        zone={zone}
         hasTeam={hasTeam}
         truncated={Boolean(slots?.next_cursor)}
         labels={labels}
@@ -624,6 +628,7 @@ function DateStep({
   from,
   to,
   today,
+  zone,
   hasTeam,
   truncated,
   labels,
@@ -637,6 +642,7 @@ function DateStep({
   from: string;
   to: string;
   today: string;
+  zone: string;
   hasTeam: boolean;
   truncated: boolean;
   labels: readonly string[];
@@ -719,6 +725,7 @@ function DateStep({
               <Icon name="info" size={16} /> Les jours de fermeture et les congés
               du salon n’apparaissent pas.
             </p>
+            <ProviderClock zone={zone} />
             {truncated ? (
               <p className="t-xs" style={{ marginTop: "var(--s-4)" }}>
                 Cette semaine compte plus de créneaux que la page n’en montre.
@@ -873,6 +880,8 @@ function TimeStep({
           </div>
         )}
 
+        <ProviderClock zone={zone} />
+
         <div className="row" style={{ marginTop: "var(--s-8)" }}>
           <Link
             className="btn btn--ghost"
@@ -906,6 +915,7 @@ function DetailsStep({
   places,
   labels,
   current,
+  refusal,
 }: {
   slug: string;
   provider: PublicProvider;
@@ -916,6 +926,7 @@ function DetailsStep({
   places: Places | null;
   labels: readonly string[];
   current: number;
+  refusal: ReactNode;
 }) {
   return (
     <>
@@ -929,6 +940,8 @@ function DetailsStep({
         Elles servent au prestataire pour vous reconnaître et vous prévenir.
         Rien de plus.
       </p>
+
+      {refusal}
 
       <form action={book} className="stack" style={{ marginTop: "var(--s-6)" }}>
         <input type="hidden" name="slug" value={slug} />
@@ -998,8 +1011,14 @@ function DetailsStep({
               {/* No longer "par WhatsApp": the sentence below this one is now
                   the customer's to answer, and a hint that decided it for them
                   would contradict the choice two panels down. */}
+              {/* The rule, said before the refusal rather than after it. There
+                  is no pattern on the box and there must not be one - what is
+                  dialable is the PROVIDER's country's business and this page has
+                  no country to read - so the sentence is the only thing that can
+                  say it. No dialling code is printed here for the same reason. */}
               <p className="field__hint" id="bk-phone-hint">
-                Le prestataire vous joindra sur ce numéro.
+                Écrivez-le comme vous le composez. Depuis l’étranger, ajoutez
+                l’indicatif du pays. Le prestataire vous joindra dessus.
               </p>
             </div>
 
@@ -1801,10 +1820,13 @@ function stepHref(slug: string, at: Position): string {
  * hand-typed `?etape=5` with no day is the day screen rather than a crash. The
  * URL is the state, which means the URL is also untrusted input.
  *
- * <p>A refusal is the one case that overrides what was asked for. The server
- * action sends it back with the day it was for and no hour, because the hour
- * is exactly what it refused - so it lands on the hour screen, above a list
- * that has just been re-read.
+ * <p>A refusal overrides what was asked for, and WHICH screen it lands on
+ * depends on what was refused. A taken slot, a slot the provider withdrew and a
+ * contended one are all refusals of the hour, so they land on the hour list,
+ * re-read. `VALIDATION_FAILED` is not: the hour was fine and a box was not, and
+ * sending that one back to the hour list made a mistyped digit cost the slot,
+ * the hour, and every field below it. It lands on the form, with the hour it
+ * already had.
  */
 function resolveStep(
   query: Search,
@@ -1815,6 +1837,7 @@ function resolveStep(
 ): 1 | 2 | 3 | 4 | 5 | 6 {
   if (query.ref && Number(query.etape) === CONFIRMATION) return CONFIRMATION;
   if (!hasService) return 1;
+  if (refusalKeepsTheHour(query.error) && day && slotAt) return 5;
   if (query.error && day) return 4;
 
   // A service named with NO step is a customer who chose it on the provider's
