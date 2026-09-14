@@ -286,7 +286,14 @@ body {
   padding: var(--s-6) var(--gutter);
   background: var(--bg);
   color: var(--text);
-  font-family: var(--font-sans);
+  /* --font, not --font-sans. The second was never declared anywhere in this
+     file, so the declaration was invalid and every sign-in, registration,
+     reset and confirmation screen fell back to the browser's default - Times,
+     measured. The titles were fine because they read --font-display, which
+     does exist, so the pages looked deliberate and only the body copy was
+     wrong. css-tokens.test.mts guards exactly this and had never been pointed
+     at this stylesheet; it is now. */
+  font-family: var(--font);
   font-size: var(--fs-base);
   line-height: var(--lh-normal);
   -webkit-font-smoothing: antialiased;
@@ -352,11 +359,13 @@ body::before {
   font-family: var(--font-display);
   font-size: var(--fs-h3);
   font-weight: 600;
-  letter-spacing: var(--ls-tight);
+  letter-spacing: var(--ls-display);
   line-height: var(--lh-tight);
 }
 .bal__lead {
-  margin: var(--s-2) 0 0;
+  /* Room underneath, because on the confirmation screen this paragraph is
+     followed immediately by the button and the two were touching. */
+  margin: var(--s-2) 0 var(--s-5);
   font-size: var(--fs-sm);
   color: var(--text-secondary);
   line-height: 1.55;
@@ -452,10 +461,15 @@ body::before {
   line-height: 1.5;
   margin-bottom: var(--s-5);
 }
-.bal__note--info    { background: var(--info-soft);    border-color: var(--info-border);    color: var(--info-strong); }
-.bal__note--success { background: var(--success-soft); border-color: var(--success-border); color: var(--success-strong); }
-.bal__note--warning { background: var(--warning-soft); border-color: var(--warning-border); color: var(--warning-strong); }
-.bal__note--error   { background: var(--danger-soft);  border-color: var(--danger-border);  color: var(--danger-strong); }
+/* -bg and -text, which this file declares. The rules read -soft and -strong,
+   which it does not: those are the product's names, and nobody compared the
+   two files. Only border-color happened to be spelt the same, so every notice
+   on every sign-in screen drew its border in the right colour around white and
+   black - it looked like a deliberate outline style rather than a failure. */
+.bal__note--info    { background: var(--info-bg);    border-color: var(--info-border);    color: var(--info-text); }
+.bal__note--success { background: var(--success-bg); border-color: var(--success-border); color: var(--success-text); }
+.bal__note--warning { background: var(--warning-bg); border-color: var(--warning-border); color: var(--warning-text); }
+.bal__note--error   { background: var(--danger-bg);  border-color: var(--danger-border);  color: var(--danger-text); }
 
 /* --- The rest ------------------------------------------------------------ */
 
