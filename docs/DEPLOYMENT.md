@@ -133,8 +133,8 @@ road from the code that reads it. Two halves, and BOTH are needed before
 - **The role** is created by `init-realm.sh`, which is this container's
   entrypoint and is BIND MOUNTED from the checkout. So it appears after a
   `git pull` and a restart of that container, with no image involved.
-  `deploy.sh` now does that restart itself, and only when the pull actually
-  changed that file.
+  `deploy.sh` does that itself now, and only when the pull actually changed
+  something under `infrastructure/keycloak` - the entrypoint or the theme.
 - **The translation** from that realm role to the `admin:moderation` the routes
   check lives in `PlatformOperatorAugmentor`, inside the API image. That one
   needs `scripts/publish-images.sh` on the build machine and `scripts/deploy.sh`
@@ -201,6 +201,34 @@ Nightly, at three in the morning, in the deploying user's crontab:
 
 `--keep` decides how many pairs stay; the default is fourteen and they are
 dropped in pairs, because a dump whose media is gone restores broken images.
+
+## When Keycloak has to be recreated
+
+Everything Keycloak reads from the checkout rather than from an image - its
+entrypoint and the theme every sign-in screen is drawn in - is a bind mount. A
+`git pull` changes those files while the running container keeps what it
+started with, and nothing says so.
+
+It is worse for the theme than it looks, because production turns the theme
+caches ON deliberately (`KC_SPI_THEME_CACHE_THEMES`): without them every
+sign-in screen is re-read from disk on every request, on a Raspberry Pi. So a
+corrected stylesheet sits on the disk being ignored.
+
+`deploy.sh` handles it: it fingerprints `infrastructure/keycloak` as a git tree
+before and after the pull, and recreates Keycloak only when that changed. By
+hand, if you ever need it:
+
+```
+$COMPOSE up -d --force-recreate keycloak
+```
+
+**`--force-recreate` rather than `restart`.** `restart` relaunches the process
+inside the existing container - it does rerun the entrypoint and does clear the
+in-memory theme cache, so it covers a mounted FILE. What it keeps is the
+environment the container was created with, so it does not cover a changed
+variable. One form that covers both beats remembering which case you are in.
+
+Keycloak 26 keeps user sessions in the database, so this signs nobody out.
 
 ## Which build is running
 
