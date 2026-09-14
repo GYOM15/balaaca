@@ -4,6 +4,7 @@ import com.balaaca.app.api.AgendaApi;
 import com.balaaca.app.api.model.AppointmentCreatedView;
 import com.balaaca.app.api.model.AppointmentCustomerView;
 import com.balaaca.app.api.model.AppointmentPage;
+import com.balaaca.app.api.model.Fulfilment;
 import com.balaaca.app.api.model.AppointmentStatus;
 import com.balaaca.app.api.model.AppointmentView;
 import com.balaaca.app.api.model.Money;
@@ -170,6 +171,7 @@ public class AppointmentsResource implements AgendaApi {
     @RolesAllowed("dashboard:read")
     public Response listAppointments(OffsetDateTime from, AppointmentStatus status,
                                      OffsetDateTime to, UUID staffId,
+                                     java.util.List<Fulfilment> fulfilment,
                                      String cursor, Integer limit) {
         var page = appointments.list(new AgendaQuery(
                 // A provider opening their dashboard means "from now", not
@@ -181,12 +183,18 @@ public class AppointmentsResource implements AgendaApi {
                 Optional.ofNullable(to).map(OffsetDateTime::toInstant),
                 Optional.ofNullable(staffId).map(StaffId::of),
                 Optional.ofNullable(status).map(s -> toDomain(s)),
+                // Names rather than the wire enum: the domain module has no
+                // business knowing the shape of a generated class, and an
+                // empty list already means "no filter" on the other side.
+                fulfilment == null ? java.util.List.of()
+                        : fulfilment.stream().map(Object::toString).toList(),
                 Cursors.agendaPosition(cursor),
                 limit == null ? Cursors.DEFAULT_LIMIT : limit));
 
         return Response.ok(new AppointmentPage()
                 .data(page.entries().stream().map(AppointmentsResource::toView).toList())
-                .nextCursor(page.next().map(Cursors::encodeAgenda).orElse(null)))
+                .nextCursor(page.next().map(Cursors::encodeAgenda).orElse(null))
+                .total(page.total()))
                 .build();
     }
 

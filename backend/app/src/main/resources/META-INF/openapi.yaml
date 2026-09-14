@@ -127,6 +127,27 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: fulfilment
+          in: query
+          required: false
+          explode: true
+          description: |
+            Repeat it to ask for several ways of working at once.
+
+            Matched against the mode FROZEN on the appointment when it was
+            booked, not against what the service offers today: a drop-off
+            taken in July is a drop-off even if the workshop stopped offering
+            it since, because the shirt is still on the shelf.
+
+            It exists for the drop-off queue, which had no way to ask. The
+            screen requested ninety days either side with a limit of two
+            hundred and sifted them in the browser, so a busy workshop lost
+            the rows past the limit - silently, and the ones lost were the
+            oldest, which are the promises most likely to be late.
+          schema:
+            type: array
+            items:
+              $ref: '#/components/schemas/Fulfilment'
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
       responses:
@@ -5194,7 +5215,7 @@ components:
 
     AppointmentPage:
       type: object
-      required: [data, next_cursor]
+      required: [data, next_cursor, total]
       properties:
         data:
           type: array
@@ -5204,6 +5225,22 @@ components:
           type: string
           nullable: true
           description: Opaque; null on the last page.
+        total:
+          type: integer
+          format: int32
+          description: |
+            How many appointments match, across every page.
+
+            It exists because a count taken from `data` is a LIE the moment
+            there is a second page, and the dashboard was taking several: the
+            badge on the diary counted the rows of a request for two hundred,
+            so a salon with more pending requests than that was told it had
+            exactly two hundred, for ever. A number that silently stops
+            growing is worse than no number.
+
+            Ask for it with `limit=1` when the rows are not wanted. The count
+            ignores the cursor, so it does not shrink as a caller pages
+            forward.
 
     RescheduleAppointmentRequest:
       type: object
