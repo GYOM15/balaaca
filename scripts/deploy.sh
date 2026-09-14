@@ -108,19 +108,31 @@ if [ "$BRANCH" != main ]; then
     exit 1
 fi
 
-# What the Keycloak container runs as its ENTRYPOINT, and a bind mount rather
-# than something baked into an image. So a pull can change it while the
-# container keeps running the version it started with - which is how a realm
-# role added to this file was missing from a deployment that had already pulled
-# it, with nothing anywhere saying why.
-REALM_SCRIPT=infrastructure/keycloak/init-realm.sh
-REALM_BEFORE=$(git hash-object "$REALM_SCRIPT" 2>/dev/null || echo none)
+# Everything Keycloak reads from the CHECKOUT rather than from an image: its
+# entrypoint, and the theme every sign-in screen is drawn in. Both are bind
+# mounts, so a pull changes them while the running container keeps what it
+# started with - and nothing anywhere says so.
+#
+# It has bitten twice. A realm role added to init-realm.sh was missing from a
+# deployment that had already pulled it. And production turns the theme caches
+# ON, deliberately - `KC_SPI_THEME_CACHE_THEMES`, because otherwise every
+# sign-in screen is re-read from disk on every request, on a Raspberry Pi - so
+# a corrected stylesheet sits on the disk being ignored.
+#
+# A tree object for the theme, not a file hash: it is a directory of templates,
+# messages, a stylesheet, fonts and images, and any one of them changing is a
+# reason to serve it again.
+KEYCLOAK_INPUTS="infrastructure/keycloak"
+keycloak_fingerprint() {
+    git rev-parse "HEAD:$KEYCLOAK_INPUTS" 2>/dev/null || echo none
+}
+REALM_BEFORE=$(keycloak_fingerprint)
 
 # --ff-only: a merge commit created here would be a divergence nobody is ever
 # going to resolve on a Raspberry Pi over SSH.
 git pull --ff-only
 
-REALM_AFTER=$(git hash-object "$REALM_SCRIPT" 2>/dev/null || echo none)
+REALM_AFTER=$(keycloak_fingerprint)
 
 # --- 2. Which images ---------------------------------------------------------
 # The last commit that could have changed an image, which is not the same as the
@@ -184,14 +196,20 @@ say "4/5  The application"
 # swallowed every message into.
 "${COMPOSE[@]}" up -d --remove-orphans
 
-# Only when the file actually changed, and never on an ordinary deployment: the
-# restart drops every session Keycloak is holding, and paying that on every
-# deploy to cover the rare case would be the wrong trade. `up -d` above does NOT
-# cover it - the script is mounted, not baked, so the container's configuration
-# is unchanged and compose has no reason to recreate anything.
+# Only when something Keycloak reads actually changed. `up -d` above does NOT
+# cover it: those files are mounted rather than baked, so the container's
+# configuration is unchanged and compose has no reason to touch it.
+#
+# --force-recreate and not `restart`. `restart` relaunches the process in the
+# existing container, which does rerun the entrypoint and does clear the
+# in-memory theme cache - but it keeps the environment the container was
+# created with, so it covers a mounted file and not a changed variable. One
+# form that covers both is worth more than remembering which case this is.
+#
+# Keycloak 26 keeps user sessions in the database, so this signs nobody out.
 if [ "$REALM_BEFORE" != "$REALM_AFTER" ]; then
-    echo "     $REALM_SCRIPT changed: restarting Keycloak so it runs again"
-    "${COMPOSE[@]}" restart keycloak
+    echo "     $KEYCLOAK_INPUTS changed: recreating Keycloak so it reads it"
+    "${COMPOSE[@]}" up -d --force-recreate keycloak
 fi
 
 # --- 5. Say whether it worked ------------------------------------------------
