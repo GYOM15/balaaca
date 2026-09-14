@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
 # Gives somebody the platform's back office, or takes it away.
 #
+#   scripts/grant-operator.sh                       # BALAACA_PLATFORM_ADMIN_EMAIL
 #   scripts/grant-operator.sh somebody@example.com
 #   scripts/grant-operator.sh --revoke somebody@example.com
 #   scripts/grant-operator.sh --list
+#
+# With no address it reads BALAACA_PLATFORM_ADMIN_EMAIL from the env file,
+# which generate-env.sh asked for once when the machine was set up. That is
+# what makes a wipe cheap: `docker compose down -v` removes the volumes and not
+# this file, so after signing up again the whole ceremony is one word.
 #
 # It exists because this was four commands copied out of a chat window, two of
 # which fail in ways that look like something else:
@@ -41,14 +47,23 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-if [ "$ACTION" != list ] && [ -z "$WHO" ]; then
-    echo "usage: scripts/grant-operator.sh [--revoke] <email>" >&2
-    echo "       scripts/grant-operator.sh --list" >&2
-    exit 2
-fi
 if [ ! -f "$ENV_FILE" ]; then
     echo "$ENV_FILE is missing. This runs on the deployment, not on a laptop." >&2
     exit 1
+fi
+
+# Read for one variable, and only when no address was given. The file holds
+# every password the stack has: sourcing it to answer a question nobody asked
+# would put all of them in this process's environment for the sake of one.
+if [ "$ACTION" != list ] && [ -z "$WHO" ]; then
+    WHO=$(sed -n 's/^BALAACA_PLATFORM_ADMIN_EMAIL=//p' "$ENV_FILE" | head -1)
+    if [ -z "$WHO" ]; then
+        echo "No address given, and BALAACA_PLATFORM_ADMIN_EMAIL is empty in $ENV_FILE." >&2
+        echo "Either pass one, or fill that variable in so a wipe costs nothing:" >&2
+        echo "    scripts/grant-operator.sh somebody@example.com" >&2
+        exit 2
+    fi
+    echo "Using $WHO, from $ENV_FILE."
 fi
 
 COMPOSE=(docker compose --env-file "$ENV_FILE"
