@@ -73,3 +73,4 @@ V051__let_a_business_answer_a_review.sql -2053833339
 V052__let_a_business_be_found_elsewhere.sql -1735004490
 V053__ask_for_the_about_text_at_signup.sql -2068365991
 V054__stop_a_business_reviewing_itself.sql -1265492755
+V055__find_a_trade_written_in_the_plural.sql -1867553160

@@ -80,15 +80,22 @@ public class ProviderDirectorySqlRepository implements SearchProvidersUseCase {
                     -- without this "esthetique" typed on a phone keyboard,
                     -- which is what everybody types, would stop reaching
                     -- "Esthétique et soins".
+                    --
+                    -- app_search_term rather than app_fold since V055: it also
+                    -- drops a trailing s or x, because people search for a
+                    -- category of person and not for the label of a taxonomy.
+                    -- "barbiers" answered nothing while "barbier" answered the
+                    -- trade. It only ever widens - the stripped form is a
+                    -- prefix of the folded one - so all three columns take it.
                     OR p.business_name_folded LIKE
-                       '%' || app_fold(CAST(:name AS varchar)) || '%'
+                       '%' || app_search_term(CAST(:name AS varchar)) || '%'
                     OR c.label_fr_folded LIKE
-                       '%' || app_fold(CAST(:name AS varchar)) || '%'
+                       '%' || app_search_term(CAST(:name AS varchar)) || '%'
                     OR EXISTS (SELECT 1 FROM service_offerings so
                                 WHERE so.provider_id = p.id
                                   AND so.active
                                   AND so.name_folded LIKE
-                                      '%' || app_fold(CAST(:name AS varchar)) || '%'))
+                                      '%' || app_search_term(CAST(:name AS varchar)) || '%'))
                AND (cardinality(CAST(:categories AS varchar[])) = 0
                     OR c.slug = ANY(CAST(:categories AS varchar[])))
                -- How the work reaches the customer, asked of the SAME rows the
@@ -138,6 +145,23 @@ public class ProviderDirectorySqlRepository implements SearchProvidersUseCase {
                -- carry.
                AND (CAST(:city AS varchar) IS NULL
                     OR lower(p.city) = lower(CAST(:city AS varchar)))
+               -- The ceiling, read from the SAME rows the card's `price_from`
+               -- is the minimum of: active offerings with a visible price. An
+               -- EXISTS over those is exactly `min(...) <= :priceMax` without
+               -- computing the minimum, and it has to be this way round - the
+               -- aggregate below is built over the page, which is chosen here.
+               --
+               -- A business with no visible priced offering has no floor and
+               -- therefore no answer to the question. EXISTS excludes it, which
+               -- is the intended reading: a card with no price in a list
+               -- filtered by price is a card that cannot be judged.
+               AND (CAST(:priceMax AS bigint) IS NULL
+                    OR EXISTS (SELECT 1 FROM service_offerings so
+                                WHERE so.provider_id = p.id
+                                  AND so.active
+                                  AND so.price_visible
+                                  AND so.price_amount_minor
+                                      <= CAST(:priceMax AS bigint)))
             """;
 
     private final EntityManager em;
@@ -359,7 +383,8 @@ public class ProviderDirectorySqlRepository implements SearchProvidersUseCase {
                 .setParameter("byMode", query.modes().any())
                 .setParameter("onSite", query.modes().onSite())
                 .setParameter("dropOff", query.modes().dropOff())
-                .setParameter("atCustomer", query.modes().atCustomer());
+                .setParameter("atCustomer", query.modes().atCustomer())
+                .setParameter("priceMax", query.priceMax().orElse(null));
     }
 
     /**
