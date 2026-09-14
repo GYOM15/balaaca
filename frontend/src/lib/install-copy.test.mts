@@ -21,16 +21,24 @@ import { test } from "node:test";
 const SRC = join(import.meta.dirname, "..");
 const BROWSERS = ["Safari", "Chrome", "Firefox", "Edge", "Opera"];
 
-test("the iOS steps do not send somebody to one browser's button", () => {
+test("the step that says where to press names no browser", () => {
   const steps = readFileSync(join(SRC, "components", "install-steps.tsx"), "utf8");
-  const ios = steps.slice(steps.indexOf("IOS_STEPS"), steps.indexOf("MENU_STEPS"));
+  const ios = steps.slice(steps.indexOf("export const IOS_STEPS"),
+                          steps.indexOf("MENU_STEPS"));
+  // The FIRST step only. That is the one that points at a control, and the one
+  // that was wrong: it named Safari's bar to somebody holding Chrome. A later
+  // step may name a browser - the list ends by sending anybody who cannot find
+  // the entry to Safari, which is true and is the only way out of a share
+  // sheet that does not have it.
+  const first = ios.slice(ios.indexOf("["), ios.indexOf("</>,") + 4);
 
-  const named = BROWSERS.filter((browser) => ios.includes(browser));
-  assert.ok(
-    named.length !== 1,
-    `the iOS steps name ${named[0]} and nothing else. On iOS every browser is `
-      + "WebKit and reaches Add to Home Screen, from a different button - so "
-      + "name none of them, or name several.",
+  const named = BROWSERS.filter((browser) => first.includes(browser));
+  assert.deepEqual(
+    named,
+    [],
+    `the first iOS step names ${named.join(", ")}. On iOS every browser is `
+      + "WebKit and reaches Add to Home Screen from a different button, so the "
+      + "step that says where to press must describe the icon, not a browser.",
   );
 });
 

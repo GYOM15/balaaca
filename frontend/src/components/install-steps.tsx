@@ -18,7 +18,17 @@ import { Icon } from "@/components/icon";
  * words.
  */
 
-/** The share sheet, on any iOS browser. */
+/**
+ * The share sheet, on any iOS browser.
+ *
+ * <p>The last line exists because the option is not always there. Apple
+ * guarantees Add to Home Screen from SAFARI's share sheet; a third-party
+ * browser on iOS carries it or does not depending on its version, and
+ * somebody scrolling a sheet that simply has no such entry has no way to
+ * know that. Naming Safari as the way out is not the mistake this list was
+ * fixed for: the mistake was assuming it in the step that says where to
+ * press.
+ */
 export const IOS_STEPS: ReactNode[] = [
   <>
     Appuyez sur <Icon name="share" size={16} /> <strong>Partager</strong>,
@@ -31,6 +41,11 @@ export const IOS_STEPS: ReactNode[] = [
   </>,
   <>
     Appuyez sur <strong>Ajouter</strong>, en haut à droite.
+  </>,
+  <>
+    Vous ne trouvez pas «&nbsp;Sur l’écran d’accueil&nbsp;»&nbsp;? Ouvrez la
+    même page dans <strong>Safari</strong> et recommencez&nbsp;: sur iPhone,
+    c’est le seul navigateur où Apple garantit cette option.
   </>,
 ];
 
