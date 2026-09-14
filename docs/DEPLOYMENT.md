@@ -86,13 +86,27 @@ So the grant is a **realm role on one named account**. `init-realm.sh` creates
 `platform-admin` and assigns it to no one; `PlatformOperatorAugmentor` turns it
 into the scope the routes check.
 
+`scripts/generate-env.sh` asks for the address once, when the machine is set
+up, and writes it as `BALAACA_PLATFORM_ADMIN_EMAIL`. Non-interactively, pass
+`--admin somebody@example.com`. It is asked there rather than pasted in
+afterwards because that script BUILDS `.env.prod` from `.env.example` line by
+line: anything added by hand is lost the day the file is regenerated, and a
+variable absent from the example never arrives at all.
+
 To grant it, on the deployment:
 
 ```
+scripts/grant-operator.sh                        # the address from .env.prod
 scripts/grant-operator.sh somebody@example.com
 scripts/grant-operator.sh --revoke somebody@example.com
 scripts/grant-operator.sh --list
 ```
+
+**After wiping a deployment** (`docker compose … down -v`) the whole ceremony is
+one word. The volumes go and `.env.prod` does not, so the address survives; sign
+up on the site again, then run it with no argument. Keycloak cannot grant a role
+to an account that does not exist yet, which is why this is still a command and
+not something the realm import does.
 
 The account must exist first: a support person signs up like anybody else and
 simply creates no business, and you promote them afterwards. Nobody types

@@ -23,13 +23,15 @@ cd "$(dirname "$0")/.."
 APP_LABEL=beta
 AUTH_LABEL=auth
 DOMAIN=""
+ADMIN_EMAIL=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --app)  APP_LABEL="$2";  shift 2 ;;
-        --auth) AUTH_LABEL="$2"; shift 2 ;;
-        -*)     echo "unknown option: $1" >&2; exit 2 ;;
-        *)      DOMAIN="$1";     shift ;;
+        --app)   APP_LABEL="$2";   shift 2 ;;
+        --auth)  AUTH_LABEL="$2";  shift 2 ;;
+        --admin) ADMIN_EMAIL="$2"; shift 2 ;;
+        -*)      echo "unknown option: $1" >&2; exit 2 ;;
+        *)       DOMAIN="$1";      shift ;;
     esac
 done
 
@@ -65,6 +67,27 @@ fi
 
 secret() { openssl rand -hex 32; }
 
+# Asked here rather than pasted into the file afterwards, and the reason is
+# this script: it BUILDS .env.prod from .env.example line by line, so anything
+# added by hand later is lost the day the file is regenerated, and a variable
+# absent from the example never arrives at all.
+#
+# Empty is allowed. Somebody setting up a machine before deciding who operates
+# it should not be blocked by a question, and grant-operator.sh still takes an
+# address as an argument.
+if [ -z "$ADMIN_EMAIL" ] && [ -t 0 ]; then
+    printf 'Which account will operate the back office? (e-mail, blank to skip): '
+    read -r ADMIN_EMAIL
+fi
+# A shape check and nothing more. A typo that still looks like an address is
+# not detectable here, and grant-operator.sh reads the answer back from
+# Keycloak anyway - but "yes" typed into this prompt is worth catching now.
+case "$ADMIN_EMAIL" in
+    "")   ;;
+    *@*.*) ;;
+    *) echo "\"$ADMIN_EMAIL\" is not an e-mail address." >&2; exit 2 ;;
+esac
+
 APP_ORIGIN="https://${APP_LABEL}.${DOMAIN}"
 AUTH_ORIGIN="https://${AUTH_LABEL}.${DOMAIN}"
 
@@ -88,6 +111,8 @@ umask 077
             # carry it - which was false, because the same template is
             # imported everywhere. This is what makes the claim true.
             KEYCLOAK_DEV_CLIENT_ENABLED=*) printf 'KEYCLOAK_DEV_CLIENT_ENABLED=false\n' ;;
+            BALAACA_PLATFORM_ADMIN_EMAIL=*)
+                printf 'BALAACA_PLATFORM_ADMIN_EMAIL=%s\n' "$ADMIN_EMAIL" ;;
             *) printf '%s\n' "$line" ;;
         esac
     done < .env.example
