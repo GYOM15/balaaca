@@ -1,4 +1,5 @@
 import { Icon } from "@/components/icon";
+import { IOS_STEPS, InstallSteps, MENU_STEPS } from "@/components/install-steps";
 import { Notice } from "@/components/ui";
 import { api } from "@/lib/api";
 import { env } from "@/lib/env";
@@ -193,31 +194,13 @@ export default async function Account() {
                     <div className="t-overline" style={{ marginBottom: "var(--s-3)" }}>
                       Sur iPhone et iPad
                     </div>
-                    <ol className="install-steps" style={{ marginTop: 0 }}>
-                      <li>
-                        Appuyez sur <Icon name="share" size={16} />{" "}
-                        <strong>Partager</strong>, dans la barre de Safari.
-                      </li>
-                      <li>
-                        Faites défiler, puis choisissez{" "}
-                        <strong>«&nbsp;Sur l’écran d’accueil&nbsp;»</strong>.
-                      </li>
-                      <li>
-                        Appuyez sur <strong>Ajouter</strong>.
-                      </li>
-                    </ol>
+                    <InstallSteps steps={IOS_STEPS} flush />
                   </div>
                   <div>
                     <div className="t-overline" style={{ marginBottom: "var(--s-3)" }}>
                       Sur Android et sur ordinateur
                     </div>
-                    <ol className="install-steps" style={{ marginTop: 0 }}>
-                      <li>Ouvrez le menu du navigateur.</li>
-                      <li>
-                        Choisissez <strong>«&nbsp;Installer l’application&nbsp;»</strong> ou{" "}
-                        <strong>«&nbsp;Ajouter à l’écran d’accueil&nbsp;»</strong>.
-                      </li>
-                    </ol>
+                    <InstallSteps steps={MENU_STEPS} flush />
                   </div>
                 </div>
               </div>
