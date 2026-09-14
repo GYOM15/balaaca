@@ -39,6 +39,12 @@ public interface SearchProvidersUseCase {
      *                 false is no filter at all - nobody asks for a business
      *                 that offers nothing, so the value is free to mean the
      *                 absence of the question
+     * @param priceMax the most the caller will pay to get started, in minor
+     *                 units, matched against the SAME aggregate the card prints
+     *                 as `priceFrom` - the cheapest visible active offering. A
+     *                 business with none has no floor and cannot answer, so it
+     *                 is excluded rather than returned priceless into a list
+     *                 filtered by price
      */
     record Query(Optional<String> nameContains,
                  List<String> categorySlugs,
@@ -46,6 +52,7 @@ public interface SearchProvidersUseCase {
                  Optional<String> locality,
                  Optional<String> area,
                  Fulfilments modes,
+                 Optional<Long> priceMax,
                  Optional<Position> after,
                  int limit) {
 

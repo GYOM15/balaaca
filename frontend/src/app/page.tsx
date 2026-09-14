@@ -30,11 +30,16 @@ const TRADES_FILTERED = 14;
 /** How many businesses the hub puts on the page. The directory shows the page. */
 const PROVIDERS_SHOWN = 6;
 
+/** The three the contract publishes. Anything else is somebody editing a URL. */
+const MODES = new Set(["ON_SITE", "AT_CUSTOMER", "DROP_OFF"]);
+
 type Search = {
   q?: string;
   category_slug?: string | string[];
   locality?: string;
   area?: string;
+  fulfilment?: string | string[];
+  price_max?: string;
   /**
    * The opaque cursor of the page being asked for. It was missing, and
    * `nextPage` has always minted one - so "Charger la suite" built a correct
@@ -50,6 +55,14 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
     selected: toList(params.category_slug),
     locality: params.locality?.trim() ?? "",
     area: params.area?.trim() ?? "",
+    // Filtered against the published set rather than forwarded. The API would
+    // refuse an unknown mode with a 400, which on a public directory turns a
+    // hand-edited address into an error page instead of a search.
+    fulfilment: toList(params.fulfilment).filter((mode) => MODES.has(mode)),
+    // Digits only, and dropped otherwise for the same reason. Not parsed to a
+    // number here: it travels back into the box the reader typed it in, and
+    // a round trip through Number would rewrite "050" under them.
+    priceMax: /^\d+$/.test(params.price_max?.trim() ?? "") ? params.price_max!.trim() : "",
   };
 
   const [categories, localities, areas, results] = await Promise.all([
@@ -68,6 +81,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
         category_slug: asked.selected.length > 0 ? asked.selected : undefined,
         locality: asked.locality || undefined,
         area: asked.area || undefined,
+        fulfilment: asked.fulfilment.length > 0 ? asked.fulfilment : undefined,
+        price_max: asked.priceMax === "" ? undefined : Number(asked.priceMax),
         cursor: params.cursor || undefined,
         limit: 24,
       },
@@ -79,7 +94,9 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
     asked.q.length >= 2 ||
     asked.selected.length > 0 ||
     asked.locality.length > 0 ||
-    asked.area.length > 0;
+    asked.area.length > 0 ||
+    asked.fulfilment.length > 0 ||
+    asked.priceMax !== "";
 
   // Ranked by how many providers actually hold the trade, which is the only
   // ordering the contract publishes anything for. Alphabetical on a tie.

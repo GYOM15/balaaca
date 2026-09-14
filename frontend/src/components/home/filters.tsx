@@ -11,16 +11,27 @@ import type { Trade } from "./taxonomy";
  * <p>One GET form. Everything it holds is a query parameter `listProviders`
  * accepts, which is what makes a filtered directory a link somebody can send.
  *
- * <p>No "Mode" fieldset. The design has one - sur place, dépôt, à domicile -
- * and `GET /v1/providers` takes no fulfilment parameter, so those three boxes
- * would submit and change nothing.
+ * <p>The "Mode" fieldset is here now. A comment in this place claimed for
+ * months that `GET /v1/providers` took no fulfilment parameter and that the
+ * three boxes would submit and change nothing. It takes one, repeatable, and
+ * has since it was published - so the boxes were missing from a filter that
+ * was already built and already tested.
  */
+/** The three the contract publishes, in the words the product already uses. */
+const MODES = [
+  { value: "ON_SITE", label: "Sur place" },
+  { value: "AT_CUSTOMER", label: "À domicile" },
+  { value: "DROP_OFF", label: "Dépôt" },
+] as const;
+
 export function Filters({
   variant,
   q,
   selected,
   locality,
   area,
+  fulfilment,
+  priceMax,
   trades,
   total,
   localities,
@@ -31,6 +42,8 @@ export function Filters({
   selected: string[];
   locality: string;
   area: string;
+  fulfilment: string[];
+  priceMax: string;
   /** The shortlist of trades the panel offers; the rest are on /metiers. */
   trades: Trade[];
   total: number;
@@ -57,6 +70,72 @@ export function Filters({
             defaultValue={q}
           />
         </div>
+      </div>
+
+      {/* The three ways of being served, which the contract has taken as a
+          repeatable `fulfilment` since it was published - the comment above
+          this component said otherwise for months and was simply wrong.
+          Nothing here is new server-side: the parameter is documented, and its
+          own description pins it to the same source the card's badges read, so
+          the filter and the badge cannot disagree.
+
+          Above the trades on purpose. In this market it is the sharpest
+          question a customer has - a plumber who comes to the house and one
+          who does not are two different services, not two options of one - and
+          it is three boxes rather than thirty. */}
+      <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
+        <legend className="field__label" style={{ padding: 0 }}>
+          Comment
+        </legend>
+        <p className="t-xs" style={{ margin: "-.25rem 0 .75rem" }}>
+          Plusieurs choix possibles.
+        </p>
+        <div className="stack" style={stackGap("var(--s-3)")}>
+          {MODES.map((mode) => (
+            <label className="check" key={mode.value}>
+              <input
+                type="checkbox"
+                name="fulfilment"
+                value={mode.value}
+                defaultChecked={fulfilment.includes(mode.value)}
+              />
+              <span className="check__box">
+                <Icon name="check" />
+              </span>
+              <span className="check__text grow">
+                <strong>{mode.label}</strong>
+              </span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+
+      {/* A ceiling and no floor. `price_from` is already the cheapest thing a
+          business sells, so a minimum on it would hide every affordable one
+          from somebody who asked for an expensive one - a question nobody has.
+          The contract says the same in its own words. */}
+      <div className="field">
+        <label className="field__label" htmlFor={id("price")}>
+          Budget <span className="field__optional">facultatif</span>
+        </label>
+        <div className="input-group input-group--suffix">
+          <input
+            className="input"
+            id={id("price")}
+            name="price_max"
+            type="number"
+            inputMode="numeric"
+            min={0}
+            step={1000}
+            placeholder="50 000"
+            defaultValue={priceMax}
+          />
+          <span className="input-group__suffix">GNF au plus</span>
+        </div>
+        <p className="field__hint">
+          Le prix de départ du professionnel. Ceux qui n’affichent aucun prix
+          n’apparaissent pas.
+        </p>
       </div>
 
       <fieldset style={{ border: 0, padding: 0, margin: 0 }}>

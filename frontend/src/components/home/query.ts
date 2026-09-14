@@ -4,6 +4,10 @@ export type Asked = {
   selected: string[];
   locality: string;
   area: string;
+  /** ON_SITE, AT_CUSTOMER, DROP_OFF - any of them, as the contract reads it. */
+  fulfilment: string[];
+  /** Minor units, as typed. Empty is no ceiling, and "0" is a real ceiling. */
+  priceMax: string;
 };
 
 /**
@@ -20,6 +24,10 @@ export function directoryHref(asked: Asked, cursor?: string): string {
   for (const slug of asked.selected) query.append("category_slug", slug);
   if (asked.locality) query.set("locality", asked.locality);
   if (asked.area) query.set("area", asked.area);
+  for (const mode of asked.fulfilment) query.append("fulfilment", mode);
+  // Written whenever it is non-empty, INCLUDING "0". A ceiling of nothing is a
+  // question somebody can ask, and a falsy check would silently drop it.
+  if (asked.priceMax !== "") query.set("price_max", asked.priceMax);
   if (cursor) query.set("cursor", cursor);
   const search = query.toString();
   return search ? `/?${search}` : "/";
