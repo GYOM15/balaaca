@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Icon } from "@/components/icon";
+import { IOS_STEPS, InstallSteps, MENU_STEPS } from "@/components/install-steps";
 import { chooseOffer, isIOS, type Offer } from "@/lib/install-offer";
 
 /**
@@ -207,35 +208,11 @@ export function InstallPrompt() {
             {/* Numbered, because this is a sequence somebody performs with a
                 telephone in one hand. On iOS it is the only way there is: Apple
                 ships no interface for installing a web application, so a button
-                that claimed to do it would be a lie. */}
-            <ol className="install-steps">
-              {(offer === "share"
-                ? [
-                    <>
-                      Appuyez sur <Icon name="share" size={16} /> <strong>Partager</strong>,
-                      dans la barre de Safari.
-                    </>,
-                    <>
-                      Faites défiler, puis choisissez{" "}
-                      <strong>«&nbsp;Sur l’écran d’accueil&nbsp;»</strong>.
-                    </>,
-                    <>
-                      Appuyez sur <strong>Ajouter</strong>, en haut à droite.
-                    </>,
-                  ]
-                : [
-                    <>
-                      Ouvrez le menu du navigateur, en haut à droite.
-                    </>,
-                    <>
-                      Choisissez <strong>«&nbsp;Installer l’application&nbsp;»</strong> ou{" "}
-                      <strong>«&nbsp;Ajouter à l’écran d’accueil&nbsp;»</strong>.
-                    </>,
-                  ]
-              ).map((step, index) => (
-                <li key={index}>{step}</li>
-              ))}
-            </ol>
+                that claimed to do it would be a lie.
+
+                The words live in one module with the copy on "Mon compte".
+                Written twice, they said the same wrong thing twice. */}
+            <InstallSteps steps={offer === "share" ? IOS_STEPS : MENU_STEPS} />
 
             <button
               type="button"
