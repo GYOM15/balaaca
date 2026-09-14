@@ -141,4 +141,84 @@ class AgendaIT {
                 .containsExactly("2026-09-04T12:00:00Z");
         assertThat(second.jsonPath().getString("next_cursor")).isNull();
     }
+
+    /** A service handed over and collected, so the queue has something to hold. */
+    private static String anAlteration() {
+        return given().contentType("application/json")
+                .body("""
+                      {"name":"Retouche ourlet","duration_minutes":10,
+                       "turnaround_hours":48,
+                       "price":{"amount_minor":50000,"currency":"GNF"}}
+                      """)
+                .when().post("/v1/service-offerings").then().statusCode(201)
+                .extract().path("service_offering_id");
+    }
+
+    @Test
+    @TestSecurity(user = BookingFixtures.SALON_SUBJECT,
+                  roles = {"dashboard:read", "appointments:write", "catalog:write"})
+    @OidcSecurity(claims = @Claim(key = "sub", value = BookingFixtures.SALON_SUBJECT))
+    @DisplayName("The queue asks for drop-offs instead of sifting the whole agenda")
+    void filtersOnHowTheWorkReachesTheCustomer() {
+        book(SALON_BOOKING, BookingFixtures.SALON_OFFERING, "2026-09-04T10:00:00Z", "622000101");
+        book(SALON_BOOKING, UUID.fromString(anAlteration()), "2026-09-04T14:00:00Z", "622000102");
+
+        int everything = given().queryParam("from", "2026-09-01T00:00:00Z")
+                .when().get(AGENDA).then().statusCode(200).extract().path("total");
+
+        var queue = given().queryParam("from", "2026-09-01T00:00:00Z")
+                .queryParam("fulfilment", "DROP_OFF")
+                .when().get(AGENDA).then().statusCode(200).extract().jsonPath();
+
+        // The screen used to ask for ninety days either side with a limit of
+        // two hundred and sift them in the browser, so a busy workshop lost
+        // the rows past the limit - the oldest ones, which are exactly the
+        // promises most likely to be late.
+        assertThat(everything).isEqualTo(2);
+        assertThat(queue.getInt("total")).isEqualTo(1);
+        assertThat(queue.getList("data.fulfilment", String.class))
+                .containsExactly("DROP_OFF");
+    }
+
+    @Test
+    @TestSecurity(user = BookingFixtures.SALON_SUBJECT,
+                  roles = {"dashboard:read", "appointments:write"})
+    @OidcSecurity(claims = @Claim(key = "sub", value = BookingFixtures.SALON_SUBJECT))
+    @DisplayName("The total counts what matches, not what fits on the page")
+    void countsBeyondThePage() {
+        book(SALON_BOOKING, BookingFixtures.SALON_OFFERING, "2026-09-04T10:00:00Z", "622000103");
+        book(SALON_BOOKING, BookingFixtures.SALON_OFFERING, "2026-09-04T14:00:00Z", "622000104");
+
+        // One row asked for, both counted. This is the whole point: the diary's
+        // badge counted the ROWS of a request for two hundred, so a salon with
+        // more than that was told it had exactly two hundred, for ever.
+        var narrow = given().queryParam("from", "2026-09-01T00:00:00Z")
+                .queryParam("limit", 1)
+                .when().get(AGENDA).then().statusCode(200).extract().jsonPath();
+
+        assertThat(narrow.getList("data")).hasSize(1);
+        assertThat(narrow.getInt("total")).isEqualTo(2);
+        assertThat(narrow.getString("next_cursor")).isNotNull();
+    }
+
+    @Test
+    @TestSecurity(user = BookingFixtures.SALON_SUBJECT,
+                  roles = {"dashboard:read", "appointments:write"})
+    @OidcSecurity(claims = @Claim(key = "sub", value = BookingFixtures.SALON_SUBJECT))
+    @DisplayName("The total does not shrink as the caller pages forward")
+    void theTotalIsNotTheRemainder() {
+        book(SALON_BOOKING, BookingFixtures.SALON_OFFERING, "2026-09-04T10:00:00Z", "622000105");
+        book(SALON_BOOKING, BookingFixtures.SALON_OFFERING, "2026-09-04T14:00:00Z", "622000106");
+
+        var first = given().queryParam("from", "2026-09-01T00:00:00Z").queryParam("limit", 1)
+                .when().get(AGENDA).then().statusCode(200).extract().jsonPath();
+        var second = given().queryParam("from", "2026-09-01T00:00:00Z").queryParam("limit", 1)
+                .queryParam("cursor", first.getString("next_cursor"))
+                .when().get(AGENDA).then().statusCode(200).extract().jsonPath();
+
+        // A total that counted what is LEFT would be a different number on
+        // every page, and a badge that moves while somebody scrolls is worse
+        // than no badge at all.
+        assertThat(second.getInt("total")).isEqualTo(first.getInt("total")).isEqualTo(2);
+    }
 }

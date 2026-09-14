@@ -458,10 +458,15 @@ export default async function DashboardLayout({
  */
 async function pendingCount(): Promise<number> {
   try {
+    // One row, and the count comes from `total`. This asked for two hundred
+    // and counted what came back, so a salon with more pending requests than
+    // that wore a badge reading exactly two hundred, for ever - a number that
+    // silently stops growing is worse than no number. The rows themselves were
+    // never used here.
     const page = await api<AppointmentPage>("/v1/appointments", {
-      query: { status: "PENDING", limit: 200 },
+      query: { status: "PENDING", limit: 1 },
     });
-    return page.data.length;
+    return page.total;
   } catch {
     return 0;
   }

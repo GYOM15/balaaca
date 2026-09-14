@@ -17,4 +17,19 @@ public interface AppointmentAgendaRepository {
      * one without a second query or a count.
      */
     List<AgendaEntry> page(AgendaQuery query);
+
+    /**
+     * How many match, ignoring the cursor and the limit.
+     *
+     * <p>Its own statement rather than a window function beside the rows: the
+     * page reads one extra row to learn whether there is a next one, which
+     * costs nothing, while a COUNT OVER () on the same query would be computed
+     * for every row returned. Two scans, each doing one job, on an index the
+     * page already uses.
+     *
+     * <p>The cursor is deliberately not part of it. A total that shrank as the
+     * caller paged forward would be a different number on every page, and the
+     * one thing a caller wants it for is a badge that does not move.
+     */
+    int count(AgendaQuery query);
 }

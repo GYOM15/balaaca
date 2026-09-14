@@ -44,12 +44,49 @@ public class AppointmentAgendaSqlRepository implements AppointmentAgendaReposito
         this.em = em;
     }
 
+    /**
+     * The conditions both statements share, written once.
+     *
+     * <p>The page and the count answer two halves of one question, and a
+     * predicate present in one and missing from the other is a badge that
+     * disagrees with the list under it - which is exactly the kind of defect
+     * nobody reports, because both numbers look plausible.
+     *
+     * <p>The cursor is NOT in here. It narrows the page and must never narrow
+     * the count, or the total shrinks as somebody pages forward.
+     */
+    private static final String MATCHING = """
+                 WHERE a.starts_at >= :from
+                   AND (CAST(:to AS timestamptz) IS NULL
+                        OR a.starts_at <= CAST(:to AS timestamptz))
+                   AND (CAST(:staffId AS uuid) IS NULL
+                        OR a.staff_id = CAST(:staffId AS uuid))
+                   AND (CAST(:status AS varchar) IS NULL OR a.status = CAST(:status AS varchar))
+                   AND (CAST(:status AS varchar) IS NOT NULL
+                        OR a.status IN ('PENDING','CONFIRMED'))
+                   -- The mode FROZEN on the appointment, never what the service
+                   -- offers today: a drop-off taken in July is a drop-off even
+                   -- if the workshop stopped offering it since, because the
+                   -- shirt is still on the shelf.
+                   AND (cardinality(CAST(:fulfilments AS varchar[])) = 0
+                        OR a.service_fulfilment = ANY(CAST(:fulfilments AS varchar[])))
+                """;
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public int count(AgendaQuery query) {
+        Number total = (Number) bind(em.createNativeQuery(
+                "SELECT count(*) FROM appointments a" + MATCHING), query)
+                .getSingleResult();
+        return total.intValue();
+    }
+
     @Override
     @SuppressWarnings("unchecked")
     public List<AgendaEntry> page(AgendaQuery query) {
         Optional<AgendaPosition> after = query.after();
 
-        List<Object[]> rows = em.createNativeQuery("""
+        jakarta.persistence.Query rowsQuery = em.createNativeQuery("""
                 SELECT a.id, a.starts_at, a.ends_at, a.status, a.service_name,
                        a.customer_price_amount_minor, a.customer_price_currency,
                        c.full_name, c.phone_e164, c.email, a.customer_note,
@@ -64,14 +101,7 @@ public class AppointmentAgendaSqlRepository implements AppointmentAgendaReposito
                   -- ordinary, and an inner join would drop the appointment
                   -- rather than the field.
                   LEFT JOIN localities l ON l.id = a.service_locality_id
-                 WHERE a.starts_at >= :from
-                   AND (CAST(:to AS timestamptz) IS NULL
-                        OR a.starts_at <= CAST(:to AS timestamptz))
-                   AND (CAST(:staffId AS uuid) IS NULL
-                        OR a.staff_id = CAST(:staffId AS uuid))
-                   AND (CAST(:status AS varchar) IS NULL OR a.status = CAST(:status AS varchar))
-                   AND (CAST(:status AS varchar) IS NOT NULL
-                        OR a.status IN ('PENDING','CONFIRMED'))
+                """ + MATCHING + """
                    -- The tie-break is part of the comparison, not an extra
                    -- filter: (starts_at, id) > (:at, :id) as a row comparison is
                    -- what makes the index seek land on the next row rather than
@@ -82,18 +112,27 @@ public class AppointmentAgendaSqlRepository implements AppointmentAgendaReposito
                  ORDER BY a.starts_at, a.id
                  LIMIT :limit
                 """)
-                .setParameter("from", Timestamp.from(query.from()))
-                .setParameter("to", query.to().map(Timestamp::from).orElse(null))
-                .setParameter("staffId", query.staffId().map(id -> id.value()).orElse(null))
-                .setParameter("status", query.status().map(Enum::name).orElse(null))
                 .setParameter("afterAt", after.map(p -> Timestamp.from(p.startsAt())).orElse(null))
                 .setParameter("afterId", after.map(p -> p.id().value()).orElse(null))
                 // One more than asked, so the caller can tell a full page from
                 // the last one without a second query.
-                .setParameter("limit", query.limit() + 1)
-                .getResultList();
+                .setParameter("limit", query.limit() + 1);
+        bind(rowsQuery, query);
 
-        return rows.stream().map(AppointmentAgendaSqlRepository::toEntry).toList();
+        return ((List<Object[]>) rowsQuery.getResultList()).stream()
+                .map(AppointmentAgendaSqlRepository::toEntry).toList();
+    }
+
+    /** What MATCHING needs, bound the same way for both statements. */
+    private static jakarta.persistence.Query bind(jakarta.persistence.Query statement,
+                                                  AgendaQuery query) {
+        return statement
+                .setParameter("from", Timestamp.from(query.from()))
+                .setParameter("to", query.to().map(Timestamp::from).orElse(null))
+                .setParameter("staffId", query.staffId().map(id -> id.value()).orElse(null))
+                .setParameter("status", query.status().map(Enum::name).orElse(null))
+                .setParameter("fulfilments",
+                        "{" + String.join(",", query.fulfilments()) + "}");
     }
 
     private static AgendaEntry toEntry(Object[] r) {
