@@ -133,4 +133,70 @@ class DirectorySearchIT {
                 .when().get("/v1/providers/salon-fatou/available-slots").then()
                 .header("Cache-Control", equalTo("no-store"));
     }
+
+    @Test
+    @DisplayName("A trade written in the plural finds it, which is how people search")
+    void findsATradeWrittenInThePlural() {
+        // People search for a category of person, not for the label of a
+        // taxonomy. "barbiers" answered nothing while "barbier" answered the
+        // trade, and the same held for every trade whose label is singular.
+        assertThat(search("photographies")).containsExactly("coiffeur-solo");
+        assertThat(search("photographie")).containsExactly("coiffeur-solo");
+    }
+
+    @Test
+    @DisplayName("Singularising only ever widens: nothing that matched stops matching")
+    void losesNothingItUsedToFind() {
+        // The stripped form is a PREFIX of the folded one, so every match the
+        // longer word made, the shorter one makes too. This is the property
+        // that made it safe to apply to all three matched columns at once.
+        assertThat(search("tresses")).containsExactly("salon-fatou");
+        assertThat(search("tresse")).containsExactly("salon-fatou");
+        assertThat(search("FATOU")).containsExactly("salon-fatou");
+    }
+
+    @Test
+    @DisplayName("A short label is not smuggled into an unrelated word")
+    void doesNotMatchTheOtherWayRound() {
+        // The obvious fix - also test whether the LABEL appears inside the
+        // query - looks symmetric and is not. `position('spa' in 'espace')` is
+        // 2, so searching for an "espace" would return massage parlours. A
+        // rule that manufactures nonsense from real words is worse than one
+        // that misses a plural, so the match stays one-directional.
+        assertThat(search("espace")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("A ceiling keeps what somebody can actually afford to walk into")
+    void filtersOnWhatItCostsToGetStarted() {
+        // Matched against the same aggregate the card prints: the cheapest
+        // VISIBLE active offering. Not "everything it sells is cheap" - that
+        // is a question nobody asks, and it would hide a salon that does a
+        // 5 000 GNF trim because it also does a wedding.
+        long cheapest = given().when().get("/v1/providers")
+                .then().statusCode(200)
+                .extract().jsonPath().getLong("data.find { it.price_from }.price_from.amount_minor");
+
+        assertThat(withCeiling(cheapest)).isNotEmpty();
+        assertThat(withCeiling(cheapest - 1)).doesNotContainAnyElementsOf(withCeiling(cheapest));
+    }
+
+    @Test
+    @DisplayName("A business with no visible price cannot answer, so it is not returned")
+    void excludesWhatHasNoFloor() {
+        // A card with no price, in a list filtered by price, is a card nobody
+        // can judge. EXISTS over the visible offerings excludes it by
+        // construction rather than by a rule somebody has to remember.
+        fixtures.execute("UPDATE service_offerings SET price_visible = false");
+
+        assertThat(withCeiling(100_000_000L)).isEmpty();
+        // And with no ceiling asked for, the same businesses come back.
+        assertThat(search("")).isNotEmpty();
+    }
+
+    private static List<String> withCeiling(long priceMax) {
+        return given().queryParam("price_max", priceMax).when().get("/v1/providers")
+                .then().statusCode(200)
+                .extract().jsonPath().getList("data.slug", String.class);
+    }
 }
