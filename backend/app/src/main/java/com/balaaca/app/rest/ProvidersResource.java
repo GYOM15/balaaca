@@ -63,7 +63,7 @@ public class ProvidersResource implements ProvidersApi {
     @Override
     public Response listProviders(String q, List<String> categorySlug, String locality,
                                   String area, List<Fulfilment> fulfilment, String city,
-                                  String cursor, Integer limit) {
+                                  Long priceMax, String cursor, Integer limit) {
         var found = directory.search(new Query(
                 trimmed(q),
                 categorySlug == null ? List.of()
@@ -72,6 +72,10 @@ public class ProvidersResource implements ProvidersApi {
                 trimmed(locality),
                 trimmed(area),
                 asked(fulfilment),
+                // Passed on as given. A ceiling of zero is a real question -
+                // "show me what costs nothing" - and turning it into "no
+                // filter" would answer a different one.
+                Optional.ofNullable(priceMax),
                 Cursors.directoryPosition(cursor),
                 limit == null ? Cursors.DEFAULT_LIMIT : limit));
 

@@ -3176,6 +3176,33 @@ paths:
           schema:
             type: string
             maxLength: 80
+        - name: price_max
+          in: query
+          required: false
+          description: |
+            The most a customer is willing to pay to get started, in minor
+            units of the provider's currency - so 50000 for 50 000 GNF.
+
+            Matched against the SAME aggregate the card prints as `price_from`:
+            the cheapest active offering. A business matches when it has
+            anything at or below the figure, which is the question somebody
+            actually asks - can I afford to walk in here at all - rather than
+            whether everything it sells is cheap.
+
+            There is deliberately no `price_min`. A floor on a price that is
+            already a floor asks a question nobody has: `price_from` is by
+            definition the cheapest thing a business sells, and filtering it
+            from below would hide every affordable business from somebody who
+            wanted an expensive one.
+
+            A business with no active priced offering has no `price_from` and
+            is excluded whenever this is sent. It cannot answer the question,
+            and returning it would put a card with no price in a list filtered
+            by price.
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
       responses:
