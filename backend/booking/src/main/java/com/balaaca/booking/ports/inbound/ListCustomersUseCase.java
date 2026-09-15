@@ -59,8 +59,18 @@ public interface ListCustomersUseCase {
      *                  which is what a salon means by "when did I last see
      *                  them", and empty only for somebody who has never booked
      */
+    /**
+     * @param visits     every appointment in every state, cancellations
+     *                   included, exactly as the contract publishes it
+     * @param noShows    how many of those they did not come to. Beside
+     *                   {@code visits} rather than instead of it: the total is
+     *                   what a salon recognises somebody by, and this is the
+     *                   only thing that separates eight visits kept from eight
+     *                   booked and two honoured. NO_SHOW alone - somebody who
+     *                   telephoned to cancel gave the chair back
+     */
     record CustomerSummary(CustomerId id, CustomerContact contact,
-                           int visits, Optional<Instant> lastVisit) {
+                           int visits, int noShows, Optional<Instant> lastVisit) {
     }
 
     /**
@@ -72,7 +82,7 @@ public interface ListCustomersUseCase {
      */
     record CustomerDetail(CustomerId id, CustomerContact contact,
                           Optional<String> notes, boolean blocked, int visits,
-                          Optional<Instant> lastVisit,
+                          int noShows, Optional<Instant> lastVisit,
                           List<Visit> history) {
     }
 

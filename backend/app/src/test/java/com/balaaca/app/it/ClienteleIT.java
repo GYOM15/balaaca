@@ -1,6 +1,7 @@
 package com.balaaca.app.it;
 
 import static io.restassured.RestAssured.given;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
@@ -162,5 +163,39 @@ class ClienteleIT {
         // any intermediary, and must not come back from a browser's history.
         given().when().get("/v1/customers").then().statusCode(200)
                 .header("Cache-Control", equalTo("no-store"));
+    }
+
+    @Test
+    @TestSecurity(user = BookingFixtures.SALON_SUBJECT, roles = "dashboard:read")
+    @OidcSecurity(claims = @Claim(key = "sub", value = BookingFixtures.SALON_SUBJECT))
+    @DisplayName("The card separates somebody who comes from somebody who books")
+    void countsWhatWasNotHonoured() {
+        // `visits` counts every appointment in every state, deliberately - so
+        // eight kept and eight booked with two honoured are the same number on
+        // the same card. This is the only thing that tells them apart, and it
+        // is the figure a provider wants before deciding whether to block
+        // anybody.
+        book("Mariama Barry", "622000001", "2026-09-07T10:00:00Z");
+        book("Mariama Barry", "622000001", "2026-09-08T10:00:00Z");
+        book("Aissatou Diallo", "622000002", "2026-09-07T14:00:00Z");
+
+        fixtures.execute("UPDATE appointments SET status = 'NO_SHOW' WHERE id IN "
+                + "(SELECT id FROM appointments ORDER BY starts_at LIMIT 1)");
+
+        var card = given().when().get("/v1/customers").then().statusCode(200)
+                .extract().jsonPath();
+
+        assertThat(card.getList("data.no_show_count", Integer.class)).isNotEmpty();
+        assertThat(card.getInt("data.no_show_count.sum()")).isEqualTo(1);
+        // And a cancellation is NOT one of them: somebody who telephoned gave
+        // the chair back, and somebody who simply did not come cost the hour.
+        // The whole shape, because ck_appointments_cancel_shape refuses a
+        // cancellation with no date and no author - the schema defending the
+        // same distinction this field exists to make.
+        fixtures.execute("UPDATE appointments SET status = 'CANCELLED', "
+                + "cancelled_at = now(), cancelled_by = 'PROVIDER' "
+                + "WHERE status IN ('PENDING','CONFIRMED')");
+        assertThat(given().when().get("/v1/customers").then().statusCode(200)
+                .extract().jsonPath().getInt("data.no_show_count.sum()")).isEqualTo(1);
     }
 }

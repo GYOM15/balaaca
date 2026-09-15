@@ -211,6 +211,17 @@ function Row({ customer, zone }: { customer: CustomerSummary; zone: string }) {
           {customer.phone} · {customer.visits} rendez-vous
           {customer.last_visit ? ` · dernier le ${longDay(customer.last_visit, zone)}` : ""}
         </div>
+        {/* Only when there are any. `visits` counts every appointment in every
+            state on purpose, so eight kept and eight booked with two honoured
+            read the same on this line - and this is what tells them apart. A
+            zero printed beside everybody would make the address book look like
+            a list of suspects. */}
+        {customer.no_show_count > 0 ? (
+          <div className="t-xs" style={{ marginTop: "2px", color: "var(--warning)" }}>
+            {customer.no_show_count} rendez-vous manqué
+            {customer.no_show_count > 1 ? "s" : ""}
+          </div>
+        ) : null}
       </div>
       <Icon name="chevron-right" size={18} />
     </Link>

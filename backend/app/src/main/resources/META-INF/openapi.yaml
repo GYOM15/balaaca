@@ -4308,7 +4308,7 @@ components:
 
     CustomerSummaryView:
       type: object
-      required: [customer_id, full_name, phone, visits]
+      required: [customer_id, full_name, phone, visits, no_show_count]
       properties:
         customer_id:
           type: string
@@ -4324,6 +4324,23 @@ components:
           type: integer
           format: int32
           description: Every appointment, in every state. Cancellations count.
+        no_show_count:
+          type: integer
+          format: int32
+          description: |
+            How many of those the customer did not turn up to.
+
+            It is here because `visits` deliberately counts everything, which
+            makes it useless for the one judgement a salon actually has to
+            make: somebody who booked eight times and came eight times and
+            somebody who booked eight times and came twice are the same number
+            on the same card. This is the difference between them, and it is
+            the figure a provider wants before deciding whether to block
+            anybody.
+
+            Only `NO_SHOW`, never a cancellation. A customer who telephoned to
+            cancel gave the chair back; one who simply did not come cost the
+            hour, and the two are not the same failing.
         last_visit:
           type: string
           format: date-time
