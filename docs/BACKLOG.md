@@ -71,16 +71,17 @@ this schema most carefully constrains.
 ## Decided, scoped, not yet done
 
 ### ~~Rate-limit registrations~~ (done)
-`V020` closed the oracle for any account that already has a salon. What remains
-is that an account **without** a salon can probe the handles, exactly like any
-sign-up form that answers "that name is taken".
+`V020` closed the handle oracle for an account that already has a salon;
+`RegisterProviderService` closes it for one that does not. Ten tries an hour per
+verified subject, through `AttemptLimiter` on Redis, counted BEFORE the work so
+a refused slug costs a try - a probe and a genuine mistake look identical from
+there, and charging only for successes would leave the enumeration free.
 
-Closing it takes a rate limit, not a different error. `RATE_LIMITED` (429) is
-already published and already raised, but for booking **contention**
-(`BookingContendedException`), which is another subject: a registration limit
-would need a counter, and Redis is already in the compose file for that.
+`AcceptStaffInvitationService` carries the same guard on the same limiter.
 
-To be done when there are enough salons for the list to be worth enumerating.
+**The heading was struck through and this body was left as it was written.** It
+read as an open item for weeks and was proposed for building a second time. A
+line marked done says what was built, or it is worse than no line at all.
 
 ### ~~A real alerting system~~ (done)
 An `Alerter` port, two channels: the log by default, a webhook if
@@ -162,8 +163,11 @@ by one.
 
 ### The rest, screen by screen
 
-- `CategoryFamily` has no description: the subtitle under each family on
-  /metiers. Eight sentences to write for a page nobody lingers on.
+- ~~`CategoryFamily` has no description.~~ (dropped, 2026-09-14) Eight
+  subtitles on a page people cross on the way to a trade. They are copy, not a
+  field: the day they are wanted, they are eight strings in the front end, and
+  a column on a reference table would make them a migration and a screen to
+  edit them with.
 - ~~`CategoryView` has no search aliases: typing "barbiers" finds nothing.~~
   (the plural, done) V055 singularises what was TYPED, which cannot lose a
   match because the stripped form is a prefix of the folded one. Matching the
@@ -203,34 +207,72 @@ by one.
   is how every directory of any size builds one - and it answers a second
   question at the same time: which trades people come here for and this
   platform has not recruited.
-- `PublicProviderView` has no founding year (`depuis 2016`), and it is not
-  wanted: a business that opened this year looks worse for carrying one, which
-  is half of a launch market.
+- ~~`PublicProviderView` has no founding year (`depuis 2016`).~~ (dropped,
+  2026-09-14) A business that opened this year looks worse for carrying one,
+  and at a launch that is half the directory. The design element goes, not the
+  field: there is nothing to build and nothing to decide later.
 - ~~`PublicStaffMember` has no `bookable`: the `Non reservable` pill.~~ (not
   buildable, and should not be) `PublicStaffSqlRepository` reads
   `WHERE status = 'ACTIVE' AND bookable`, so a customer is never shown somebody
   they cannot book. The field would be `true` on every row it ever appeared on,
   and the pill would be a label for a case the API refuses to produce.
-- `CustomerBookingView` has neither `fulfilment` nor `turnaround_hours`: the
-  Deroulement line and the fulfilment note are inferred from the named service
-  offering. `available-slots` does not distinguish a closed day from a full one.
+- ~~`CustomerBookingView` has no `fulfilment`.~~ (done) It is published from
+  the appointment row, where the choice was frozen at booking. The page used to
+  match the frozen `service_name` against the live catalogue, which finds
+  nothing the moment the provider renames the service and cannot say which mode
+  was chosen since V044 lets one offering be sold all three ways - both landing
+  on the same ON_SITE fallback.
+
+  **`turnaround_hours` was NOT added beside it, on purpose.** V027 constrains
+  `(turnaround_hours IS NULL) = (ready_by IS NULL)`, so a drop-off always
+  carries the promised instant, and `ready_by` is already on this view. A
+  second number saying the same thing in another unit is one more pair that has
+  to agree.
+- ~~`available-slots` does not distinguish a closed day from a full one.~~
+  (done, in the client) The slot list still says only what can be booked - a
+  grid flagging what is taken would be an occupancy map of a named person at a
+  named address. The day strip reads `listPublicOpeningHours` beside it and
+  draws the whole window: a weekday with no stretch is "Fermé", one with hours
+  and no slot is "Complet".
+
+  A one-off closure still reads as "Complet", because holidays deliberately do
+  not appear in the weekly hours. The hint under the strip says so.
 - ~~`GET /v1/appointments` has no fulfilment filter.~~ (done) It takes a
   repeatable one, matched against the mode frozen on the appointment. The queue
   asks for `DROP_OFF` instead of sifting a hundred and eighty days in the
   browser, and `AppointmentPage` publishes a `total` so a badge counts what
   matches rather than the rows that fit on a page.
-- `ServiceOfferingView` has no photo: one thumbnail per line costs one request
-  per service offering.
-- `CustomerSummaryView` has no `has_notes`, and `CustomerVisitView` carries no
-  amount: the price of each visit in the history. ~~`no_show_count`~~ (done) -
+- ~~`ServiceOfferingView` has no photo.~~ (dropped, 2026-09-14) The gallery
+  already carries the business's own photographs, and `listServicePhotos`
+  already serves per-service ones for the screen that wants them. A thumbnail on
+  every line of the price list buys a second upload surface, a second ratio to
+  hold, and a provider's evening spent photographing a haircut - for a line a
+  customer reads for its price. Revisit only if a trade appears where the line
+  IS the picture.
+- ~~`CustomerSummaryView` has no `has_notes`, and `CustomerVisitView` carries
+  no amount.~~ (done) The flag travels, never the note: the list is read at a
+  counter with the customer standing at it. The amount is the one frozen on the
+  appointment, because the catalogue holds today's price for a service that may
+  since have been repriced, renamed or retired. ~~`no_show_count`~~ (done) -
   `visits` counts every appointment in every state on purpose, so it cannot
   tell eight kept from eight booked and two honoured, and that is the one
   judgement a provider has to make before blocking anybody.
 - ~~**Moderation: no operation lists the businesses.**~~ (done)
   `GET /v1/admin/providers` publishes every business with its standing, so the
   suspension lever is no longer keyed on a slug nobody could look up. What is
-  still owed on that screen: `ProviderProfileView` has no `report_count`, and
-  `ProviderReportView` does not carry the booking reference.
+  still owed on that screen: nothing. `ModeratedProviderView` now carries a
+  `report_count` - pending only - beside `appointment_count`, which are the two
+  halves of a suspension: what it costs, and whether there is a case for one.
+  Counting a report the operator has already closed would leave a business they
+  cleared last month looking exactly like one nobody has read.
+
+  **The booking reference was NOT added to `ProviderReportView`** (dropped,
+  2026-09-14). The reference is the customer's own handle and `getBooking` is
+  anonymous: publishing it to the console would hand every operator a working
+  key into the booking of everybody who has ever complained. The report already
+  carries `appointment_starts_at` and `service_name`, which is what makes it
+  read as an event, and `report_id` is what two reports about one visit are
+  correlated by.
 
   **Who did it** is answered off-screen rather than in a view. Every write those
   routes perform now writes `audit_logs` with `actor_role = 'OPERATOR'`, and
@@ -243,11 +285,18 @@ by one.
 - **Compte and Reglages**: neither e-mail verification nor password change on the
   contract side, that is Keycloak. The controls are drawn and disabled, with the
   sentence that says so.
-- `409 SLUG_UNAVAILABLE` carries no address suggestion: the design's screen
-  offers one.
-- **`design.html` shows SIX appointment statuses, the API has five.** The sixth
-  is `Pret`, which already exists as `ready_at` on a drop-off without being a
-  status.
+- ~~`409 SLUG_UNAVAILABLE` carries no address suggestion.~~ (dropped,
+  2026-09-14) The server would have to mint a free handle, which means guessing
+  what a business wants to be called; the form already answers in under a
+  second, and a person retyping one word is faster than reading a suggestion
+  and deciding whether to accept it. Reconsider only if the misses show people
+  abandoning the form there.
+- ~~**`design.html` shows SIX appointment statuses, the API has five.**~~
+  (dropped, 2026-09-14) The sixth is `Pret`, and it already exists as `ready_at`
+  on a drop-off. Making it a status would put a value in `AppointmentStatus`
+  that only applies to one fulfilment, and every CHECK, every filter and every
+  badge would have to learn that CONFIRMED and READY are the same standing seen
+  from two angles. The badge reads `ready_at`, which is where the fact lives.
 
 ## Known functional gaps
 
