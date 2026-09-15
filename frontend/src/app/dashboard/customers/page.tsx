@@ -223,6 +223,15 @@ function Row({ customer, zone }: { customer: CustomerSummary; zone: string }) {
           </div>
         ) : null}
       </div>
+      {/* The flag, never the note. This list is read at a counter with the
+          customer standing at it, and "allergique au defrisant" is the line
+          the provider wrote to themselves. */}
+      {customer.has_notes ? (
+        <span className="badge badge--neutral">
+          <Icon name="note" />
+          Note
+        </span>
+      ) : null}
       <Icon name="chevron-right" size={18} />
     </Link>
   );

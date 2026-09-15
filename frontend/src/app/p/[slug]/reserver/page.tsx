@@ -14,11 +14,13 @@ import type {
   CustomerBooking,
   Fulfilment,
   LocalityList,
+  PublicOpeningHours,
   PublicProvider,
   PublicServiceOffering,
   PublicStaffList,
   PublicStaffMember,
 } from "@/lib/types";
+import { openWeekdays, weekday } from "@/lib/day-strip";
 import { groupLocalities, localityLabel } from "@/lib/localities";
 import { refusalKeepsTheHour } from "@/lib/refusal";
 import { book } from "./actions";
@@ -216,7 +218,7 @@ export default async function BookingFlow({
   const from = day ?? today;
   const to = addDays(from, WINDOW_DAYS - 1);
 
-  const [slots, places] = await Promise.all([
+  const [slots, hours, places] = await Promise.all([
     // Only once a service is chosen, and only on the steps that show them: a
     // slot's length comes from that offering's own duration and buffers, so
     // there is no such thing as the slot list of a provider in general.
@@ -235,6 +237,13 @@ export default async function BookingFlow({
             },
           },
         )
+      : null,
+    // The weekly hours, on the day picker alone. The slot list says what can be
+    // booked and deliberately says nothing about the rest, so a day it omits is
+    // a day this page cannot explain without them: shut on Sundays, and full on
+    // Tuesday, arrive here as the same silence.
+    step === 3 && service
+      ? loadHours(slug)
       : null,
     // The map and the quartiers, read only when the form is going to ask for
     // an address. Every other booking happens where the business already is.
@@ -306,6 +315,7 @@ export default async function BookingFlow({
         service={service}
         person={person}
         groups={groups}
+        open={openWeekdays(hours)}
         active={day}
         from={from}
         to={to}
@@ -624,6 +634,7 @@ function DateStep({
   service,
   person,
   groups,
+  open,
   active,
   from,
   to,
@@ -638,6 +649,7 @@ function DateStep({
   service: PublicServiceOffering;
   person: PublicStaffMember | undefined;
   groups: { date: string; slots: Slot[] }[];
+  open: Set<number> | null;
   active: string | undefined;
   from: string;
   to: string;
@@ -666,7 +678,7 @@ function DateStep({
         Quel jour ?
       </h1>
       <p className="t-body" style={{ marginTop: "var(--s-3)", maxWidth: "58ch" }}>
-        Seuls les jours où il reste de la place sont proposés.
+        Toute la semaine est affichée, avec ce qu&rsquo;il reste chaque jour.
       </p>
 
       <div style={{ marginTop: "var(--s-6)" }}>
@@ -698,49 +710,68 @@ function DateStep({
           </span>
         </div>
 
-        {groups.length > 0 ? (
-          <>
-            <div className="daystrip">
-              {groups.map((group) => (
-                <Link
-                  key={group.date}
-                  className={group.date === active ? "day is-active" : "day"}
-                  aria-current={group.date === active ? "true" : undefined}
-                  href={stepHref(slug, {
-                    etape: 4,
-                    service: service.service_offering_id,
-                    staff: person?.staff_id,
-                    date: group.date,
-                  })}
-                >
-                  <span className="day__dow">{dayOfWeek(group.date)}</span>
-                  <span className="day__num">{dayNumber(group.date)}</span>
-                  <span className="day__free">
-                    {group.slots.length} libre{group.slots.length > 1 ? "s" : ""}
-                  </span>
-                </Link>
-              ))}
-            </div>
-            <p className="t-xs" style={{ marginTop: "var(--s-4)" }}>
-              <Icon name="info" size={16} /> Les jours de fermeture et les congés
-              du salon n’apparaissent pas.
-            </p>
-            <ProviderClock zone={zone} />
-            {truncated ? (
-              <p className="t-xs" style={{ marginTop: "var(--s-4)" }}>
-                Cette semaine compte plus de créneaux que la page n’en montre.
-                Les jours suivants en ont d’autres.
-              </p>
-            ) : null}
-          </>
-        ) : (
-          <div className="empty empty--tight">
+        <div className="daystrip">
+          {daysOf(from).map((date) => {
+            const free = groups.find((group) => group.date === date)?.slots.length ?? 0;
+            const shut = open !== null && !open.has(weekday(date));
+            const label = free > 0
+              ? `${free} libre${free > 1 ? "s" : ""}`
+              : shut
+                ? "Fermé"
+                : "Complet";
+            const inside = (
+              <>
+                <span className="day__dow">{dayOfWeek(date)}</span>
+                <span className="day__num">{dayNumber(date)}</span>
+                <span className="day__free">{label}</span>
+              </>
+            );
+
+            // A day with nothing on it is not a link. It is drawn because the
+            // question the customer is asking is why it is empty, and a control
+            // that answers with the page it is already on answers nothing.
+            return free === 0 ? (
+              <span key={date} className="day is-full" aria-disabled="true">
+                {inside}
+              </span>
+            ) : (
+              <Link
+                key={date}
+                className={date === active ? "day is-active" : "day"}
+                aria-current={date === active ? "true" : undefined}
+                href={stepHref(slug, {
+                  etape: 4,
+                  service: service.service_offering_id,
+                  staff: person?.staff_id,
+                  date,
+                })}
+              >
+                {inside}
+              </Link>
+            );
+          })}
+        </div>
+        <p className="t-xs" style={{ marginTop: "var(--s-4)" }}>
+          <Icon name="info" size={16} /> « Fermé » est un jour de la semaine où
+          le salon ne travaille pas. Un congé ou un jour férié s&rsquo;affiche
+          comme complet.
+        </p>
+        <ProviderClock zone={zone} />
+        {truncated ? (
+          <p className="t-xs" style={{ marginTop: "var(--s-4)" }}>
+            Cette semaine compte plus de créneaux que la page n’en montre. Les
+            jours suivants en ont d’autres.
+          </p>
+        ) : null}
+
+        {groups.length === 0 ? (
+          <div className="empty empty--tight" style={{ marginTop: "var(--s-6)" }}>
             <Scene name="chair" className="scene-ill scene-ill--sm" />
             <div className="empty__title">Rien de libre cette semaine</div>
             <p className="empty__body">
               {person
                 ? `${person.display_name} n’a plus de place du ${dayLabel(from)} au ${dayLabel(to)}. La semaine suivante est souvent plus ouverte, ou revenez à l’étape précédente pour ne demander personne en particulier.`
-                : `Tout est pris du ${dayLabel(from)} au ${dayLabel(to)}. Essayez la semaine suivante.`}
+                : `Il ne reste rien du ${dayLabel(from)} au ${dayLabel(to)}. Essayez la semaine suivante.`}
             </p>
             <div className="empty__actions">
               <Link className="btn btn--secondary" href={nextWeek}>
@@ -749,7 +780,7 @@ function DateStep({
               </Link>
             </div>
           </div>
-        )}
+        ) : null}
 
         <div className="row" style={{ marginTop: "var(--s-8)" }}>
           <Link
@@ -1757,6 +1788,24 @@ async function loadProvider(
   }
 }
 
+/**
+ * The weekly hours, or nothing.
+ *
+ * <p>Swallowed on purpose, and it is the only read on this page that is. The
+ * hours decide a LABEL on a day the customer can already see; the slots decide
+ * what they can book. Letting a failure here take down the day picker would
+ * trade a page that books appointments for a page that explains itself.
+ */
+async function loadHours(slug: string): Promise<PublicOpeningHours | null> {
+  try {
+    return await publicApi<PublicOpeningHours>(
+      `/v1/providers/${encodeURIComponent(slug)}/opening-hours`,
+    );
+  } catch {
+    return null;
+  }
+}
+
 /** The appointment behind a reference, for the confirmation. */
 async function loadBooking(reference: string): Promise<CustomerBooking> {
   try {
@@ -1898,6 +1947,11 @@ function minutesOfDay(instant: string, timeZone: string): number {
   }).formatToParts(new Date(instant));
   const at = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? "0");
   return at("hour") * 60 + at("minute");
+}
+
+/** The window, day by day, so an empty day is drawn rather than skipped. */
+function daysOf(from: string): string[] {
+  return Array.from({ length: WINDOW_DAYS }, (_, i) => addDays(from, i));
 }
 
 /** Days added to a date, both written the way the contract writes a date. */

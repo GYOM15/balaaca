@@ -4308,7 +4308,8 @@ components:
 
     CustomerSummaryView:
       type: object
-      required: [customer_id, full_name, phone, visits, no_show_count]
+      required: [customer_id, full_name, phone, visits, no_show_count,
+                 has_notes]
       properties:
         customer_id:
           type: string
@@ -4341,6 +4342,21 @@ components:
             Only `NO_SHOW`, never a cancellation. A customer who telephoned to
             cancel gave the chair back; one who simply did not come cost the
             hour, and the two are not the same failing.
+        has_notes:
+          type: boolean
+          description: |
+            Whether this person's card carries the salon's own note.
+
+            The note itself is NOT here, and must not be: it is the line a
+            provider writes to remember that somebody is allergic to a product
+            or is difficult about prices, and a list is read over a shoulder at
+            a counter. This is the flag that says the card is worth opening,
+            which is the whole of what a list can say about it.
+
+            A note of nothing but spaces is no note: it is folded away when it
+            is written, so the column is the single definition and this flag and
+            the detail's `notes` cannot disagree. A card marked annotated that
+            opens on an empty box is the failure this shape exists to prevent.
         last_visit:
           type: string
           format: date-time
@@ -4369,7 +4385,7 @@ components:
 
     CustomerVisitView:
       type: object
-      required: [starts_at, service_name, status, staff_name]
+      required: [starts_at, service_name, status, staff_name, price]
       properties:
         starts_at:
           type: string
@@ -4382,6 +4398,15 @@ components:
           $ref: '#/components/schemas/AppointmentStatus'
         staff_name:
           type: string
+        price:
+          allOf:
+            - $ref: '#/components/schemas/Money'
+          description: |
+            What this visit was quoted at, frozen like the name beside it. The
+            only figure that answers the question a salon actually opens this
+            card with - what somebody is worth to the business - and it cannot
+            be recovered from the catalogue, which carries today's price for a
+            service that may have been renamed or retired since.
 
     CustomerNotesRequest:
       type: object
@@ -4500,7 +4525,7 @@ components:
         unpublished and the suspended - and carries no way to contact anybody:
         not the business, and above all not its customers.
       required: [slug, business_name, published, status, registered_at,
-                 appointment_count]
+                 appointment_count, report_count]
       properties:
         slug:
           type: string
@@ -4555,6 +4580,25 @@ components:
             is how many customers are still expected at the door after the lever
             is pulled. It counts appointments and says nothing whatsoever about
             who is in them.
+        report_count:
+          type: integer
+          format: int64
+          description: |
+            How many complaints against this business are still waiting to be
+            read.
+
+            `appointment_count` says what a suspension costs; this says whether
+            there is a case for one. They are the two halves of the same
+            decision, and having only the first meant reading the report inbox
+            beside this list and matching names by eye.
+
+            Pending only. A report an operator has already read and closed is a
+            decision they made, and counting it here would leave a business they
+            cleared last month looking exactly like one nobody has read yet.
+
+            A count, like its neighbour: it says how many, never who. Neither
+            the person who complained nor the appointment behind a complaint
+            appears on this view.
         suspension_reason:
           type: string
           description: What the operator wrote when they suspended, and what the
@@ -5325,7 +5369,8 @@ components:
         identifier, no customer identifier: the reference is the only handle, and
         publishing a second one would be publishing a second way in.
       required: [reference, provider_slug, provider_name, service_name,
-                 staff_name, starts_at, ends_at, status, price, timezone]
+                 staff_name, starts_at, ends_at, status, price, timezone,
+                 fulfilment]
       properties:
         reference:
           type: string

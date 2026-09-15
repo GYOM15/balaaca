@@ -76,7 +76,14 @@ class ClienteleIT {
                 // visit, not the first.
                 .body("history[0].starts_at", equalTo("2026-09-08T10:00:00Z"))
                 .body("history[0].service_name", equalTo("Tresses"))
-                .body("history[0].staff_name", equalTo("Fatou"));
+                .body("history[0].staff_name", equalTo("Fatou"))
+                // Frozen on the row, beside the name. A salon opening this card
+                // is asking what somebody is worth to the business, and a
+                // history of dates with no amounts cannot answer it - nor can
+                // the catalogue, which holds today's price for a service that
+                // may have been repriced, renamed or retired since.
+                .body("history[0].price.amount_minor", equalTo(150000))
+                .body("history[0].price.currency", equalTo("GNF"));
     }
 
     @Test
@@ -125,16 +132,31 @@ class ClienteleIT {
         String id = given().when().get("/v1/customers").then().statusCode(200)
                 .extract().path("data[0].customer_id");
 
+        given().when().get("/v1/customers").then().statusCode(200)
+                .body("data[0].has_notes", equalTo(false));
+
         given().contentType("application/json")
                 .body("{\"notes\":\"  Allergique a l'ammoniaque.  \"}")
                 .when().put("/v1/customers/" + id + "/notes").then().statusCode(200)
-                .body("notes", equalTo("Allergique a l'ammoniaque."));
+                .body("notes", equalTo("Allergique a l'ammoniaque."))
+                .body("has_notes", equalTo(true));
+
+        // Two code paths, one question. The list reads a boolean out of SQL,
+        // the card derives it from the note it is already carrying, and a list
+        // that said "Note" beside a card opening on an empty box would be
+        // nobody's fault and would stay.
+        given().when().get("/v1/customers").then().statusCode(200)
+                .body("data[0].has_notes", equalTo(true));
 
         // Nothing but spaces is no note - it would render as a card that looks
         // annotated and says nothing.
         given().contentType("application/json").body("{\"notes\":\"   \"}")
                 .when().put("/v1/customers/" + id + "/notes").then().statusCode(200)
-                .body("notes", nullValue());
+                .body("notes", nullValue())
+                .body("has_notes", equalTo(false));
+
+        given().when().get("/v1/customers").then().statusCode(200)
+                .body("data[0].has_notes", equalTo(false));
     }
 
     @Test

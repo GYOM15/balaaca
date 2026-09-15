@@ -2,6 +2,7 @@ package com.balaaca.app.rest;
 
 import com.balaaca.app.api.BookingApi;
 import com.balaaca.app.api.model.ErrorCode;
+import com.balaaca.app.api.model.Fulfilment;
 import com.balaaca.app.api.model.OwnReviewView;
 import com.balaaca.app.api.model.ReportRequest;
 import com.balaaca.app.api.model.ServicePhotoView;
@@ -361,6 +362,7 @@ public class PublicBookingResource implements BookingApi {
                 .endsAt(OffsetDateTime.ofInstant(booking.endsAt(), ZoneOffset.UTC))
                 .status(AppointmentStatus.fromValue(booking.status()))
                 .timezone(booking.timezone())
+                .fulfilment(Fulfilment.fromValue(booking.fulfilment()))
                 .price(new Money()
                         .amountMinor(booking.price().amountMinor())
                         .currency(booking.price().currency().name()));

@@ -1004,6 +1004,7 @@ function Businesses({
                 <th>Lieu</th>
                 <th>État</th>
                 <th>Rendez-vous</th>
+                <th>Signalements</th>
                 <th>Inscrit</th>
                 <th></th>
               </tr>
@@ -1054,6 +1055,20 @@ function Businesses({
                       cancels none of these, so this is how many customers are
                       still expected at the door afterwards. */}
                   <td className="t-sm">{row.appointment_count}</td>
+                  {/* Whether there is a case, beside what the lever costs. The
+                      two are read together or the number above is only half a
+                      decision. Nothing is drawn for a business nobody has
+                      complained about: a zero on every line would make the
+                      table read as a list of suspects. */}
+                  <td className="t-sm">
+                    {row.report_count > 0 ? (
+                      <Badge
+                        label={String(row.report_count)}
+                        tone="warning"
+                        icon="flag"
+                      />
+                    ) : null}
+                  </td>
                   <td className="t-xs">{day(row.registered_at, OPERATOR_ZONE)}</td>
                   <td>
                     <details className="menu">
