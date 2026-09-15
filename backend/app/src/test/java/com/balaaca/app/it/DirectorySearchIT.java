@@ -199,4 +199,80 @@ class DirectorySearchIT {
                 .then().statusCode(200)
                 .extract().jsonPath().getList("data.slug", String.class);
     }
+
+    @Test
+    @DisplayName("A phrase finds what a substring never could")
+    void readsASentence() {
+        // Every comparison here was `stored LIKE '%typed%'`, a substring test:
+        // it finds a word inside a label and can never find a label inside a
+        // sentence. "salon de coiffure" answered nothing.
+        // Across the NAME and the TRADE, which are one document here: "salon"
+        // is the business and "coiffure" is what it does, and a vector per
+        // column would have asked for both words in one of them and found
+        // nothing.
+        assertThat(search("salon de coiffure")).containsExactly("salon-fatou");
+        // And within one field, which needs no concatenation.
+        assertThat(search("salon fatou")).containsExactly("salon-fatou");
+    }
+
+    @Test
+    @DisplayName("Typing three letters still answers, which full text alone cannot")
+    void stillAnswersPartialTyping() {
+        // Full text matches WHOLE stems, so "tress" gets nothing from it. The
+        // trigram-indexed LIKE is the half that answers from the third letter,
+        // which is why the two are OR'd rather than one replacing the other.
+        assertThat(search("tress")).containsExactly("salon-fatou");
+        assertThat(search("photograp")).containsExactly("coiffeur-solo");
+    }
+
+    @Test
+    @DisplayName("An irregular plural works, which a trailing-s rule never could")
+    void stemsRatherThanStrips() {
+        // V055 strips a trailing s or x. French stemming is what actually
+        // reduces "barbiers" and "chevaux" to the same root as their singular,
+        // and it is why this is worth more than the rule it joins.
+        assertThat(search("photographies")).containsExactly("coiffeur-solo");
+    }
+
+    @Test
+    @DisplayName("A phrase across a business name and a SERVICE name is not served")
+    void doesNotSpanTheOfferings() {
+        // Said out loud rather than left to be discovered. Offerings are
+        // matched on their own, so "tresses" finds the salon - but "salon de
+        // tresses" asks for both words in one document and the offerings are
+        // not in the concatenation, because aggregating them per row would be
+        // a correlated subquery on the hot path. docs/BACKLOG.md carries it.
+        assertThat(search("tresses")).containsExactly("salon-fatou");
+        assertThat(search("salon de tresses")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("A word that answers nothing is written down, once per word")
+    void remembersWhatItCouldNotAnswer() {
+        assertThat(search("plombier")).isEmpty();
+        assertThat(search("plombier")).isEmpty();
+        assertThat(search("PLOMBIER")).isEmpty();
+
+        // One row per distinct term, counted: the table is bounded by how many
+        // different things people type rather than by how often, and the number
+        // that matters - how many people wanted this - is the row itself.
+        assertThat(fixtures.count(
+                "SELECT times FROM search_misses WHERE term_folded = 'plombier'"))
+                .isEqualTo(3);
+        assertThat(fixtures.count("SELECT count(*) FROM search_misses")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("An empty place is not a missing word")
+    void doesNotFileAnEmptyFilterAsAMissingWord() {
+        // A search narrowed to a commune with nobody in it is an empty
+        // directory, not a vocabulary this platform lacks. Filing it would
+        // bury the words that are, which is the one thing these rows exist to
+        // make findable.
+        given().queryParam("q", "tresses").queryParam("locality", "boke")
+                .when().get("/v1/providers").then().statusCode(200)
+                .body("data", org.hamcrest.Matchers.hasSize(0));
+
+        assertThat(fixtures.count("SELECT count(*) FROM search_misses")).isZero();
+    }
 }
