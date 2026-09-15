@@ -173,9 +173,36 @@ by one.
   for "Coiffure", "clim" for "Climatisation". `localities.aliases` is the
   precedent and the same column shape would serve. Inventing thirty-five
   Guinean trade vocabularies is not an engineering decision.
-- **Multi-word queries match nothing.** "salon de coiffure" reaches no label,
-  because no stored label contains that phrase. That needs tokenisation rather
-  than a longer LIKE.
+- ~~**Multi-word queries match nothing.**~~ (done, with one gap named) V056
+  adds a French `tsvector` beside each `_folded` column, OR'd with the existing
+  LIKE and never replacing it: full text matches whole stems, so somebody
+  typing "coiff" as they go gets nothing from it while the trigram-indexed LIKE
+  answers from the third letter. Measured before it was written.
+
+  The business name and its trade are CONCATENATED into one document, because
+  a two-word query is `'salon' & 'coiffur'` and AND means both terms in one
+  vector - separately, "salon de coiffure" asks for a business whose name
+  contains both and finds nothing.
+
+  **What is still not served**: a phrase spanning a business name and a SERVICE
+  name. "tresses" finds the salon and "salon de tresses" does not, because the
+  offerings are matched on their own rather than joined into the concatenation
+  - aggregating them per row would be a correlated subquery on the hot path.
+  And the concatenated arm cannot use a GIN index, so it is a scan: nothing at
+  a directory of hundreds, and the fix when it is not is a maintained column
+  holding the join.
+- **The synonym list writes itself now.** `search_misses` counts every word
+  that returned nothing, one row per distinct term. Read it with:
+
+  ```
+  psql -c "SELECT term_as_typed, times, last_at FROM search_misses
+            ORDER BY times DESC LIMIT 30"
+  ```
+
+  That is the list to turn into aliases - harvested rather than invented, which
+  is how every directory of any size builds one - and it answers a second
+  question at the same time: which trades people come here for and this
+  platform has not recruited.
 - `PublicProviderView` has no founding year (`depuis 2016`), and it is not
   wanted: a business that opened this year looks worse for carrying one, which
   is half of a launch market.

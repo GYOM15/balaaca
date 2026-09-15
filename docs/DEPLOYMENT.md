@@ -230,6 +230,26 @@ variable. One form that covers both beats remembering which case you are in.
 
 Keycloak 26 keeps user sessions in the database, so this signs nobody out.
 
+## What people looked for and did not find
+
+`search_misses` counts every directory search that returned nothing, one row
+per distinct word rather than one per search - so the table is bounded by how
+many different things people type, and the number that matters is the row
+itself.
+
+```
+$COMPOSE exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
+  "SELECT term_as_typed, times, last_at FROM search_misses \
+    ORDER BY times DESC LIMIT 30"'
+```
+
+It answers two questions. The words at the top are the synonym list, harvested
+rather than invented - which is how every directory of any size builds one.
+And they are also the trades people come here for that nobody has recruited.
+
+Nothing in that table identifies anybody: a term is what somebody looked for,
+never who they are, and no session, address or account is recorded beside it.
+
 ## Which build is running
 
 The commit is a LABEL on each image, put there by `publish-images.sh`. Ask the

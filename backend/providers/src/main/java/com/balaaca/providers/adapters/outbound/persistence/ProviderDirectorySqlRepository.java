@@ -1,7 +1,12 @@
 package com.balaaca.providers.adapters.outbound.persistence;
 
 import com.balaaca.providers.ports.inbound.PublishedReviewsUseCase;
-import com.balaaca.providers.ports.inbound.SearchProvidersUseCase;
+import com.balaaca.providers.ports.inbound.SearchProvidersUseCase.Directory;
+import com.balaaca.providers.ports.inbound.SearchProvidersUseCase.Fulfilments;
+import com.balaaca.providers.ports.inbound.SearchProvidersUseCase.Position;
+import com.balaaca.providers.ports.inbound.SearchProvidersUseCase.ProviderCard;
+import com.balaaca.providers.ports.inbound.SearchProvidersUseCase.Query;
+import com.balaaca.providers.ports.outbound.ProviderDirectoryRepository;
 import com.balaaca.sharedkernel.money.Currency;
 import com.balaaca.sharedkernel.money.Money;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -39,7 +44,7 @@ import java.util.Optional;
  * because a join needs a key, and the outer projection does not carry it.
  */
 @ApplicationScoped
-public class ProviderDirectorySqlRepository implements SearchProvidersUseCase {
+public class ProviderDirectorySqlRepository implements ProviderDirectoryRepository {
 
     /**
      * The three tables a card is read from, named once because two statements
@@ -87,15 +92,48 @@ public class ProviderDirectorySqlRepository implements SearchProvidersUseCase {
                     -- "barbiers" answered nothing while "barbier" answered the
                     -- trade. It only ever widens - the stripped form is a
                     -- prefix of the folded one - so all three columns take it.
+                    --
+                    -- And OR'd with full text since V056, which is the half
+                    -- that reads a PHRASE: a LIKE is a substring test, so it
+                    -- can find a word inside a label and never a label inside
+                    -- "salon de coiffure". Both, never one: full text matches
+                    -- whole stems, so somebody typing "coiff" as they go gets
+                    -- nothing from it, while the trigram-indexed LIKE answers
+                    -- from the third letter. Measured before it was written.
                     OR p.business_name_folded LIKE
                        '%' || app_search_term(CAST(:name AS varchar)) || '%'
                     OR c.label_fr_folded LIKE
                        '%' || app_search_term(CAST(:name AS varchar)) || '%'
+                    -- CONCATENATED, and measured before it was written. A
+                    -- tsquery of two words is 'salon' & 'coiffur', and AND
+                    -- means both terms in ONE document: with a vector per
+                    -- column, "salon de coiffure" asks for a business whose
+                    -- NAME contains both, and finds nothing at all, because
+                    -- "salon" is the name and "coiffure" is the trade. Joining
+                    -- the two makes the provider one document, which is what a
+                    -- search engine would have indexed in the first place.
+                    --
+                    -- The cost is honest: `(a || b) @@ q` cannot use the GIN
+                    -- index on either column, so this arm is a scan. At a
+                    -- directory of hundreds it is nothing; the day it is not,
+                    -- the fix is a maintained column holding the join, and the
+                    -- indexes are already there for every other arm.
+                    --
+                    -- Offerings stay in the EXISTS below rather than in this
+                    -- concatenation: aggregating them per row would be a
+                    -- correlated subquery on the hot path, and a phrase
+                    -- spanning a business NAME and a SERVICE name is the rarer
+                    -- want. Written down in docs/BACKLOG.md rather than half
+                    -- solved here.
+                    OR (p.search_terms || c.search_terms)
+                           @@ app_search_query(CAST(:name AS varchar))
                     OR EXISTS (SELECT 1 FROM service_offerings so
                                 WHERE so.provider_id = p.id
                                   AND so.active
-                                  AND so.name_folded LIKE
-                                      '%' || app_search_term(CAST(:name AS varchar)) || '%'))
+                                  AND (so.name_folded LIKE
+                                           '%' || app_search_term(CAST(:name AS varchar)) || '%'
+                                    OR so.search_terms
+                                           @@ app_search_query(CAST(:name AS varchar)))))
                AND (cardinality(CAST(:categories AS varchar[])) = 0
                     OR c.slug = ANY(CAST(:categories AS varchar[])))
                -- How the work reaches the customer, asked of the SAME rows the
