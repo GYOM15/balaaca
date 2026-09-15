@@ -126,6 +126,8 @@ public interface ModerateProvidersUseCase {
                              String status,
                              Instant registeredAt,
                              long appointmentCount,
+                             /** Complaints still waiting to be read. Pending only. */
+                             long reportCount,
                              Optional<String> suspensionReason,
                              SearchProvidersUseCase.Position position) {
     }

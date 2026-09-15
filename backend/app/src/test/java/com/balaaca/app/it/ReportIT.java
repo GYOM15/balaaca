@@ -119,6 +119,39 @@ class ReportIT {
     }
 
     @Test
+    @DisplayName("The list the operator decides from counts the complaints, and stops counting a closed one")
+    @TestSecurity(user = "kc-operator", roles = "admin:moderation")
+    @OidcSecurity(claims = @Claim(key = "sub", value = "kc-operator"))
+    void theListCarriesTheCount() {
+        // Nothing filed yet, and the business already holds a booking. The two
+        // numbers are the two halves of the same decision: one says what a
+        // suspension costs, the other whether there is a case for one.
+        String reference = aBooking();
+
+        given().when().get("/v1/admin/providers?q=salon-fatou").then().statusCode(200)
+                .body("data[0].appointment_count", equalTo(1))
+                .body("data[0].report_count", equalTo(0));
+
+        report(reference, """
+               {"reason":"RUDE_OR_UNSAFE","details":"Comportement inacceptable."}
+               """, 202);
+
+        String id = given().when().get("/v1/admin/reports?status=PENDING").then().statusCode(200)
+                .extract().path("data[0].report_id");
+
+        given().when().get("/v1/admin/providers?q=salon-fatou").then().statusCode(200)
+                .body("data[0].report_count", equalTo(1));
+
+        // Reviewing is the operator saying they looked. Counting it afterwards
+        // would leave a business they cleared last month looking exactly like
+        // one nobody has read yet, and the number would only ever climb.
+        given().when().post("/v1/admin/reports/" + id + "/review").then().statusCode(200);
+
+        given().when().get("/v1/admin/providers?q=salon-fatou").then().statusCode(200)
+                .body("data[0].report_count", equalTo(0));
+    }
+
+    @Test
     @DisplayName("A provider cannot read what was filed against it")
     @TestSecurity(user = BookingFixtures.SALON_SUBJECT, roles = "dashboard:read")
     @OidcSecurity(claims = @Claim(key = "sub", value = BookingFixtures.SALON_SUBJECT))

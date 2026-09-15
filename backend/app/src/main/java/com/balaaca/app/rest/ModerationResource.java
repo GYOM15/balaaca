@@ -192,7 +192,8 @@ public class ModerationResource implements ModerationApi {
                 .published(p.published())
                 .status(ProviderStatus.fromValue(p.status()))
                 .registeredAt(OffsetDateTime.ofInstant(p.registeredAt(), ZoneOffset.UTC))
-                .appointmentCount(p.appointmentCount());
+                .appointmentCount(p.appointmentCount())
+                .reportCount(p.reportCount());
 
         p.trade().ifPresent(view::setTrade);
         p.area().ifPresent(view::setArea);

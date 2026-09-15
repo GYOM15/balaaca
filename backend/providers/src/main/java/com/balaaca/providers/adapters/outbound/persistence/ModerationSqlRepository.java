@@ -136,7 +136,8 @@ public class ModerationSqlRepository implements ModerationRepository {
                 Optional.ofNullable((String) r[5]),
                 (Boolean) r[6], (String) r[7], instant(r[8]),
                 ((Number) r[9]).longValue(),
-                Optional.ofNullable((String) r[10]),
+                ((Number) r[10]).longValue(),
+                Optional.ofNullable((String) r[11]),
                 new Position(businessName, slug));
     }
 
