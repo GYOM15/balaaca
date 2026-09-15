@@ -94,7 +94,7 @@ public class CustomersResource implements ClienteleApi {
     private static CustomerSummaryView summary(CustomerSummary c) {
         return fill(new CustomerSummaryView(), c.id().value(), c.contact().fullName(),
                     c.contact().phone().e164(), c.contact().email(),
-                    c.visits(), c.noShows(), c.lastVisit());
+                    c.visits(), c.noShows(), c.hasNotes(), c.lastVisit());
     }
 
     private static CustomerDetailView detail(CustomerDetail c) {
@@ -110,6 +110,10 @@ public class CustomersResource implements ClienteleApi {
                 .blocked(c.blocked())
                 .visits(c.visits())
                 .noShowCount(c.noShows())
+                // Derived from the note this same view carries, not counted a
+                // second way: the card and the line in the list cannot disagree
+                // about whether there is a note when one of them IS the note.
+                .hasNotes(c.notes().isPresent())
                 .history(c.history().stream()
                         .map(v -> new CustomerVisitView()
                                 .startsAt(OffsetDateTime.ofInstant(v.startsAt(), ZoneOffset.UTC))
@@ -130,10 +134,10 @@ public class CustomersResource implements ClienteleApi {
     private static CustomerSummaryView fill(CustomerSummaryView view, UUID id,
                                             String name, String phone,
                                             Optional<String> email, int visits,
-                                            int noShows,
+                                            int noShows, boolean hasNotes,
                                             Optional<java.time.Instant> lastVisit) {
         view.customerId(id).fullName(name).phone(phone)
-                .visits(visits).noShowCount(noShows);
+                .visits(visits).noShowCount(noShows).hasNotes(hasNotes);
         email.ifPresent(view::setEmail);
         lastVisit.ifPresent(at ->
                 view.setLastVisit(OffsetDateTime.ofInstant(at, ZoneOffset.UTC)));

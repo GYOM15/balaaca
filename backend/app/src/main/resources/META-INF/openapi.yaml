@@ -4308,7 +4308,8 @@ components:
 
     CustomerSummaryView:
       type: object
-      required: [customer_id, full_name, phone, visits, no_show_count]
+      required: [customer_id, full_name, phone, visits, no_show_count,
+                 has_notes]
       properties:
         customer_id:
           type: string
@@ -4341,6 +4342,21 @@ components:
             Only `NO_SHOW`, never a cancellation. A customer who telephoned to
             cancel gave the chair back; one who simply did not come cost the
             hour, and the two are not the same failing.
+        has_notes:
+          type: boolean
+          description: |
+            Whether this person's card carries the salon's own note.
+
+            The note itself is NOT here, and must not be: it is the line a
+            provider writes to remember that somebody is allergic to a product
+            or is difficult about prices, and a list is read over a shoulder at
+            a counter. This is the flag that says the card is worth opening,
+            which is the whole of what a list can say about it.
+
+            A note of nothing but spaces is no note: it is folded away when it
+            is written, so the column is the single definition and this flag and
+            the detail's `notes` cannot disagree. A card marked annotated that
+            opens on an empty box is the failure this shape exists to prevent.
         last_visit:
           type: string
           format: date-time

@@ -61,9 +61,14 @@ public interface ListCustomersUseCase {
      *                   only thing that separates eight visits kept from eight
      *                   booked and two honoured. NO_SHOW alone - somebody who
      *                   telephoned to cancel gave the chair back
+     * @param hasNotes   whether the card carries the salon's own note, never
+     *                   the note. It is read at a counter over somebody's
+     *                   shoulder, and "allergique" beside a name is the
+     *                   provider's line to themselves
      */
     record CustomerSummary(CustomerId id, CustomerContact contact,
-                           int visits, int noShows, Optional<Instant> lastVisit) {
+                           int visits, int noShows, boolean hasNotes,
+                           Optional<Instant> lastVisit) {
     }
 
     /**

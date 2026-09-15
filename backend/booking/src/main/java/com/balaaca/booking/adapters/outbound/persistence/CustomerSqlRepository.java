@@ -47,7 +47,13 @@ public class CustomerSqlRepository implements CustomerRepository {
         // booking that failed after the customer upsert leaves exactly that.
         List<Object[]> rows = em.createNativeQuery("""
                 SELECT c.id, c.full_name, c.phone_e164, c.email,
-                       v.visits, v.no_shows, v.last_visit
+                       v.visits, v.no_shows, v.last_visit,
+                       -- A plain null test, and it is enough: replaceNotes
+                       -- below folds a blank to NULL on the way in, so the
+                       -- column is the one definition of "there is a note".
+                       -- Folding again here would be a second one to keep in
+                       -- step, for a state the write path cannot produce.
+                       c.notes IS NOT NULL AS has_notes
                   FROM customers c
                   LEFT JOIN LATERAL (
                         SELECT count(*)::int AS visits,
@@ -171,6 +177,7 @@ public class CustomerSqlRepository implements CustomerRepository {
                 contact(r[1], r[2], r[3]),
                 ((Number) r[4]).intValue(),
                 ((Number) r[5]).intValue(),
+                (Boolean) r[7],
                 Optional.ofNullable(r[6]).map(CustomerSqlRepository::instant));
     }
 
