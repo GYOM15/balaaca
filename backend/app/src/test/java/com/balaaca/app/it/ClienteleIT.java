@@ -76,7 +76,14 @@ class ClienteleIT {
                 // visit, not the first.
                 .body("history[0].starts_at", equalTo("2026-09-08T10:00:00Z"))
                 .body("history[0].service_name", equalTo("Tresses"))
-                .body("history[0].staff_name", equalTo("Fatou"));
+                .body("history[0].staff_name", equalTo("Fatou"))
+                // Frozen on the row, beside the name. A salon opening this card
+                // is asking what somebody is worth to the business, and a
+                // history of dates with no amounts cannot answer it - nor can
+                // the catalogue, which holds today's price for a service that
+                // may have been repriced, renamed or retired since.
+                .body("history[0].price.amount_minor", equalTo(150000))
+                .body("history[0].price.currency", equalTo("GNF"));
     }
 
     @Test

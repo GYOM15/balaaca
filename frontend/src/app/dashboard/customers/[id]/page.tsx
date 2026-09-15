@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { Icon } from "@/components/icon";
 import { EmptyState, Notice, STATUS, StatusBadge } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
+import { money } from "@/lib/format";
 import type { CustomerDetail, CustomerVisit, ProviderProfile } from "@/lib/types";
 import { saveNotes, setBlocking } from "./actions";
 
@@ -295,7 +296,7 @@ function Visit({ visit, zone }: { visit: CustomerVisit; zone: string }) {
           {visit.service_name}
         </div>
         <div className="t-xs" style={{ marginTop: "2px" }}>
-          {longDay(visit.starts_at, zone)}
+          {longDay(visit.starts_at, zone)} · {money(visit.price)}
         </div>
       </div>
       <StatusBadge status={visit.status} />

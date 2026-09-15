@@ -8,6 +8,7 @@ import com.balaaca.app.api.model.CustomerNotesRequest;
 import com.balaaca.app.api.model.CustomerPage;
 import com.balaaca.app.api.model.CustomerSummaryView;
 import com.balaaca.app.api.model.CustomerVisitView;
+import com.balaaca.app.api.model.Money;
 import com.balaaca.booking.ports.inbound.ListCustomersUseCase;
 import com.balaaca.booking.ports.inbound.ListCustomersUseCase.CustomerDetail;
 import com.balaaca.booking.ports.inbound.ListCustomersUseCase.CustomerSummary;
@@ -114,7 +115,10 @@ public class CustomersResource implements ClienteleApi {
                                 .startsAt(OffsetDateTime.ofInstant(v.startsAt(), ZoneOffset.UTC))
                                 .serviceName(v.serviceName())
                                 .status(AppointmentStatus.fromValue(v.status()))
-                                .staffName(v.staffName()))
+                                .staffName(v.staffName())
+                                .price(new Money()
+                                        .amountMinor(v.price().amountMinor())
+                                        .currency(v.price().currency().name())))
                         .toList());
 
         c.contact().email().ifPresent(view::setEmail);

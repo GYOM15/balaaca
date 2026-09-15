@@ -4369,7 +4369,7 @@ components:
 
     CustomerVisitView:
       type: object
-      required: [starts_at, service_name, status, staff_name]
+      required: [starts_at, service_name, status, staff_name, price]
       properties:
         starts_at:
           type: string
@@ -4382,6 +4382,15 @@ components:
           $ref: '#/components/schemas/AppointmentStatus'
         staff_name:
           type: string
+        price:
+          allOf:
+            - $ref: '#/components/schemas/Money'
+          description: |
+            What this visit was quoted at, frozen like the name beside it. The
+            only figure that answers the question a salon actually opens this
+            card with - what somebody is worth to the business - and it cannot
+            be recovered from the catalogue, which carries today's price for a
+            service that may have been renamed or retired since.
 
     CustomerNotesRequest:
       type: object

@@ -1,6 +1,7 @@
 package com.balaaca.booking.ports.inbound;
 
 import com.balaaca.booking.domain.CustomerContact;
+import com.balaaca.sharedkernel.money.Money;
 import com.balaaca.sharedkernel.ids.CustomerId;
 import java.time.Instant;
 import java.util.List;
@@ -52,14 +53,6 @@ public interface ListCustomersUseCase {
     CustomerDetail setBlocked(CustomerId id, boolean blocked);
 
     /**
-     * @param visits how many appointments this person has, in any state. A
-     *               count that hid cancellations would make a serial canceller
-     *               look like a new customer
-     * @param lastVisit the most recent appointment START, past or future -
-     *                  which is what a salon means by "when did I last see
-     *                  them", and empty only for somebody who has never booked
-     */
-    /**
      * @param visits     every appointment in every state, cancellations
      *                   included, exactly as the contract publishes it
      * @param noShows    how many of those they did not come to. Beside
@@ -86,9 +79,16 @@ public interface ListCustomersUseCase {
                           List<Visit> history) {
     }
 
-    /** One line of the history: enough to recognise it, not the whole agenda row. */
+    /**
+     * One line of the history: enough to recognise it, not the whole agenda row.
+     *
+     * @param price what this visit was quoted at, frozen on the row beside the
+     *              name. Read from the appointment and never from the catalogue:
+     *              the offering carries today's price, for a service that may
+     *              since have been renamed, repriced or retired
+     */
     record Visit(Instant startsAt, String serviceName, String status,
-                 String staffName) {
+                 String staffName, Money price) {
     }
 
     /** @param next empty on the last page */
