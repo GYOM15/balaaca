@@ -243,9 +243,7 @@ export default async function BookingFlow({
     // a day this page cannot explain without them: shut on Sundays, and full on
     // Tuesday, arrive here as the same silence.
     step === 3 && service
-      ? publicApi<PublicOpeningHours>(
-          `/v1/providers/${encodeURIComponent(slug)}/opening-hours`,
-        )
+      ? loadHours(slug)
       : null,
     // The map and the quartiers, read only when the form is going to ask for
     // an address. Every other booking happens where the business already is.
@@ -1787,6 +1785,24 @@ async function loadProvider(
     // exists.
     if (error instanceof ApiError && error.status === 404) notFound();
     throw error;
+  }
+}
+
+/**
+ * The weekly hours, or nothing.
+ *
+ * <p>Swallowed on purpose, and it is the only read on this page that is. The
+ * hours decide a LABEL on a day the customer can already see; the slots decide
+ * what they can book. Letting a failure here take down the day picker would
+ * trade a page that books appointments for a page that explains itself.
+ */
+async function loadHours(slug: string): Promise<PublicOpeningHours | null> {
+  try {
+    return await publicApi<PublicOpeningHours>(
+      `/v1/providers/${encodeURIComponent(slug)}/opening-hours`,
+    );
+  } catch {
+    return null;
   }
 }
 
