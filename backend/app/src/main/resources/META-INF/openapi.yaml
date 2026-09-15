@@ -127,6 +127,27 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: fulfilment
+          in: query
+          required: false
+          explode: true
+          description: |
+            Repeat it to ask for several ways of working at once.
+
+            Matched against the mode FROZEN on the appointment when it was
+            booked, not against what the service offers today: a drop-off
+            taken in July is a drop-off even if the workshop stopped offering
+            it since, because the shirt is still on the shelf.
+
+            It exists for the drop-off queue, which had no way to ask. The
+            screen requested ninety days either side with a limit of two
+            hundred and sifted them in the browser, so a busy workshop lost
+            the rows past the limit - silently, and the ones lost were the
+            oldest, which are the promises most likely to be late.
+          schema:
+            type: array
+            items:
+              $ref: '#/components/schemas/Fulfilment'
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
       responses:
@@ -3176,6 +3197,33 @@ paths:
           schema:
             type: string
             maxLength: 80
+        - name: price_max
+          in: query
+          required: false
+          description: |
+            The most a customer is willing to pay to get started, in minor
+            units of the provider's currency - so 50000 for 50 000 GNF.
+
+            Matched against the SAME aggregate the card prints as `price_from`:
+            the cheapest active offering. A business matches when it has
+            anything at or below the figure, which is the question somebody
+            actually asks - can I afford to walk in here at all - rather than
+            whether everything it sells is cheap.
+
+            There is deliberately no `price_min`. A floor on a price that is
+            already a floor asks a question nobody has: `price_from` is by
+            definition the cheapest thing a business sells, and filtering it
+            from below would hide every affordable business from somebody who
+            wanted an expensive one.
+
+            A business with no active priced offering has no `price_from` and
+            is excluded whenever this is sent. It cannot answer the question,
+            and returning it would put a card with no price in a list filtered
+            by price.
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
       responses:
@@ -4260,7 +4308,7 @@ components:
 
     CustomerSummaryView:
       type: object
-      required: [customer_id, full_name, phone, visits]
+      required: [customer_id, full_name, phone, visits, no_show_count]
       properties:
         customer_id:
           type: string
@@ -4276,6 +4324,23 @@ components:
           type: integer
           format: int32
           description: Every appointment, in every state. Cancellations count.
+        no_show_count:
+          type: integer
+          format: int32
+          description: |
+            How many of those the customer did not turn up to.
+
+            It is here because `visits` deliberately counts everything, which
+            makes it useless for the one judgement a salon actually has to
+            make: somebody who booked eight times and came eight times and
+            somebody who booked eight times and came twice are the same number
+            on the same card. This is the difference between them, and it is
+            the figure a provider wants before deciding whether to block
+            anybody.
+
+            Only `NO_SHOW`, never a cancellation. A customer who telephoned to
+            cancel gave the chair back; one who simply did not come cost the
+            hour, and the two are not the same failing.
         last_visit:
           type: string
           format: date-time
@@ -5167,7 +5232,7 @@ components:
 
     AppointmentPage:
       type: object
-      required: [data, next_cursor]
+      required: [data, next_cursor, total]
       properties:
         data:
           type: array
@@ -5177,6 +5242,22 @@ components:
           type: string
           nullable: true
           description: Opaque; null on the last page.
+        total:
+          type: integer
+          format: int32
+          description: |
+            How many appointments match, across every page.
+
+            It exists because a count taken from `data` is a LIE the moment
+            there is a second page, and the dashboard was taking several: the
+            badge on the diary counted the rows of a request for two hundred,
+            so a salon with more pending requests than that was told it had
+            exactly two hundred, for ever. A number that silently stops
+            growing is worse than no number.
+
+            Ask for it with `limit=1` when the rows are not wanted. The count
+            ignores the cursor, so it does not shrink as a caller pages
+            forward.
 
     RescheduleAppointmentRequest:
       type: object

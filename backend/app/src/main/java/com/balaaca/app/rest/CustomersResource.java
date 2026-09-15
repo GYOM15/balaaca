@@ -93,7 +93,7 @@ public class CustomersResource implements ClienteleApi {
     private static CustomerSummaryView summary(CustomerSummary c) {
         return fill(new CustomerSummaryView(), c.id().value(), c.contact().fullName(),
                     c.contact().phone().e164(), c.contact().email(),
-                    c.visits(), c.lastVisit());
+                    c.visits(), c.noShows(), c.lastVisit());
     }
 
     private static CustomerDetailView detail(CustomerDetail c) {
@@ -108,6 +108,7 @@ public class CustomersResource implements ClienteleApi {
                 .phone(c.contact().phone().e164())
                 .blocked(c.blocked())
                 .visits(c.visits())
+                .noShowCount(c.noShows())
                 .history(c.history().stream()
                         .map(v -> new CustomerVisitView()
                                 .startsAt(OffsetDateTime.ofInstant(v.startsAt(), ZoneOffset.UTC))
@@ -125,8 +126,10 @@ public class CustomersResource implements ClienteleApi {
     private static CustomerSummaryView fill(CustomerSummaryView view, UUID id,
                                             String name, String phone,
                                             Optional<String> email, int visits,
+                                            int noShows,
                                             Optional<java.time.Instant> lastVisit) {
-        view.customerId(id).fullName(name).phone(phone).visits(visits);
+        view.customerId(id).fullName(name).phone(phone)
+                .visits(visits).noShowCount(noShows);
         email.ifPresent(view::setEmail);
         lastVisit.ifPresent(at ->
                 view.setLastVisit(OffsetDateTime.ofInstant(at, ZoneOffset.UTC)));

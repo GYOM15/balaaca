@@ -115,6 +115,8 @@ export function Directory({
                     selected={asked.selected}
                     locality={asked.locality}
                     area={asked.area}
+                    fulfilment={asked.fulfilment}
+                    priceMax={asked.priceMax}
                     trades={shortlist}
                     total={total}
                     localities={localities}
@@ -129,6 +131,8 @@ export function Directory({
                   selected={asked.selected}
                   locality={asked.locality}
                   area={asked.area}
+                  fulfilment={asked.fulfilment}
+                  priceMax={asked.priceMax}
                   trades={shortlist}
                   total={total}
                   localities={localities}

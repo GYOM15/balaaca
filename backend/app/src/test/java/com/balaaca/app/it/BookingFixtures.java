@@ -86,7 +86,7 @@ public class BookingFixtures {
         run("""
             TRUNCATE notifications, appointments, customers, availability_overrides,
                      availability_rules, service_offerings, provider_staff, providers,
-                     audit_logs, users CASCADE
+                     audit_logs, users, search_misses CASCADE
             """);
         // The trades come from V016 and are NOT truncated: the tests browse the
         // taxonomy the product actually ships. Only the withdrawn one is local -

@@ -116,7 +116,7 @@ type Query = {
   error?: string;
 };
 
-const EMPTY_PAGE: AppointmentPage = { data: [], next_cursor: null };
+const EMPTY_PAGE: AppointmentPage = { data: [], next_cursor: null, total: 0 };
 
 /* --- The counter's own verbs ---------------------------------------------- */
 
@@ -280,11 +280,19 @@ export default async function Agenda({
     // The counter is not a period. A shirt handed over in July and promised for
     // last Tuesday is exactly the row that must not fall off the bottom of a
     // date filter, so this one reads back as well as forward.
+    //
+    // `fulfilment` rather than sifting what comes back. This asked for every
+    // appointment in a hundred and eighty days and kept the drop-offs in the
+    // browser, so a busy workshop lost whatever fell past the limit - and what
+    // fell was the OLDEST, which are exactly the promises most likely to be
+    // late. Asking the server narrows the window to the work actually held at
+    // the counter, and `total` is exact whatever the limit.
     api<AppointmentPage>("/v1/appointments", {
       query: {
         from: instantFromLocal(`${addDays(todayDay, -PROMISE_WINDOW_DAYS)}T00:00`, zone),
         to: instantFromLocal(`${addDays(todayDay, PROMISE_WINDOW_DAYS)}T23:59`, zone),
         staff_id: query.staff || undefined,
+        fulfilment: ["DROP_OFF"],
         limit: 200,
       },
     }),
@@ -299,9 +307,12 @@ export default async function Agenda({
   // Carried through every action so a verb pressed on Saturday's page comes
   // back to Saturday.
   const back = carry(query);
-  const dropOffs = promises.data.filter(
-    (row) => row.ready_by && row.status !== "CANCELLED" && row.status !== "COMPLETED",
-  );
+  // No sifting left to do. The server was asked for DROP_OFF, and an agenda
+  // read without a status already excludes what is cancelled or finished - so
+  // what comes back is the work still on the shelf, including the pieces taken
+  // in with no promised date, which used to be dropped here for want of a
+  // `ready_by` and are just as much on the shelf.
+  const dropOffs = promises.data;
   // Read once, and passed down: a promise is late or it is not, and two
   // readings of the clock inside one render can disagree.
   const clock = now().getTime();
@@ -2158,7 +2169,12 @@ function dayBounds(rows: AppointmentView[]): { first: string; last: string } | n
  * with more than that in one day would otherwise be told it has two hundred.
  */
 function count(page: AppointmentPage): string {
-  return `${page.data.length}${page.next_cursor ? "+" : ""}`;
+  // The published total, which counts every match rather than the rows that
+  // came back. It used to be `data.length` with a "+" stuck on when there was
+  // another page - an honest admission that the figure was a floor, printed on
+  // a badge whose whole job is to be a number. A salon with more than the
+  // limit was told the limit, for ever.
+  return String(page.total);
 }
 
 /* --- Reading a calendar date --------------------------------------------- */

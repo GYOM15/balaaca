@@ -38,8 +38,21 @@ public interface ListAppointmentsUseCase {
                        Optional<Instant> to,
                        Optional<StaffId> staffId,
                        Optional<AppointmentStatus> status,
+                       /**
+                        * The ways of working asked for, matched against what
+                        * was FROZEN on the appointment. Empty is no filter:
+                        * nobody asks for an appointment that happens no way at
+                        * all, so the value is free to mean the absence of the
+                        * question - the same reading `Fulfilments` takes in the
+                        * directory.
+                        */
+                       java.util.List<String> fulfilments,
                        Optional<AgendaPosition> after,
                        int limit) {
+
+        public AgendaQuery {
+            fulfilments = java.util.List.copyOf(fulfilments);
+        }
     }
 
     /**
@@ -97,6 +110,13 @@ public interface ListAppointmentsUseCase {
     }
 
     /** @param next empty on the last page */
-    record AgendaPage(List<AgendaEntry> entries, Optional<AgendaPosition> next) {
+    /**
+     * @param total how many match across every page, which is NOT the size of
+     *              `entries`. A count taken from the rows is a lie the moment
+     *              there is a second page, and the dashboard was taking
+     *              several: a badge counting a request for two hundred told a
+     *              busy salon it had exactly two hundred, for ever.
+     */
+    record AgendaPage(List<AgendaEntry> entries, Optional<AgendaPosition> next, int total) {
     }
 }

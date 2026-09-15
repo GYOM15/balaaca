@@ -39,7 +39,7 @@ public class ListAppointmentsService implements ListAppointmentsUseCase {
                 ? Optional.of(position(entries.get(entries.size() - 1)))
                 : Optional.empty();
 
-        return new AgendaPage(List.copyOf(entries), next);
+        return new AgendaPage(List.copyOf(entries), next, agenda.count(query));
     }
 
     private static AgendaPosition position(AgendaEntry last) {
