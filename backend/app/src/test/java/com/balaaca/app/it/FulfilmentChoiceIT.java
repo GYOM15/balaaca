@@ -101,6 +101,35 @@ class FulfilmentChoiceIT {
     }
 
     @Test
+    @DisplayName("The customer's own page reads the mode off the appointment, not off the catalogue")
+    void theCustomerIsToldWhatTheyChose() {
+        String offering = bothWays();
+
+        String salon = book(offering, "2026-09-07T10:00:00Z", chose("ON_SITE"), "")
+                .statusCode(201).extract().path("reference");
+        String home = book(offering, "2026-09-07T14:00:00Z", chose("AT_CUSTOMER"), HOME)
+                .statusCode(201).extract().path("reference");
+
+        // The provider renames the service the next morning, which is a thing
+        // providers do. A client that matched the frozen service_name against
+        // the live catalogue found nothing from here on and drew both bookings
+        // as a chair in the salon - including the one where somebody is coming
+        // to a house.
+        given().contentType("application/json")
+                .body("""
+                      {"name":"Tresses africaines","duration_minutes":90,
+                       "fulfilments":["ON_SITE","AT_CUSTOMER"],
+                       "price":{"amount_minor":300000,"currency":"GNF"}}
+                      """)
+                .when().put("/v1/service-offerings/" + offering).then().statusCode(200);
+
+        given().when().get("/v1/bookings/" + salon).then().statusCode(200)
+                .body("fulfilment", equalTo("ON_SITE"));
+        given().when().get("/v1/bookings/" + home).then().statusCode(200)
+                .body("fulfilment", equalTo("AT_CUSTOMER"));
+    }
+
+    @Test
     @DisplayName("A service offered one way asks nothing, as every booking before this did")
     void oneModeNeedsNoChoice() {
         // Tresses, seeded on-site and nothing else. A request that names no mode

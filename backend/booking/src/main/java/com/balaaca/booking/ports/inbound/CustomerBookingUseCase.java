@@ -74,6 +74,17 @@ public interface CustomerBookingUseCase {
                            Money price,
                            /** The provider's IANA zone: what turns the instants into a reading. */
                            String timezone,
+                           /**
+                            * How this appointment is fulfilled, frozen at booking.
+                            *
+                            * <p>Published rather than left to be worked out from the
+                            * service: since V044 one offering may be sold all three
+                            * ways, so its name says nothing about which of them the
+                            * customer chose, and the name itself is frozen too - a
+                            * client matching it against the live catalogue finds
+                            * nothing the moment the provider renames the service.
+                            */
+                           String fulfilment,
                            /** Both empty unless the work was handed over. */
                            Optional<Instant> readyBy,
                            Optional<Instant> readyAt,

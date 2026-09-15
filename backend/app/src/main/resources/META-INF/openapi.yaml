@@ -5325,7 +5325,8 @@ components:
         identifier, no customer identifier: the reference is the only handle, and
         publishing a second one would be publishing a second way in.
       required: [reference, provider_slug, provider_name, service_name,
-                 staff_name, starts_at, ends_at, status, price, timezone]
+                 staff_name, starts_at, ends_at, status, price, timezone,
+                 fulfilment]
       properties:
         reference:
           type: string
