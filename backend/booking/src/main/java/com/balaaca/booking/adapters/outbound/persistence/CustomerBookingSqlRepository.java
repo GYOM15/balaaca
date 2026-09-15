@@ -45,6 +45,7 @@ public class CustomerBookingSqlRepository implements CustomerBookingRepository {
                        a.service_name, s.display_name, a.starts_at, a.ends_at,
                        a.status, a.customer_price_amount_minor,
                        a.customer_price_currency, p.timezone,
+                       a.service_fulfilment,
                        a.ready_by, a.ready_at,
                        p.cancellation_deadline_minutes
                   FROM appointments a
@@ -62,9 +63,10 @@ public class CustomerBookingSqlRepository implements CustomerBookingRepository {
                 (String) r[8],
                 Money.ofMinor(((Number) r[9]).longValue(), Currency.of((String) r[10])),
                 (String) r[11],
-                Optional.ofNullable(r[12]).map(CustomerBookingSqlRepository::instant),
+                (String) r[12],
                 Optional.ofNullable(r[13]).map(CustomerBookingSqlRepository::instant),
-                Duration.ofMinutes(((Number) r[14]).longValue())));
+                Optional.ofNullable(r[14]).map(CustomerBookingSqlRepository::instant),
+                Duration.ofMinutes(((Number) r[15]).longValue())));
     }
     /**
      * The type a timestamptz comes back as depends on the driver and its

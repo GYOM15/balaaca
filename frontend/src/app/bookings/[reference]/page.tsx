@@ -431,7 +431,11 @@ function DetailView({
   const providerPage = `/p/${encodeURIComponent(booking.provider_slug)}`;
   const status = STATUS[booking.status];
   const service = serviceOf(provider, booking);
-  const mode = service ? modeOf(service.fulfilment) : undefined;
+  // From the appointment, never from the catalogue entry beside it. What the
+  // customer chose is frozen on the row; the offering can be renamed, withdrawn
+  // or - since a service may be sold all three ways - simply not say which of
+  // them this was.
+  const mode = modeOf(booking.fulfilment);
   const logo = mediaUrl(provider?.logo_url);
   const place = provider ? placeOf(provider) : "";
   const whatsApp = provider?.whatsapp_phone_e164;
@@ -589,17 +593,15 @@ function DetailView({
                 <span className="dl__key">Prix figé</span>
                 <span className="dl__val t-price">{money(booking.price)}</span>
               </div>
-              {mode ? (
-                <div className="dl__row">
-                  <span className="dl__key">Déroulement</span>
-                  <span className="dl__val">
-                    <span className={`mode mode--${mode.slug} mode--lg`}>
-                      <Icon name={mode.icon} />
-                      {mode.label}
-                    </span>
+              <div className="dl__row">
+                <span className="dl__key">Déroulement</span>
+                <span className="dl__val">
+                  <span className={`mode mode--${mode.slug} mode--lg`}>
+                    <Icon name={mode.icon} />
+                    {mode.label}
                   </span>
-                </div>
-              ) : null}
+                </span>
+              </div>
               {booking.ready_by ? (
                 <div className="dl__row">
                   <span className="dl__key">Promesse de retrait</span>
@@ -637,38 +639,44 @@ function DetailView({
               ) : null}
             </div>
 
-            {service && mode ? (
-              <div style={{ marginTop: "var(--s-6)" }}>
-                <div className={`mode-note mode-note--${mode.slug}`}>
-                  <span className="mode-note__icon">
-                    <Icon name={mode.icon} size={24} />
-                  </span>
-                  <div>
-                    <div className="mode-note__title">{mode.title}</div>
-                    <div className="mode-note__body">
-                      {service.fulfilment === "DROP_OFF" ? (
-                        <>
-                          Vous déposez l’article, vous repassez le récupérer une
-                          fois le travail terminé.{" "}
-                          {service.turnaround_hours ? (
-                            <>
-                              <strong>
-                                Prêt sous {turnaround(service.turnaround_hours)}.
-                              </strong>{" "}
-                            </>
-                          ) : null}
-                          Le rendez-vous ci-dessus n’est que la remise au comptoir
-                          ({duration(service.duration_minutes)}), ce n’est pas la
-                          durée du travail.
-                        </>
-                      ) : (
-                        mode.body
-                      )}
-                    </div>
+            <div style={{ marginTop: "var(--s-6)" }}>
+              <div className={`mode-note mode-note--${mode.slug}`}>
+                <span className="mode-note__icon">
+                  <Icon name={mode.icon} size={24} />
+                </span>
+                <div>
+                  <div className="mode-note__title">{mode.title}</div>
+                  <div className="mode-note__body">
+                    {booking.fulfilment === "DROP_OFF" ? (
+                      <>
+                        Vous déposez l’article, vous repassez le récupérer une
+                        fois le travail terminé.{" "}
+                        {service?.turnaround_hours ? (
+                          <>
+                            <strong>
+                              Prêt sous {turnaround(service.turnaround_hours)}.
+                            </strong>{" "}
+                          </>
+                        ) : null}
+                        {/* The counter time comes from the live offering, which
+                            a withdrawn or renamed service no longer supplies.
+                            The sentence that needs it is dropped rather than
+                            printed with a blank where a duration should be. */}
+                        {service ? (
+                          <>
+                            Le rendez-vous ci-dessus n’est que la remise au
+                            comptoir ({duration(service.duration_minutes)}), ce
+                            n’est pas la durée du travail.
+                          </>
+                        ) : null}
+                      </>
+                    ) : (
+                      mode.body
+                    )}
                   </div>
                 </div>
               </div>
-            ) : null}
+            </div>
           </div>
 
           {open && (changeable || whatsApp) ? (

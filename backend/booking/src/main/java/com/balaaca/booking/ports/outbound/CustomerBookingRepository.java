@@ -32,6 +32,8 @@ public interface CustomerBookingRepository {
                            String status,
                            Money price,
                            String timezone,
+                           /** What the customer chose at booking, frozen on the row. */
+                           String fulfilment,
                            Optional<Instant> readyBy,
                            Optional<Instant> readyAt,
                            Duration cancellationWindow) {

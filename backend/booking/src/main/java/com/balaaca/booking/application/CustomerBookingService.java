@@ -122,7 +122,7 @@ public class CustomerBookingService implements CustomerBookingUseCase {
                 snapshot.reference(), snapshot.providerSlug(), snapshot.providerName(),
                 snapshot.serviceName(), snapshot.staffName(),
                 snapshot.startsAt(), snapshot.endsAt(), snapshot.status(), snapshot.price(),
-                snapshot.timezone(),
+                snapshot.timezone(), snapshot.fulfilment(),
                 snapshot.readyBy(), snapshot.readyAt(),
                 // Absent rather than a date in the past: a client showing a
                 // deadline that has gone invites a customer to try, and be
