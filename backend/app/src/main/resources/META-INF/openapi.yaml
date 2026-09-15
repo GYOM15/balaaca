@@ -4525,7 +4525,7 @@ components:
         unpublished and the suspended - and carries no way to contact anybody:
         not the business, and above all not its customers.
       required: [slug, business_name, published, status, registered_at,
-                 appointment_count]
+                 appointment_count, report_count]
       properties:
         slug:
           type: string
@@ -4580,6 +4580,25 @@ components:
             is how many customers are still expected at the door after the lever
             is pulled. It counts appointments and says nothing whatsoever about
             who is in them.
+        report_count:
+          type: integer
+          format: int64
+          description: |
+            How many complaints against this business are still waiting to be
+            read.
+
+            `appointment_count` says what a suspension costs; this says whether
+            there is a case for one. They are the two halves of the same
+            decision, and having only the first meant reading the report inbox
+            beside this list and matching names by eye.
+
+            Pending only. A report an operator has already read and closed is a
+            decision they made, and counting it here would leave a business they
+            cleared last month looking exactly like one nobody has read yet.
+
+            A count, like its neighbour: it says how many, never who. Neither
+            the person who complained nor the appointment behind a complaint
+            appears on this view.
         suspension_reason:
           type: string
           description: What the operator wrote when they suspended, and what the
