@@ -44,10 +44,18 @@ public class CustomerSqlRepository implements CustomerRepository {
         // customer with no appointment still appears - which happens, because a
         // booking that failed after the customer upsert leaves exactly that.
         List<Object[]> rows = em.createNativeQuery("""
-                SELECT c.id, c.full_name, c.phone_e164, c.email, v.visits, v.last_visit
+                SELECT c.id, c.full_name, c.phone_e164, c.email,
+                       v.visits, v.no_shows, v.last_visit
                   FROM customers c
                   LEFT JOIN LATERAL (
-                        SELECT count(*)::int AS visits, max(a.starts_at) AS last_visit
+                        SELECT count(*)::int AS visits,
+                               -- In the same pass as the total, not a second
+                               -- lateral: one scan already has every row, and
+                               -- two would be two chances for the predicates to
+                               -- part company.
+                               count(*) FILTER (WHERE a.status = 'NO_SHOW')::int
+                                   AS no_shows,
+                               max(a.starts_at) AS last_visit
                           FROM appointments a WHERE a.customer_id = c.id) v ON true
                  WHERE (CAST(:contains AS varchar) IS NULL
                         OR c.full_name ILIKE '%' || CAST(:contains AS varchar) || '%'
@@ -71,10 +79,13 @@ public class CustomerSqlRepository implements CustomerRepository {
     public Optional<CustomerDetail> detail(CustomerId id) {
         List<Object[]> rows = em.createNativeQuery("""
                 SELECT c.id, c.full_name, c.phone_e164, c.email, c.notes,
-                       c.blocked, v.visits, v.last_visit
+                       c.blocked, v.visits, v.no_shows, v.last_visit
                   FROM customers c
                   LEFT JOIN LATERAL (
-                        SELECT count(*)::int AS visits, max(a.starts_at) AS last_visit
+                        SELECT count(*)::int AS visits,
+                               count(*) FILTER (WHERE a.status = 'NO_SHOW')::int
+                                   AS no_shows,
+                               max(a.starts_at) AS last_visit
                           FROM appointments a WHERE a.customer_id = c.id) v ON true
                  WHERE c.id = :id
                 """).setParameter("id", id.value()).getResultList();
@@ -85,7 +96,8 @@ public class CustomerSqlRepository implements CustomerRepository {
                 Optional.ofNullable((String) r[4]).filter(n -> !n.isBlank()),
                 (Boolean) r[5],
                 ((Number) r[6]).intValue(),
-                Optional.ofNullable(r[7]).map(CustomerSqlRepository::instant),
+                ((Number) r[7]).intValue(),
+                Optional.ofNullable(r[8]).map(CustomerSqlRepository::instant),
                 history(id)));
     }
 
@@ -153,7 +165,8 @@ public class CustomerSqlRepository implements CustomerRepository {
                 CustomerId.of((UUID) r[0]),
                 contact(r[1], r[2], r[3]),
                 ((Number) r[4]).intValue(),
-                Optional.ofNullable(r[5]).map(CustomerSqlRepository::instant));
+                ((Number) r[5]).intValue(),
+                Optional.ofNullable(r[6]).map(CustomerSqlRepository::instant));
     }
 
     private static CustomerContact contact(Object name, Object phone, Object email) {

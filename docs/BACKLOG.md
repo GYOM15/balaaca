@@ -140,32 +140,65 @@ by one.
   `price_from` are derived from the active service offerings. The foot of the
   directory card is back.
 
-- **`GET /v1/providers` accepts no fulfilment parameter.** The `Mode` checkbox
-  group in the filters is removed rather than shipping three boxes that filter
-  nothing. A repeatable `fulfilment` parameter would give it back.
-- **`LocalityView` has no `provider_count`.** The home page's Places band counts
-  eight tiles with figures; only `/v1/areas` publishes a place with a count, so
-  the band shows the best-supplied quartiers instead of the design's communes.
-- **No total.** `ProviderSummaryPage` publishes the page and `next_cursor`, so
-  the toolbar says "N on this page" and not "23 professionals".
+- ~~**`GET /v1/providers` accepts no fulfilment parameter.**~~ (was already
+  false) It has taken a repeatable `fulfilment` since it was published, with a
+  description pinning it to the same source the card's badges read. This line,
+  and the same claim in a comment in `filters.tsx`, are why the three boxes
+  were missing from a filter that was already built and already tested. They
+  are there now.
+- ~~**`LocalityView` has no `provider_count`.**~~ (was already false) It has
+  one, served, and the Places band was reading `/v1/areas` because the
+  component's own doc repeated this line. The band draws communes and
+  prefectures now, which is what its heading always promised, and the tiles
+  filter on `locality` - which walks DOWN the tree, so a Conakry tile returns
+  every commune under it.
+- ~~**No total.**~~ (was already false) `ProviderSummaryPage` publishes one and
+  the resource fills it.
+
+  **Three stale lines in one section.** They were not merely out of date: each
+  one was READ as a constraint and shaped a screen around itself. The cost of a
+  backlog nobody prunes is not confusion, it is work that gets designed around
+  a limit that no longer exists.
 
 ### The rest, screen by screen
 
 - `CategoryFamily` has no description: the subtitle under each family on
-  /metiers. `CategoryView` has no search aliases: typing "barbiers" finds
-  nothing any more.
-- `PublicProviderView` has no founding year (`depuis 2016`). `PublicStaffMember`
-  has no `bookable`: the `Non reservable` pill.
+  /metiers. Eight sentences to write for a page nobody lingers on.
+- ~~`CategoryView` has no search aliases: typing "barbiers" finds nothing.~~
+  (the plural, done) V055 singularises what was TYPED, which cannot lose a
+  match because the stripped form is a prefix of the folded one. Matching the
+  other way round was rejected: `position('spa' in 'espace')` is 2.
+
+  **True synonyms are still owed and are the owner's to write** - "coiffeur"
+  for "Coiffure", "clim" for "Climatisation". `localities.aliases` is the
+  precedent and the same column shape would serve. Inventing thirty-five
+  Guinean trade vocabularies is not an engineering decision.
+- **Multi-word queries match nothing.** "salon de coiffure" reaches no label,
+  because no stored label contains that phrase. That needs tokenisation rather
+  than a longer LIKE.
+- `PublicProviderView` has no founding year (`depuis 2016`), and it is not
+  wanted: a business that opened this year looks worse for carrying one, which
+  is half of a launch market.
+- ~~`PublicStaffMember` has no `bookable`: the `Non reservable` pill.~~ (not
+  buildable, and should not be) `PublicStaffSqlRepository` reads
+  `WHERE status = 'ACTIVE' AND bookable`, so a customer is never shown somebody
+  they cannot book. The field would be `true` on every row it ever appeared on,
+  and the pill would be a label for a case the API refuses to produce.
 - `CustomerBookingView` has neither `fulfilment` nor `turnaround_hours`: the
   Deroulement line and the fulfilment note are inferred from the named service
   offering. `available-slots` does not distinguish a closed day from a full one.
-- `GET /v1/appointments` has no fulfilment filter: the drop-off queue is filtered
-  client-side over +/-90 days, limit 200. It truncates for a busy salon, and the
-  sidebar's Agenda counter is a floor.
+- ~~`GET /v1/appointments` has no fulfilment filter.~~ (done) It takes a
+  repeatable one, matched against the mode frozen on the appointment. The queue
+  asks for `DROP_OFF` instead of sifting a hundred and eighty days in the
+  browser, and `AppointmentPage` publishes a `total` so a badge counts what
+  matches rather than the rows that fit on a page.
 - `ServiceOfferingView` has no photo: one thumbnail per line costs one request
   per service offering.
-- `CustomerSummaryView` has neither `has_notes` nor `no_show_count`;
-  `CustomerVisitView` carries no amount: the price of each visit in the history.
+- `CustomerSummaryView` has no `has_notes`, and `CustomerVisitView` carries no
+  amount: the price of each visit in the history. ~~`no_show_count`~~ (done) -
+  `visits` counts every appointment in every state on purpose, so it cannot
+  tell eight kept from eight booked and two honoured, and that is the one
+  judgement a provider has to make before blocking anybody.
 - ~~**Moderation: no operation lists the businesses.**~~ (done)
   `GET /v1/admin/providers` publishes every business with its standing, so the
   suspension lever is no longer keyed on a slug nobody could look up. What is

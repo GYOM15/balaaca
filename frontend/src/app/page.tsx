@@ -123,8 +123,22 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
   ];
 
   const families = byFamily(categories.data);
-  const places = [...areas.data]
-    .sort((a, b) => b.provider_count - a.provider_count || a.label.localeCompare(b.label, "fr"))
+  // Communes and prefectures, not quartiers: the band's own heading promises
+  // "Conakry commune par commune, et les villes de l'intérieur", and it drew
+  // quartiers because LocalityView was once thought to carry no count. It does.
+  //
+  // Regions are left out. A region is a container rather than a place somebody
+  // says they are from, and Conakry as one would sit beside its own communes
+  // counting every one of them again.
+  //
+  // Places nobody is filed under are dropped rather than ranked last: the
+  // trades band draws an empty tile on purpose, because a trade with nobody in
+  // it is an invitation to a provider, while a commune with nobody in it is a
+  // dead end for a customer.
+  const places = localities.data
+    .filter((l) => l.kind !== "REGION" && l.provider_count > 0)
+    .sort((a, b) => b.provider_count - a.provider_count
+        || a.label_fr.localeCompare(b.label_fr, "fr"))
     .slice(0, 8);
   const settlements = localities.data.filter((l) => l.kind !== "REGION").length;
   const localityName = localities.data.find((l) => l.slug === asked.locality)?.label_fr;
